@@ -27,7 +27,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          path-to-document: https://github.com/bl3x3/dinnerparty_community/blob/main/CLA.md
+          path-to-document: https://github.com/DinnerpartyFoodMap/dinnerparty_community/blob/main/CLA.md
           path-to-signatures: signatures/version1/cla.json
           branch: cla-signatures
           allowlist: bl3x3,Chenan-LightFox,lofur,bot*
