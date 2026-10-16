@@ -42,6 +42,24 @@ function bundledIconFont() {
     };
 }
 
+// 无扩展名的政策地址必须先于 Vite 的 SPA fallback 处理，否则会启动地图页。
+function privacyPageRoute() {
+    const install = (server) => {
+        server.middlewares.use((req, res, next) => {
+            if (req.url === '/privacy' || req.url?.startsWith('/privacy?')) {
+                res.writeHead(302, { Location: `/privacy/${req.url.slice('/privacy'.length)}` });
+                res.end();
+                return;
+            }
+            if (req.url === '/privacy/' || req.url?.startsWith('/privacy/?')) {
+                req.url = `/privacy/index.html${req.url.slice('/privacy/'.length)}`;
+            }
+            next();
+        });
+    };
+    return { name: 'yuyuko-privacy-page-route', configureServer: install, configurePreviewServer: install };
+}
+
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, __dirname, 'VITE_');
     const isMobile = mode === 'mobile' || env.VITE_TARGET === 'native';
@@ -55,7 +73,7 @@ export default defineConfig(({ mode }) => {
         define: {
             __APP_VERSION__: JSON.stringify(appVersion)
         },
-        plugins: isMobile ? [bundledIconFont()] : [],
+        plugins: [privacyPageRoute(), ...(isMobile ? [bundledIconFont()] : [])],
         build: {
             rollupOptions: {
                 // motion 包内的 "use client" 指令对客户端打包无意义，Rollup 会逐个文件告警
@@ -65,6 +83,7 @@ export default defineConfig(({ mode }) => {
                 },
                 input: {
                     main: resolve(__dirname, 'index.html'),
+                    privacy: resolve(__dirname, 'privacy/index.html'),
                     beian: resolve(__dirname, 'beian/index.html')
                 }
             }

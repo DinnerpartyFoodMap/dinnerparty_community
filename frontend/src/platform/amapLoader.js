@@ -4,6 +4,7 @@
 import { getRuntimeConfig } from './runtimeConfig.js';
 import { getPlatform } from './env.js';
 import { t } from '../i18n/index.js';
+import { readPrivacyConsent } from './privacyConsent.js';
 
 const AMAP_PLUGINS = ['AMap.PlaceSearch', 'AMap.Geolocation'];
 const LOAD_TIMEOUT_MS = 20000;
@@ -56,6 +57,11 @@ function applyRenderHints() {
 }
 
 export function loadAmap() {
+    if (readPrivacyConsent() !== 'accepted') {
+        const error = new Error(t('common:privacy.consentRequired'));
+        error.code = 'PRIVACY_CONSENT_REQUIRED';
+        return Promise.reject(error);
+    }
     if (typeof window === 'undefined') return Promise.reject(new Error(t('platform:amapLoader.notBrowser')));
     if (window.AMap) {
         if (state.status !== 'ready') setState({ status: 'ready', error: null });

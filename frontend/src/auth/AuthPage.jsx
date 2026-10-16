@@ -8,6 +8,7 @@ import { getThemeColor, getThemeSecondary, colorToRgba, darkenColor } from "../t
 import { reportAuthStage } from "./services/authDiagnostics";
 import { getClientInfo } from "../platform/env";
 import { t, tx } from "../i18n/index.js";
+import PrivacyPolicyLink from './components/PrivacyPolicyLink.jsx';
 
 const REQUEST_TIMEOUT_MS = 12000;
 const MAX_USERNAME_LENGTH = 64;
@@ -942,6 +943,10 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     </Button>
                 </form>
             )}
+
+            <p style={{ margin: '14px 0 0', fontSize: 13, textAlign: 'center' }}>
+                <PrivacyPolicyLink style={{ color: 'var(--color-text-secondary)' }} />
+            </p>
 
             {slowConnection && (
                 <div

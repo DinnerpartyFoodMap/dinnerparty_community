@@ -1,10 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "./app/App";
+import PrivacyConsent from './app/PrivacyConsent.jsx';
 import "./styles/tokens.css";
-import { initPlatform } from "./platform/nativeShell";
 import { getRuntimeConfig } from "./platform/runtimeConfig";
-import { loadAmap } from "./platform/amapLoader";
 import { t } from './i18n/index.js';
 
 /**
@@ -49,15 +47,24 @@ function ConfigErrorScreen({ errors }) {
     );
 }
 
-initPlatform();
-const config = getRuntimeConfig();
 const root = createRoot(document.getElementById("root"));
 
-if (config.errors.length) {
-    console.error('运行配置错误', config.errors);
-    root.render(<ConfigErrorScreen errors={config.errors} />);
-} else {
-    // 尽早开始加载地图 SDK（失败时由地图页提供重试）
+async function startApplication() {
+    const [{ default: App }, { initPlatform }, { loadAmap }] = await Promise.all([
+        import('./app/App.jsx'), import('./platform/nativeShell.js'), import('./platform/amapLoader.js')
+    ]);
+    const config = getRuntimeConfig();
+    if (config.errors.length) {
+        console.error('运行配置错误', config.errors);
+        root.render(<ConfigErrorScreen errors={config.errors} />);
+        return;
+    }
+    document.querySelectorAll('link[data-consent-href]').forEach((link) => {
+        link.href = link.dataset.consentHref;
+    });
+    initPlatform();
     loadAmap().catch((error) => console.warn('地图 SDK 首次加载失败', error));
     root.render(<App />);
 }
+
+root.render(<PrivacyConsent onAccept={startApplication} />);
