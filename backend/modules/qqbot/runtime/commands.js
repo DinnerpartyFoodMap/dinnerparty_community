@@ -130,7 +130,7 @@ function formatRandomPick(result) {
         : result.centerLabel;
     const centerHint = result.centerSource === 'user' ? ''
         : result.registered
-            ? '在网站或 App 的地图上点“定位”，或私聊发我 QQ 位置后，会改为以你的位置为中心。'
+            ? `你的账号还没有定位记录，所以按${result.centerLabel}附近推荐。在网站或 App 的地图上点“定位”，或私聊发我 QQ 位置后，会改为以你的位置为中心。`
             : '注册网站账号并填写本人 QQ 后，可以按你的位置推荐。';
     if (!result.place) {
         return [`以${centerText}为中心，${EMPTY_MESSAGE}。`, centerHint].filter(Boolean).join('\n');

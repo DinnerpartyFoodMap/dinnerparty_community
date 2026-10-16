@@ -10,6 +10,7 @@ import { expandBounds } from "./cluster/snapshot";
 import { placeKey } from "./cluster/engine";
 import { readViewBounds, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
+import { createLocationReporter } from "./locationReport";
 import MotionSurface from "../components/overlay/MotionSurface";
 import FullScreenMapContent from "../components/layout/FullScreenMapContent";
 const JourneyWorkspace = React.lazy(() => import("../journey/JourneyWorkspace"));
@@ -1365,6 +1366,13 @@ export default function MapView({
         setManageMessage("");
     };
 
+    // 定位结果上报给后端（QQ Bot 的 !随机 以它为中心）；登录状态晚于定位就绪时在登录后补报，失败不影响定位本身
+    const locationReporterRef = useRef(null);
+    if (!locationReporterRef.current) locationReporterRef.current = createLocationReporter(Api.reportUserLocation);
+    useEffect(() => {
+        locationReporterRef.current.setAuth({ isAuthenticated, token, backendUrl });
+    }, [isAuthenticated, token, backendUrl]);
+
     // auto：App 启动后的自动定位。失败不弹提示（拒绝授权也不打扰）；
     // 等待期间用户已经拖动地图或打开了地点卡片时，只放置位置标记、不再移动地图
     const handleLocateMe = async ({ auto = false } = {}) => {
@@ -1390,10 +1398,7 @@ export default function MapView({
             if (!mapRef.current) return;
 
             ensureUserLocationMarker([position.lng, position.lat]);
-            // 登录后记下这次定位，QQ Bot 的 !随机 以它为中心；失败不影响定位本身
-            if (isAuthenticated && token) {
-                Api.reportUserLocation(backendUrl, token, position).catch((error) => console.warn("记录定位失败", error));
-            }
+            locationReporterRef.current.located(position);
 
             if (auto) {
                 const center = mapRef.current.getCenter?.();
