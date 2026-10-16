@@ -1,0 +1,163 @@
+/* 地图标记：同根承载图标、名称与数量。外层由 AMap 定位，这里不对外层添加 transform 或 transition。 */
+
+.fm-marker {
+    position: relative;
+    width: 0;
+    height: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.fm-marker__travel {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+}
+
+.fm-marker__glyph {
+    position: absolute;
+    transform-origin: 50% 100%;
+    pointer-events: none;
+}
+
+.fm-marker__glyph img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+}
+
+.fm-marker__count {
+    position: absolute;
+    left: 54%;
+    top: 30%;
+    transform: translate(-50%, -50%);
+    font-weight: 600;
+    color: #000;
+    line-height: 1;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+
+.fm-marker__label {
+    position: absolute;
+    left: 0;
+    top: 3px;
+    transform: translateX(-50%);
+    max-width: 140px;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px 8px 2px 6px;
+    font-size: 12px;
+    line-height: 16px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1px solid var(--theme-primary, #c77dff);
+    background: var(--color-bg-surface, #fff);
+    color: var(--color-text-primary, #222);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 140ms ease, visibility 0s linear 0s;
+}
+
+.fm-marker__label[data-thunder] {
+    border-color: var(--color-danger, #d9534f);
+    color: var(--color-danger, #d9534f);
+    background: var(--color-bg-overlay, #fafafa);
+}
+
+.fm-marker__label[data-hidden] {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 120ms ease, visibility 0s linear 120ms;
+}
+
+.fm-marker[data-selected] .fm-marker__label {
+    font-weight: 600;
+}
+
+.fm-marker__hit {
+    position: absolute;
+    pointer-events: auto;
+    cursor: pointer;
+    border-radius: 50%;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fm-marker__hit:focus-visible {
+    outline: 2px solid var(--theme-primary, #c77dff);
+    outline-offset: 2px;
+}
+
+/* 退出残影只做视觉过渡，不可再次点击 */
+.fm-marker[data-ghost],
+.fm-marker[data-ghost] .fm-marker__hit {
+    pointer-events: none;
+}
+
+/* 减少动态效果：名称直接显隐 */
+@media (prefers-reduced-motion: reduce) {
+    .fm-marker__label,
+    .fm-marker__label[data-hidden] {
+        transition: none;
+    }
+}
+
+:root[data-motion='reduced'] .fm-marker__label,
+:root[data-motion='reduced'] .fm-marker__label[data-hidden] {
+    transition: none;
+}
+
+/* 当前位置：蓝点 + 白边 + 扩散光圈（与系统地图一致，不依赖外部图片）。
+   外层是 44px 透明容器，光圈（::before）先画、蓝点（::after）后画，叠放顺序不依赖 z-index */
+.fm-user-location {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    pointer-events: none;
+}
+
+.fm-user-location::before,
+.fm-user-location::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+}
+
+.fm-user-location::before {
+    inset: 0;
+    background: rgba(26, 115, 232, 0.28);
+    animation: fm-user-location-pulse 2s ease-out infinite;
+}
+
+.fm-user-location::after {
+    left: 13px;
+    top: 13px;
+    width: 18px;
+    height: 18px;
+    box-sizing: border-box;
+    border: 3px solid #fff;
+    background: #1a73e8;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes fm-user-location-pulse {
+    from { transform: scale(0.35); opacity: 1; }
+    to { transform: scale(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fm-user-location::before {
+        animation: none;
+        transform: scale(0.7);
+        opacity: 0.6;
+    }
+}

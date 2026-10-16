@@ -1,0 +1,10 @@
+{
+  "license": "AGPL-3.0-only",
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "sharp": "^0.34.5"
+  }
+}

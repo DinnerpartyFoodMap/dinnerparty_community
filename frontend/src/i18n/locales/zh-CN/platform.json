@@ -1,0 +1,59 @@
+{
+  "amapLoader": {
+    "notBrowser": "非浏览器环境",
+    "configIncomplete": "运行配置不完整：{{errors}}",
+    "errorSeparator": "；",
+    "amapMissing": "地图脚本已加载，但未找到 AMap 对象",
+    "timeout": "地图服务加载超时",
+    "connectFailed": "无法连接地图服务",
+    "describe": {
+      "timeout": "地图服务加载超时，请检查网络后重试。",
+      "offline": "当前处于离线状态，联网后可重新加载地图。",
+      "unavailable": "地图服务暂时无法加载，请检查网络后重试。"
+    }
+  },
+  "geolocation": {
+    "permissionDenied": "定位权限被拒绝。可以在系统设置中允许访问位置，或继续手动浏览地图选点。",
+    "servicesDisabled": "设备定位服务未开启，请在系统设置中打开定位后重试。",
+    "positionUnavailable": "暂时无法获取当前位置，请确认设备定位服务已开启。",
+    "timeout": "定位超时，请检查网络或稍后重试。",
+    "notReady": "地图尚未就绪，稍候再试。",
+    "unknown": "定位失败，请稍后重试。",
+    "failed": "定位失败"
+  },
+  "mediaPicker": {
+    "permissionDenied": "没有访问相册或相机的权限，请在系统设置中允许后重试。",
+    "pickFailed": "选择图片失败，请重试。",
+    "noFile": "未选择图片",
+    "notImage": "仅支持上传图片文件",
+    "gifTooLarge": "动图过大，最大支持 {{formatMB}}",
+    "heicUnsupported": "当前设备无法读取 HEIC 格式照片，请在相机设置中选择“兼容性最佳”，或改用 JPG/PNG 图片。",
+    "decodeFailed": "图片无法读取，可能已损坏或格式不受支持。",
+    "imageTooLarge": "图片过大，最大支持 {{formatMB}}"
+  },
+  "nativeMapChrome": {
+    "noCapabilities": "原生未返回能力",
+    "protocolMismatch": "协议版本不一致（App {{protocolVersion}}，网页 {{NATIVE_CHROME_PROTOCOL}}）",
+    "glassUnsupported": "系统不支持 Liquid Glass{{systemVersion}}",
+    "systemVersion": "（iOS {{systemVersion}}）",
+    "layoutTimeout": "等待原生布局超时"
+  },
+  "share": {
+    "readFailed": "读取文件失败",
+    "dialogTitle": "分享",
+    "saveFileDialog": "保存或分享文件",
+    "saveImageDialog": "保存或分享图片",
+    "shareImageDialog": "分享图片",
+    "copied": "已复制到剪贴板",
+    "imageSaved": "图片已保存",
+    "failed": "操作失败，请重试",
+    "unsupported": "当前环境不支持系统分享"
+  },
+  "runtimeConfig": {
+    "notConfigured": "{{name}} 未配置",
+    "invalidUrl": "{{name}} 不是有效的 URL：{{value}}",
+    "httpsRequired": "{{name}} 必须使用 HTTPS：{{value}}",
+    "localAddress": "{{name}} 不能指向本机地址：{{value}}",
+    "amapProxyName": "高德代理地址"
+  }
+}

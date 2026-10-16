@@ -1,0 +1,697 @@
+/* 应用内容框：与 App.jsx 的固定容器相同的几何区域（顶部与左右让出安全区，高度随可视视口/键盘变化） */
+.fm-app-frame {
+    position: fixed;
+    left: var(--safe-left, 0px);
+    right: var(--safe-right, 0px);
+    top: calc(var(--app-offset-top, 0px) + var(--safe-top, 0px));
+    height: calc(var(--app-height, 100vh) - var(--safe-top, 0px));
+}
+
+/* iOS App：底图延伸到状态栏下方（像系统地图一样没有顶部黑边）。
+   只放开顶部裁剪并把地图画布向上延伸，其余页面与控件仍按安全区排版。 */
+:root[data-platform='ios'] :is(.fm-app-root, .fm-map-root) {
+    overflow: visible !important;
+}
+
+/* 高度取键盘弹出前的稳定高度（App.jsx 记录的 --app-stable-height）：键盘缩小 WebView 时底图尺寸不变，
+   被键盘盖住的部分照常绘制，地图不会重新居中。未记录时等同于铺满到容器底部 */
+:root[data-platform='ios'] .fm-map-canvas {
+    position: absolute !important;
+    top: calc(-1 * var(--safe-top, 0px));
+    left: 0;
+    right: 0;
+    bottom: auto;
+    width: auto !important;
+    height: var(--app-stable-height, calc(100% + var(--safe-top, 0px))) !important;
+}
+
+/* 安卓 App 同理（键盘插件同样缩小 WebView）；底图从安全区下方开始，减去状态栏高度 */
+:root[data-platform='android'] .fm-map-canvas {
+    height: calc(var(--app-stable-height, calc(100% + var(--safe-top, 0px))) - var(--safe-top, 0px)) !important;
+}
+
+/* 应用外壳与地图页不可选中：单指缩放（双击后按住拖动）、长按不会选中工具栏按钮或标记名称，
+   iOS 也不会把整页当作一段文字选中 */
+html,
+body,
+.fm-app-root,
+.fm-map-root {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.fm-map-root {
+    -webkit-touch-callout: none;
+}
+
+/* 地图自己处理全部触摸手势：浏览器不再同时缩放、平移整个页面
+   （高德的触摸监听被 main.jsx 设为 passive，阻止不了系统默认手势；页面一缩放，视口尺寸变化会让地图漂走） */
+.fm-map-canvas {
+    touch-action: none;
+}
+
+/* 子页面、浮层面板、公告、宽屏时挂在底图上的地点卡片与输入框：文字照常可选、可复制 */
+[data-app-scroll],
+.fm-overlay-root,
+.fm-notice,
+.fm-map-canvas .fm-card-host,
+input,
+textarea,
+[contenteditable='true'] {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.fm-map-canvas .fm-card-host {
+    -webkit-touch-callout: default;
+}
+
+/* 按钮文字在任何地方都不参与选择 */
+button,
+[role='button'],
+[role='menuitem'],
+[role='tab'] {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.fm-statusbar-occluder {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(-1 * var(--safe-top, 0px));
+    height: var(--safe-top, 0px);
+    pointer-events: none;
+}
+
+/* 全屏页面沿用顺路吃的实色底、紧凑标题栏与细分隔线，不叠加玻璃边缘。 */
+.fm-full-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    color: var(--color-text-primary);
+}
+.fm-full-page__header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-surface);
+}
+.fm-full-page__heading { flex: 1; min-width: 0; }
+.fm-full-page__heading h2 { margin: 0; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-full-page__heading small { display: block; margin-top: 2px; font-size: 11px; color: var(--color-text-secondary); }
+.fm-full-page__header .fm-full-page__back,
+.fm-full-page__header .jw-header__action {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 44px; min-height: 44px; padding: 4px;
+    border: 0; border-radius: 0; background: transparent;
+    color: var(--color-text-primary); box-shadow: none; cursor: pointer;
+}
+.fm-full-page__actions { display: flex; gap: 6px; flex-shrink: 0; }
+.fm-route-page__content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-bottom: var(--safe-bottom, 0px); }
+.fm-route-page__content > :is(main, div) { min-height: 100% !important; height: auto !important; padding: 14px !important; background: var(--color-bg-surface) !important; }
+.fm-route-page .fm-legacy-page-heading { display: none !important; }
+.fm-route-page .fm-page-card { padding: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; }
+.fm-native-settings-placeholder { color: var(--color-text-secondary); text-align: center; }
+
+:root[data-platform='ios'] .fm-route-transition {
+    top: calc(-1 * var(--safe-top, 0px)) !important;
+    padding-top: var(--safe-top, 0px);
+    box-sizing: border-box;
+    overflow: hidden !important;
+    background: var(--color-bg-surface) !important;
+}
+:root[data-platform='ios'] .fm-panel-outer--full::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 100%; height: var(--safe-top, 0px);
+    background: var(--color-bg-surface);
+}
+
+.fm-overlay-root {
+    z-index: 5500;
+    pointer-events: none;
+    overflow: visible;
+}
+
+/* 每个门户浮层一层，按打开顺序堆叠 */
+.fm-overlay-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.fm-overlay-layer > * {
+    pointer-events: auto;
+}
+
+.fm-overlay-layer[data-passthrough] > .fm-overlay-surface-host {
+    pointer-events: none;
+}
+
+.fm-overlay-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--color-backdrop);
+}
+
+:root[data-degrade='1'] .fm-overlay-surface,
+:root[data-motion='reduced'] .fm-overlay-surface {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* 居中对话框 */
+.fm-overlay-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.fm-overlay-center > * {
+    pointer-events: auto;
+}
+
+.fm-surface {
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md, 12px);
+    box-shadow: var(--shadow-surface);
+    box-sizing: border-box;
+    outline: none;
+}
+
+/* 底部面板 */
+.fm-sheet-host {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.fm-sheet-host > * {
+    pointer-events: auto;
+}
+
+.fm-sheet {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+    padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+    touch-action: auto;
+}
+
+.fm-sheet__grabber {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 4px;
+    cursor: grab;
+    touch-action: none;
+}
+
+.fm-sheet__grabber::before {
+    content: '';
+    width: 40px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--color-border);
+}
+
+.fm-panel__header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.fm-panel__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.fm-panel__close {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fm-panel__close:hover {
+    background: var(--color-bg-overlay);
+}
+
+.fm-panel__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* App 内的 Liquid Glass 材质（iOS 与安卓）：网页弹窗、菜单、搜索结果与网页版地图控件，与 iOS 原生 SwiftUI 玻璃控件同一视觉语言。网页版不使用。
+   开源实现（liquid-glass-js、deepika-builds/liquid-glass、kube.io 的折射文章等）靠 SVG 位移贴图做边缘折射，
+   都依赖 backdrop-filter: url(#filter)：WebKit 目前不渲染（bug 245510），iOS 的 WKWebView 用不上；安卓 WebView 是 Chromium，
+   由 platform/glassRefraction.js 按每个玻璃的尺寸与圆角生成位移贴图，写入 --glass-refraction，边缘真正折射背后的地图。
+   其余部分两端相同，按原生 Liquid Glass 的观感调整：
+   - 更通透：控件几乎不加底色、只轻微模糊，地图细节透得出来（像透镜，而不是旧式磨砂片）；弹窗略实，保证文字可读；
+   - 提亮与增饱和：玻璃把背后的颜色“点亮”，而不是盖一层灰白；
+   - 镜面边缘：光从左上方照来，左上沿最亮、右下沿次亮的细高光，加一圈沿边缘的内侧柔光模拟边缘折射提亮；
+   - 投影轻而散。
+   全部绘制在表面自身的背景、边框与阴影上：不加伪元素覆盖层（不截获触摸，滚动容器里也不会跟着内容滚走）。 */
+:root:is([data-platform='ios'], [data-platform='android']) {
+    /* 小控件（工具栏、按钮、搜索框）通透；承载大段文字的弹窗略实 */
+    --glass-fill: color-mix(in srgb, var(--color-bg-surface) 26%, transparent);
+    --glass-fill-panel: color-mix(in srgb, var(--color-bg-surface) 48%, transparent);
+    /* 左上方的光照进玻璃：一层柔和的反光，往右下渐隐 */
+    --glass-sheen: radial-gradient(150% 110% at 0% 0%, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.1) 34%, rgba(255, 255, 255, 0) 62%);
+    --glass-edge: rgba(255, 255, 255, 0.24);
+    --glass-divider: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+    --glass-highlight: rgba(255, 255, 255, 0.95);
+    --glass-filter: blur(8px) saturate(1.7) brightness(1.08);
+    --glass-filter-panel: blur(20px) saturate(1.8) brightness(1.06);
+    /* 镜面边缘与玻璃厚度：左上高光、右下次高光、0.5px 发丝边、边缘内侧提亮、底部一点点暗部 */
+    --glass-rim:
+        inset 1px 1.5px 0.5px -0.5px var(--glass-highlight),
+        inset -1px -1px 0.5px -0.5px rgba(255, 255, 255, 0.55),
+        inset 0 0 0 0.5px rgba(255, 255, 255, 0.3),
+        inset 0 0 12px rgba(255, 255, 255, 0.26),
+        inset 0 -14px 16px -16px rgba(20, 28, 52, 0.16);
+    /* 浅色地图上外沿再加一圈极淡的发丝线，玻璃轮廓不至于融进背景 */
+    --glass-drop: 0 0 0 0.5px rgba(15, 20, 32, 0.06), 0 10px 28px rgba(15, 20, 32, 0.12), 0 1px 4px rgba(15, 20, 32, 0.08);
+    --glass-shadow: var(--glass-rim), var(--glass-drop);
+}
+
+:root:is([data-platform='ios'], [data-platform='android'])[data-theme='dark'] {
+    --glass-fill: color-mix(in srgb, var(--color-bg-surface) 30%, transparent);
+    --glass-fill-panel: color-mix(in srgb, var(--color-bg-surface) 52%, transparent);
+    --glass-sheen: radial-gradient(150% 110% at 0% 0%, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 36%, rgba(255, 255, 255, 0) 64%);
+    --glass-edge: rgba(255, 255, 255, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 0.45);
+    --glass-filter: blur(8px) saturate(1.7) brightness(0.86);
+    --glass-filter-panel: blur(20px) saturate(1.6) brightness(0.8);
+    --glass-rim:
+        inset 1px 1.5px 0.5px -0.5px var(--glass-highlight),
+        inset -1px -1px 0.5px -0.5px rgba(255, 255, 255, 0.2),
+        inset 0 0 0 0.5px rgba(255, 255, 255, 0.1),
+        inset 0 0 12px rgba(255, 255, 255, 0.05),
+        inset 0 -14px 16px -16px rgba(0, 0, 0, 0.4);
+    --glass-drop: 0 10px 28px rgba(0, 0, 0, 0.38), 0 1px 4px rgba(0, 0, 0, 0.24);
+}
+
+/* 安卓的控件有边缘折射：模糊放轻，弯折才看得出来（弹窗仍用较强模糊，保证文字可读） */
+:root[data-platform='android'] {
+    --glass-filter: blur(3px) saturate(1.7) brightness(1.08);
+}
+
+:root[data-platform='android'][data-theme='dark'] {
+    --glass-filter: blur(3px) saturate(1.7) brightness(0.86);
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) :is(.fm-surface, .fm-glass, .fm-search-results, .fm-map-search__input, .fm-map-search__submit, .fm-map-toolbar, .fm-map-account, .fm-compact-search__back, .fm-compact-search__field) {
+    background: var(--glass-sheen), var(--glass-fill) !important;
+    border: 1px solid var(--glass-edge) !important;
+    box-shadow: var(--glass-shadow) !important;
+    /* 带 !important：工具栏等元素自带内联的 backdrop-filter；安卓上 --glass-refraction 为边缘折射滤镜，其余平台为空 */
+    -webkit-backdrop-filter: var(--glass-filter) !important;
+    backdrop-filter: var(--glass-refraction,) var(--glass-filter) !important;
+}
+
+/* 弹窗（底部面板、对话框、菜单、浮动卡片、搜索结果）：承载文字，底色与模糊更足 */
+:root:is([data-platform='ios'], [data-platform='android']) :is(.fm-surface, .fm-glass, .fm-search-results) {
+    background: var(--glass-sheen), var(--glass-fill-panel) !important;
+    -webkit-backdrop-filter: var(--glass-filter-panel) !important;
+    backdrop-filter: var(--glass-refraction,) var(--glass-filter-panel) !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) :is(.fm-surface, .fm-glass) {
+    border-radius: 30px;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-menu.fm-surface {
+    border-radius: 22px;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-search-results {
+    border-radius: 26px !important;
+}
+
+/* 遮罩更轻：让玻璃透出地图的颜色 */
+:root:is([data-platform='ios'], [data-platform='android']) .fm-overlay-backdrop {
+    background: rgba(10, 15, 25, 0.06);
+}
+
+/* 底部面板悬浮在屏幕内，四周留边，圆角接近机身 */
+:root:is([data-platform='ios'], [data-platform='android']) .fm-panel-outer--sheet {
+    width: min(calc(100% - 16px), 620px) !important;
+    margin-bottom: max(8px, var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+    max-height: calc(100% - max(8px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) - 24px) !important;
+}
+
+/* 圆角与机身圆角同心（机身约 55pt，面板内缩 8pt） */
+:root:is([data-platform='ios'], [data-platform='android']) .fm-sheet {
+    border-radius: 40px;
+    padding-bottom: 8px;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-sheet__grabber::before {
+    width: 36px;
+    background: color-mix(in srgb, var(--color-text-primary) 26%, transparent);
+}
+
+/* 系统面板的标题区没有分隔线，标题更大 */
+:root:is([data-platform='ios'], [data-platform='android']) .fm-panel__header {
+    border-bottom-color: transparent;
+    padding: 12px 18px 8px 22px;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-sheet .fm-panel__title {
+    font-size: 20px;
+}
+
+/* 关闭按钮：嵌在玻璃里的小玻璃圆钮 */
+:root:is([data-platform='ios'], [data-platform='android']) .fm-panel__close {
+    width: 44px;
+    height: 44px;
+    background: var(--glass-sheen), color-mix(in srgb, var(--color-text-primary) 7%, transparent);
+    box-shadow: var(--glass-rim);
+    color: var(--color-text-primary);
+}
+
+/* 登录 / 登记：内容直接铺在玻璃上，不再自带不透明底色；
+   输入框、分段控件改为玻璃上的半透明填充（与系统表单在玻璃面板上的样子一致），聚焦时主题色描边 */
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page {
+    background: transparent !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page input:not([type='checkbox']):not([type='radio']) {
+    border: 1px solid transparent !important;
+    border-radius: 14px !important;
+    background: color-mix(in srgb, var(--color-text-primary) 7%, transparent) !important;
+    box-shadow: inset 0 0.5px 1px rgba(0, 0, 0, 0.06) !important;
+    font-size: 16px;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page input:not([type='checkbox']):not([type='radio']):focus {
+    border-color: var(--theme-primary) !important;
+    background: color-mix(in srgb, var(--color-text-primary) 4%, transparent) !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page .fm-auth-tabs {
+    border-color: transparent !important;
+    border-radius: 999px !important;
+    background: color-mix(in srgb, var(--color-text-primary) 7%, transparent) !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page .fm-auth-tabs > button {
+    border-radius: 999px !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page .fm-auth-tabs > button[aria-pressed='true'] {
+    border-color: transparent !important;
+    background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-surface) 70%, transparent) !important;
+    box-shadow: var(--glass-rim), 0 1px 4px rgba(15, 20, 32, 0.1) !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page button {
+    border-radius: 999px !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-map-search__input {
+    left: 0 !important;
+    font-size: 16px;
+    border-radius: 24px !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-map-search__input:focus-visible {
+    outline: 2px solid var(--theme-primary) !important;
+    outline-offset: 2px;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-map-search__submit {
+    color: var(--color-text-primary) !important;
+}
+
+/* 底部工具栏：悬浮的玻璃胶囊（不再贴底铺满） */
+:root:is([data-platform='ios'], [data-platform='android']) .fm-map-toolbar {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(4px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
+    min-height: 60px !important;
+    padding: 4px 6px !important;
+    border-radius: 999px;
+    /* 收起搜索后工具栏重新出现 */
+    animation: fm-glass-pop 260ms cubic-bezier(0.2, 0.9, 0.25, 1.1) backwards;
+}
+
+/* iOS 的头像是工具栏右侧单独的圆钮；安卓的头像仍在工具栏里 */
+:root[data-platform='ios'] .fm-map-toolbar {
+    right: 76px !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-map-toolbar > button {
+    min-height: 52px !important;
+    border-radius: 999px !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-map-toolbar > button[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--theme-primary) 16%, transparent) !important;
+}
+
+.fm-map-account {
+    position: absolute;
+    right: 12px;
+    bottom: calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+    z-index: 2050;
+    width: 52px;
+    height: 52px;
+    padding: 5px;
+    border-radius: 50%;
+    touch-action: manipulation;
+}
+
+.fm-map-account img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* 输入中头像位置的“收起键盘”按钮 */
+.fm-map-account--close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-primary);
+    cursor: pointer;
+}
+
+.fm-map-account--close .material-symbols-outlined {
+    font-size: 24px;
+}
+
+/* iOS App 窄屏：工具栏展开成的搜索栏（网页控件，与原生搜索栏同样的布局与动效） */
+.fm-compact-search__back {
+    position: absolute;
+    left: 0;
+    top: 4px;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-primary);
+    cursor: pointer;
+    touch-action: manipulation;
+    animation: fm-glass-pop 260ms cubic-bezier(0.2, 0.9, 0.25, 1.2) backwards;
+}
+
+.fm-compact-search__back .material-symbols-outlined {
+    font-size: 20px;
+}
+
+.fm-compact-search__field {
+    position: absolute;
+    top: 4px;
+    right: 0;
+    height: 52px;
+    box-sizing: border-box;
+    padding: 0 6px 0 14px;
+    border-radius: 26px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: left 260ms cubic-bezier(0.2, 0.9, 0.25, 1);
+    /* 从工具栏右端的“搜索”按钮处拉长展开 */
+    animation: fm-search-stretch 340ms cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
+}
+
+:root[data-platform='ios'] .fm-compact-search__field:focus-within {
+    background: var(--glass-sheen), color-mix(in srgb, var(--theme-primary) 10%, var(--glass-fill)) !important;
+}
+
+.fm-compact-search__icon {
+    flex-shrink: 0;
+    font-size: 22px;
+    color: var(--theme-primary);
+}
+
+.fm-compact-search__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 16px;
+}
+
+.fm-compact-search__input::placeholder {
+    color: var(--color-text-muted);
+}
+
+.fm-compact-search__trailing {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.fm-compact-search__trailing .material-symbols-outlined {
+    font-size: 20px;
+}
+
+@keyframes fm-search-stretch {
+    from {
+        clip-path: inset(0 0 0 72% round 26px);
+        opacity: 0.5;
+    }
+    to {
+        clip-path: inset(0 0 0 0 round 26px);
+        opacity: 1;
+    }
+}
+
+@keyframes fm-glass-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+
+:root[data-motion='reduced'] :is(.fm-compact-search__back, .fm-compact-search__field, .fm-map-toolbar) {
+    animation: none !important;
+    transition: none !important;
+}
+
+:root:is([data-platform='ios'], [data-platform='android'])[data-transparency='reduced'],
+:root:is([data-platform='ios'], [data-platform='android'])[data-degrade='1'] {
+    --glass-fill: var(--color-bg-surface);
+    --glass-fill-panel: var(--color-bg-surface);
+    --glass-sheen: linear-gradient(transparent, transparent);
+}
+
+:root:is([data-platform='ios'], [data-platform='android'])[data-transparency='reduced'] :is(.fm-surface, .fm-glass, .fm-search-results, .fm-map-search__input, .fm-map-search__submit, .fm-map-toolbar, .fm-map-account, .fm-compact-search__back, .fm-compact-search__field),
+:root:is([data-platform='ios'], [data-platform='android'])[data-degrade='1'] :is(.fm-surface, .fm-glass, .fm-search-results, .fm-map-search__input, .fm-map-search__submit, .fm-map-toolbar, .fm-map-account, .fm-compact-search__back, .fm-compact-search__field) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* 菜单项：禁用项语义与视觉一致 */
+.fm-menu [role='menuitem'][aria-disabled='true'] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.fm-menu [role='menuitem']:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: -2px;
+}
+
+/* 模态打开时锁定背景滚动 */
+:root[data-scroll-lock='1'] [data-app-scroll] {
+    overflow: hidden !important;
+}
+
+/* 按钮按压反馈：触屏跟手，指针设备轻微 */
+@media (hover: hover) and (pointer: fine) {
+    :root:not([data-motion='reduced']) .fm-pressable:active {
+        transform: scale(0.97);
+    }
+}
+
+@media (pointer: coarse), (hover: none) {
+    :root:not([data-motion='reduced']) .fm-pressable:active {
+        transform: scale(0.94);
+        transition-duration: 60ms;
+    }
+}
+
+/* iOS 网页玻璃：降低左上镜面高光，避免与系统 Liquid Glass 并排时出现白色硬边。 */
+:root[data-platform='ios'] {
+    --glass-highlight: rgba(255, 255, 255, 0.32);
+    --glass-edge: rgba(255, 255, 255, 0.14);
+    --glass-sheen: radial-gradient(150% 110% at 0% 0%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 34%, transparent 62%);
+    --glass-rim: inset 0.5px 0.5px 0.5px var(--glass-highlight), inset -0.5px -0.5px 0.5px rgba(255, 255, 255, 0.16), inset 0 0 8px rgba(255, 255, 255, 0.08);
+}
+:root[data-platform='ios'][data-theme='dark'] {
+    --glass-highlight: rgba(255, 255, 255, 0.16);
+    --glass-edge: rgba(255, 255, 255, 0.08);
+    --glass-sheen: radial-gradient(150% 110% at 0% 0%, rgba(255, 255, 255, 0.06) 0%, transparent 64%);
+    --glass-rim: inset 0.5px 0.5px 0.5px var(--glass-highlight), inset -0.5px -0.5px 0.5px rgba(255, 255, 255, 0.08), inset 0 0 8px rgba(255, 255, 255, 0.025);
+}
+:root[data-platform='ios'] .fm-full-page {
+    background: var(--color-bg-surface) !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+:root[data-platform='ios'] .fm-full-page :is(.jw-root, .jw-page) { background: var(--color-bg-surface); }
+:root[data-platform='ios'] .fm-full-page .jw-content { padding: 14px 14px 28px; }

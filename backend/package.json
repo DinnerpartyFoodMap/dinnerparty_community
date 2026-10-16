@@ -1,0 +1,60 @@
+{
+    "name": "yuyuko-food-map-backend",
+    "version": "2.0.0",
+    "license": "AGPL-3.0-only",
+    "main": "index.js",
+    "scripts": {
+        "test": "node scripts/testing/run_tests.js",
+        "test:ui": "node scripts/testing/run_tests.js --ui",
+        "test:structure": "node tests/infrastructure/test_structure.js",
+        "start": "node index.js",
+        "logs": "node scripts/diagnostics/read_logs.js",
+        "backup:database": "node scripts/backups/backup_database.js",
+        "test:backup": "node tests/infrastructure/test_database_backup.js",
+        "test:logging": "node tests/infrastructure/test_logging.js",
+        "test:migration": "node tests/infrastructure/test_database_migration.js",
+        "test:transactions": "node tests/infrastructure/test_transactions.js",
+        "test:place-location": "node tests/places/test_place_location_ui.js",
+        "test:sessions": "node tests/accounts/test_sessions.js",
+        "test:session-store": "node tests/accounts/test_session_store.js",
+        "test:search": "node tests/discovery/test_place_search.js && node tests/discovery/test_search_smoke.js",
+        "test:ai-clients": "node tests/infrastructure/test_ai_clients.js",
+        "test:preferences": "node tests/preferences/test_preferences.js",
+        "test:community": "node tests/community/test_community_preferences.js",
+        "test:random": "node tests/discovery/test_random_recommendation.js",
+        "test:ratings": "node tests/ratings/test_rating_schema.js && node tests/ratings/test_rating_weight_model.js && node tests/ratings/test_rating_reputation.js && node tests/ratings/test_place_ratings.js",
+        "test:journeys": "node tests/journeys/test_journeys.js",
+        "test:journey-resolution": "node tests/journeys/test_journey_resolution.js",
+        "test:journey-ui": "node tests/journeys/test_journey_ui.js",
+        "test:journey-publication": "node tests/journeys/test_journey_publication.js",
+        "test:journey-algorithms": "node tests/journeys/test_journey_algorithm_client.js && node tests/journeys/test_journey_algorithm_lifecycle.js && node tests/journeys/test_journey_algorithm_setup.js",
+        "test:journey-private-service": "node tests/journeys/test_journey_private_service.js",
+        "journey:configure-private": "node scripts/journeys/configure_private_algorithms.js",
+        "vectors:backfill": "node scripts/vectors/backfill_place_vectors.js",
+        "test:qq-bot": "node tests/qqbot/test_qq_bot.js",
+        "test:qq-verification": "node tests/accounts/test_qq_verification.js",
+        "test:images": "node tests/media/test_image_storage.js",
+        "test:place-share": "node tests/places/test_place_share.js",
+        "images:repair": "node scripts/images/repair_place_images.js",
+        "images:migrate-oss": "node scripts/images/migrate_uploads_to_oss.js"
+    },
+    "dependencies": {
+        "ali-oss": "^6.23.0",
+        "better-sqlite3": "^13.0.3",
+        "body-parser": "^1.20.2",
+        "cors": "^2.8.5",
+        "dotenv": "^16.6.1",
+        "express": "^4.18.2",
+        "ioredis": "^5.10.0",
+        "jsonwebtoken": "^9.0.3",
+        "multer": "^2.1.1",
+        "sharp": "^0.35.5",
+        "sqlite-vec": "0.1.9"
+    },
+    "overrides": {
+        "qs": "^6.16.0"
+    },
+    "allowScripts": {
+        "better-sqlite3": false
+    }
+}

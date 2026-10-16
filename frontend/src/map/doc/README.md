@@ -1,0 +1,32 @@
+# 地图协调、渲染与缓存
+
+MapView.jsx 是旧 src/Map.jsx，仍是地图协调者；MapUI.jsx 负责地图 UI 与面板编排，二者尚未拆完。MarkerLayerController、markerContent 与 cluster 下引擎/快照/转场/缓存负责标记；viewport、pinchGuard、overseasTileLayer 各自处理视口、手势与境外底图。MapPanel/MapAnchoredCard 是地图布局容器，不是通用页面组件。
+
+```mermaid
+flowchart TD
+    Mount[地图容器挂载] --> SDK[订阅 SDK 状态并创建 AMap]
+    SDK --> Setup[建立标记控制器 / 海外底图 / 事件]
+    Setup --> View[读取视口边界与缩放]
+    View --> Cache{范围缓存覆盖且有效?}
+    Cache -->|是| Render[使用缓存结果]
+    Cache -->|否| Gate[请求闸门 取消或淘汰旧请求]
+    Gate --> API[请求 nearby 范围]
+    API --> Current{仍为有效请求?}
+    Current -->|否| Ignore[丢弃旧响应]
+    Current -->|是| Merge[写缓存并更新可见地点]
+    Merge --> Render
+    Render --> Cluster[生成聚合快照与转场计划]
+    Cluster --> Markers[统一标记内容 / 点击 / 卡片锚点]
+    Select[地点操作] --> Business[places / discovery / journey]
+    Business --> Patch[按现有规则回写选中地点与缓存]
+    Leave[地图卸载] --> Cleanup[销毁地图 / 监听 / 控制器与定位资源]
+```
+
+| 当前实现 | 对照 |
+| --- | --- |
+| 视口缓存 + 请求版本闸门 | 只缓存列表不能阻止旧响应覆盖；移动后要同时核对范围与请求身份 |
+| 引擎/快照/转场分离 | 直接在 React 列表逐点管理难维护现有聚合成员与动画中断不变量 |
+| 海外 tile overlay 与 SDK 分工 | CARTO 是配置可选覆盖，不替换国内坐标和高德区域判断 |
+| MapView/MapUI 继续协调 | 本轮先归位地点与发现面板，状态拆分见 MAP-01，不假定文件移动已解除耦合 |
+
+已有 `test:map` / `test:platform` 逻辑测试；真实地图相关交互覆盖一部分在位置与日记浏览器回归。案例见 [TEST_CASES.md](TEST_CASES.md)。历史 `d944e8a`、`2bc8c5e`；待办 MAP-01 / MAP-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。

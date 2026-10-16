@@ -1,0 +1,214 @@
+name: iOS 构建
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/mobile-ios.yml'
+  workflow_dispatch:
+    inputs:
+      distribute:
+        description: '签名、归档并上传 TestFlight'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ${{ vars.IOS_RUNNER || 'macos-26' }}
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # 原生地图控件使用 iOS 26 SDK 的 SwiftUI Liquid Glass API，固定经过验证的 Xcode 26 版本
+          xcode-version: ${{ vars.IOS_XCODE_VERSION || '26.6' }}
+
+      - run: npm ci
+
+      - name: 生成 iOS 工程（仓库中尚无 ios/ 时）
+        id: generate
+        run: |
+          if [ -d ios ]; then
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            npm run build:mobile
+            npm run cap:add:ios
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 构建并同步资源
+        run: npm run cap:sync
+
+      - name: 上传生成的 iOS 工程（检查后提交到 frontend/ios/）
+        if: steps.generate.outputs.generated == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-project
+          # 工程中的 .gitignore 等隐藏文件也要包含（v6 默认排除）
+          include-hidden-files: true
+          path: |
+            frontend/ios
+            !frontend/ios/App/App/public
+            !frontend/ios/**/build
+            !frontend/ios/**/xcuserdata
+            !frontend/ios/DerivedData
+
+      - name: 计算版本号
+        run: |
+          echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 0 }} ))" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
+      # 真机架构的 Release 编译，同时作为编译检查；不签名，安装前需用 Sideloadly / AltStore 等工具以自己的 Apple ID 重签
+      - name: 无签名编译（真机架构）
+        working-directory: frontend/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -50
+          exit ${PIPESTATUS[0]}
+
+      - name: 打包不签名 IPA
+        run: |
+          APP=$(find "$RUNNER_TEMP/dd/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -type d | head -1)
+          if [ -z "$APP" ]; then echo "::error::未找到编译产物 .app"; exit 1; fi
+          OUT="$RUNNER_TEMP/ipa"; mkdir -p "$OUT/Payload"
+          cp -R "$APP" "$OUT/Payload/"
+          IPA="$OUT/foodmap-$APP_VERSION-$APP_BUILD_NUMBER-unsigned.ipa"
+          (cd "$OUT" && zip -qry "$IPA" Payload)
+          echo "IPA_PATH=$IPA" >> "$GITHUB_ENV"
+          echo "- 不签名 IPA：$(basename "$IPA")（$(du -h "$IPA" | cut -f1)）" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ios-unsigned-ipa-${{ env.APP_BUILD_NUMBER }}
+          path: ${{ env.IPA_PATH }}
+          retention-days: 14
+          compression-level: 0
+
+      - name: 记录版本
+        run: |
+          {
+            echo "### iOS verify"
+            echo "- $(xcodebuild -version | tr '\n' ' ')"
+            echo "- $(sw_vers -productName) $(sw_vers -productVersion)"
+            echo "- node $(node -v)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  testflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.distribute
+    needs: verify
+    runs-on: ${{ vars.IOS_RUNNER || 'macos-26' }}
+    environment: testflight
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      BUNDLE_ID: cc.dinnerparty.foodmap
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # 原生地图控件使用 iOS 26 SDK 的 SwiftUI Liquid Glass API，固定经过验证的 Xcode 26 版本
+          xcode-version: ${{ vars.IOS_XCODE_VERSION || '26.6' }}
+
+      - name: 计算版本号
+        run: |
+          echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 0 }} ))" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
+      - run: npm ci
+
+      - name: 同步工程
+        run: |
+          if [ ! -d ios ]; then
+            echo "::error::仓库中没有 frontend/ios/，请先提交 verify 任务生成的 ios-project 产物"; exit 1
+          fi
+          npm run cap:sync
+
+      - name: 导入证书与描述文件
+        env:
+          CERT_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          CERT="$RUNNER_TEMP/dist.p12"; PROFILE="$RUNNER_TEMP/appstore.mobileprovision"; KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$CERT"
+          echo "$PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
+          UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
+          NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+          rm -f "$CERT"
+
+      - name: 切换 App 目标为手动签名
+        run: node scripts/ci/ios-manual-signing.mjs "${{ secrets.IOS_TEAM_ID }}" "$PROFILE_NAME"
+
+      - name: 归档
+        working-directory: frontend/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER" \
+            archive | tail -50
+          exit ${PIPESTATUS[0]}
+
+      - name: 导出并上传 TestFlight
+        working-directory: frontend/ios/App
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$KEY"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key><dict><key>$BUNDLE_ID</key><string>$PROFILE_NAME</string></dict>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          rm -f "$KEY"
+          echo "### TestFlight 已上传 $APP_VERSION ($APP_BUILD_NUMBER)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 清理钥匙串
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

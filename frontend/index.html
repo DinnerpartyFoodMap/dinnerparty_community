@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-cn">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>东方饭联地图</title>
+    <!-- 高德 JS API 由 src/platform/amapLoader.js 按运行配置动态加载：
+         先写入 window._AMapSecurityConfig，再插入 SDK 脚本，并支持失败重试。 -->
+    <style>
+        @keyframes yuyuko-card-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes yuyuko-thinking-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        :root {
+            --app-height: 100vh;
+            color-scheme: light;
+
+            /* 安全区与键盘避让：Android 原生壳可能通过 --safe-area-inset-* 注入，其余环境使用 env() */
+            --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+            --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+            --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+            --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+            --keyboard-inset: 0px;
+
+            /* 白玉楼·春：语义色彩令牌 */
+            --color-bg-base: #F9F8FA;
+            --color-bg-surface: #FFFFFF;
+            --color-bg-overlay: #F2EEF5;
+            --color-border: #E6DCEB;
+            --color-text-primary: #2B2533;
+            --color-text-secondary: #6E6578;
+            --color-text-muted: #857C90;
+
+            --color-primary: #E2789F;
+            --color-primary-hover: #D4628B;
+            --color-primary-active: #C2517A;
+            --color-secondary: #8C6BB1;
+            --color-glow: rgba(226, 120, 159, 0.2);
+
+            --color-success: #3D9970;
+            --color-warning: #E67E22;
+            --color-danger: #D9534F;
+            --color-info: #3498DB;
+            --color-on-emphasis: #2B2533;
+
+            --color-backdrop: rgba(18, 16, 22, 0.32);
+            --shadow-surface: 0 8px 28px rgba(43, 37, 51, 0.14);
+            --theme-primary: #E2789F;
+            --theme-secondary: #8C6BB1;
+            --theme-icon: #8C6BB1;
+            --theme-primary-0-2: var(--color-glow);
+            --theme-primary-0-25: rgba(226, 120, 159, 0.25);
+            --theme-secondary-0-12: rgba(140, 107, 177, 0.12);
+            --theme-secondary-0-2: rgba(140, 107, 177, 0.2);
+        }
+
+        :root[data-theme='dark'] {
+            color-scheme: dark;
+
+            /* 冥界·夜樱：语义色彩令牌 */
+            --color-bg-base: #121016;
+            --color-bg-surface: #1A1625;
+            --color-bg-overlay: #251F34;
+            --color-border: #382E47;
+            --color-text-primary: #F3EFEF;
+            --color-text-secondary: #9E97A9;
+            --color-text-muted: #60586E;
+
+            --color-primary: #FF8FB1;
+            --color-primary-hover: #FFA6C1;
+            --color-primary-active: #E87A9C;
+            --color-secondary: #A882DD;
+            --color-glow: rgba(255, 143, 177, 0.3);
+
+            --color-success: #5CD698;
+            --color-warning: #FFB049;
+            --color-danger: #FF6B6B;
+            --color-info: #64B5F6;
+            --color-on-emphasis: #2B2533;
+
+            --color-backdrop: rgba(8, 6, 12, 0.68);
+            --shadow-surface: 0 10px 32px rgba(0, 0, 0, 0.48), 0 0 18px rgba(255, 143, 177, 0.08);
+            --theme-primary: #FF8FB1;
+            --theme-secondary: #A882DD;
+            --theme-icon: #A882DD;
+            --theme-primary-0-2: rgba(255, 143, 177, 0.2);
+            --theme-primary-0-25: rgba(255, 143, 177, 0.25);
+            --theme-secondary-0-12: rgba(168, 130, 221, 0.12);
+            --theme-secondary-0-2: rgba(168, 130, 221, 0.2);
+        }
+
+        @supports (height: 100dvh) {
+            :root {
+                --app-height: 100dvh;
+            }
+        }
+
+        html,
+        body,
+        #root {
+            height: 100%;
+            min-height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        body {
+            background: var(--color-bg-base);
+            color: var(--color-text-primary);
+            overscroll-behavior: none;
+        }
+
+        ::selection {
+            background: var(--color-glow);
+            color: var(--color-text-primary);
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .panel {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 2000;
+            background: var(--color-bg-surface);
+            color: var(--color-text-primary);
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid var(--color-border);
+            box-shadow: var(--shadow-surface);
+        }
+
+        input,
+        textarea,
+        select {
+            font-size: 16px;
+        }
+
+        /* App 内：去掉点击高亮与图片/链接长按的系统菜单（文本仍可选中复制） */
+        :root[data-platform='ios'] img,
+        :root[data-platform='ios'] a,
+        :root[data-platform='android'] img,
+        :root[data-platform='android'] a {
+            -webkit-touch-callout: none;
+        }
+
+        :root[data-platform='ios'] body,
+        :root[data-platform='android'] body {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 键盘弹出时（App 内由原生键盘事件设置 .keyboard-open 与 --keyboard-inset）：
+           WebView 已按键盘缩小（Keyboard.resize = native），这里只收起底部常驻工具条，避免挤占输入区 */
+        .keyboard-open [data-hide-when-keyboard] {
+            display: none !important;
+        }
+
+    </style>
+    <link rel="stylesheet" href="https://cdn.mccolor.cc/fonts/material-symbols.css" />
+</head>
+
+<body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+</body>
+
+</html>

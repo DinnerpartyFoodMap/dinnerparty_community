@@ -1,0 +1,139 @@
+{
+  "customThemes": {
+    "mapStyle": {
+      "dark": "暗黑（默认）",
+      "darkblue": "深蓝",
+      "grey": "灰色",
+      "default": "默认",
+      "light": "浅色",
+      "normal": "标准"
+    },
+    "saveFailed": "保存失败",
+    "saved": "已保存设置",
+    "savedLocally": "已保存到本地（访客模式）",
+    "darkMode": "暗黑模式",
+    "darkModeHint": "开启后界面将使用“冥界·夜樱”暗色主题",
+    "enabled": "已启用",
+    "disabled": "未启用",
+    "themeColor": "主题颜色",
+    "themeColorHint": "自定义页面主色（用于核心按钮、选中状态与头像外圈）",
+    "secondaryColorHint": "自定义辅色（用于标签、次要操作与强调图标）",
+    "mapStyleTitle": "地图样式",
+    "mapStyleHint": "为当前主题选择地图样式（选择后将保存到服务器或本地）。",
+    "darkStyleCurrent": "暗色样式（当前）",
+    "lightStyleCurrent": "亮色样式（当前）"
+  },
+  "common": {
+    "error": {
+      "serverHttp": "服务器返回错误（HTTP {{status}}）"
+    },
+    "nav": {
+      "settings": "设置"
+    },
+    "status": {
+      "saving": "保存中..."
+    }
+  },
+  "editAvatar": {
+    "unreadable": "图片无法读取",
+    "cropRequired": "请选择图片并调整裁剪区域",
+    "uploadFailedStatus": "上传失败状态码：{{status}}",
+    "updated": "头像更新成功",
+    "badData": "数据格式错误",
+    "zoom": "缩放:",
+    "chooseImage": "选择图片",
+    "uploading": "上传中...",
+    "saveChanges": "保存更改"
+  },
+  "editPassword": {
+    "missingSession": "未提供后端地址或通行凭证无效",
+    "currentRequired": "请输入当前通行密码",
+    "tooShort": "新通行密码长度至少 6 位",
+    "mismatch": "两次输入的新通行密码不一致",
+    "failed": "修改通行密码失败",
+    "successOtherDevices": "通行密码修改成功，其他设备需要重新登录",
+    "success": "通行密码修改成功",
+    "requestFailed": "请求失败",
+    "current": "当前通行密码",
+    "new": "新通行密码",
+    "confirm": "确认新通行密码"
+  },
+  "editUsername": {
+    "empty": "住民名不能为空",
+    "missingSession": "未提供后端地址或通行凭证无效",
+    "failed": "更新失败",
+    "updated": "住民名已更新",
+    "requestFailed": "请求失败",
+    "label": "住民名"
+  },
+  "motion": {
+    "cluster": {
+      "label": "地图聚合吸附动效",
+      "hint": "缩放时标记合并、拆分的位移与回弹"
+    },
+    "web": {
+      "label": "弹窗与页面动效",
+      "hint": "弹窗、菜单、面板与页面的进出场过渡"
+    },
+    "nativeGlass": {
+      "label": "原生玻璃按钮",
+      "hint": "iOS 26 App 中地图浮动按钮与底部工具栏使用系统 Liquid Glass"
+    },
+    "native": {
+      "notIncluded": "当前安装的 App 未包含原生控件，使用网页工具栏",
+      "enabled": "状态：已启用",
+      "connecting": "状态：正在连接…",
+      "unavailable": "状态：不可用（{{reason}}）",
+      "fallback": "状态：已回退到网页工具栏（{{reason}}）{{retrying}}",
+      "retrying": "，正在自动重试",
+      "notConnected": "状态：尚未连接，回到地图页后自动连接"
+    },
+    "title": "动效",
+    "localOnly": "仅保存在本设备。{{reducedMotion}}",
+    "reducedMotion": "系统已开启“减少动态效果”，动效会以短渐变代替。"
+  },
+  "personalizeMap": {
+    "latLngPair": "请同时填写纬度和经度，或都留空",
+    "invalidLatLng": "请输入有效的经纬度",
+    "invalidZoom": "请输入有效的缩放等级",
+    "saveFailed": "保存失败",
+    "saved": "个性化地图已保存",
+    "savedLocally": "已保存到本地（访客模式）",
+    "mapStyleLabel": "地图样式",
+    "mapStyle": {
+      "standard": "标准",
+      "satellite": "卫星",
+      "terrain": "街景"
+    },
+    "centerLat": "默认中心纬度 (lat)",
+    "centerLng": "默认中心经度 (lng)",
+    "zoom": "默认缩放等级"
+  },
+  "main": {
+    "confirmLogoutAll": "确认在所有设备上退出登录吗？包括本设备在内都需要重新登录。",
+    "logoutAllFailed": "操作失败（状态 {{status}}）",
+    "loggedOutAll": "已在所有设备上退出登录",
+    "requestFailed": "请求失败：{{message}}",
+    "confirmDeleteAccount": "确认从幻想乡名册中除名吗？此操作不可恢复，所有个人数据可能被删除或无法恢复。",
+    "accountDeleted": "住民档案已删除，正在离开幻想乡",
+    "deleteFailed": "删除失败（状态 {{status}}）",
+    "deleteRequestFailed": "删除请求失败：{{message}}",
+    "processing": "正在处理…",
+    "opening": "正在打开设置…",
+    "avatar": "头像：",
+    "currentUsername": "当前住民名：",
+    "logoutAll": {
+      "title": "退出全部设备",
+      "hint": "网页与手机可同时登录；怀疑通行凭证泄露时，可在此让所有设备重新登录。",
+      "processing": "处理中...",
+      "button": "全部退出"
+    },
+    "deleteAccount": {
+      "title": "从幻想乡名册除名",
+      "hint": "此操作不可恢复，会删除部分个人信息并取消住民身份的访问权限。",
+      "tooltip": "从名册除名（不可恢复）",
+      "deleting": "除名中...",
+      "button": "确认除名"
+    }
+  }
+}

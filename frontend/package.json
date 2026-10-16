@@ -1,0 +1,53 @@
+{
+    "name": "yuyuko-food-map-frontend",
+    "version": "2.2.2",
+    "private": true,
+    "license": "AGPL-3.0-only",
+    "scripts": {
+        "dev": "vite --port 5173",
+        "build": "vite build",
+        "preview": "vite preview",
+        "build:mobile": "vite build --mode mobile",
+        "cap:add:android": "cap add android && node scripts/patch-native-projects.mjs android",
+        "cap:add:ios": "cap add ios && node scripts/patch-native-projects.mjs ios",
+        "cap:patch": "node scripts/patch-native-projects.mjs",
+        "cap:sync": "npm run build:mobile && cap sync && node scripts/patch-native-projects.mjs",
+        "android:open": "cap open android",
+        "test:platform": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-platform.mjs",
+        "test:map": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-map-motion.mjs",
+        "test": "npm run test:platform && npm run test:map && npm run test:overlay && npm run test:rating && npm run test:native-chrome && npm run test:journey-text && npm run test:i18n && npm run test:structure",
+        "test:structure": "node tests/unit/structure/test-structure.mjs",
+        "test:ui": "npm --prefix ../backend run test:ui",
+        "test:overlay": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/overlay/test-overlay.mjs",
+        "test:rating": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-rating.mjs",
+        "test:native-chrome": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-chrome.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-settings.mjs",
+        "test:journey-text": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/journey/test-journey-text.mjs",
+        "test:i18n": "node tests/unit/i18n/test-i18n.mjs"
+    },
+    "dependencies": {
+        "@aparajita/capacitor-secure-storage": "8.0.1",
+        "@capacitor/android": "8.5.3",
+        "@capacitor/app": "8.1.2",
+        "@capacitor/app-launcher": "8.0.1",
+        "@capacitor/camera": "8.2.5",
+        "@capacitor/core": "8.5.3",
+        "@capacitor/filesystem": "8.1.4",
+        "@capacitor/geolocation": "8.2.2",
+        "@capacitor/ios": "8.5.3",
+        "@capacitor/keyboard": "8.0.6",
+        "@capacitor/share": "8.0.3",
+        "i18next": "26.4.4",
+        "motion": "12.43.0",
+        "qrcode": "^1.5.4",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-easy-crop": "^5.5.7",
+        "supercluster": "9.1.0"
+    },
+    "devDependencies": {
+        "@babel/parser": "7.29.0",
+        "@capacitor/cli": "8.5.3",
+        "@vitejs/plugin-react": "^3.0.0",
+        "vite": "^4.0.0"
+    }
+}

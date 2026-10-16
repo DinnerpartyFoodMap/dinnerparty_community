@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: 纯逻辑测试（平台层、地图聚合与转场、原生控件桥接）
+        run: npm test
+      - name: 网页构建
+        run: npm run build
+      - name: 移动构建（含 HTTPS 配置校验）
+        run: npm run build:mobile
+      - name: 移动构建缺少配置时必须失败
+        run: |
+          if VITE_BACKEND_URL=http://127.0.0.1:7000 npx vite build --mode mobile --outDir /tmp/should-fail >/tmp/fail.log 2>&1; then
+            echo "::error::build:mobile 接受了非 HTTPS 的本机地址"; exit 1
+          fi
+          grep -q "移动应用构建配置错误" /tmp/fail.log
+      - name: 记录工具版本
+        run: |
+          {
+            echo "### 前端工具版本"
+            echo "- node $(node -v) / npm $(npm -v)"
+            echo "- capacitor $(npx cap --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run test:session-store
+      - run: npm run test:sessions
+      - run: npm run test:transactions
+      - run: npm run test:migration
+      - run: npm run test:logging

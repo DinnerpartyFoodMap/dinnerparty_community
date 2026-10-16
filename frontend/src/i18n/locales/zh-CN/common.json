@@ -1,0 +1,76 @@
+{
+  "status": {
+    "loading": "加载中…",
+    "deleted": "已删除"
+  },
+  "action": {
+    "cancel": "取消",
+    "refresh": "刷新",
+    "delete": "删除",
+    "close": "关闭",
+    "more": "更多",
+    "backToMap": "返回地图",
+    "back": "返回",
+    "pickOnMap": "在地图上选择地点",
+    "save": "保存",
+    "search": "搜索",
+    "addImage": "添加图片",
+    "chooseFromAlbum": "从相册选择",
+    "takePhoto": "拍照",
+    "remove": "移除"
+  },
+  "error": {
+    "deleteFailedStatus": "删除失败 {{status}}",
+    "deleteFailedWithMessage": "删除失败：{{message}}",
+    "uploadFailed": "上传失败",
+    "geolocationInsecure": "定位功能仅在 HTTPS 或 localhost 环境下可用。"
+  },
+  "label": {
+    "avatar": "头像",
+    "qq": "QQ号",
+    "uncategorized": "未分类",
+    "menu": "菜单",
+    "amapPlace": "高德地点",
+    "unnamedPlace": "未命名地点",
+    "perPersonCost": " · 人均 ¥{{per_person_cost}}"
+  },
+  "punctuation": {
+    "listSeparator": "、"
+  },
+  "app": {
+    "verifyingSession": "正在核验通行凭证...",
+    "name": "东方饭联地图",
+    "configError": {
+      "title": "应用配置不完整",
+      "body": "当前安装包缺少必要的服务地址，无法连接东方饭联地图服务。请安装正式发布的版本，或联系维护者。"
+    }
+  },
+  "confirm": {
+    "title": "确认操作",
+    "confirm": "确认"
+  },
+  "actionSheet": {
+    "defaultTitle": "选择操作"
+  },
+  "nav": {
+    "accountSettings": "住民设置",
+    "editAvatar": "修改头像",
+    "editUsername": "修改住民名",
+    "editPassword": "修改通行密码",
+    "customThemes": "个性化主题",
+    "personalizeMap": "个性化地图"
+  },
+  "pageTemplate": {
+    "backToSettings": "返回设置"
+  },
+  "responsiveTable": {
+    "scrollHint": "← 左右滑动查看完整内容 →"
+  },
+  "routePageShell": {
+    "admin": "管理员后台",
+    "posterExport": "导出地点海报",
+    "dinners": "聚餐活动",
+    "dinnerCreate": "发起聚餐",
+    "dinnerDetail": "聚餐详情"
+  }
+}

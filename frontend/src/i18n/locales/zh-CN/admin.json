@@ -1,0 +1,201 @@
+{
+  "auditModal": {
+    "title": "管理员操作日志（最近 200 条）",
+    "empty": "暂无操作记录",
+    "col": {
+      "operator": "操作者 UUID",
+      "action": "动作",
+      "target": "目标用户 UUID",
+      "requestId": "请求编号",
+      "detail": "详情",
+      "time": "时间"
+    }
+  },
+  "banModal": {
+    "title": "封禁用户 {{username}}",
+    "targetLabel": "对象：",
+    "unknownUser": "未知用户",
+    "effect": "。封禁期间该账号仍可浏览，但不能添加、编辑、收藏或评论。",
+    "duration": "封禁时长",
+    "days1": "1 天",
+    "days7": "7 天",
+    "days30": "30 天",
+    "permanent": "永久封禁",
+    "reason": "封禁原因（可选）",
+    "reasonPlaceholder": "请输入封禁原因",
+    "confirm": "确认封禁"
+  },
+  "common": {
+    "error": {
+      "sessionExpired": "未登录或授权已失效，请重新登录",
+      "serverStatusDetail": "服务器错误 {{status}} {{txt}}",
+      "loadFailedWithMessage": "加载失败: {{message}}",
+      "noPanelAccess": "您的账号无权访问此面板。"
+    },
+    "table": {
+      "actions": "操作"
+    },
+    "pagination": {
+      "summary": "共 {{count}} 条 — 第 {{page}} / {{totalPages}} 页",
+      "first": "首页",
+      "prev": "上一页",
+      "next": "下一页",
+      "last": "尾页"
+    }
+  },
+  "comments": {
+    "forbidden": "权限不足，无法获取评论列表",
+    "confirmDelete": "确认删除此评论？",
+    "title": "评论管理",
+    "searchPlaceholder": "搜索 ID / 地点ID / 用户ID / 内容",
+    "empty": "当前没有评论记录。",
+    "noMatch": "未找到匹配的评论。",
+    "col": {
+      "placeId": "地点ID",
+      "userId": "用户ID",
+      "content": "内容",
+      "createdAt": "创建时间"
+    }
+  },
+  "generalUsers": {
+    "forbidden": "权限不足，无法获取普通用户列表",
+    "confirmDelete": "确认永久删除普通用户“{{username}}”？\n账号资料与登录资格将被移除，此操作目前无法撤销。",
+    "deleted": "用户已删除",
+    "title": "普通用户管理",
+    "searchPlaceholder": "搜索用户名称、id、qq号",
+    "empty": "当前没有匹配的普通用户记录。",
+    "idLine": "ID：{{id}}",
+    "qqLine": "QQ：{{qq}}",
+    "deleteAction": "永久删除用户…",
+    "col": {
+      "username": "用户名"
+    }
+  },
+  "notices": {
+    "forbidden": "权限不足，无法访问公告管理",
+    "loadFailedStatus": "加载失败 {{status}}",
+    "loadFailed": "加载公告失败：{{message}}",
+    "fillRequired": "请先填写公告标题和内容",
+    "publishFailedStatus": "发布失败 {{status}}",
+    "published": "公告已发布，所有用户将自动获取最新公告",
+    "publishFailed": "发布公告失败：{{message}}",
+    "confirmUnpublish": "确认下线当前公告？",
+    "unpublishFailedStatus": "下线失败 {{status}}",
+    "unpublished": "当前公告已下线",
+    "unpublishFailed": "下线公告失败：{{message}}",
+    "previewTitle": "公告预览",
+    "previewContent": "这里会显示公告内容。",
+    "title": "公告发布",
+    "unpublish": "下线当前公告",
+    "currentTitle": "当前生效公告",
+    "noCurrent": "当前没有生效的公告。",
+    "newTitle": "发布新公告",
+    "titlePlaceholder": "公告标题",
+    "contentPlaceholder": "公告内容",
+    "chooseColor": "选择背景颜色",
+    "preview": "预览",
+    "publish": "发布公告"
+  },
+  "places": {
+    "serverError": "服务器错误 {{status}} {{preview}}",
+    "approveImpact": "通过后，提议内容会写入对应地点并立即对地图访客可见。",
+    "rejectImpact": "驳回后，本申请会结束且不会修改地点。",
+    "confirmReview": "确认{{action}}申请 #{{id}}？\n对象：地点 {{place_id}}，申请人 {{requester_id}}。\n{{impact}}",
+    "approve": "通过",
+    "reject": "驳回",
+    "success": "操作成功",
+    "failed": "操作失败: {{message}}",
+    "approveAction": "通过并应用修改…",
+    "rejectAction": "驳回申请…",
+    "title": "地点修改申请",
+    "searchPlaceholder": "搜索 ID / 地点ID / 申请人 / 内容",
+    "empty": "当前没有匹配的待处理申请。",
+    "requestTitle": "地点申请 #{{id}}",
+    "requestMeta": "地点：{{place_id}} · 申请人：{{requester_id}}",
+    "requestNote": "备注：{{note}}",
+    "pageSummary": "共 {{count}} 条 · 第 {{page}}/{{totalPages}} 页",
+    "col": {
+      "placeId": "地点ID",
+      "requester": "申请人",
+      "submittedAt": "提交时间",
+      "status": "当前状态",
+      "proposal": "提议内容"
+    },
+    "note": "备注: {{note}}"
+  },
+  "qqWhitelist": {
+    "forbidden": "权限不足，无法获取QQ白名单",
+    "serverError": "服务器错误 {{status}}",
+    "enterQQ": "请输入要添加的QQ号",
+    "addFailedStatus": "添加失败 {{status}}",
+    "addedSummary": "成功添加 {{count}} 个：{{added}}",
+    "skippedSummary": "跳过 {{count}} 个：{{details}}",
+    "summarySeparator": "；",
+    "done": "操作完成",
+    "addFailed": "添加失败：{{message}}",
+    "confirmRemove": "确认将此QQ号移出白名单？",
+    "removed": "已移出白名单",
+    "title": "QQ白名单管理",
+    "searchPlaceholder": "搜索QQ号",
+    "addTitle": "添加QQ号到白名单",
+    "singleLabel": "单个QQ号：",
+    "qqPlaceholder": "输入QQ号",
+    "batchLabel": "批量导入（每行一个，或用逗号分隔）：",
+    "adding": "添加中...",
+    "add": "添加到白名单",
+    "empty": "当前白名单为空，请先添加QQ号。",
+    "col": {
+      "addedAt": "添加时间"
+    }
+  },
+  "users": {
+    "forbidden": "权限不足，无法获取用户列表",
+    "regularUser": "普通用户",
+    "confirmLevel": "确认将用户“{{username}}”的等级从“{{oldLabel}}”调整为“{{nextLabel}}”？\n这会立即改变该账号可访问的管理功能。",
+    "updateFailedStatus": "更新失败 {{status}}",
+    "levelUpdated": "权限已更新",
+    "failed": "失败：{{message}}",
+    "confirmDelete": "确认永久删除用户“{{username}}”？\n账号资料与登录资格将被移除，此操作目前无法撤销。",
+    "deleted": "用户已删除",
+    "banFailedStatus": "封禁失败 {{status}}",
+    "banned": "用户已封禁",
+    "banFailed": "封禁失败：{{message}}",
+    "confirmUnban": "确认解除用户“{{username}}”的封禁？\n该账号将立即恢复可写操作权限。",
+    "unbanFailedStatus": "解除封禁失败 {{status}}",
+    "unbanned": "已解除封禁",
+    "unbanFailed": "解除封禁失败：{{message}}",
+    "setYuyuko": "设为 YUYUKO",
+    "setYoumu": "设为 YOUMU",
+    "setKomachi": "设为 KOMACHI",
+    "setRegular": "设为普通用户",
+    "unban": "解除封禁",
+    "ban": "封禁账号…",
+    "delete": "永久删除用户…",
+    "title": "用户管理",
+    "searchPlaceholder": "搜索用户名称、id、QQ号",
+    "noMatch": "未找到匹配的用户。",
+    "idLine": "ID：{{id}}",
+    "level": "等级",
+    "status": "状态",
+    "statusBanned": "已封禁",
+    "statusNormal": "正常",
+    "col": {
+      "username": "用户名"
+    }
+  },
+  "dashboard": {
+    "title": "管理员后台",
+    "currentUser": "当前用户：",
+    "adminLevel": "管理员等级：",
+    "regularUser": "普通用户",
+    "viewAudit": "查看操作日志",
+    "notAdmin": "当前住民身份不是管理员，无法访问后台功能。"
+  },
+  "noticeColors": {
+    "blue": "隙间蓝",
+    "green": "幽庭绿",
+    "amber": "灯笼橙",
+    "rose": "樱华粉",
+    "slate": "魂灵紫灰"
+  }
+}

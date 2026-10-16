@@ -1,0 +1,116 @@
+name: Android 构建
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/mobile-android.yml'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: '同时构建签名发布包（内测 APK）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: 计算构建号
+        working-directory: .
+        run: echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 0 }} ))" >> "$GITHUB_ENV"
+
+      - run: npm ci
+
+      - name: 生成 Android 工程（仓库中尚无 android/ 时）
+        id: generate
+        run: |
+          if [ -d android ]; then
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            npm run build:mobile
+            npm run cap:add:android
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 构建并同步资源
+        run: npm run cap:sync
+
+      - name: 上传生成的 Android 工程（检查后提交到 frontend/android/）
+        if: steps.generate.outputs.generated == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-project
+          # 工程中的 .gitignore 等隐藏文件也要包含（v6 默认排除）
+          include-hidden-files: true
+          path: |
+            frontend/android
+            !frontend/android/**/build
+            !frontend/android/.gradle
+            !frontend/android/local.properties
+            !frontend/android/app/src/main/assets/public
+
+      - name: 调试包
+        working-directory: frontend/android
+        # 工程在 Windows 上提交时 gradlew 可能丢失可执行位，这里统一补上
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: app-debug-${{ env.APP_BUILD_NUMBER }}
+          path: frontend/android/app/build/outputs/apk/debug/*.apk
+
+      - name: 签名发布包
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        working-directory: frontend/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::未配置 ANDROID_KEYSTORE_BASE64 等签名 Secrets"; exit 1
+          fi
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_PATH"
+          ./gradlew assembleRelease --no-daemon
+          rm -f "$ANDROID_KEYSTORE_PATH"
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+
+      - name: 上传发布包
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        uses: actions/upload-artifact@v6
+        with:
+          name: app-release-${{ env.APP_BUILD_NUMBER }}
+          path: frontend/android/app/build/outputs/apk/release/*.apk
+
+      - name: 记录版本
+        run: |
+          {
+            echo "### Android"
+            echo "- versionName $(node -p "require('./package.json').version") / versionCode $APP_BUILD_NUMBER"
+            echo "- node $(node -v), java $(java -version 2>&1 | head -1)"
+          } >> "$GITHUB_STEP_SUMMARY"
