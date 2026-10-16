@@ -1,6 +1,6 @@
 {
     "name": "yuyuko-food-map-frontend",
-    "version": "2.2.2",
+    "version": "2.2.3",
     "private": true,
     "license": "AGPL-3.0-only",
     "scripts": {

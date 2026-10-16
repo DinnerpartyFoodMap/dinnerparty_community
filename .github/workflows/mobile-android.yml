@@ -38,7 +38,8 @@ jobs:
 
       - name: 计算构建号
         working-directory: .
-        run: echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 0 }} ))" >> "$GITHUB_ENV"
+        # run_number 在 2026-10-16 迁移到新仓库后从 1 重新计数；默认加 1000，保证构建号大于旧仓库发出的版本（安装升级与 TestFlight 都要求递增）
+        run: echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 1000 }} ))" >> "$GITHUB_ENV"
 
       - run: npm ci
 

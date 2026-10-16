@@ -66,8 +66,9 @@ jobs:
             !frontend/ios/DerivedData
 
       - name: 计算版本号
+        # run_number 在 2026-10-16 迁移到新仓库后从 1 重新计数；默认加 1000，保证构建号大于旧仓库发出的版本（安装升级与 TestFlight 都要求递增）
         run: |
-          echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 0 }} ))" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 1000 }} ))" >> "$GITHUB_ENV"
           echo "APP_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
 
       # 真机架构的 Release 编译，同时作为编译检查；不签名，安装前需用 Sideloadly / AltStore 等工具以自己的 Apple ID 重签
@@ -132,8 +133,9 @@ jobs:
           xcode-version: ${{ vars.IOS_XCODE_VERSION || '26.6' }}
 
       - name: 计算版本号
+        # run_number 在 2026-10-16 迁移到新仓库后从 1 重新计数；默认加 1000，保证构建号大于旧仓库发出的版本（安装升级与 TestFlight 都要求递增）
         run: |
-          echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 0 }} ))" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ vars.BUILD_NUMBER_OFFSET || 1000 }} ))" >> "$GITHUB_ENV"
           echo "APP_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
 
       - run: npm ci
