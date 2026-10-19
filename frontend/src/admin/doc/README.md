@@ -1,5 +1,7 @@
 # 管理界面
 
+AdminExhibitions 在后台底部提供展会联动设置，沿用公告发布权限。名称/信息使用 TextInput，简介使用 TextArea；图标复用 `/upload`。发布后替换当前展会，支持下架。接口与浏览器回归分别在 `backend/tests/community/test_exhibitions.js` 和 `test_exhibition_ui.js`。
+
 AdminDashboard.jsx 提供管理入口，AdminUsers/GeneralUsers/Places/Comments/QQWhitelist/Notices 分业务页，BanModal/AuditModal 负责关联弹层。显示权限与当前用户联动，后端才是授权和事务权威；目录整理不新增权限。
 
 ```mermaid

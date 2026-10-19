@@ -1,4 +1,9 @@
 {
+  "exhibition": {
+    "open": "查看展会：{{name}}",
+    "description": "展会简介",
+    "information": "展会信息"
+  },
   "category": {
     "placeholder": "搜索或输入新分类",
     "loadFailed": "分类加载失败",

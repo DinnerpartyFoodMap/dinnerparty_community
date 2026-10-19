@@ -272,6 +272,7 @@ app.use("/admin/qq-whitelist", requireAuth, adminQQWhitelistRouter);
 app.use("/admin/qq-bot", requireAuth, require('./modules/admin/routes/adminQQBot'));
 app.use("/admin/notices", requireAuth, adminNoticesRouter);
 app.use("/api/admin/notices", requireAuth, adminNoticesRouter);
+app.use(["/admin/exhibitions", "/api/admin/exhibitions"], requireAuth, require('./modules/admin/routes/adminExhibitions'));
 
 
 init();
@@ -293,6 +294,7 @@ app.use("/comments", commentsRouter);
 app.use("/users", usersRouter);
 app.use("/notices", noticesRouter);
 app.use("/api/notices", noticesRouter);
+app.use(["/exhibitions", "/api/exhibitions"], require('./modules/community/routes/exhibitions'));
 app.use("/categories", categoriesRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/place-requests", placeRequestsRouter);

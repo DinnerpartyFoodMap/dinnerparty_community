@@ -618,6 +618,17 @@ function init() {
             time DATETIME DEFAULT CURRENT_TIMESTAMP
         );`);
 
+        rawDb.exec(`CREATE TABLE IF NOT EXISTS "SiteExhibition" (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            information TEXT NOT NULL,
+            icon_url TEXT NOT NULL DEFAULT '',
+            created_by TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_time DATETIME DEFAULT CURRENT_TIMESTAMP
+        );`);
+        rawDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_siteexhibition_active ON SiteExhibition(is_active) WHERE is_active = 1;`);
         rawDb.exec(`CREATE TABLE IF NOT EXISTS "SiteNotice" (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import MapView from "../map/MapView";
+import MapExhibition from "../map/MapExhibition";
 import AdminDashboard from "../admin/AdminDashboard";
 import Settings from "../settings/Settings";
 import { supportsNativeSettings } from "../settings/useNativeSettings";
@@ -853,6 +854,8 @@ export default function App() {
                                 <div style={{ whiteSpace: 'pre-wrap' }}>{siteNotice.content}</div>
                             </Notice>
                         )}
+                        {showMapPage && <MapExhibition backendUrl={BACKEND_URL} noticeRef={siteNoticeRef}
+                            noticeVisible={siteNoticeVisible} noticeTop={noticeLayout.top + 55} />}
                         <div style={{ display: mapHidden ? 'none' : 'block', width: '100%', height: '100%' }} aria-hidden={showMapPage ? undefined : true} inert={showMapPage ? undefined : 'true'}>
                             <MapView
                                 backendUrl={BACKEND_URL}

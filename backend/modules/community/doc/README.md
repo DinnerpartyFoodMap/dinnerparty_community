@@ -1,5 +1,7 @@
 # 社区互动与反馈
 
+exhibitions 提供公开的 `/exhibitions/current`（及 `/api/exhibitions/current`），只返回当前已发布展会的展示信息，无展会时返回 `{ exhibition: null }`。发布、下架及审计由 adminExhibitions 管理。
+
 routes：community（`/api/community`）、comments、dinners、notices；挂载前缀与别名见 index.js。services/communityPreferences 提供同意状态及同好向量匹配；feedbackDataset 为离线导出提供去标识处理与估计工具。评论、聚餐、公告目前仍在各自路由内实现业务，不强行增加空 service 包装。依赖 accounts、preferences、discovery，以及 journeys/Store 的通用 SQL/错误工具。
 
 ```mermaid

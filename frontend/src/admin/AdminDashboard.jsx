@@ -7,6 +7,7 @@ import AdminGeneralUsers from "./AdminGeneralUsers";
 import AdminQQWhitelist from "./AdminQQWhitelist";
 import AdminAuditModal from "./AdminAuditModal";
 import AdminNotices from "./AdminNotices";
+import AdminExhibitions from "./AdminExhibitions";
 import ScrollableView from "../components/layout/ScrollableView";
 import { t } from "../i18n/index.js";
 
@@ -91,6 +92,12 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
                 {canManageAnnouncements && (
                     <div style={panelStyle}>
                         <AdminNotices backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} />
+                    </div>
+                )}
+
+                {canManageAnnouncements && (
+                    <div style={panelStyle}>
+                        <AdminExhibitions backendUrl={backendUrl} />
                     </div>
                 )}
 
