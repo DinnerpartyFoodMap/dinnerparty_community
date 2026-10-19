@@ -1,6 +1,6 @@
 # 地点详情、编辑与评分
 
-components 下 AddPlaceForm、ManagePanel、CategorySelector、PlaceDetailPanel、PlaceImageInputs、PlaceRatingPanel、CommentPanel 收拢地点交互；hooks/usePlaceRating 处理评分状态与请求；rating.js 是展示与避雷纯逻辑；placeBehavior.js 记录有效用户操作与分享。地图渲染仍在 map，网络封装在 api/client，照片选择和压缩在 platform/mediaPicker。
+components 下 AddPlaceForm、ManagePanel、CategorySelector、PlaceDetailPanel、PlaceImageInputs、PlaceRatingPanel、CommentPanel 收拢地点交互；hooks/usePlaceRating 处理评分状态与请求；rating.js 是展示与避雷纯逻辑；placeBehavior.js 记录有效用户操作与分享。shareCard.js 画地点分享卡片（以静态地图为中心、外围信息框与二维码，横竖两版），hooks/useShareCard 管生成/缓存/分享；地图来自后端 `/api/amap/staticmap`，输出走 platform/share 的图片分享与保存。地图渲染仍在 map，网络封装在 api/client，照片选择和压缩在 platform/mediaPicker。
 
 ```mermaid
 flowchart TD
