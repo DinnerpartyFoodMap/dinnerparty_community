@@ -8,6 +8,8 @@ import { readPrivacyConsent } from './privacyConsent.js';
 
 const AMAP_PLUGINS = ['AMap.PlaceSearch', 'AMap.Geolocation'];
 const LOAD_TIMEOUT_MS = 20000;
+const KEY_TIMEOUT_MS = 8000;
+const KEY_CACHE_STORAGE = 'foodmap.amapJsKey';
 
 let pending = null;
 let scriptEl = null;
@@ -81,7 +83,53 @@ export function loadAmap() {
     applyRenderHints();
     setState({ status: 'loading', error: null, attempts: state.attempts + 1 });
 
-    pending = new Promise((resolve, reject) => {
+    pending = resolveAmapJsKey(config)
+        .then(injectSdk)
+        .catch((error) => {
+            pending = null;
+            setState({ status: 'error', error });
+            throw error;
+        });
+    return pending;
+}
+
+function readCachedKey() {
+    try { return String(window.localStorage.getItem(KEY_CACHE_STORAGE) || '').trim(); } catch (e) { return ''; }
+}
+
+function writeCachedKey(key) {
+    try { window.localStorage.setItem(KEY_CACHE_STORAGE, key); } catch (e) { /* ignore */ }
+}
+
+/**
+ * JS API key 由后端下发（GET /api/amap/js-config，读 backend/.env 的 AMAP_JS_KEY），换 key 不必重新构建或发版。
+ * 后端暂时连不上时退回上次成功取到的 key，地图底图仍可显示。
+ */
+export async function resolveAmapJsKey(config) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), KEY_TIMEOUT_MS);
+    try {
+        const response = await fetch(`${config.apiBaseUrl}/api/amap/js-config`, { signal: controller.signal });
+        const data = await response.json().catch(() => null);
+        const key = data && typeof data.key === 'string' ? data.key.trim() : '';
+        if (response.ok && key) {
+            writeCachedKey(key);
+            return key;
+        }
+    } catch (e) {
+        /* 走缓存 */
+    } finally {
+        clearTimeout(timer);
+    }
+    const cached = readCachedKey();
+    if (cached) return cached;
+    const error = new Error(t('platform:amapLoader.keyUnavailable'));
+    error.code = 'AMAP_KEY_UNAVAILABLE';
+    throw error;
+}
+
+function injectSdk(key) {
+    return new Promise((resolve, reject) => {
         const script = document.createElement('script');
         scriptEl = script;
         let settled = false;
@@ -98,8 +146,6 @@ export function loadAmap() {
             failure.code = failure.code || 'AMAP_LOAD_FAILED';
             try { script.remove(); } catch (e) { /* ignore */ }
             if (scriptEl === script) scriptEl = null;
-            pending = null;
-            setState({ status: 'error', error: failure });
             reject(failure);
         };
         const timer = window.setTimeout(() => {
@@ -108,7 +154,7 @@ export function loadAmap() {
             finish(error);
         }, LOAD_TIMEOUT_MS);
 
-        const params = new URLSearchParams({ v: '2.0', key: config.amapJsKey, plugin: AMAP_PLUGINS.join(',') });
+        const params = new URLSearchParams({ v: '2.0', key, plugin: AMAP_PLUGINS.join(',') });
         script.src = `https://webapi.amap.com/maps?${params.toString()}`;
         script.async = true;
         script.onload = () => finish(null);
@@ -119,7 +165,6 @@ export function loadAmap() {
         };
         document.head.appendChild(script);
     });
-    return pending;
 }
 
 /** 失败后手动重试；成功或正在加载时直接复用当前结果。 */

@@ -71,8 +71,6 @@ export function resolveRuntimeConfig({ env = {}, location, native }) {
     const resourceBaseUrl = clean(env.VITE_RESOURCE_BASE_URL) || apiBaseUrl;
     // OSS 上地点图片的目录地址（与后端 OSS_PUBLIC_BASE_URL/OSS_PREFIX 一致），用于生成缩略图；未配置时一律用原图
     const ossImageBaseUrl = clean(env.VITE_OSS_IMAGE_BASE_URL);
-    const amapJsKey = clean(env.VITE_AMAP_JS_KEY);
-    if (!amapJsKey) errors.push(t('platform:runtimeConfig.notConfigured', { name: 'VITE_AMAP_JS_KEY' }));
     // 海外底图（CARTO）的浏览器 key；未配置时不叠加海外底图（见 map/overseasTileLayer.js）
     const cartoApiKey = clean(env.VITE_CARTO_API_KEY);
 
@@ -89,7 +87,6 @@ export function resolveRuntimeConfig({ env = {}, location, native }) {
         publicWebBaseUrl,
         resourceBaseUrl,
         ossImageBaseUrl,
-        amapJsKey,
         cartoApiKey,
         errors
     };

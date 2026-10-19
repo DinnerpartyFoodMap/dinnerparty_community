@@ -57,6 +57,17 @@ async function fetchAmap(path, params) {
     }
 }
 
+// 地图 SDK 的 JS API key 是公开值，由后端下发，更换时只需改 backend/.env 并重启，
+// 网页无需重新构建、App 无需发版。它与 AMAP_JS_CODE 属于同一个“Web端(JS API)”应用，须一起更换。
+// 放在下方 Web 服务 key 检查之前：两者是不同的凭证。
+router.get('/js-config', (req, res) => {
+    const key = String(process.env.AMAP_JS_KEY || '').trim();
+    if (!key) return res.status(503).json({ error: '地图服务未配置（AMAP_JS_KEY）' });
+    // no-cache：浏览器每次用 ETag 重新校验，换 key 后下次打开页面即生效
+    res.set('Cache-Control', 'no-cache');
+    return res.json({ key });
+});
+
 router.use((req, res, next) => {
     if (!webServiceKey()) {
         return res.status(503).json({ error: '地图 Web 服务未配置（AMAP_WEB_SERVICE_KEY）' });

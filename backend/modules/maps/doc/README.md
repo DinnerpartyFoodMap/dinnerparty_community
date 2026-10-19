@@ -1,6 +1,6 @@
 # 地图服务边界
 
-`routes/amap.js` 提供 `/api/amap/regeo` 与 `/api/amap/staticmap`，使用 AMAP_WEB_SERVICE_KEY。JS SDK 的 `/_AMapService` 流式代理目前仍在 backend/index.js，使用 AMAP_JS_CODE；两个凭证和请求链不同。services/fuzzySearch.js 是现有字面模糊匹配工具，保留当前行为。
+`routes/amap.js` 提供 `/api/amap/regeo` 与 `/api/amap/staticmap`，使用 AMAP_WEB_SERVICE_KEY；另有 `/api/amap/js-config` 下发地图 SDK 的公开 JS API key（AMAP_JS_KEY，不经 Web 服务 key 检查与限流），换 key 不必重新构建前端。JS SDK 的 `/_AMapService` 流式代理目前仍在 backend/index.js，使用 AMAP_JS_CODE；两个凭证和请求链不同。services/fuzzySearch.js 是现有字面模糊匹配工具，保留当前行为。
 
 ```mermaid
 flowchart TD

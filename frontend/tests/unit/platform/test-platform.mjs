@@ -7,25 +7,45 @@ import { pushBackHandler, dispatchBack, BACK_PRIORITY } from "../../../src/platf
 import { decodeTokenPayload, getTokenUserId } from "../../../src/platform/credentialStore.js";
 import { toInAppPath } from "../../../src/platform/nativeShell.js";
 import { placeSharePath, shareParamValue } from "../../../src/platform/navigation.js";
-import { shouldForceAmapWebGL } from "../../../src/platform/amapLoader.js";
+import { shouldForceAmapWebGL, resolveAmapJsKey } from "../../../src/platform/amapLoader.js";
 
 const webLocation = { protocol: 'https:', hostname: 'cn.dinnerparty.cc', origin: 'https://cn.dinnerparty.cc' };
 
-// 高德 key 必须显式配置；网页和 App 都不能回退到仓库里的真实凭证。
-for (const native of [false, true]) {
-    const env = { VITE_BACKEND_URL: 'https://api.example.cc', VITE_PUBLIC_WEB_URL: webLocation.origin };
-    for (const value of [undefined, '', '   ', '%VITE_AMAP_JS_KEY%']) {
-        const missing = resolveRuntimeConfig({ env: { ...env, VITE_AMAP_JS_KEY: value }, location: webLocation, native });
-        assert.ok(missing.amapJsKey === '', 'missing map credentials must stay empty');
-        assert.ok(missing.errors.some((error) => error.includes('VITE_AMAP_JS_KEY')), 'missing map credentials must report a configuration error');
+// 高德 JS API key 由后端下发；后端不可用时只能退回上次取到的 key，没有就报错，不回退到任何内置凭证。
+{
+    const originalFetch = globalThis.fetch;
+    const originalWindow = globalThis.window;
+    const stored = new Map();
+    globalThis.window = { localStorage: { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v) } };
+    const requested = [];
+    const respond = (status, body) => async (url) => {
+        requested.push(url);
+        return { ok: status >= 200 && status < 300, status, json: async () => body };
+    };
+    const apiConfig = { apiBaseUrl: 'https://dinnerparty.cc/backend' };
+    try {
+        globalThis.fetch = respond(503, { error: 'not configured' });
+        await assert.rejects(resolveAmapJsKey(apiConfig), { code: 'AMAP_KEY_UNAVAILABLE' });
+        assert.equal(requested[0], 'https://dinnerparty.cc/backend/api/amap/js-config');
+
+        globalThis.fetch = respond(200, { key: '  key-from-server  ' });
+        assert.equal(await resolveAmapJsKey(apiConfig), 'key-from-server');
+
+        globalThis.fetch = async () => { throw new TypeError('network down'); };
+        assert.equal(await resolveAmapJsKey(apiConfig), 'key-from-server', 'falls back to the last key the server sent');
+
+        globalThis.fetch = respond(200, { key: 'rotated-key' });
+        assert.equal(await resolveAmapJsKey(apiConfig), 'rotated-key', 'a rotated key replaces the cached one');
+        globalThis.fetch = respond(200, { key: '' });
+        assert.equal(await resolveAmapJsKey(apiConfig), 'rotated-key');
+    } finally {
+        globalThis.fetch = originalFetch;
+        if (originalWindow === undefined) delete globalThis.window; else globalThis.window = originalWindow;
     }
-    const configured = resolveRuntimeConfig({ env: { ...env, VITE_AMAP_JS_KEY: '  test-amap-js-key  ' }, location: webLocation, native });
-    assert.equal(configured.amapJsKey, 'test-amap-js-key');
-    assert.deepEqual(configured.errors, []);
 }
 
 // 网页：保持原有回退逻辑
-let config = resolveRuntimeConfig({ env: { VITE_AMAP_JS_KEY: 'test-amap-js-key' }, location: webLocation, native: false });
+let config = resolveRuntimeConfig({ env: {}, location: webLocation, native: false });
 assert.equal(config.apiBaseUrl, 'https://cn.dinnerparty.cc:2053');
 assert.equal(config.amapServiceHost, 'https://cn.dinnerparty.cc/_AMapService');
 assert.equal(config.publicWebBaseUrl, 'https://cn.dinnerparty.cc');
@@ -54,7 +74,7 @@ assert.ok(config.errors.length >= 2);
 config = resolveRuntimeConfig({ env: { VITE_BACKEND_URL: 'http://127.0.0.1:7000', VITE_PUBLIC_WEB_URL: 'https://cn.dinnerparty.cc' }, location: appLocation, native: true });
 assert.ok(config.errors.some((e) => e.includes('HTTPS')));
 assert.ok(config.errors.some((e) => e.includes('本机')));
-config = resolveRuntimeConfig({ env: { VITE_BACKEND_URL: 'https://cn.dinnerparty.cc:2053', VITE_PUBLIC_WEB_URL: 'https://cn.dinnerparty.cc', VITE_AMAP_JS_KEY: 'test-amap-js-key' }, location: appLocation, native: true });
+config = resolveRuntimeConfig({ env: { VITE_BACKEND_URL: 'https://cn.dinnerparty.cc:2053', VITE_PUBLIC_WEB_URL: 'https://cn.dinnerparty.cc' }, location: appLocation, native: true });
 assert.deepEqual(config.errors, []);
 assert.equal(config.amapServiceHost, 'https://cn.dinnerparty.cc:2053/_AMapService');
 assert.equal(config.publicWebBaseUrl, 'https://cn.dinnerparty.cc');
