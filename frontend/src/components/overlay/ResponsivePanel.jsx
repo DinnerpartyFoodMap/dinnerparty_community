@@ -24,7 +24,7 @@ const SIDE_TOP = 76;
  *   modal?: boolean, backdrop?: boolean, dismissOnBackdrop?: boolean, showClose?: boolean, closeLabel?: string,
  *   label?: string, role?: string, kind?: string, suspendNative?: boolean, closeOnEscape?: boolean,
  *   initialFocusRef?: any, bodyStyle?: object, surfaceStyle?: object, headerExtra?: React.ReactNode,
- *   bodyProps?: object, onExitComplete?: Function, plain?: boolean, sideInset?: number, draggable?: boolean
+ *   bodyProps?: object, onExitComplete?: Function, plain?: boolean, sideInset?: number, sideTop?: number, sideBottom?: number, draggable?: boolean
  * }} props
  * draggable=false 关闭底部/全屏面板的下滑关闭（例如正在输入的创作页，避免误触退出）。
  */
@@ -72,14 +72,14 @@ export default function ResponsivePanel({
     );
 }
 
-function outerStyle(mode, { width, maxHeight, sheetHeight, sideInset = 20 }) {
+function outerStyle(mode, { width, maxHeight, sheetHeight, sideInset = 20, sideTop = SIDE_TOP, sideBottom = 24 }) {
     if (mode === 'sheet') return { width: 'min(100%, 640px)', maxHeight: maxHeight || 'calc(100% - 24px)', height: sheetHeight, display: 'flex', flexDirection: 'column', outline: 'none' };
     if (mode === 'full') return { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', outline: 'none' };
     if (mode === 'side-left' || mode === 'side-right') {
         return {
             position: 'absolute',
-            top: SIDE_TOP,
-            bottom: 24,
+            top: sideTop,
+            bottom: sideBottom,
             [mode === 'side-left' ? 'left' : 'right']: sideInset,
             width: width || 'min(360px, calc(100vw - 40px))',
             display: 'flex',

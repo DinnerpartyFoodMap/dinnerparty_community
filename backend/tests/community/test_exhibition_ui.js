@@ -65,15 +65,30 @@ async function main() {
                 : Math.abs(button.getBoundingClientRect().top - 30) < 1;
         }, underNotice);
     }
-    await checkPosition(true);
+    async function checkDesktopEntry() {
+        await page.waitForFunction(() => {
+            const rect = document.querySelector('[data-exhibition-entry]')?.getBoundingClientRect();
+            return rect && Math.abs(innerHeight - rect.bottom - 42) < 1 && Math.abs(innerWidth - rect.right - 12) < 1;
+        });
+    }
+    await checkDesktopEntry();
+    await entry.click();
+    const desktopDetail = page.getByRole('dialog', { name: '秋日展会', exact: true });
+    await desktopDetail.waitFor();
+    await page.waitForFunction(() => {
+        const rect = document.querySelector('[role="dialog"][aria-label="秋日展会"]')?.getBoundingClientRect();
+        return rect && Math.abs(rect.width - 370) < 1 && Math.abs(rect.top - 68) < 1 && Math.abs(innerHeight - rect.bottom - 42) < 1;
+    });
+    await page.keyboard.press('Escape');
+    await desktopDetail.waitFor({ state: 'hidden' });
     if (process.env.EXHIBITION_ARTIFACT_DIR) {
         fs.mkdirSync(process.env.EXHIBITION_ARTIFACT_DIR, { recursive: true });
         await page.screenshot({ path: path.join(process.env.EXHIBITION_ARTIFACT_DIR, 'exhibition-notice.png') });
     }
     await page.getByRole('button', { name: 'Resize notice' }).click();
-    await checkPosition(true);
+    await checkDesktopEntry();
     await page.setViewportSize({ width: 1440, height: 900 });
-    await checkPosition(false); // Wide desktop: the centered notice leaves room on its right.
+    await checkDesktopEntry();
     await page.setViewportSize({ width: 390, height: 844 });
     await checkPosition(true);
     await page.locator('.fm-notice').getByRole('button', { name: '关闭' }).click();
@@ -81,6 +96,10 @@ async function main() {
     await entry.click();
     const detail = page.getByRole('dialog', { name: '秋日展会', exact: true });
     await detail.waitFor();
+    await page.waitForFunction(() => {
+        const rect = document.querySelector('[role="dialog"][aria-label="秋日展会"]')?.getBoundingClientRect();
+        return rect && Math.abs(rect.top) < 1 && Math.abs(rect.left) < 1 && Math.abs(rect.width - innerWidth) < 1 && Math.abs(rect.height - innerHeight) < 1;
+    });
     assert.match(await detail.innerText(), /简介第一行\s+简介第二行/);
     await detail.getByText('上海 · 周六 10:00', { exact: true }).waitFor();
     if (process.env.EXHIBITION_ARTIFACT_DIR) {
@@ -95,8 +114,10 @@ async function main() {
     await page.getByText('当前展会：秋日展会', { exact: true }).waitFor();
     await page.getByLabel('添加图标', { exact: true }).setInputFiles(path.join(frontend, 'public/favicon.png'));
     await page.getByRole('button', { name: '移除图标' }).waitFor();
+    const publicationResponse = page.waitForResponse(response => response.url().endsWith('/admin/exhibitions') && response.request().method() === 'POST');
     await page.getByRole('button', { name: '发布展会', exact: true }).click();
-    await page.getByText('展会已发布', { exact: true }).waitFor();
+    assert.ok((await publicationResponse).ok());
+    await page.waitForFunction(() => document.querySelector('button[type="submit"]')?.disabled === false);
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await entry.waitFor();
     const uploadedUrl = await entry.locator('img').getAttribute('src');

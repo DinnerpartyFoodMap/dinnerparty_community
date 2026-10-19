@@ -3,12 +3,14 @@ import ExhibitionIcon from '../components/primitives/ExhibitionIcon';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import { onAppStateChange } from '../platform/lifecycle';
 import { getExhibitionTop } from './exhibitionLayout';
+import { useLayoutPolicy } from '../motion/MotionProvider';
 import { t } from '../i18n/index.js';
 
 // Keep the entry 30px below the map's top edge when no notice overlaps it.
 const HOME_TOP = 30;
 
 export default function MapExhibition({ backendUrl, noticeRef, noticeVisible, noticeTop }) {
+    const { narrow } = useLayoutPolicy();
     const [exhibition, setExhibition] = useState(null);
     const [open, setOpen] = useState(false);
     const [top, setTop] = useState(HOME_TOP);
@@ -49,7 +51,7 @@ export default function MapExhibition({ backendUrl, noticeRef, noticeVisible, no
 
     useLayoutEffect(() => {
         const entry = entryRef.current;
-        if (!entry) return;
+        if (!entry || !narrow) return;
         const parent = entry.offsetParent;
         const notice = noticeVisible ? noticeRef?.current : null;
         const update = () => {
@@ -70,14 +72,14 @@ export default function MapExhibition({ backendUrl, noticeRef, noticeVisible, no
             window.removeEventListener('resize', update);
             window.visualViewport?.removeEventListener('resize', update);
         };
-    }, [exhibition, noticeVisible, noticeRef, noticeTop]);
+    }, [exhibition, noticeVisible, noticeRef, noticeTop, narrow]);
 
     if (!exhibition) return null;
     return <>
         <button ref={entryRef} data-exhibition-entry type="button" onClick={() => setOpen(true)}
             aria-label={t('map:exhibition.open', { name: exhibition.name })} aria-haspopup="dialog" aria-expanded={open}
             title={exhibition.name}
-            style={{ position: 'absolute', top, right: 12, zIndex: 1650, width: 88, padding: 0,
+            style={{ position: 'absolute', ...(narrow ? { top } : { bottom: 42 }), right: 12, zIndex: 1650, width: 88, padding: 0,
                 border: 0, background: 'transparent', color: 'var(--color-text-primary)', cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, fontFamily: 'inherit' }}>
             <ExhibitionIcon url={exhibition.icon_url} backendUrl={backendUrl} style={{ background: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-surface)' }} />
@@ -87,7 +89,8 @@ export default function MapExhibition({ backendUrl, noticeRef, noticeVisible, no
             </span>
         </button>
         <ResponsivePanel open={open} onClose={() => setOpen(false)} title={exhibition.name}
-            desktop="side-right" mobile="side-right" sideInset={12} width="min(360px, calc(100vw - 24px))" backdrop bodyStyle={{ padding: 20 }}>
+            desktop="side-right" mobile="full" sideInset={12} sideTop={68} sideBottom={42} width="370px"
+            backdrop draggable={false} bodyStyle={{ padding: 20 }}>
             <ExhibitionIcon url={exhibition.icon_url} backendUrl={backendUrl} />
             <h3>{t('map:exhibition.description')}</h3>
             <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.7 }}>{exhibition.description}</p>
