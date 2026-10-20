@@ -74,6 +74,7 @@ export default function App() {
     const [authPanelDisabled, setAuthPanelDisabled] = useState(false);
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
     const [randomFoodRequestId, setRandomFoodRequestId] = useState(0);
+    const [onboardingRequestId, setOnboardingRequestId] = useState(0);
     const [siteNotice, setSiteNotice] = useState(null);
     const [dismissedNoticeId, setDismissedNoticeId] = useState(() => {
         try {
@@ -890,6 +891,7 @@ export default function App() {
                                 onLogout={handleLogout}
                                 desktopHeaderMenu={desktopHeaderMenu}
                                 randomFoodRequestId={randomFoodRequestId}
+                                onboardingRequestId={onboardingRequestId}
                                 exhibition={exhibition}
                                 exhibitionOpen={exhibitionOpen}
                                 onCloseExhibition={closeExhibition}
@@ -934,6 +936,7 @@ export default function App() {
                             onGoHome={() => goPath("/")}
                             onMenuOpenChange={setDesktopHeaderMenu}
                             onOpenRandomFood={showMapPage ? () => setRandomFoodRequestId((id) => id + 1) : undefined}
+                            onOpenGuide={showMapPage ? () => setOnboardingRequestId((id) => id + 1) : undefined}
                             pathname={pathname}
                             backendUrl={BACKEND_URL}
                             interactionDisabled={authPanelDisabled}

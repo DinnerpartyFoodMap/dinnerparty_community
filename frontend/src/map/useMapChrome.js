@@ -3,7 +3,7 @@
 // 防止原生工具栏同时订阅多张地图。
 
 import { useEffect, useRef, useState } from 'react';
-import { NativeMapChromeSession, canUseNativeMapChrome } from '../platform/nativeMapChrome';
+import { NativeMapChromeSession, canUseNativeMapChrome, getNativeChromeStatus, subscribeNativeChromeStatus } from '../platform/nativeMapChrome';
 import { useMotionPolicy } from '../motion/MotionProvider';
 
 let ownerSeq = 0;
@@ -13,7 +13,8 @@ let ownerSeq = 0;
  *           onAction: (id: string) => (boolean|void), onSearch?: (event: object) => void, onSheet?: (event: object) => void,
  *           onDrawer?: (event: object) => void }} options
  * items 中 sheetWhenNative 为真的按钮在原生模式下打开系统面板而不是网页浮层：不需要先收起工具栏等回执。
- * @returns {{ mode: 'web'|'native', bottomOccupied: number }}
+ * @returns {{ mode: 'web'|'native', bottomOccupied: number, connecting: boolean }}
+ * connecting：可以使用原生控件、握手还没有结果（成功或回退网页）；依赖当前按钮布局的界面（操作指引）等它结束。
  */
 export function useMapChrome({ enabled, items, theme, floatingGap = 14, search, sheet = null, drawer = null, onAction, onSearch, onSheet, onDrawer }) {
     const policy = useMotionPolicy();
@@ -22,6 +23,7 @@ export function useMapChrome({ enabled, items, theme, floatingGap = 14, search, 
     const ownerRef = useRef(null);
     if (!ownerRef.current) ownerRef.current = `map-${++ownerSeq}`;
     const sessionRef = useRef(null);
+    const [handshake, setHandshake] = useState(() => getNativeChromeStatus().state);
     const onActionRef = useRef(onAction);
     onActionRef.current = onAction;
     const onSearchRef = useRef(onSearch);
@@ -61,6 +63,12 @@ export function useMapChrome({ enabled, items, theme, floatingGap = 14, search, 
         };
     }, [active]);
 
+    useEffect(() => {
+        if (!active) return undefined;
+        setHandshake(getNativeChromeStatus().state);
+        return subscribeNativeChromeStatus((status) => setHandshake(status.state));
+    }, [active]);
+
     // 业务状态变化只更新按钮快照（忙碌、禁用、选中、角标、搜索栏）
     const signature = JSON.stringify(snapshot);
     useEffect(() => {
@@ -72,5 +80,6 @@ export function useMapChrome({ enabled, items, theme, floatingGap = 14, search, 
         if (state.mode === 'native') sessionRef.current && sessionRef.current.activate();
     }, [state.mode]);
 
-    return state;
+    const connecting = active && state.mode !== 'native' && (handshake === 'idle' || handshake === 'connecting');
+    return { ...state, connecting };
 }

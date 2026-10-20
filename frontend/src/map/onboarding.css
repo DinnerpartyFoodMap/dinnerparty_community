@@ -1,0 +1,191 @@
+/* 操作指引（MapOnboarding.jsx）：高亮框用超大扩散阴影铺出遮罩，挖空处就是当前按钮；
+   遮罩下另有透明拦截层，指引期间地图与按钮都点不到。 */
+.fm-onboarding {
+    position: absolute;
+    inset: 0;
+    outline: none;
+    --onboarding-dim: rgba(12, 10, 18, 0.6);
+}
+
+:root[data-theme='dark'] .fm-onboarding {
+    --onboarding-dim: rgba(0, 0, 0, 0.68);
+}
+
+.fm-onboarding__root,
+.fm-onboarding__blocker {
+    position: absolute;
+    inset: 0;
+}
+
+.fm-onboarding__spot {
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: none;
+    box-shadow: 0 0 0 200vmax var(--onboarding-dim);
+    transition: left 300ms cubic-bezier(0.2, 0, 0, 1), top 300ms cubic-bezier(0.2, 0, 0, 1),
+        width 300ms cubic-bezier(0.2, 0, 0, 1), height 300ms cubic-bezier(0.2, 0, 0, 1),
+        border-radius 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fm-onboarding__spot::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    border: 2px solid var(--onboarding-accent, var(--theme-primary));
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--onboarding-accent, var(--theme-primary)) 28%, transparent);
+    animation: fm-onboarding-pulse 1.6s ease-in-out infinite;
+    transition: opacity 200ms ease;
+}
+
+.fm-onboarding__spot.is-empty::after {
+    opacity: 0;
+    animation: none;
+}
+
+@keyframes fm-onboarding-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.06); opacity: 0.65; }
+}
+
+.fm-onboarding__card {
+    position: absolute;
+    width: min(340px, calc(100% - 24px));
+    box-sizing: border-box;
+    padding: 14px 16px 14px;
+    border-radius: 20px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-surface);
+    transition: left 300ms cubic-bezier(0.2, 0, 0, 1), top 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fm-onboarding__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.fm-onboarding__icon {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* 图标字体还没加载时显示的是图标名，不让它撑出圆圈 */
+    overflow: hidden;
+    font-size: 24px;
+    background: var(--onboarding-accent, var(--theme-primary));
+    color: var(--onboarding-on-accent, #fff);
+}
+
+.fm-onboarding__count {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.fm-onboarding__skip {
+    min-height: 36px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.fm-onboarding__title {
+    margin: 12px 0 6px;
+    font-size: 17px;
+    line-height: 1.35;
+    font-weight: 700;
+}
+
+.fm-onboarding__body {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--color-text-secondary);
+}
+
+.fm-onboarding__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.fm-onboarding__dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+
+.fm-onboarding__dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--color-border);
+    transition: width 200ms ease, background-color 200ms ease;
+}
+
+.fm-onboarding__dots span.is-active {
+    width: 16px;
+    background: var(--onboarding-accent, var(--theme-primary));
+}
+
+.fm-onboarding__actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.fm-onboarding__button {
+    min-height: 40px;
+    padding: 8px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full, 999px);
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 14px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.fm-onboarding__button--primary {
+    border-color: var(--onboarding-accent, var(--theme-primary));
+    background: var(--onboarding-accent, var(--theme-primary));
+    color: var(--onboarding-on-accent, #fff);
+    font-weight: 700;
+}
+
+.fm-onboarding__skip:focus-visible,
+.fm-onboarding__button:focus-visible {
+    outline: 2px solid var(--onboarding-accent, var(--theme-primary));
+    outline-offset: 2px;
+}
+
+:root:is([data-platform='ios'], [data-platform='android']) .fm-onboarding__card {
+    border-radius: 26px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fm-onboarding__spot,
+    .fm-onboarding__card,
+    .fm-onboarding__dots span { transition: none; }
+    .fm-onboarding__spot::after { animation: none; }
+}
+
+:root[data-motion='reduced'] .fm-onboarding__spot,
+:root[data-motion='reduced'] .fm-onboarding__card,
+:root[data-motion='reduced'] .fm-onboarding__dots span { transition: none; }
+:root[data-motion='reduced'] .fm-onboarding__spot::after { animation: none; }

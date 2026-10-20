@@ -65,6 +65,7 @@ export default function MapView({
     onOpenPosterExport,
     desktopHeaderMenu = null,
     randomFoodRequestId = 0,
+    onboardingRequestId = 0,
     exhibition = null,
     exhibitionOpen = false,
     onCloseExhibition,
@@ -94,6 +95,7 @@ export default function MapView({
     if (!nearbyGateRef.current) nearbyGateRef.current = new RequestGate();
     const nearbyFailureRef = useRef(0);
     const userLocationMarkerRef = useRef(null);
+    const locateAbortRef = useRef(null);
     const addModeRef = useRef(false);
     const saveViewTimerRef = useRef(null);
     const lastSavedViewRef = useRef(null);
@@ -725,6 +727,7 @@ export default function MapView({
                 userLocationMarkerRef.current.setMap(null);
                 userLocationMarkerRef.current = null;
             }
+            locateAbortRef.current?.abort();
             releaseLocationControl(mapRef.current);
             if (mapRef.current && typeof mapRef.current.destroy === 'function') {
                 try {
@@ -1310,14 +1313,33 @@ export default function MapView({
             return;
         }
 
+        // 再次定位时，上一次还在提高精度的定位作废
+        locateAbortRef.current?.abort();
+        const controller = new AbortController();
+        locateAbortRef.current = controller;
+        const map = mapRef.current;
         setLocating(true);
         setLocationError("");
-        const startCenter = auto ? mapRef.current.getCenter?.() : null;
+        const startCenter = auto ? map.getCenter?.() : null;
+
+        // 网页端之后更准的位置：移动蓝点并补报；地图已移到首个位置、之后用户没拖动也没打开地点卡片时跟着平移（不改缩放）
+        let follow = false;
+        const stopFollowing = () => { follow = false; };
+        map.on?.("dragstart", stopFollowing);
+        controller.signal.addEventListener("abort", () => map.off?.("dragstart", stopFollowing), { once: true });
+        const onUpdate = (next) => {
+            if (controller.signal.aborted || mapRef.current !== map) return;
+            ensureUserLocationMarker([next.lng, next.lat]);
+            locationReporterRef.current.located(next);
+            if (!follow || selectedPlaceRef.current) return;
+            if (typeof map.panTo === "function") map.panTo([next.lng, next.lat]);
+            else map.setCenter([next.lng, next.lat]);
+        };
 
         try {
-            // 统一返回 GCJ-02：网页端为高德定位结果，App 端为系统定位 + 本地转换（只转换一次）
-            const position = await getCurrentLocation({ map: mapRef.current });
-            if (!mapRef.current) return;
+            // 统一返回 GCJ-02：网页端为浏览器定位（本地转换）或高德 IP 定位，App 端为系统定位 + 本地转换（只转换一次）
+            const position = await getCurrentLocation({ map, onUpdate, signal: controller.signal });
+            if (controller.signal.aborted || !mapRef.current) return;
 
             ensureUserLocationMarker([position.lng, position.lat]);
             locationReporterRef.current.located(position);
@@ -1339,7 +1361,9 @@ export default function MapView({
                 mapRef.current.setCenter([position.lng, position.lat]);
                 mapRef.current.setZoom(nextZoom);
             }
+            follow = true;
         } catch (error) {
+            if (controller.signal.aborted) return;
             if (auto) {
                 console.warn("启动时自动定位失败", error);
                 return;
@@ -1349,7 +1373,7 @@ export default function MapView({
             console.error("定位失败", error);
             showTip(message);
         } finally {
-            setLocating(false);
+            if (locateAbortRef.current === controller) setLocating(false);
         }
     };
 
@@ -1704,6 +1728,7 @@ export default function MapView({
                 onOpenPosterExport={onOpenPosterExport}
                 desktopHeaderMenu={desktopHeaderMenu}
                 randomFoodRequestId={randomFoodRequestId}
+                onboardingRequestId={onboardingRequestId}
                 exhibition={exhibition}
                 exhibitionOpen={exhibitionOpen}
                 onCloseExhibition={onCloseExhibition}
