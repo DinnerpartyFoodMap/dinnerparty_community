@@ -47,6 +47,7 @@ async function main() {
     await page.getByLabel('展会名称', { exact: true }).fill('秋日展会');
     await page.getByLabel('展会简介', { exact: true }).fill('简介第一行\n简介第二行');
     await page.getByLabel('展会信息', { exact: true }).fill('上海 · 周六 10:00');
+    await page.getByText(/^选填。选好地点后/).waitFor();
     await page.getByRole('button', { name: '发布展会', exact: true }).click();
     await page.getByText('当前展会：秋日展会', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Toggle admin' }).click();
@@ -130,6 +131,27 @@ async function main() {
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await page.waitForFunction(() => document.querySelector('[data-exhibition-entry] img')?.getAttribute('src') === '/favicon.png');
     await page.unroute('**/uploads/**');
+    // 展会地点：面板显示场馆，“展会附近随机美食”以展会地点为中心
+    assert.equal(await page.getByRole('button', { name: '展会附近随机美食' }).count(), 0);
+    await page.evaluate(async () => {
+        const res = await fetch('/admin/exhibitions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.__TEST_TOKEN}` },
+            body: JSON.stringify({ name: '带地点的展会', description: '简介', information: '信息', location_name: '保利世贸博览馆', latitude: 23.0961, longitude: 113.3653 }) });
+        if (!res.ok) throw new Error(`publish failed: ${res.status}`);
+        window.dispatchEvent(new Event('exhibition-updated'));
+    });
+    await page.getByRole('button', { name: '查看展会：带地点的展会' }).click();
+    const venuePanel = page.getByRole('dialog', { name: '带地点的展会', exact: true });
+    await venuePanel.getByText('保利世贸博览馆', { exact: true }).waitFor();
+    await venuePanel.getByRole('button', { name: '展会附近随机美食' }).click();
+    await venuePanel.waitFor({ state: 'hidden' });
+    assert.equal(await page.getByLabel('随机中心').innerText(), '带地点的展会 23.0961,113.3653');
+    await page.getByRole('button', { name: 'Toggle admin' }).click();
+    await page.getByText('当前展会：带地点的展会', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('展会地点', { exact: true }).inputValue(), '保利世贸博览馆');
+    await page.getByText('已选坐标：23.096100, 113.365300', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '清除地点' }).click();
+    await page.getByText(/^选填。选好地点后/).waitFor();
+    await page.getByRole('button', { name: 'Toggle admin' }).click();
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await page.getByRole('button', { name: '下架展会', exact: true }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
@@ -137,7 +159,7 @@ async function main() {
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await entry.waitFor({ state: 'hidden' });
     assert.deepEqual(errors, []);
-    console.log('Exhibition browser flow passed: publish, favicon, upload, details, responsive notice collision, resize, dismiss, unpublish.');
+    console.log('Exhibition browser flow passed: publish, favicon, upload, details, responsive notice collision, resize, dismiss, venue random, unpublish.');
 }
 main().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {
     if (browser) await browser.close();

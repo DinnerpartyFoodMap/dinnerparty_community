@@ -65,6 +65,9 @@ export default function MapView({
     onOpenPosterExport,
     desktopHeaderMenu = null,
     randomFoodRequestId = 0,
+    exhibition = null,
+    exhibitionOpen = false,
+    onCloseExhibition,
     routeSearch = '',
     pickerMode = false,
     pickerContext = 'dinner',
@@ -1701,6 +1704,9 @@ export default function MapView({
                 onOpenPosterExport={onOpenPosterExport}
                 desktopHeaderMenu={desktopHeaderMenu}
                 randomFoodRequestId={randomFoodRequestId}
+                exhibition={exhibition}
+                exhibitionOpen={exhibitionOpen}
+                onCloseExhibition={onCloseExhibition}
                 pickerMode={pickerMode}
                 pickerContext={pickerContext}
                 pickedPlaces={pickedPlaces}
@@ -1751,10 +1757,10 @@ export default function MapView({
 }
 
 /**
- * 日记与地点编辑共用的全屏地图选点：与地图首页相同的标记、聚合与搜索。可以选中站内标记或搜索结果，
+ * 日记、地点编辑与展会设置共用的全屏地图选点：与地图首页相同的标记、聚合与搜索。可以选中站内标记或搜索结果，
  * 也可以移动地图，用中心图钉选择任意位置。
  */
-function FullScreenMapPicker({ open, title, context = 'journey', center, backendUrl, token, isAuthenticated, onRequireAuth, onPickPlace, onPickPoint, onClose }) {
+export function FullScreenMapPicker({ open, title, context = 'journey', center, backendUrl, token, isAuthenticated, onRequireAuth, onPickPlace, onPickPoint, onClose }) {
     const label = title || t('common:action.pickOnMap');
     return (
         <MotionSurface

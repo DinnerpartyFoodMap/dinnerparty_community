@@ -270,6 +270,28 @@ function makeSession(plugin, extra = {}) {
     assert.deepEqual(sanitizeSheet({ id: 'account' }).gallery, []);
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
+    // v7 展会卡片：标题左侧图标只收 https，分段正文最多 4 段、空段丢弃、截断
+    assert.equal(NATIVE_CHROME_PROTOCOL, 7);
+    const exhibition = sanitizeSheet({
+        id: 'exhibition', token: 2, title: '秋日展会', size: 'card', image: 'https://cdn.example.com/icon.png',
+        paragraphs: [
+            { id: 'description', title: '展会简介', text: 's'.repeat(2600) },
+            { id: 'empty', title: '空', text: '   ' },
+            false,
+            { title: 't'.repeat(60), text: '上海 · 周六' },
+            { id: 'p3', text: '3' }, { id: 'p4', text: '4' }, { id: 'p5', text: '5' }
+        ]
+    });
+    assert.equal(exhibition.id, 'exhibition');
+    assert.equal(exhibition.image, 'https://cdn.example.com/icon.png');
+    assert.deepEqual(exhibition.paragraphs.map((p) => p.id), ['description', 'paragraph-3', 'p3', 'p4']);
+    assert.equal(exhibition.paragraphs[0].text.length, 2000);
+    assert.equal(exhibition.paragraphs[1].title.length, 40);
+    for (const image of ['http://cdn.example.com/icon.png', 'capacitor://localhost/favicon.png', '/uploads/a.png', 'https://u:p@cdn.example.com/a.png']) {
+        assert.equal(sanitizeSheet({ id: 'exhibition', image }).image, undefined, `不下发 ${image}`);
+    }
+    assert.deepEqual(sanitizeSheet({ id: 'place' }).paragraphs, []);
+
     // v6 更多功能（工具栏上滑）：没有可显示的行时不下发，行数封顶
     assert.equal(sanitizeDrawer(null), null);
     assert.equal(sanitizeDrawer({ sections: [{ id: 'actions', rows: [] }] }), null);

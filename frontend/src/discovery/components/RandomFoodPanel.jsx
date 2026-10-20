@@ -8,7 +8,8 @@ import { t, tx } from "../../i18n/index.js";
 
 // 随机美食卡片：宽屏从按钮附近展开，窄屏浮在搜索框上方；非模态，地图仍可操作。
 // 内容组件随浮层出现而挂载（自动抽一次），退出动画结束后卸载并取消请求。
-export default function RandomFoodPanel({ open, isNarrow, placement, onClose, ...rest }) {
+// origin（可选）：固定的本轮中心 { lat, lng, key, label }，例如展会地点；不传时用当前地图中心。
+export default function RandomFoodPanel({ open, isNarrow, placement, onClose, origin = null, ...rest }) {
     return (
         <MotionSurface
             show={open}
@@ -28,13 +29,16 @@ export default function RandomFoodPanel({ open, isNarrow, placement, onClose, ..
                 border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-surface)'
             }}
         >
-            <RandomFoodContent onClose={onClose} {...rest} />
+            {/* 换一个中心（地图 ↔ 展会）时重新挂载：收起动画未结束又打开也会按新中心抽取 */}
+            <RandomFoodContent key={origin?.key || 'map'} origin={origin} onClose={onClose} {...rest} />
         </MotionSurface>
     );
 }
 
-function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, feedback }) {
+function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, feedback, origin }) {
     const [result, setResult] = useState(null);
+    // 本轮的固定中心；“按当前地图中心重新抽取”后改回地图中心
+    const [activeOrigin, setActiveOrigin] = useState(origin || null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const centerRef = useRef(null);
@@ -43,9 +47,10 @@ function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, 
     const closeRef = useRef(null);
     const pendingDrawRef = useRef(null);
 
-    const draw = async (reset = false) => {
+    const draw = async (reset = false, from = activeOrigin) => {
         if (requestRef.current) return;
-        const center = reset ? normalizeLngLat(mapRef.current?.getCenter?.()) : centerRef.current;
+        const center = !reset ? centerRef.current
+            : from ? { lat: from.lat, lng: from.lng } : normalizeLngLat(mapRef.current?.getCenter?.());
         if (!center) {
             setError(t('map:randomFood.mapNotReady'));
             return;
@@ -98,6 +103,13 @@ function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, 
 
     const place = result?.place;
     const distance = result?.distanceKm;
+    const distanceText = place ? (distance < 1 ? t('map:randomFood.meters', { distance: Math.round(distance * 1000) }) : t('map:randomFood.kilometers', { distance: distance.toFixed(1) })) : '';
+    const category = place ? place.category || t('common:label.uncategorized') : '';
+    const redrawAtMapCenter = () => {
+        if (requestRef.current) return;
+        setActiveOrigin(null);
+        draw(true, null);
+    };
     const secondaryStyle = { background: 'transparent', color: 'var(--color-text-primary)', minHeight: 40 };
 
     return (
@@ -108,7 +120,7 @@ function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, 
                     style={{ ...secondaryStyle, border: 'none', cursor: 'pointer', minWidth: 40, fontSize: 22 }}>×</button>
             </div>
             <p style={{ margin: '4px 0 16px', fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                {t('map:randomFood.intro')}
+                {activeOrigin ? t('map:randomFood.introOrigin', { name: activeOrigin.label }) : t('map:randomFood.intro')}
             </p>
             <div aria-live="polite" aria-atomic="true">
                 {busy && <p role="status">{t('map:randomFood.picking')}</p>}
@@ -120,7 +132,9 @@ function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, 
                     </p>}
                     <h4 style={{ margin: '0 0 8px', fontSize: 20, overflowWrap: 'anywhere' }}>{place.name}</h4>
                     <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>
-                        {tx('map:randomFood.meta', { category: place.category || t('common:label.uncategorized'), distance: distance < 1 ? t('map:randomFood.meters', { distance: Math.round(distance * 1000) }) : t('map:randomFood.kilometers', { distance: distance.toFixed(1) }) })}
+                        {activeOrigin
+                            ? tx('map:randomFood.metaOrigin', { category, name: activeOrigin.label, distance: distanceText })
+                            : tx('map:randomFood.meta', { category, distance: distanceText })}
                         {Number(place.per_person_cost) > 0 && t('common:label.perPersonCost', { per_person_cost: place.per_person_cost })}
                     </p>
                     {place.description && <p style={{ fontSize: 14, lineHeight: 1.6, overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{place.description}</p>}
@@ -134,7 +148,7 @@ function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, 
                     {busy ? t('map:randomFood.pickingShort') : place ? t('map:randomFood.another') : t('map:randomFood.tryAgain')}
                 </Button>
             </div>
-            <Button disabled={busy} full style={{ ...secondaryStyle, marginTop: 8 }} onClick={() => draw(true)}>
+            <Button disabled={busy} full style={{ ...secondaryStyle, marginTop: 8 }} onClick={redrawAtMapCenter}>
                 {t('map:randomFood.redraw')}
             </Button>
         </div>

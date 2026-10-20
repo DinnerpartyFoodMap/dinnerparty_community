@@ -69,6 +69,13 @@ struct MapChromeSheetGallery: Identifiable, Equatable {
     var thumbnails: [URL]
 }
 
+/// 卡片全屏详情里的一段正文（展会简介、展会信息）
+struct MapChromeSheetParagraph: Identifiable, Equatable {
+    let id: String
+    var title: String?
+    var text: String
+}
+
 /// 网页下发的面板快照。token 每次打开递增：用户关闭后，同一 token 的旧快照不会再弹出。
 struct MapChromeSheet: Identifiable, Equatable {
     let sheetId: String
@@ -88,6 +95,10 @@ struct MapChromeSheet: Identifiable, Equatable {
     var detail: String?
     /// 正文下方的次要信息（地址）
     var caption: String?
+    /// 标题左侧的图标（展会图标，https）；有 leading 圆钮时不显示
+    var image: URL?
+    /// 分段正文：有内容时代替 detail 的“简介”一段（展会）
+    var paragraphs: [MapChromeSheetParagraph]
     /// 横排操作按钮（地点卡片：导航、收藏、编辑……），等宽
     var actions: [MapChromeSheetRow]
     var sections: [MapChromeSheetSection]

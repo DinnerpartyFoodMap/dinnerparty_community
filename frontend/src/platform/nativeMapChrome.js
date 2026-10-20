@@ -14,13 +14,14 @@ import { t } from '../i18n/index.js';
 
 // v2 增加搜索动作与独立头像；v3 搜索展开后工具栏变为原生输入框（search 状态与事件）；
 // v4 更多 / 住民 / 收藏面板改为系统 sheet（sheet 快照与事件）；v5 地点卡片也改为系统 sheet（操作按钮、正文、地图可操作）；
-// v6 “更多”改为工具栏上滑展开（drawer 快照与事件），地点卡片改为两段停靠（收藏圆钮、等宽操作按钮、上滑全屏详情与图片）。
+// v6 “更多”改为工具栏上滑展开（drawer 快照与事件），地点卡片改为两段停靠（收藏圆钮、等宽操作按钮、上滑全屏详情与图片）；
+// v7 展会面板也改为两段停靠的原生卡片（exhibition 面板、标题左侧图标 image、分段正文 paragraphs）。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
-export const NATIVE_CHROME_PROTOCOL = 6;
+export const NATIVE_CHROME_PROTOCOL = 7;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
-export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place']);
+export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition']);
 export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss']);
 export const NATIVE_DRAWER_EVENTS = Object.freeze(['select']);
 const SHEET_ROW_LIMIT = 300;
@@ -30,6 +31,7 @@ const SHEET_SIZES = ['fit', 'list', 'card'];
 const DRAWER_ROW_LIMIT = 40;
 const GALLERY_GROUP_LIMIT = 4;
 const GALLERY_IMAGE_LIMIT = 12;
+const PARAGRAPH_LIMIT = 4;
 const PLUGIN_NAME = 'NativeMapChrome';
 const HEARTBEAT_MS = 1500;
 // 与原生 NativeMapChromePlugin.healthTimeout（5s）对应，再留出余量
@@ -157,10 +159,25 @@ export function sanitizeSheet(sheet) {
         leading: sheet.leading ? sanitizeSheetRows([sheet.leading], { rows: 1 })[0] : undefined,
         detail: clipText(sheet.detail, 2000),
         caption: clipText(sheet.caption, 200),
+        // 标题左侧的图标（展会图标；有 leading 圆钮时不显示）
+        image: sanitizeImageURL(sheet.image),
+        // 分段正文（展会简介、展会信息）：有内容时代替 detail 的“简介”一段
+        paragraphs: sanitizeParagraphs(sheet.paragraphs),
         actions: sanitizeSheetRows(sheet.actions, { rows: SHEET_ACTION_LIMIT }),
         sections: sanitizeSections(sheet.sections, { rows: SHEET_ROW_LIMIT }),
         gallery: sanitizeGallery(sheet.gallery)
     };
+}
+
+function sanitizeParagraphs(list) {
+    const paragraphs = [];
+    for (const [index, item] of (Array.isArray(list) ? list : []).entries()) {
+        if (paragraphs.length >= PARAGRAPH_LIMIT) break;
+        const text = item && typeof item === 'object' ? clipText(String(item.text ?? '').trim(), 2000) : undefined;
+        if (!text) continue;
+        paragraphs.push({ id: clipText(item.id, 32) || `paragraph-${index}`, title: clipText(item.title, 40), text });
+    }
+    return paragraphs;
 }
 
 /** 工具栏上滑展开的“更多功能”：与面板相同的分组行；没有可显示的行时返回 null（原生不显示拖动条）。 */

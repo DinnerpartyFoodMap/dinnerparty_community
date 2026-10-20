@@ -629,6 +629,11 @@ function init() {
             created_time DATETIME DEFAULT CURRENT_TIMESTAMP
         );`);
         rawDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_siteexhibition_active ON SiteExhibition(is_active) WHERE is_active = 1;`);
+        // 展会地点（选填，GCJ-02，与 Place 相同）：展会面板里“附近随机美食”的中心
+        const exhibitionCols = rawDb.prepare("PRAGMA table_info('SiteExhibition')").all().map(r => r.name);
+        for (const colDef of ["location_name TEXT NOT NULL DEFAULT ''", 'latitude REAL', 'longitude REAL']) {
+            if (!exhibitionCols.includes(colDef.split(' ')[0])) rawDb.exec(`ALTER TABLE SiteExhibition ADD COLUMN ${colDef}`);
+        }
         rawDb.exec(`CREATE TABLE IF NOT EXISTS "SiteNotice" (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,

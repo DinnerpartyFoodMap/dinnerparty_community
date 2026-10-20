@@ -35,6 +35,9 @@ import { useLayoutPolicy, useMotionFlags } from '../motion/MotionProvider';
 import { getPreset } from '../motion/presets';
 import { placeKey } from './cluster/engine';
 import { useMapChrome } from './useMapChrome';
+import { ExhibitionPanel } from './MapExhibition';
+import { exhibitionChromeSheet, exhibitionRandomOrigin } from './exhibition';
+import { exhibitionIconSource } from '../components/primitives/ExhibitionIcon';
 import { t, tx } from '../i18n/index.js';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
@@ -250,6 +253,9 @@ export default function MapUI(props) {
         onOpenPosterExport,
         desktopHeaderMenu,
         randomFoodRequestId = 0,
+        exhibition = null,
+        exhibitionOpen = false,
+        onCloseExhibition,
         pickerMode,
         pickerContext,
         pickedPlaces,
@@ -350,6 +356,8 @@ export default function MapUI(props) {
     const [shareOpen, setShareOpen] = useState(false);
     const [alongRouteOpen, setAlongRouteOpen] = useState(false);
     const [randomFoodOpen, setRandomFoodOpen] = useState(false);
+    // 随机美食的固定中心（展会地点）；null 表示按地图中心
+    const [randomFoodOrigin, setRandomFoodOrigin] = useState(null);
     const handledRandomFoodRequest = useRef(0);
     // 布局策略集中判断（640px 窄屏基线）
     const layout = useLayoutPolicy();
@@ -450,7 +458,7 @@ export default function MapUI(props) {
 
     const closeAlongRoute = () => setAlongRouteOpen(false);
 
-    const openRandomFood = () => {
+    const openRandomFoodAt = (origin) => {
         setAlongRouteOpen(false);
         setFavPageOpen(false);
         setPickedPageOpen(false);
@@ -459,8 +467,26 @@ export default function MapUI(props) {
         closePopup?.();
         if (addMode) handleToggleAddMode();
         clearSearch?.();
+        setRandomFoodOrigin(origin || null);
         setRandomFoodOpen(true);
     };
+    const openRandomFood = () => openRandomFoodAt(null);
+
+    // 展会面板的“展会附近随机美食”：收起展会面板，以展会地点为本轮中心抽取
+    const openExhibitionRandom = () => {
+        const origin = exhibitionRandomOrigin(exhibition);
+        if (!origin) return;
+        onCloseExhibition?.();
+        openRandomFoodAt(origin);
+    };
+
+    // 打开展会面板时收起菜单类浮层（原生模式下它们与展会面板共用同一个系统面板位置）
+    useEffect(() => {
+        if (!exhibitionOpen) return;
+        setMobileMoreOpen(false);
+        setMobileAccountOpen(false);
+        setFavPageOpen(false);
+    }, [exhibitionOpen]);
 
     useEffect(() => {
         if (!mapReady || !randomFoodRequestId || handledRandomFoodRequest.current === randomFoodRequestId) return;
@@ -674,6 +700,8 @@ export default function MapUI(props) {
 
     const openSheetId = (isAuthenticated && mobileAccountOpen) ? 'account'
         : (isAuthenticated && favPageOpen) ? 'favorites'
+        // 展会面板盖在地点卡片之上：关闭后仍选中的地点卡片重新出现
+        : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
         : (selectedPlace && !pickerMode) ? 'place'
         : null;
     // 每次打开面板分配新 token：用户在原生侧关闭后，同一 token 的旧快照不会再弹出，迟到的事件也不会作用到新面板
@@ -714,6 +742,8 @@ export default function MapUI(props) {
                 })
             }]
         };
+    } else if (openSheetId === 'exhibition') {
+        chromeSheet = exhibitionChromeSheet(exhibition, { iconUrl: exhibitionIconSource(exhibition.icon_url, backendUrl) });
     } else if (openSheetId === 'place') {
         // 地点卡片：两段停靠。第一段是摘要（左上角分享、右上角关闭、一排等宽操作按钮），地图保持可操作，点其他地点时原地更新；
         // 上滑或点“详情”到全屏，显示完整简介、地址、相关日记与图片。操作按钮不收起面板：
@@ -803,6 +833,9 @@ export default function MapUI(props) {
             setFavPageOpen(false);
             const item = type === 'select' && favItems.find((fav) => favoriteRowId(fav) === rowId);
             if (item) navigateToPlace(item.longitude, item.latitude);
+        } else if (sheetId === 'exhibition') {
+            if (type === 'dismiss') onCloseExhibition?.();
+            else if (rowId === 'random') openExhibitionRandom();
         } else if (sheetId === 'place') {
             if (type === 'dismiss') {
                 closePopup?.();
@@ -950,6 +983,13 @@ export default function MapUI(props) {
             return;
         }
         popupOpenedAtRef.current = window.performance.now();
+    }, [selectedPlaceKey]);
+
+    // 原生展会面板第一段时地图仍可点选：选中另一个地点就收起展会面板，让地点卡片出现
+    const exhibitionOpenRef = useRef(exhibitionOpen);
+    exhibitionOpenRef.current = exhibitionOpen;
+    useEffect(() => {
+        if (selectedPlaceKey && exhibitionOpenRef.current) onCloseExhibition?.();
     }, [selectedPlaceKey]);
 
     const handlePopupButtonClickCapture = (event) => {
@@ -1707,8 +1747,17 @@ export default function MapUI(props) {
                 onSelectPlace={onSelectAlongRoutePlace}
             />
 
+            {!pickerMode && <ExhibitionPanel
+                open={exhibitionOpen && !nativeChrome}
+                exhibition={exhibition}
+                backendUrl={backendUrl}
+                onClose={() => onCloseExhibition?.()}
+                onRandomNearby={openExhibitionRandom}
+            />}
+
             {!pickerMode && <RandomFoodPanel
                 open={randomFoodOpen}
+                origin={randomFoodOrigin}
                 feedback={feedback}
                 mapRef={mapRef} backendUrl={backendUrl} isNarrow={isNarrow}
                 token={isAuthenticated ? token : null}
@@ -1750,7 +1799,7 @@ export default function MapUI(props) {
 
             {!hideNonSearchButtons && pickerMode && !iosApp && (
                 <div ref={dinnerBtnRef} style={{ position: "absolute", left: 16, bottom: isNarrow ? 68 : 12, zIndex: 2000 }}>
-                    <Tooltip text={isPosterPicker ? t('map:ui.picker.backToPoster') : pickerContext === 'manage' ? t('map:manage.backToEdit') : pickerContext === 'journey' ? t('map:ui.picker.backToDiary') : t('map:ui.picker.backToDinner')} placement="top">
+                    <Tooltip text={isPosterPicker ? t('map:ui.picker.backToPoster') : pickerContext === 'manage' ? t('map:manage.backToEdit') : pickerContext === 'journey' ? t('map:ui.picker.backToDiary') : pickerContext === 'exhibition' ? t('map:ui.picker.backToExhibition') : t('map:ui.picker.backToDinner')} placement="top">
                         <div style={{ display: "inline-block" }}>
                             <Button
                                 onClick={onPickerClose}

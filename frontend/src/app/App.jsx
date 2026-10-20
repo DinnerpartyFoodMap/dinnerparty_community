@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import MapView from "../map/MapView";
-import MapExhibition from "../map/MapExhibition";
+import MapExhibition, { useCurrentExhibition } from "../map/MapExhibition";
 import AdminDashboard from "../admin/AdminDashboard";
 import Settings from "../settings/Settings";
 import { supportsNativeSettings } from "../settings/useNativeSettings";
@@ -518,6 +518,13 @@ export default function App() {
     const showPosterExport = pathname === '/posters/new';
     const showMapPage = !showAdminPage && !showSettingsAny && !showAnyDinnerPage && !showPosterExport;
     const siteNoticeVisible = !!(siteNotice && String(siteNotice.id) !== String(dismissedNoticeId || ''));
+    // 展会：入口在这里（避让公告），面板由地图渲染（iOS 原生控件接管时为原生面板，随机美食以展会地点为中心）
+    const exhibition = useCurrentExhibition(BACKEND_URL, showMapPage);
+    const [exhibitionOpen, setExhibitionOpen] = useState(false);
+    const closeExhibition = useCallback(() => setExhibitionOpen(false), []);
+    useEffect(() => {
+        if (!exhibition || !showMapPage) setExhibitionOpen(false);
+    }, [exhibition, showMapPage]);
 
     useLayoutEffect(() => {
         if (typeof window === 'undefined') return;
@@ -854,8 +861,8 @@ export default function App() {
                                 <div style={{ whiteSpace: 'pre-wrap' }}>{siteNotice.content}</div>
                             </Notice>
                         )}
-                        {showMapPage && <MapExhibition backendUrl={BACKEND_URL} noticeRef={siteNoticeRef}
-                            noticeVisible={siteNoticeVisible} noticeTop={noticeLayout.top + 55} />}
+                        {showMapPage && <MapExhibition exhibition={exhibition} open={exhibitionOpen} onOpen={() => setExhibitionOpen(true)}
+                            backendUrl={BACKEND_URL} noticeRef={siteNoticeRef} noticeVisible={siteNoticeVisible} noticeTop={noticeLayout.top + 55} />}
                         <div style={{ display: mapHidden ? 'none' : 'block', width: '100%', height: '100%' }} aria-hidden={showMapPage ? undefined : true} inert={showMapPage ? undefined : 'true'}>
                             <MapView
                                 backendUrl={BACKEND_URL}
@@ -883,6 +890,9 @@ export default function App() {
                                 onLogout={handleLogout}
                                 desktopHeaderMenu={desktopHeaderMenu}
                                 randomFoodRequestId={randomFoodRequestId}
+                                exhibition={exhibition}
+                                exhibitionOpen={exhibitionOpen}
+                                onCloseExhibition={closeExhibition}
                                 mapPageActive={showMapPage}
                             />
                         </div>

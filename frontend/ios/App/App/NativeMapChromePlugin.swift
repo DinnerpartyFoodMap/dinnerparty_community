@@ -2,13 +2,14 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 6）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 7）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
 /// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer }) -> { appliedRevision }
 ///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
 ///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, caption?,
+///                   image?: https, paragraphs?: [{ id, title?, text }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }] }
 ///   drawer: null | { sections: [section] }
 ///   row: { id, title, subtitle?, symbol?, tone?, disabled?, keepsOpen?, expands? }
@@ -27,6 +28,7 @@ import Capacitor
 /// - v5：地点卡片也改为系统 sheet：地图保持可操作，操作按钮（keepsOpen）不收起面板，网页浮层打开期间面板暂时让位。
 /// - v6：去掉“更多”按钮，改为工具栏上滑展开（drawer）；地点卡片改为两段停靠（摘要 / 上滑全屏详情），
 ///   左上角收藏圆钮、等宽操作按钮、正文与图片；面板改由 UIKit 呈现，宿主被系统界面（分享等）占用时等待而不是顶掉它。
+/// - v7：展会面板（exhibition）也是两段停靠的卡片：标题左侧图标（image）、分段正文（paragraphs）、“展会附近随机美食”操作。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -46,9 +48,9 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 6
+    static let protocolVersion = 7
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "add", "search", "alongRoute", "account", "locate"]
-    static let allowedSheets: Set<String> = ["account", "favorites", "place"]
+    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition"]
     /// 单个面板最多的行数（收藏列表）
     static let sheetRowLimit = 300
     /// 心跳超时（秒）；网页每 1.5 秒发一次
@@ -342,6 +344,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             leading: parseRows(leadingRaw, budget: &leadingBudget).first,
             detail: clip(raw["detail"], 2000),
             caption: clip(raw["caption"], 200),
+            image: httpsURL(raw["image"]),
+            paragraphs: parseParagraphs(raw["paragraphs"]),
             actions: parseRows(raw["actions"], budget: &actionBudget),
             sections: sections,
             gallery: parseGallery(raw["gallery"])
@@ -389,6 +393,21 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             ))
         }
         return rows
+    }
+
+    /// 分段正文：最多 4 段，标题 40 字、正文 2000 字；空正文丢弃
+    private static func parseParagraphs(_ raw: JSValue?) -> [MapChromeSheetParagraph] {
+        var paragraphs: [MapChromeSheetParagraph] = []
+        for (index, rawParagraph) in ((raw as? JSArray) ?? []).compactMap({ $0 as? JSObject }).enumerated() {
+            guard paragraphs.count < 4,
+                  let text = clip(rawParagraph["text"], 2000)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { continue }
+            paragraphs.append(MapChromeSheetParagraph(
+                id: clip(rawParagraph["id"], 32) ?? "paragraph-\(index)",
+                title: clip(rawParagraph["title"], 40),
+                text: text
+            ))
+        }
+        return paragraphs
     }
 
     /// 图片只接受 https（App 内网页资源均为公网 HTTPS），每组最多 12 张、最多 4 组。

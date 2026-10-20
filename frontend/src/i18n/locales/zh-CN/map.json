@@ -2,7 +2,11 @@
   "exhibition": {
     "open": "查看展会：{{name}}",
     "description": "展会简介",
-    "information": "展会信息"
+    "information": "展会信息",
+    "subtitle": "展会",
+    "location": "展会地点",
+    "randomNearby": "展会附近随机美食",
+    "randomHint": "以展会地点为中心，在 5km 内随机挑一家。"
   },
   "category": {
     "placeholder": "搜索或输入新分类",
@@ -298,7 +302,8 @@
       "useCenter": "选图钉位置",
       "backToPoster": "返回海报生成",
       "backToDiary": "返回日记",
-      "backToDinner": "返回聚餐创建"
+      "backToDinner": "返回聚餐创建",
+      "backToExhibition": "返回展会设置"
     },
     "searchPlaceholder": "搜店名，或说说现在想吃什么",
     "locateTooltip": "定位/我的位置",
@@ -368,9 +373,11 @@
     "loadFailed": "随机推荐加载失败，请稍后重试",
     "close": "关闭随机美食",
     "intro": "从本轮地图中心 5km 内，为你挑一家。",
+    "introOrigin": "以「{{name}}」为中心，在 5km 内为你挑一家。",
     "picking": "正在挑选附近的美食…",
     "personalized": "已参考你的收藏、导航和分享偏好，也留一点机会尝鲜。",
     "meta": "{{category}} · 距本轮中心 {{distance}}",
+    "metaOrigin": "{{category}} · 距「{{name}}」{{distance}}",
     "meters": "{{distance}} 米",
     "kilometers": "{{distance}} 公里",
     "candidates": "附近有 {{candidateCount}} 家可选，换一家会避开最近两次推荐。",

@@ -117,6 +117,7 @@ const COMMAND_ALIASES = {
     确认提交: 'confirm', 确认: 'confirm',
     取消: 'cancel',
     查询: 'search', 搜索: 'search', search: 'search', find: 'search',
+    随机中心: 'random_center', 设置随机中心: 'random_center',
     随机: 'random', 随机地点: 'random', 随机推荐: 'random', 随机美食: 'random', 吃什么: 'random', 今天吃什么: 'random',
     roll: 'random', rand: 'random', random: 'random'
 };

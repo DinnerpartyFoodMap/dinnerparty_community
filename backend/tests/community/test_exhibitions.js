@@ -44,7 +44,9 @@ async function main() {
         assert.equal((await request('/admin/exhibitions/current', 'DELETE', null, level)).status, status);
     }
     for (const bad of [{ name: ' ' }, { description: '' }, { information: '' }, { name: 'x'.repeat(81) },
-        { icon_url: 'javascript:alert(1)' }, { icon_url: '//evil.test/icon.png' }, { icon_url: '/not-an-upload.png' }]) {
+        { icon_url: 'javascript:alert(1)' }, { icon_url: '//evil.test/icon.png' }, { icon_url: '/not-an-upload.png' },
+        { latitude: 23.1 }, { longitude: 113.3 }, { latitude: 91, longitude: 113 }, { latitude: 23, longitude: 181 },
+        { latitude: 0, longitude: 0 }, { latitude: 'abc', longitude: 113 }, { location_name: 'x'.repeat(81) }]) {
         assert.equal((await request('/admin/exhibitions', 'POST', { ...publication, ...bad }, 'YUYUKO')).status, 400);
     }
     assert.equal((await request('/admin/exhibitions', 'POST', publication, 'YUYUKO')).status, 200);
@@ -53,12 +55,21 @@ async function main() {
     assert.equal(first.description, publication.description);
     assert.equal(first.information, publication.information);
     assert.equal(first.icon_url, '');
+    assert.equal(first.location_name, '');
+    assert.equal(first.latitude, null, '展会地点选填');
+    assert.equal(first.longitude, null);
     assert.equal((await request('/admin/exhibitions/current', 'GET', null, 'YOUMU')).body.exhibition.id, first.id);
     assert.equal((await request('/admin/exhibitions', 'POST', { ...publication, name: '新展会', icon_url: '/uploads/exhibition.png' }, 'YOUMU')).status, 200);
     init();
     assert.equal((await request('/exhibitions/current')).body.exhibition.name, '新展会');
+    const located = { ...publication, name: '带地点的展会', location_name: '  保利世贸博览馆  ', latitude: '23.0961', longitude: 113.3653 };
+    assert.equal((await request('/admin/exhibitions', 'POST', located, 'YOUMU')).status, 200);
+    const venue = (await request('/exhibitions/current')).body.exhibition;
+    assert.deepEqual([venue.location_name, venue.latitude, venue.longitude], ['保利世贸博览馆', 23.0961, 113.3653]);
+    assert.equal((await request('/admin/exhibitions', 'POST', { ...publication, name: '新展会', icon_url: '/uploads/exhibition.png', latitude: '', longitude: null }, 'YOUMU')).status, 200);
+    assert.equal((await request('/exhibitions/current')).body.exhibition.latitude, null, '清空地点');
     assert.equal(db._raw.prepare('SELECT COUNT(*) AS n FROM SiteExhibition WHERE is_active = 1').get().n, 1);
-    assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM AdminAudit WHERE action = 'publish-exhibition'").get().n, 2);
+    assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM AdminAudit WHERE action = 'publish-exhibition'").get().n, 4);
     // An audit write failure must roll back replacement of the current publication.
     db._raw.exec("CREATE TRIGGER fail_exhibition_audit BEFORE INSERT ON AdminAudit BEGIN SELECT RAISE(ABORT, 'test failure'); END");
     assert.equal((await request('/admin/exhibitions', 'POST', publication, 'YUYUKO')).status, 500);
