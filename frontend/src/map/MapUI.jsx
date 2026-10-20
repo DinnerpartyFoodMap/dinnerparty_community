@@ -1945,6 +1945,7 @@ export default function MapUI(props) {
                                             onClick={handleToggleAddMode}
                                             disabled={!mapReady || authPending}
                                             aria-label={addPlaceTipText}
+                                            aria-pressed={addMode}
                                             style={{
                                                 width: 44,
                                                 height: 44,
@@ -1962,7 +1963,7 @@ export default function MapUI(props) {
                                                 opacity: (!mapReady || authPending) ? 0.6 : 1
                                             }}
                                         >
-                                            <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 36, transform: addMode ? 'rotate(-45deg)' : 'rotate(0deg)', transition: 'transform 220ms ease' }}>add</span>
+                                            <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 28 }}>{addMode ? 'close' : 'add_location_alt'}</span>
                                         </Button>
                                     </div>
                                 </Tooltip>
@@ -2215,7 +2216,7 @@ export default function MapUI(props) {
                             aria-pressed={addMode}
                             style={{ ...mobileNavButtonStyle, color: addMode ? 'var(--color-danger)' : customThemeColor }}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: 27, transform: addMode ? 'rotate(-45deg)' : 'none', transition: 'transform 180ms ease' }}>add_circle</span>
+                            <span className="material-symbols-outlined" style={{ fontSize: 25 }}>{addMode ? 'close' : 'add_location_alt'}</span>
                             <span>{addMode ? t('map:ui.cancelAdd') : t('map:ui.add')}</span>
                         </Button>
                         {iosApp ? <Button

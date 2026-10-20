@@ -53,7 +53,7 @@ export function buildOnboardingSteps({ variant = 'desktop', isAuthenticated = fa
     return [
         step('welcome', 'waving_hand', t('map:onboarding.welcome.title'), t('map:onboarding.welcome.body')),
         step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body')),
-        step('add', 'add_circle', t('map:onboarding.add.title'), t('map:onboarding.add.body')),
+        step('add', 'add_location_alt', t('map:onboarding.add.title'), t('map:onboarding.add.body')),
         step('favorites', 'favorite', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body')),
         (variant === 'desktop' || variant === 'mobile') && step('alongRoute', 'route', t('map:onboarding.alongRoute.title'), t('map:onboarding.alongRoute.body')),
         (variant === 'desktop' || native) && step('journey', 'auto_stories', t('map:onboarding.journey.title'), t('map:onboarding.journey.body')),
