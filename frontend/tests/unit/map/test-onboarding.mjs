@@ -9,16 +9,15 @@ assert.equal(parseOnboardingSeen(JSON.stringify({ version: ONBOARDING_VERSION - 
 assert.equal(parseOnboardingSeen(null), false);
 assert.equal(parseOnboardingSeen('{broken'), false);
 
-// 步骤：各布局只介绍自己有的按钮
-const ids = (options) => buildOnboardingSteps(options).map((step) => step.id);
-assert.deepEqual(ids({ variant: 'desktop' }), ['welcome', 'search', 'add', 'favorites', 'alongRoute', 'journey', 'locate', 'more', 'account']);
-assert.deepEqual(ids({ variant: 'mobile' }), ['welcome', 'search', 'add', 'favorites', 'alongRoute', 'locate', 'more', 'account']);
-assert.deepEqual(ids({ variant: 'ios' }), ['welcome', 'search', 'add', 'favorites', 'locate', 'more', 'account'], 'iOS web toolbar keeps along-route in More');
-assert.deepEqual(ids({ variant: 'native' }), ['welcome', 'search', 'add', 'favorites', 'journey', 'locate', 'more', 'account']);
+// 步骤：各布局顺序相同；欢迎页和没有网页按钮的步骤（收在“更多”里、原生控件）居中显示
+const ORDER = ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'alongRoute', 'more', 'journey'];
+const centred = { desktop: ['welcome'], mobile: ['welcome', 'journey'], ios: ['welcome', 'alongRoute', 'journey'], native: ORDER };
 for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
-    for (const step of buildOnboardingSteps({ variant })) {
+    const steps = buildOnboardingSteps({ variant });
+    assert.deepEqual(steps.map((step) => step.id), ORDER, `${variant} order`);
+    for (const step of steps) {
         assert.ok(step.title && step.body && step.icon, `${variant}/${step.id} has copy and icon`);
-        assert.equal(step.target, variant === 'native' || step.id === 'welcome' ? null : step.id, `${variant}/${step.id} target`);
+        assert.equal(step.target, centred[variant].includes(step.id) ? null : step.id, `${variant}/${step.id} target`);
     }
 }
 const more = (variant) => buildOnboardingSteps({ variant }).find((step) => step.id === 'more').body;

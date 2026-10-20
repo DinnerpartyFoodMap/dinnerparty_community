@@ -39,11 +39,17 @@ export function rememberOnboardingSeen() {
  * - mobile：网页与安卓 App 的底部工具栏（更多、收藏、添加、顺路吃、入乡）与搜索框；
  * - ios：iOS App 的网页工具栏（顺路吃在“更多”里，搜索是工具栏按钮，头像在右上角）；
  * - native：iOS 原生玻璃控件，网页指不到原生按钮，只显示说明卡片（指引打开时原生控件按浮层规则收起）。
- * 返回的 target 是 data-tour 的取值；为 null 的步骤居中显示。
+ * 各布局步骤顺序相同；返回的 target 是 data-tour 的取值，欢迎页和没有网页按钮可指的步骤（收在“更多”里或原生控件）为 null，居中显示。
  */
+const NO_WEB_BUTTON = {
+    desktop: [],
+    mobile: ['journey'],
+    ios: ['alongRoute', 'journey']
+};
+
 export function buildOnboardingSteps({ variant = 'desktop', isAuthenticated = false } = {}) {
-    const native = variant === 'native';
-    const step = (id, icon, title, body) => ({ id, icon, title, body, target: native || id === 'welcome' ? null : id });
+    const hidden = NO_WEB_BUTTON[variant];
+    const step = (id, icon, title, body) => ({ id, icon, title, body, target: !hidden || id === 'welcome' || hidden.includes(id) ? null : id });
     const moreBody = {
         desktop: t('map:onboarding.more.bodyDesktop'),
         mobile: t('map:onboarding.more.bodyMobile'),
@@ -52,17 +58,17 @@ export function buildOnboardingSteps({ variant = 'desktop', isAuthenticated = fa
     }[variant] || t('map:onboarding.more.bodyDesktop');
     return [
         step('welcome', 'waving_hand', t('map:onboarding.welcome.title'), t('map:onboarding.welcome.body')),
-        step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body')),
-        step('add', 'add_location_alt', t('map:onboarding.add.title'), t('map:onboarding.add.body')),
-        step('favorites', 'favorite', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body')),
-        (variant === 'desktop' || variant === 'mobile') && step('alongRoute', 'route', t('map:onboarding.alongRoute.title'), t('map:onboarding.alongRoute.body')),
-        (variant === 'desktop' || native) && step('journey', 'auto_stories', t('map:onboarding.journey.title'), t('map:onboarding.journey.body')),
-        step('locate', 'my_location', t('map:onboarding.locate.title'), t('map:onboarding.locate.body')),
-        step('more', 'more_horiz', t('map:onboarding.more.title'), moreBody),
         isAuthenticated
             ? step('account', 'person', t('map:onboarding.account.title'), t('map:onboarding.account.body'))
-            : step('account', 'login', t('map:onboarding.account.loginTitle'), t('map:onboarding.account.loginBody'))
-    ].filter(Boolean);
+            : step('account', 'login', t('map:onboarding.account.loginTitle'), t('map:onboarding.account.loginBody')),
+        step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body')),
+        step('locate', 'my_location', t('map:onboarding.locate.title'), t('map:onboarding.locate.body')),
+        step('favorites', 'favorite', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body')),
+        step('add', 'add_location_alt', t('map:onboarding.add.title'), t('map:onboarding.add.body')),
+        step('alongRoute', 'route', t('map:onboarding.alongRoute.title'), t('map:onboarding.alongRoute.body')),
+        step('more', 'more_horiz', t('map:onboarding.more.title'), moreBody),
+        step('journey', 'auto_stories', t('map:onboarding.journey.title'), t('map:onboarding.journey.body'))
+    ];
 }
 
 /** 页面里第一个看得见的 data-tour 目标（同一按钮可能有桌面与窄屏两份，只有一份显示）。 */
