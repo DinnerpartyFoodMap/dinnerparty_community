@@ -1,8 +1,10 @@
 // iOS 原生地图控件（SwiftUI Liquid Glass）的网页端会话。只在 iOS App 内、插件可用且系统为 iOS 26+ 时启用；
 // 其余情况网页始终使用自己的工具栏。协议见 ios/App/App/NativeMapChromePlugin.swift。
 //
-// 控件所有权握手：初始显示 Web 工具栏 → capabilities / attach / 首个状态 / 首个布局全部成功
-// → 网页隐藏自己的工具栏 → resume 显示原生控件。任何时刻只有一组可交互、在读屏树中可见。
+// 控件所有权握手：capabilities / attach / 首个状态 / 首个布局全部成功 → 网页隐藏自己的工具栏 → resume 显示原生控件。
+// 任何时刻只有一组可交互、在读屏树中可见。上次握手接管过的设备（expectNativeMapChrome）在握手期间先不显示 Web 工具栏，
+// 避免启动时先闪一下网页工具栏再换成原生控件；不支持的设备照常立即显示 Web 工具栏。
+// 地图页被其他页面盖住时只收起原生控件（setPageHidden），会话保留，回到地图页直接恢复而不重新握手。
 // 运行中故障：先确认原生已隐藏（dispose 回执，或等待原生自身的健康超时）再恢复 Web，绝不仅凭超时同时启用两组。
 
 import { getPlatform, isPluginAvailable } from './env.js';
@@ -74,6 +76,19 @@ export function getNativeChromeStatus() {
 export function subscribeNativeChromeStatus(fn) {
     statusListeners.add(fn);
     return () => statusListeners.delete(fn);
+}
+
+// ---- 上次握手的明确结果（native / unsupported），记在本机供下次启动预判 ----
+const OUTCOME_STORAGE_KEY = 'foodmap.nativeChrome.outcome';
+
+function rememberOutcome(outcome) {
+    try { window.localStorage.setItem(OUTCOME_STORAGE_KEY, outcome); } catch (e) { /* ignore */ }
+}
+
+/** 握手是否预计会由原生接管：没有记录时按会接管处理（不支持的设备只在第一次启动多等一次能力查询）。 */
+export function expectNativeMapChrome() {
+    if (chromeStatus.state === 'unsupported') return false;
+    try { return window.localStorage.getItem(OUTCOME_STORAGE_KEY) !== 'unsupported'; } catch (e) { return true; }
 }
 
 function describeError(step, error) {
@@ -289,6 +304,7 @@ export class NativeMapChromeSession {
         this.revision = 0;
         this.snapshot = null;
         this.suspended = false;
+        this.pageHidden = false;
         this.active = false;
         this.stopped = false;
         this.listeners = [];
@@ -329,6 +345,7 @@ export class NativeMapChromeSession {
                     ? t('platform:nativeMapChrome.protocolMismatch', { protocolVersion: caps.protocolVersion, NATIVE_CHROME_PROTOCOL })
                     : t('platform:nativeMapChrome.glassUnsupported', { systemVersion: caps.systemVersion ? t('platform:nativeMapChrome.systemVersion', { systemVersion: caps.systemVersion }) : '' });
                 setStatus({ state: 'unsupported', reason });
+                rememberOutcome('unsupported');
                 return false;
             }
             if (this.stopped) return false;
@@ -354,6 +371,7 @@ export class NativeMapChromeSession {
             // 网页先隐藏自己的工具栏；React 提交后由 activate() 显示原生控件
             this._setMode('native');
             setStatus({ state: 'native', reason: '', retrying: false });
+            rememberOutcome('native');
             clearTimeout(this.stableTimer);
             this.stableTimer = setTimeout(() => { this.failures = 0; }, STABLE_RESET_MS);
             return true;
@@ -371,6 +389,12 @@ export class NativeMapChromeSession {
         this.active = true;
         this.suspended = null;
         await this._syncSuspension(getOverlayEntries(), true);
+    }
+
+    /** 地图页被其他页面（设置、管理等）盖住：收起原生控件但保留会话，回到地图页时直接恢复。 */
+    setPageHidden(hidden) {
+        this.pageHidden = !!hidden;
+        this._syncSuspension(getOverlayEntries());
     }
 
     update(snapshot) {
@@ -478,7 +502,8 @@ export class NativeMapChromeSession {
         }
         // 等 React 提交与浮层登记完成，再判断是否真的打开了浮层
         await nextFrames();
-        const overlayOpened = hasNativeSuspendingOverlay(getOverlayEntries());
+        // 动作切到了其他页面（地图页被盖住）也算：原生保持收起
+        const overlayOpened = this.pageHidden || hasNativeSuspendingOverlay(getOverlayEntries());
         if (overlayOpened) this.suspended = true;
         try {
             await withTimeout(this.plugin.ackAction({ sessionId: this.sessionId, eventId: event.eventId, outcome, overlayOpened, revision: this.revision }), CALL_TIMEOUT_MS);
@@ -544,7 +569,7 @@ export class NativeMapChromeSession {
 
     async _syncSuspension(list, force = false) {
         if (this.mode !== 'native' || !this.active || !this.sessionId) return;
-        const want = hasNativeSuspendingOverlay(list);
+        const want = this.pageHidden || hasNativeSuspendingOverlay(list);
         if (!force && want === this.suspended) return;
         this.suspended = want;
         try {

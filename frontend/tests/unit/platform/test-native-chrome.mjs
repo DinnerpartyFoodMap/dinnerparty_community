@@ -442,4 +442,70 @@ for (const options of [{ glass: false }, { protocol: 1 }, { protocol: 2 }, { pro
     await s2.stop();
 }
 
+// ---- 地图页被盖住：只收起原生控件、会话保留，回到地图页直接恢复（不重新握手） ----
+{
+    const plugin = new FakePlugin();
+    const { session, modes } = makeSession(plugin);
+    session.setPageHidden(true); // 例如启动时停在设置页：握手照常进行
+    assert.equal(await session.start({ items }), true);
+    await session.activate();
+    assert.equal(plugin.state.suspended, true, '地图页被盖住时接管后保持收起');
+    session.setPageHidden(false);
+    await tick(5);
+    assert.equal(plugin.state.suspended, false);
+    assert.equal(plugin.state.visible, true);
+
+    session.setPageHidden(true);
+    await tick(5);
+    assert.equal(plugin.state.suspended, true);
+    assert.equal(plugin.state.session !== null, true, '会话保留');
+    // 盖住期间浮层开合不会让原生控件露出来
+    const overlay = registerOverlay({ kind: 'panel', onClose: () => { } });
+    await tick(5);
+    overlay.unregister();
+    await tick(5);
+    assert.equal(plugin.state.suspended, true);
+    session.setPageHidden(false);
+    await tick(5);
+    assert.equal(plugin.state.suspended, false);
+    assert.equal(plugin.calls.filter((c) => c === 'attach').length, 1, '回到地图页不重新握手');
+    assert.deepEqual(modes, ['native']);
+
+    // 原生按钮动作切到了其他页面：回执按“已被盖住”处理，原生保持收起
+    session.onAction = () => { session.setPageHidden(true); return true; };
+    plugin.tap('account', 'page-1');
+    await tick(30);
+    assert.equal(plugin.acks.at(-1).eventId, 'page-1');
+    assert.equal(plugin.acks.at(-1).overlayOpened, true);
+    assert.equal(plugin.state.suspended, true);
+    await session.stop();
+}
+
+// ---- 记住上次握手结果：接管过 → 下次握手期间先不显示网页工具栏；不支持 → 立即显示网页工具栏 ----
+{
+    const store = new Map();
+    globalThis.window = { localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) } };
+    const { expectNativeMapChrome } = await import("../../../src/platform/nativeMapChrome.js");
+    const old = makeSession(new FakePlugin({ glass: false }));
+    assert.equal(await old.session.start({ items }), false);
+    assert.equal(expectNativeMapChrome(), false, '不支持的设备不等待握手');
+    await old.session.stop();
+
+    const ok = makeSession(new FakePlugin());
+    assert.equal(await ok.session.start({ items }), true);
+    assert.equal(expectNativeMapChrome(), true);
+    await ok.session.stop();
+
+    // 超时等临时故障不改写记录
+    const flaky = makeSession(new FakePlugin({ noLayout: true }));
+    assert.equal(await flaky.session.start({ items }), false);
+    assert.equal(expectNativeMapChrome(), true);
+    await flaky.session.stop();
+
+    // 读不到存储（隐私模式等）：按会接管处理
+    globalThis.window = { get localStorage() { throw new Error('denied'); } };
+    assert.equal(expectNativeMapChrome(), true);
+    delete globalThis.window;
+}
+
 console.log('native chrome tests passed');

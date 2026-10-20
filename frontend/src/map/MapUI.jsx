@@ -907,8 +907,10 @@ export default function MapUI(props) {
         }
     };
 
+    // 非选点器的 MapView 只有 App 常驻的主地图：它持有原生会话，地图页被其他页面盖住时只收起原生控件
     const chrome = useMapChrome({
-        enabled: chromeOwner && layout.sheet && !pickerMode,
+        enabled: layout.sheet && !pickerMode,
+        visible: chromeOwner,
         items: chromeItems,
         theme: { primary: customThemeColor, onPrimary: pickContrastTextColor(customThemeColor), dark },
         floatingGap: 14,
@@ -932,6 +934,8 @@ export default function MapUI(props) {
     });
     // 原生控件接管后：网页工具栏、定位按钮与输入框不再渲染（也从读屏树中移除），网页只保留原生输入框上方的搜索结果
     const nativeChrome = chrome.mode === 'native';
+    // 网页工具栏、定位按钮、头像与底部输入框：原生接管后不渲染；预计会接管、首次握手还没结果时也先不渲染
+    const webChromeHidden = nativeChrome || chrome.holdWeb;
 
     // 指引按当前布局介绍按钮：原生控件握手中先不弹出，免得指向随后被替换的网页工具栏
     const onboardingVariant = nativeChrome ? 'native' : (isNarrow ? (iosApp ? 'ios' : 'mobile') : 'desktop');
@@ -1608,7 +1612,7 @@ export default function MapUI(props) {
                 </div>
             );
         }
-        if (!searchExpanded) return null;
+        if (!searchExpanded || chrome.holdWeb) return null;
         const editing = webSearchEditing;
         return (
             <div data-map-search-bar data-map-occluder="" className="fm-compact-search" style={{ position: 'absolute', zIndex: 2050, left: 12, right: 76, bottom: aboveBottomInset(4), height: 60 }}>
@@ -1856,7 +1860,7 @@ export default function MapUI(props) {
                 onClose={closeOnboarding}
             />}
 
-            {!hideNonSearchButtons && isNarrow && !pickerMode && !nativeChrome && !(compactSearch && searchExpanded) && (
+            {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
                 <div style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(compactSearch ? 78 : 130), zIndex: 2000 }}>
                     <Tooltip text={locating ? t('map:ui.locating') : t('map:ui.locateTooltip')} placement="top">
                         <div style={{ display: 'inline-block' }}>
@@ -2197,7 +2201,7 @@ export default function MapUI(props) {
                         </div>
                     </ResponsivePanel>
 
-                    {!nativeChrome && !(compactSearch && searchExpanded) && <nav
+                    {!webChromeHidden && !(compactSearch && searchExpanded) && <nav
                         className="fm-map-toolbar"
                         aria-label={t('map:ui.mainActions')}
                         data-hide-when-keyboard=""
@@ -2284,7 +2288,7 @@ export default function MapUI(props) {
                             </span>
                         </Button>}
                     </nav>}
-                    {iosApp && !nativeChrome && compactSearch && searchExpanded && webSearchEditing && <button
+                    {iosApp && !webChromeHidden && compactSearch && searchExpanded && webSearchEditing && <button
                         type="button"
                         className="fm-map-account fm-map-account--close fm-pressable"
                         data-map-occluder=""
@@ -2294,7 +2298,7 @@ export default function MapUI(props) {
                     >
                         <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>}
-                    {iosApp && !nativeChrome && !(compactSearch && searchExpanded && webSearchEditing) && <button
+                    {iosApp && !webChromeHidden && !(compactSearch && searchExpanded && webSearchEditing) && <button
                         type="button"
                         className="fm-map-account fm-pressable"
                         data-map-occluder=""
