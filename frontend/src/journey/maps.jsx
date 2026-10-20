@@ -6,6 +6,8 @@ import {OverseasTileLayer} from '../map/overseasTileLayer';
 import {getCurrentLocation,describeLocationError} from '../platform/geolocation';
 import {centerLabel} from './shared';
 import { t, tx } from '../i18n/index.js';
+import { searchExternalPlaces } from '../discovery/externalSearch.js';
+import { useExternalSearch } from '../discovery/hooks/useExternalSearch.js';
 
 // 日记里的地图能力：搜索中心选择与行程预览；地图选点使用与地图首页相同的全屏选点器（ctx.pickOnMap）。所有坐标均为 GCJ-02（与高德地图一致），
 // 设备定位已在 platform/geolocation 中统一转换，这里不再二次转换。
@@ -36,21 +38,10 @@ export async function reverseGeocode(lng,lat,base) {
     }catch{/* 无法反查时保留坐标 */}
     return {name:'',city:'',address:''};
 }
-/** 按名称搜索城市、地址或地点（高德地点搜索，经安全代理）。 */
-export async function searchAddress(keyword,city) {
-    const AMap=await timeout(loadAmap(),6000);
-    return timeout(new Promise((resolve,reject)=>AMap.plugin('AMap.PlaceSearch',()=>{
-        try{
-            new AMap.PlaceSearch({pageSize:10,pageIndex:1,city:city||'全国',citylimit:false}).search(keyword,(status,result)=>{
-                if(status==='no_data')return resolve([]);
-                if(status!=='complete')return reject(new Error(t('journey:maps.searchFailed')));
-                resolve((result.poiList?.pois||[]).map(p=>{
-                    const lng=Number(p.location?.lng??p.location?.getLng?.()),lat=Number(p.location?.lat??p.location?.getLat?.());
-                    return Number.isFinite(lng)&&Number.isFinite(lat)?{id:p.id,name:p.name,address:p.address&&typeof p.address==='string'?p.address:`${p.pname||''}${p.cityname||''}${p.adname||''}`,city:p.cityname||p.pname||'',lng,lat}:null;
-                }).filter(Boolean));
-            });
-        }catch(e){reject(e);}
-    })),10000);
+/** Explicit city/address search shares the server-side search budget. */
+export async function searchAddress(keyword,city,base=getRuntimeConfig().apiBaseUrl) {
+    const places=await searchExternalPlaces(base,{q:keyword,city,source:'journey_address'});
+    return places.map(p=>({...p,lng:p.longitude,lat:p.latitude}));
 }
 
 /** 内嵌地图：独立实例，与主地图的标记层互不影响；卸载时销毁。 */
@@ -76,8 +67,11 @@ function useEmbeddedMap(ref,{center,zoom=15,onReady}) {
  * 搜索中心：当前位置 / 搜索城市或地址 / 地图选点 / 暂不设置。选定后作为本次固定上下文，浏览底图不会改变它。
  */
 export function LocationPicker({open,value,base,mapRef,pickOnMap,onChange,onClose}) {
-    const [query,setQuery]=useState(''),[results,setResults]=useState(null),[busy,setBusy]=useState(''),[error,setError]=useState('');
-    useEffect(()=>{if(open){setError('');setResults(null);}},[open]);
+    const [query,setQuery]=useState(''),[busy,setBusy]=useState(''),[error,setError]=useState('');
+    const addressSearch=useExternalSearch(query,`${open}:${value?.city||''}`,base);
+    const results=addressSearch.loaded?addressSearch.results.map(p=>({...p,lng:p.longitude,lat:p.latitude})):null;
+    const working=!!busy||addressSearch.loading;
+    useEffect(()=>{if(open)setError('');},[open]);
     const locate=async()=>{
         setBusy('locate');setError('');
         try{
@@ -87,13 +81,11 @@ export function LocationPicker({open,value,base,mapRef,pickOnMap,onChange,onClos
         }catch(e){setError(t('journey:maps.locateFailed', { reason: describeLocationError(e) }));}
         finally{setBusy('');}
     };
-    const search=async e=>{
+    const search=e=>{
         e?.preventDefault();
-        if(!query.trim())return;
-        setBusy('search');setError('');
-        try{setResults(await searchAddress(query.trim(),value?.city));}
-        catch{setError(t('journey:maps.searchUnavailable'));setResults([]);}
-        finally{setBusy('');}
+        if(!query.trim()||working)return;
+        setError('');
+        void addressSearch.search({city:value?.city,source:'journey_address'});
     };
     // 全屏地图上选中的地点或图钉位置；城市只用于判断候选是否同城，读取不到时留空
     const pickFromMap=async()=>{
@@ -111,16 +103,16 @@ export function LocationPicker({open,value,base,mapRef,pickOnMap,onChange,onClos
             <div className="jw-stack jw-pad">
                 <p className="jw-muted">{t('journey:maps.hint')}</p>
                 {value&&<div className="jw-current-value"><span>{tx('journey:maps.current', { centerLabel: centerLabel(value) })}</span></div>}
-                <button type="button" className="jw-option" disabled={!!busy} onClick={locate}>{busy==='locate'?t('journey:maps.locating'):t('journey:maps.useCurrentLocation')}</button>
+                <button type="button" className="jw-option" disabled={working} onClick={locate}>{busy==='locate'?t('journey:maps.locating'):t('journey:maps.useCurrentLocation')}</button>
                 <form className="jw-search" onSubmit={search} role="search">
                     <input aria-label={t('journey:maps.searchLabel')} placeholder={t('journey:maps.searchPlaceholder')} value={query} maxLength={60} onChange={e=>setQuery(e.target.value)}/>
-                    <button type="submit" disabled={!!busy||!query.trim()}>{busy==='search'?t('journey:maps.searching'):t('common:action.search')}</button>
+                    <button type="submit" disabled={working||!query.trim()||addressSearch.loaded}>{addressSearch.loading?t('journey:maps.searching'):t('common:action.search')}</button>
                 </form>
                 {results&&(results.length?<ul className="jw-result-list" aria-label={t('journey:maps.resultsLabel')}>{results.map(r=><li key={r.id||`${r.lng},${r.lat}`}>
                     <button type="button" onClick={()=>onChange({name:r.name,city:r.city,lng:r.lng,lat:r.lat,source:'search'})}><strong>{r.name}</strong><small>{r.address}</small></button>
                 </li>)}</ul>:<p className="jw-muted">{t('journey:maps.noResults')}</p>)}
-                <button type="button" className="jw-option" disabled={!!busy} onClick={pickFromMap}>{busy==='map'?t('journey:maps.readingSelection'):t('journey:maps.pickOnMap')}</button>
-                {error&&<p className="jw-error-text" role="alert">{error}</p>}
+                <button type="button" className="jw-option" disabled={working} onClick={pickFromMap}>{busy==='map'?t('journey:maps.readingSelection'):t('journey:maps.pickOnMap')}</button>
+                {(error||addressSearch.error)&&<p className="jw-error-text" role="alert">{error||addressSearch.error}</p>}
                 <div className="jw-actions">
                     <button type="button" onClick={()=>onChange(null)}>{t('journey:maps.skip')}</button>
                     <button type="button" onClick={onClose}>{t('common:action.cancel')}</button>

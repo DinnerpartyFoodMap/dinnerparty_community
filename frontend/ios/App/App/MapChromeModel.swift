@@ -27,6 +27,8 @@ struct MapChromeItem: Identifiable, Equatable {
 struct MapChromeSearch: Equatable {
     var expanded = false
     var placeholder = "搜索"
+    var hint = "输入和回车搜索已收录地点。查找未收录地点请使用结果列表中的按钮。"
+    var busyLabel = "正在搜索"
     var busy = false
     var text = ""
     var textVersion = 0
@@ -358,6 +360,8 @@ final class MapChromeModel: ObservableObject {
     }
 
     func submitSearch() {
+        guard !search.busy, !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Only submit the local search. External POIs require the explicit Web result-list action.
         sendSearch("submit", ["text": searchText])
     }
 

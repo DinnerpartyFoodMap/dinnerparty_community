@@ -127,6 +127,8 @@ export function sanitizeSearch(search) {
     return {
         expanded: !!s.expanded,
         placeholder: String(s.placeholder || t('common:action.search')).slice(0, 40),
+        hint: String(s.hint || '').slice(0, 160),
+        busyLabel: String(s.busyLabel || '').slice(0, 60),
         busy: !!s.busy,
         text: String(s.text || '').slice(0, NATIVE_SEARCH_TEXT_LIMIT),
         textVersion: toCounter(s.textVersion),

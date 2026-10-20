@@ -160,7 +160,7 @@ function makeSession(plugin, extra = {}) {
 
 // ---- v3 原生搜索栏：状态清洗、随快照下发、输入事件只接受当前会话与白名单类型 ----
 {
-    assert.deepEqual(sanitizeSearch(undefined), { expanded: false, placeholder: '搜索', busy: false, text: '', textVersion: 0, focusToken: 0, focus: false });
+    assert.deepEqual(sanitizeSearch(undefined), { expanded: false, placeholder: '搜索', hint: '', busyLabel: '', busy: false, text: '', textVersion: 0, focusToken: 0, focus: false });
     const clean = sanitizeSearch({ expanded: 1, text: 'x'.repeat(300), textVersion: -3, focusToken: 2.5, placeholder: 'p'.repeat(80), token: 'secret' });
     assert.equal(clean.expanded, true);
     assert.equal(clean.text.length, 100);
@@ -176,7 +176,7 @@ function makeSession(plugin, extra = {}) {
         timing: { selfHideMs: 30, retryMs: 10000, handshakeMs: 200 },
         onAction: () => true, onModeChange: () => { }, onSearch: (event) => events.push(event)
     });
-    const search = { expanded: true, text: '火锅', textVersion: 3, focusToken: 1, focus: true, busy: false, placeholder: '搜店名' };
+    const search = { expanded: true, text: '火锅', textVersion: 3, focusToken: 1, focus: true, busy: false, placeholder: '搜店名', hint: '输入和回车搜索已收录地点', busyLabel: '查找未收录地点' };
     assert.equal(await session.start({ items, search }), true);
     await session.activate();
     assert.deepEqual(plugin.state.search, { ...search });

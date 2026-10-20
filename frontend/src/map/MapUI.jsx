@@ -10,6 +10,8 @@ import usePlaceRating from "../places/hooks/usePlaceRating";
 import { isAvoidedPlace, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace } from "../places/rating";
 import useDarkMode from "../theme/useDarkMode";
 import { useSearchPanel } from "../discovery/hooks/useSearchPanel";
+import { useExternalSearch } from '../discovery/hooks/useExternalSearch';
+import { currentMapCenter, unmarkedExternalPlaces } from '../discovery/externalSearch';
 import ScrollableView from "../components/layout/ScrollableView";
 import Notice from "../components/feedback/Notice";
 import { fetchFavorites } from "../api/client";
@@ -494,7 +496,9 @@ export default function MapUI(props) {
         action?.();
     };
 
-    // ---- 搜索输入：网页输入框与原生输入框共用 ----
+    const externalSearch = useExternalSearch(searchTerm, searchResetKey, backendUrl);
+
+    // ---- 搜索输入：网页输入框与原生输入框共用；输入及回车仅搜索已收录地点 ----
     const handleSearchInput = (value) => {
         feedback?.beginSearch();
         setSearchTerm(value);
@@ -511,10 +515,17 @@ export default function MapUI(props) {
         feedback?.beginSearch();
         feedback?.record('search', 'search');
         setSearchResultsVisible(true);
-        searchServer({ q: value, includeUnmarked: true, autoFit: false });
+        searchServer({ q: value, autoFit: false });
     };
 
     const requestNativeSearchFocus = (focus) => setNativeFocusRequest((prev) => ({ token: prev.token + 1, focus }));
+
+    const searchUnlistedPlaces = () => {
+        if (!mapReady || !searchTerm.trim()) return;
+        inputRef.current?.blur();
+        requestNativeSearchFocus(false);
+        void externalSearch.search({ center: currentMapCenter(mapRef), source: 'map_manual' });
+    };
 
     const openCompactSearch = () => {
         setSearchExpanded(true);
@@ -822,7 +833,9 @@ export default function MapUI(props) {
         search: compactSearch ? {
             expanded: searchExpanded,
             placeholder: t('map:ui.searchPlaceholderShort'),
-            busy: !!searching,
+            hint: t('map:ui.search.nativeHint'),
+            busyLabel: externalSearch.loading ? t('map:ui.search.externalLoading') : t('map:ui.search.loading'),
+            busy: !!searching || externalSearch.loading,
             text: searchTerm,
             textVersion: searchTextVersion,
             focusToken: nativeFocusRequest.token,
@@ -1424,7 +1437,7 @@ export default function MapUI(props) {
                         ? baseResults.filter((place) => !recommendedIds.has(String(place.id)))
                         : [];
                     const siteResults = visibleResults.filter((place) => place.isMarked !== false);
-                    const amapResults = visibleResults.filter((place) => place.isMarked === false);
+                    const amapResults = unmarkedExternalPlaces(externalSearch.results, [...(places || []), ...siteResults], currentMapCenter(mapRef));
                     if (!Array.isArray(baseResults) && spLoading) {
                         return <div style={{ padding: 12, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>{t('map:ui.search.loading')}</div>;
                     }
@@ -1432,7 +1445,7 @@ export default function MapUI(props) {
                         <>
                             {renderSpSection(t('map:ui.search.sitePlaces'), siteResults, false, null)}
                             {renderSpSection(t('map:ui.search.amapResults'), amapResults, false, null)}
-                            {!visibleResults.length && !aiThinking && aiRecommendations.length === 0 && !spLoading && (
+                            {!visibleResults.length && !amapResults.length && !aiThinking && aiRecommendations.length === 0 && !spLoading && (
                                 <div style={{ padding: 12, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>{t('map:ui.search.noResults')}</div>
                             )}
                             {!aiThinking && aiRecommendations.length === 0 && !Array.isArray(searchResults) && Array.isArray(spResults) && !spLoading && (
@@ -1440,6 +1453,17 @@ export default function MapUI(props) {
                                     {compactSearch ? t('map:ui.search.aiHintMobile') : t('map:ui.search.aiHint')}
                                 </div>
                             )}
+                            <div style={{ padding: '10px 12px 12px', borderTop: '1px solid var(--color-border)' }}>
+                                {externalSearch.error && <p role="alert" style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-secondary)' }}>{externalSearch.error}</p>}
+                                {externalSearch.loaded && !amapResults.length && <p role="status" style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-muted)' }}>{t('map:ui.search.externalEmpty')}</p>}
+                                <Button type="button" onClick={searchUnlistedPlaces}
+                                    disabled={!mapReady || externalSearch.loading || externalSearch.loaded}
+                                    aria-busy={externalSearch.loading}
+                                    style={{ width: '100%', textAlign: 'center', padding: '10px 12px', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                    {externalSearch.loading ? t('map:ui.search.externalLoading') : externalSearch.loaded ? t('map:ui.search.externalLoaded') : externalSearch.error ? t('map:ui.search.externalRetry') : t('map:ui.search.findUnlisted')}
+                                </Button>
+                                {!externalSearch.loaded && !externalSearch.loading && <p style={{ margin: '6px 0 0', textAlign: 'center', fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:ui.search.externalHint')}</p>}
+                            </div>
                         </>
                     );
                 })()}

@@ -281,7 +281,15 @@
       "exit": "退出搜索",
       "label": "搜索地点或想吃的美食",
       "searching": "正在搜索",
-      "clear": "清空搜索内容"
+      "clear": "清空搜索内容",
+      "findUnlisted": "没找到？查找未收录地点",
+      "externalHint": "输入具体店名或地址，查找后可添加到地图。",
+      "externalLoading": "正在查找未收录地点…",
+      "externalLoaded": "已查找未收录地点",
+      "externalRetry": "重试查找未收录地点",
+      "externalEmpty": "没有找到新的地点。可以补充分店名、地址，或直接在地图上选点。",
+      "externalUnavailable": "外部地点搜索暂时不可用，请稍后重试或在地图上选点。",
+      "nativeHint": "输入和回车搜索已收录地点。没找到时，可在结果列表中点击查找未收录地点。"
     },
     "picker": {
       "posterTitle": "正在选择海报地点 · 已选 {{count}} 个",

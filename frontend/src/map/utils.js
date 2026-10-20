@@ -1,5 +1,5 @@
-import { resolveResourceUrl } from "../platform/runtimeConfig";
-import { isLocationAvailable } from "../platform/geolocation";
+import { resolveResourceUrl } from "../platform/runtimeConfig.js";
+import { isLocationAvailable } from "../platform/geolocation.js";
 import { t } from '../i18n/index.js';
 
 export const DEFAULT_CENTER = [113.394405, 23.016485];

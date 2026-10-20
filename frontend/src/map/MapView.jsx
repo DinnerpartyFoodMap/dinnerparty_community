@@ -1018,7 +1018,7 @@ export default function MapView({
     };
 
     // 提交搜索时同时启动快速字面匹配与 AI 语义推荐；快速结果不会等待 AI。
-    const searchServer = async ({ q = "", center = undefined, bounds = undefined, limit = undefined, autoFit = true, includeUnmarked = true } = {}) => {
+    const searchServer = async ({ q = "", center = undefined, bounds = undefined, limit = undefined, autoFit = true } = {}) => {
         const query = String(q || '').trim();
         if (!query) return;
         const readMapPoint = (point) => {
@@ -1116,88 +1116,7 @@ export default function MapView({
                 return Number.isFinite(distanceKm) ? { ...place, dist: distanceKm * 1000 } : place;
             });
 
-            let unmarkedData = [];
-            if (includeUnmarked && window.AMap) {
-                unmarkedData = await new Promise(resolve => {
-                    window.AMap.plugin('AMap.PlaceSearch', () => {
-                        const ps = new window.AMap.PlaceSearch({
-                            pageSize: 20,
-                            pageIndex: 1
-                        });
-                        const cpoint = effectiveCenter
-                            ? [effectiveCenter.lng, effectiveCenter.lat]
-                            : (mapRef.current ? [mapRef.current.getCenter().lng, mapRef.current.getCenter().lat] : null);
-
-                        if (cpoint) {
-                            ps.searchNearBy(query, cpoint, 20000, (status, result) => {
-                                if (status === 'complete' && result.info === 'OK') {
-                                    resolve(result.poiList.pois || []);
-                                } else {
-                                    resolve([]);
-                                }
-                            });
-                        } else {
-                            ps.search(query, (status, result) => {
-                                if (status === 'complete' && result.info === 'OK') {
-                                    resolve(result.poiList.pois || []);
-                                } else {
-                                    resolve([]);
-                                }
-                            });
-                        }
-                    });
-                });
-            }
-            if (requestId !== searchRequestIdRef.current) return;
-
-            const processUnmarked = unmarkedData.map(p => {
-                const lng = p.location?.lng;
-                const lat = p.location?.lat;
-                if (!lng || !lat) return null;
-
-                const allKnown = [...(places || []), ...markedResults];
-                let isKnown = false;
-                if (window.AMap) {
-                    for (const kp of allKnown) {
-                        if (!kp.longitude || !kp.latitude) continue;
-                        const d = window.AMap.GeometryUtil.distance(
-                            new window.AMap.LngLat(lng, lat),
-                            new window.AMap.LngLat(kp.longitude, kp.latitude)
-                        );
-                        if (d < 50) {
-                            isKnown = true;
-                            break;
-                        }
-                    }
-                }
-                if (isKnown) return null;
-
-                const dist = effectiveCenter && window.AMap
-                    ? window.AMap.GeometryUtil.distance(
-                        new window.AMap.LngLat(effectiveCenter.lng, effectiveCenter.lat),
-                        new window.AMap.LngLat(lng, lat)
-                    )
-                    : null;
-
-                // 高德的空地址可能是 []，统一成字符串
-                const street = typeof p.address === 'string' ? p.address.trim() : '';
-                const amapCategory = MapUtils.categoryFromAmapType(p.type);
-                return {
-                    id: 'amap_' + p.id,
-                    name: p.name,
-                    longitude: lng,
-                    latitude: lat,
-                    address: street || `${p.pname || ''}${p.cityname || ''}${p.adname || ''}`,
-                    category: amapCategory || t('common:label.amapPlace'),
-                    // 收录为标记时预填的分类（“高德地点”只是展示用的占位）
-                    amapCategory,
-                    isMarked: false,
-                    showOnMap: false,
-                    ...(Number.isFinite(dist) ? { dist } : {})
-                };
-            }).filter(Boolean);
-
-            baseData = includeUnmarked ? [...markedResults, ...processUnmarked] : markedResults;
+            baseData = markedResults;
             fastSettled = true;
 
             publishResults(baseData, resolvedRecommendations);

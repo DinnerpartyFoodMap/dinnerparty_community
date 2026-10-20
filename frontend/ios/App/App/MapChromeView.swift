@@ -474,8 +474,9 @@ struct MapChromeView: View {
                 .matchedGeometryEffect(id: "searchIcon", in: morphNamespace)
                 .accessibilityHidden(true)
             TextField(text: searchText, prompt: Text(model.search.placeholder)) {
-                Text("搜索地点或想吃的美食")
+                Text(model.search.placeholder)
             }
+            .accessibilityHint(Text(model.search.hint))
             .focused($searchFocused)
             .submitLabel(.search)
             .textInputAutocapitalization(.never)
@@ -491,7 +492,7 @@ struct MapChromeView: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 36, height: 36)
-                    .accessibilityLabel(Text("正在搜索"))
+                    .accessibilityLabel(Text(model.search.busyLabel))
             } else if !model.searchText.isEmpty {
                 Button {
                     model.updateSearchText("")

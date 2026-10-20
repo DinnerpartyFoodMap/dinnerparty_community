@@ -312,6 +312,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         search.expanded = (raw["expanded"] as? Bool) ?? false
         search.placeholder = String(((raw["placeholder"] as? String) ?? "搜索").prefix(40))
         search.busy = (raw["busy"] as? Bool) ?? false
+        if let hint = raw["hint"] as? String, !hint.isEmpty { search.hint = String(hint.prefix(160)) }
+        if let label = raw["busyLabel"] as? String, !label.isEmpty { search.busyLabel = String(label.prefix(60)) }
         search.text = String(((raw["text"] as? String) ?? "").prefix(MapChromeModel.searchTextLimit))
         search.textVersion = (raw["textVersion"] as? Int) ?? 0
         search.focusToken = (raw["focusToken"] as? Int) ?? 0

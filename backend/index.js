@@ -198,7 +198,7 @@ function amapProxy(req, res) {
     req.pipe(upstreamReq);
 }
 
-app.use('/_AMapService', amapProxy);
+app.use('/_AMapService', require('./modules/maps/services/amapSearchBudget').createLegacySearchGuard(), amapProxy);
 
 app.use('/api/journeys', express.json({ limit: '256kb' }));
 app.use(express.json());

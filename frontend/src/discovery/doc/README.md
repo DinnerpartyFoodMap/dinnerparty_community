@@ -2,10 +2,12 @@
 
 hooks/useSearchPanel 控制搜索面板；components/RandomFoodPanel 与 AlongRoutePanel 管理推荐/顺路交互；alongRoute.js 处理高德路线输入等工具。普通关键词、AI、随机的服务端规则仍由后端决定。MapView/MapUI 继续持有部分搜索状态；api/client 提供请求函数。
 
+输入预览和回车只查询站内地点，回车保留 AI 推荐。网页和 iOS 原生输入共用这一规则；点击“没找到？查找未收录地点”才经后端查询高德。`useExternalSearch` 管理本次结果、错误、重复点击及过期响应；自有标记更新会刷新本地结果，但不会触发外部查询。额度与上线步骤见[外部搜索配置](../../../../backend/modules/maps/doc/search-budget.md)。
+
 ```mermaid
 flowchart TD
     Submit[提交查询与当时地图中心] --> Local[已有地点关键词请求]
-    Submit --> POI[地图 POI 补充路径]
+    Explicit[点击查找未收录地点] --> POI[后端计量的高德搜索]
     Local --> Result[保留服务端已有地点排序与距离]
     POI --> Result
     Result --> Select[选择结果 → 地图与地点卡片]
@@ -25,4 +27,4 @@ flowchart TD
 | 随机一轮固定中心和短历史 | 每次悄悄换中心会使“再换一家”含义改变 |
 | 取消与 controller 身份判断同时使用 | 单独 abort 不保证已完成或迟到回调不更新状态 |
 
-测试见 [TEST_CASES.md](TEST_CASES.md)。排序/随机算法由后端 test:search / test:random 验证；前端复杂搜索竞态和顺路面板覆盖仍需补充，见 DSC-F01 / DSC-F02 的 [清单](../../../doc/HISTORY_AND_TODO.md)。
+测试见 [TEST_CASES.md](TEST_CASES.md)。前端 `test:search` 覆盖显式外部查询状态和去重；后端 `tests/maps/test_amap_search_ui.js` 覆盖网页及模拟原生 iOS 输入、按钮调用和收录后刷新。排序/随机算法由后端 test:search / test:random 验证；完整本地/AI 搜索竞态和顺路面板覆盖仍需补充，见 DSC-F01 / DSC-F02 的 [清单](../../../doc/HISTORY_AND_TODO.md)。
