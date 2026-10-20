@@ -15,10 +15,12 @@ import { currentMapCenter, unmarkedExternalPlaces } from '../discovery/externalS
 import ScrollableView from "../components/layout/ScrollableView";
 import Notice from "../components/feedback/Notice";
 import { fetchFavorites } from "../api/client";
-import { pickContrastTextColor } from "../theme/theme";
+import { getThemeColor, pickContrastTextColor } from "../theme/theme";
 import defaultAvatar from '../img/default.png';
 import AlongRoutePanel from "../discovery/components/AlongRoutePanel";
 import { recordPlaceBehavior, sharePlaceContent, copyPlaceContent } from "../places/placeBehavior";
+import { buildShareCardModel } from "../places/shareCard";
+import useShareCard from "../places/hooks/useShareCard";
 import RandomFoodPanel from "../discovery/components/RandomFoodPanel";
 import { Exposure } from '../journey/feedback';
 import { usePlaceDiaryCount } from '../journey/PlaceDiaryList';
@@ -358,6 +360,27 @@ export default function MapUI(props) {
     const [favError, setFavError] = useState('');
     const [navPickerOpen, setNavPickerOpen] = useState(false);
     const [shareOpen, setShareOpen] = useState(false);
+    // 图片卡片：横竖版在预览里切换，生成一次后缓存同一地点的两版
+    const shareCard = useShareCard({ onRecord: recordSelectedPlaceBehavior, onTip: showTip });
+
+    const openShareCard = () => {
+        const place = selectedPlace;
+        if (!place) return;
+        const model = buildShareCardModel(place, {
+            title: t('map:ui.share.cardTitle'),
+            siteName: t('common:app.name'),
+            tagline: t('map:ui.share.cardTagline'),
+            metaText: place.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: place.per_person_cost }) : '',
+            ratingText: ratingSummary && ratingSummary.count > 0 ? summaryText(ratingSummary) : '',
+            scanHint: t('map:ui.share.cardScanHint'),
+            url: buildPlaceShareUrl(place),
+            mapServiceUrl: backendUrl ? `${String(backendUrl).replace(/\/+$/, '')}/api/amap/staticmap` : '',
+            fallbackName: t('common:label.unnamedPlace'),
+            fallbackCategory: t('common:label.uncategorized')
+        });
+        setShareOpen(false);
+        shareCard.start(model);
+    };
     const [alongRouteOpen, setAlongRouteOpen] = useState(false);
     const [randomFoodOpen, setRandomFoodOpen] = useState(false);
     // 随机美食的固定中心（展会地点）；null 表示按地图中心
@@ -2464,9 +2487,87 @@ export default function MapUI(props) {
                                 onClick={() => handleSharePlace('amap')}
                                 dark={dark}
                             />
+
+                            {/* 选项4: 生成以地图为中心的图片卡片 */}
+                            <ShareOptionButton
+                                icon="image"
+                                label={t('map:ui.share.cardOption')}
+                                description={t('map:ui.share.cardOptionHint')}
+                                onClick={openShareCard}
+                                dark={dark}
+                            />
                         </div>
                     </div>
                 )}
+            </ResponsivePanel>
+
+            <ResponsivePanel
+                open={shareCard.visible}
+                onClose={shareCard.close}
+                title={t('map:ui.share.cardPanelTitle')}
+                kind="share-card"
+                desktop="center"
+                mobile="center"
+                width="min(440px, 92vw)"
+            >
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        {[
+                            ['portrait', t('map:ui.share.cardPortrait')],
+                            ['landscape', t('map:ui.share.cardLandscape')]
+                        ].map(([key, label]) => {
+                            const active = shareCard.orientation === key;
+                            return (
+                                <div key={key} style={{ flex: 1 }}>
+                                    <Button
+                                        full
+                                        onClick={() => shareCard.switchTo(key)}
+                                        disabled={shareCard.busy}
+                                        aria-pressed={active}
+                                        style={{
+                                            background: active ? 'var(--theme-primary)' : 'transparent',
+                                            color: active ? pickContrastTextColor(getThemeColor()) : 'var(--color-text-primary)',
+                                            border: '1px solid var(--color-border)'
+                                        }}
+                                    >
+                                        {label}
+                                    </Button>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div style={{ minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
+                        {shareCard.busy && t('map:ui.share.cardGenerating')}
+                        {!shareCard.busy && shareCard.failed && (
+                            <span style={{ color: 'var(--color-danger)' }}>{t('map:ui.share.cardFailed')}</span>
+                        )}
+                        {!shareCard.busy && !shareCard.failed && shareCard.view && (
+                            <img
+                                src={shareCard.view.url}
+                                alt={t('map:ui.share.cardPreviewAlt', { name: shareCard.view.name })}
+                                style={{ maxWidth: '100%', maxHeight: '54vh', borderRadius: 10, display: 'block' }}
+                            />
+                        )}
+                    </div>
+
+                    {!shareCard.busy && shareCard.failed && (
+                        <Button full onClick={shareCard.retry}>{t('map:ui.share.cardRetry')}</Button>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <div style={{ flex: 1 }}>
+                            <Button full onClick={shareCard.share} disabled={!shareCard.view || shareCard.busy}>
+                                {t('map:ui.share.cardShare')}
+                            </Button>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <Button full onClick={shareCard.save} disabled={!shareCard.view || shareCard.busy}>
+                                {t('map:ui.share.cardSave')}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             </ResponsivePanel>
 
             <ResponsivePanel
