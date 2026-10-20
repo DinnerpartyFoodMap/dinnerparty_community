@@ -154,7 +154,9 @@ function startQQBot() {
         if (!mayConcernBot(parsed, isGroup)) return;
         // NapCat may re-deliver after a reconnect; each message moves a conversation at most once.
         if (!claimInbound(`${client.selfId}:${chatType}:${chatId}:${event.message_id}`)) return;
-        const ctx = { botId: client.selfId, chatType, chatId, senderQq, isGroup, parsed };
+        // OneBot's group role (owner / admin / member) decides who may set the group's !随机中心.
+        const senderRole = isGroup && ['owner', 'admin'].includes(event.sender && event.sender.role) ? event.sender.role : 'member';
+        const ctx = { botId: client.selfId, chatType, chatId, senderQq, senderRole, isGroup, parsed };
         enqueue(conversation.conversationKey(ctx), async () => {
             ctx.now = new Date();
             let replies;

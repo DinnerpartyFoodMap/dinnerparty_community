@@ -57,7 +57,7 @@ function card({ name = '测试地点', address = '测试路 1 号', lat = 23.05,
     return JSON.stringify({ app: 'com.tencent.map', view: 'LocationShare', meta: { 'Location.Search': { name, address, lat: String(lat), lng: String(lng) } } });
 }
 
-function ctxFor({ chatType = 'private', chatId, qq, text = '', location = null, rawCard = null, atSelf = false, replyId = null }) {
+function ctxFor({ chatType = 'private', chatId, qq, text = '', location = null, rawCard = null, atSelf = false, replyId = null, role = 'member' }) {
     const message = [];
     if (replyId) message.push({ type: 'reply', data: { id: String(replyId) } });
     if (atSelf) message.push({ type: 'at', data: { qq: BOT } });
@@ -65,7 +65,7 @@ function ctxFor({ chatType = 'private', chatId, qq, text = '', location = null, 
     if (location || rawCard) message.push({ type: 'json', data: { data: rawCard || card(location) } });
     const isGroup = chatType === 'group';
     return {
-        botId: BOT, chatType, chatId: isGroup ? String(chatId) : String(qq), senderQq: String(qq), isGroup,
+        botId: BOT, chatType, chatId: isGroup ? String(chatId) : String(qq), senderQq: String(qq), senderRole: isGroup ? role : 'member', isGroup,
         parsed: parseMessage({ message }, BOT), now: clock
     };
 }
@@ -573,6 +573,14 @@ async function testOneBotClientAndBot() {
         assert.match(sends[3].params.message[2].data.text, /找到 5 个地点/);
         assert.ok(bot.requests.some((r) => r.action === 'send_packet' && r.params.cmd === 'OidbSvcTrpcTcp.0xdc2_34'), 'tries the 图文 card first');
         assert.deepEqual(sends[4].params.message, [{ type: 'text', data: { text: `https://dinnerparty.cc/p/${fastSearch('拉面王', 1)[0].id}` } }]);
+        // The group role comes from the OneBot event: a group admin may set !随机中心, a member may not.
+        bot.sockets[0].push({ ...event, message_id: 4248, sender: { user_id: 100009, role: 'member' }, message: [{ type: 'text', data: { text: '!随机中心 拉面王' } }] });
+        bot.sockets[0].push({ ...event, message_id: 4249, sender: { user_id: 100009, role: 'admin' }, message: [{ type: 'text', data: { text: '!随机中心 拉面王' } }] });
+        await flush();
+        const centerReplies = bot.requests.filter((r) => r.action === 'send_group_msg').slice(-2).map((r) => r.params.message[2].data.text);
+        assert.match(centerReplies[0], /只有群主/);
+        assert.match(centerReplies[1], /已将本群随机中心设为「/);
+        assert.equal(require('../../modules/qqbot/runtime/randomCenter').getGroupCenter(GROUP_A).setBy, '100009');
     } finally {
         instance.stop();
         globalThis.WebSocket = previousWebSocket;
@@ -676,6 +684,69 @@ function testRandomAndLocation() {
     say({ qq: '177002', location: { name: '店铺定位', lat: 31.3, lng: 121.5 } });
     assert.equal(getUserLocation(gina).updatedAt, before);
     say({ qq: '177002', text: '!取消' });
+}
+
+function testGroupRandomCenter() {
+    const randomCenter = require('../../modules/qqbot/runtime/randomCenter');
+    const { haversineDistanceKm } = require('../../modules/discovery/services/semanticSearch');
+    commands._resetRateLimitsForTesting();
+    const group = (qq, text, role = 'member', chatId = GROUP_A) => say({ chatType: 'group', chatId, qq, text, role });
+    const near = (replies, center) => {
+        const place = sql.prepare('SELECT latitude, longitude FROM Place WHERE id = ?').get(cardsOf(replies)[0]);
+        return haversineDistanceKm(center, { lat: place.latitude, lng: place.longitude }) <= 5;
+    };
+    assert.deepEqual(['!随机中心 B记', '！设置随机中心', '!随机地点', '!随机'].map((t) => parseCommand(t).name), ['random_center', 'random_center', 'random', 'random']);
+    assert.equal(parseCommand('!随机中心人民广场').args, '人民广场', 'Chinese argument may be glued');
+
+    // Per group only; anyone can look, only owners/admins (or site admins) can change it.
+    assert.match(textOf(say({ qq: '178001', text: '!随机中心' })), /按群设置/);
+    assert.match(textOf(group('178001', '!随机中心')), /本群还没有设置随机中心[\s\S]*B记鱼粥[\s\S]*!随机中心 清除/);
+    assert.match(textOf(group('178001', '!随机中心 人民广场店2')), /只有群主、群管理员或网站管理员/);
+    assert.equal(randomCenter.getGroupCenter(GROUP_A), null);
+    assert.match(textOf(group('178002', '!随机中心 人民广场店2', 'admin')), /已将本群随机中心设为「人民广场店2」/);
+    const shanghai = randomCenter.getGroupCenter(GROUP_A);
+    assert.deepEqual([shanghai.source, shanghai.setBy, Number(shanghai.lat.toFixed(4))], ['place', '178002', 31.2364]);
+    assert.match(textOf(group('178001', '!随机中心')), /本群随机中心：「人民广场店2」（31\.23640, 121\.47370）/);
+
+    // The group's centre wins over the default and over a member's own last position (hank: 45,90).
+    tick(5000);
+    const guest = group('178001', '!随机');
+    assert.match(textOf(guest), /距本群中心「人民广场店2」 [\d.]+ (km|米)/);
+    assert.doesNotMatch(textOf(guest), /注册网站账号/, 'no position hint under a group centre');
+    assert.ok(near(guest, shanghai));
+    tick(5000);
+    assert.match(textOf(group('177003', '!随机')), /距本群中心「人民广场店2」/);
+    // Another group and private chat keep the old order: own position, then the default.
+    tick(5000);
+    assert.match(textOf(group('177003', '!随机', 'member', GROUP_B)), /以你上次定位的位置（远方）为中心/);
+    tick(5000);
+    assert.match(textOf(say({ qq: '177003', text: '!随机' })), /以你上次定位的位置（远方）为中心/);
+
+    // Coordinates, the current exhibition, unknown keywords and bad input.
+    assert.match(textOf(group('178003', '!随机中心 95,113 某处', 'owner', GROUP_B)), /坐标无效/);
+    assert.match(textOf(group('178003', '!随机中心 23.016488，113.394404  鱼粥 本店', 'owner', GROUP_B)), /已将本群随机中心设为「鱼粥 本店」/);
+    assert.equal(randomCenter.getGroupCenter(GROUP_B).source, 'coordinates');
+    assert.match(textOf(group('178003', '!随机中心 不存在的店名xyz', 'owner', GROUP_B)), /没有找到与「不存在的店名xyz」相关的已收录地点/);
+    assert.equal(randomCenter.getGroupCenter(GROUP_B).label, '鱼粥 本店', 'a failed change keeps the old centre');
+    assert.match(textOf(group('178003', '!随机中心 展会', 'owner', GROUP_B)), /当前没有进行中的展会/);
+    sql.prepare("INSERT INTO SiteExhibition (name, description, information, is_active) VALUES ('无地点展会', 'd', 'i', 1)").run();
+    assert.match(textOf(group('178003', '!随机中心 展会', 'owner', GROUP_B)), /「无地点展会」没有设置地点/);
+    sql.prepare("UPDATE SiteExhibition SET location_name = '保利世贸博览馆', latitude = 23.0961, longitude = 113.3653 WHERE is_active = 1").run();
+    assert.match(textOf(group('178003', '!随机中心 展会', 'owner', GROUP_B)), /已将本群随机中心设为「保利世贸博览馆」（23\.09610, 113\.36530）/);
+    assert.equal(randomCenter.getGroupCenter(GROUP_B).source, 'exhibition');
+    sql.prepare('UPDATE SiteExhibition SET is_active = 0').run();
+
+    // A site admin linked by QQ may change it without a group role; clearing restores the old order.
+    const admin = user('站管', '178004');
+    sql.prepare("UPDATE User SET admin_level = 'YOUMU' WHERE id = ?").run(admin);
+    assert.match(textOf(group('178004', '!随机中心 清除', 'member', GROUP_B)), /已清除本群随机中心/);
+    assert.equal(randomCenter.getGroupCenter(GROUP_B), null);
+    assert.match(textOf(group('178004', '!随机中心 清除', 'member', GROUP_B)), /本群没有设置随机中心/);
+    const komachi = user('小町', '178005');
+    sql.prepare("UPDATE User SET admin_level = 'KOMACHI' WHERE id = ?").run(komachi);
+    assert.match(textOf(group('178005', '!随机中心 清除')), /只有群主/, 'comment moderators cannot');
+    assert.match(textOf(group('178002', '!随机中心 reset', 'admin')), /已清除/);
+    assert.match(commands.HELP_TEXT, /!随机中心/);
 }
 
 async function testCommandInterpreter() {
@@ -867,6 +938,7 @@ async function main() {
     testDuplicatesAndRollback();
     testSearch();
     testRandomAndLocation();
+    testGroupRandomCenter();
     await testCommandInterpreter();
     await testPlaceCards();
     await testMemberSync();
@@ -875,7 +947,49 @@ async function main() {
     configure();
     await testWebRoute();
     await testLocationRoute();
-    console.log('QQ bot tests passed: parser, private/group drafts, isolation, versions, pause/expiry, identity, duplicates, rollback, search, random picks, recorded positions, DeepSeek commands, place cards, whitelist sync, notifications, OneBot client and dedupe.');
+    await testRandomCenterRoute();
+    console.log('QQ bot tests passed: parser, private/group drafts, isolation, versions, pause/expiry, identity, duplicates, rollback, search, random picks, recorded positions, group random centres, DeepSeek commands, place cards, whitelist sync, notifications, OneBot client and dedupe.');
+}
+
+async function testRandomCenterRoute() {
+    const express = require('express');
+    const jwt = require('jsonwebtoken');
+    const randomCenter = require('../../modules/qqbot/runtime/randomCenter');
+    const admin = user('群中心管理员', '178010');
+    sql.prepare("UPDATE User SET admin_level = 'YOUMU' WHERE id = ?").run(admin);
+    const member = user('普通住民', '178011');
+    const app = express();
+    app.use(express.json());
+    app.use('/admin/qq-bot', require('../../modules/accounts/middleware/auth').requireAuth, require('../../modules/admin/routes/adminQQBot'));
+    const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+    try {
+        const tokenOf = (id) => jwt.sign({ id }, process.env.JWT_SECRET || 'yuyuko_secret_key');
+        const call = async (method, path, body, id = admin) => {
+            const res = await fetch(`http://127.0.0.1:${server.address().port}/admin/qq-bot${path}`, {
+                method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenOf(id)}` }, ...(body ? { body: JSON.stringify(body) } : {})
+            });
+            return { status: res.status, body: await res.json() };
+        };
+        assert.equal((await call('GET', '/random-centers', null, member)).status, 403);
+        assert.equal((await call('PUT', `/random-centers/${GROUP_B}`, { latitude: 23, longitude: 113, label: 'x' }, member)).status, 403);
+        assert.equal((await call('PUT', '/random-centers/abc', { latitude: 23, longitude: 113, label: 'x' })).status, 400);
+        assert.equal((await call('PUT', `/random-centers/${GROUP_B}`, { latitude: 0, longitude: 0, label: '零点' })).status, 400);
+        assert.equal((await call('PUT', `/random-centers/${GROUP_B}`, { latitude: 23, longitude: 113, label: ' ' })).status, 400);
+        const saved = await call('PUT', `/random-centers/${GROUP_B}`, { latitude: '23.1', longitude: 113.3, label: ' 大学城 ' });
+        assert.equal(saved.status, 200);
+        assert.deepEqual([saved.body.center.label, saved.body.center.lat, saved.body.center.source, saved.body.center.setBy], ['大学城', 23.1, 'admin', `admin:${admin}`]);
+        const listed = await call('GET', '/random-centers');
+        assert.equal(listed.body.defaultCenter.label, 'B记鱼粥');
+        assert.ok(listed.body.centers.some((c) => c.groupId === GROUP_B && c.label === '大学城'));
+        assert.equal(count('AdminAudit', "action = 'qq-bot-random-center'"), 1);
+        assert.deepEqual((await call('DELETE', `/random-centers/${GROUP_B}`)).body, { cleared: true });
+        assert.deepEqual((await call('DELETE', `/random-centers/${GROUP_B}`)).body, { cleared: false });
+        assert.equal(randomCenter.getGroupCenter(GROUP_B), null);
+        assert.equal(count('AdminAudit', "action = 'qq-bot-random-center-clear'"), 1, 'only a real clear is audited');
+    } finally {
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+    }
 }
 
 main().then(() => {

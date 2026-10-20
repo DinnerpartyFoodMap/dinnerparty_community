@@ -449,6 +449,7 @@ private struct MapChromeRowButtonStyle: ButtonStyle {
 
 /// 地点卡片：两段停靠。第一段约占屏幕三分之一：摘要——左上角分享、居中标题、右上角关闭，下面一排等宽操作按钮（导航、收藏……），
 /// 再露出简介的开头；上滑（或点“详情”）到全屏后继续显示完整简介、地址、相关日记与图片。
+/// 展会面板用同一张卡片：左上角是展会图标（image），正文按 paragraphs 分段（展会简介、展会信息），地址行显示展会地点。
 @available(iOS 26.0, *)
 struct MapChromePlaceCard: View {
     @ObservedObject var model: MapChromeModel
@@ -514,6 +515,8 @@ struct MapChromePlaceCard: View {
                 ) {
                     model.selectSheetRow(leading)
                 }
+            } else if let image = sheet.image {
+                headerImage(image)
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }
@@ -537,6 +540,25 @@ struct MapChromePlaceCard: View {
                 model.dismissSheet()
             }
         }
+    }
+
+    /// 标题左侧的图标（展会图标）：与右侧关闭钮同宽，标题保持居中；加载失败时显示占位符号
+    private func headerImage(_ url: URL) -> some View {
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFit()
+            case .failure:
+                Image(systemName: "building.columns")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(accent)
+            default:
+                ProgressView()
+            }
+        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityHidden(true)
     }
 
     private func circleButton(symbol: String, label: String, tint: Color, disabled: Bool, action: @escaping () -> Void) -> some View {
@@ -592,23 +614,45 @@ struct MapChromePlaceCard: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("简介")
-                    .font(.headline)
-                Text(sheet.detail ?? "暂无描述")
-                    .font(.body)
-                    .foregroundStyle(sheet.detail == nil ? Color.secondary : Color.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if sheet.paragraphs.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("简介")
+                        .font(.headline)
+                    Text(sheet.detail ?? "暂无描述")
+                        .font(.body)
+                        .foregroundStyle(sheet.detail == nil ? Color.secondary : Color.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let caption = sheet.caption {
+                        captionLabel(caption)
+                            .padding(.top, 4)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            } else {
+                // 展会：地点在最前，随后逐段显示简介与信息
                 if let caption = sheet.caption {
-                    Label(caption, systemImage: "mappin.and.ellipse")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 4)
+                    captionLabel(caption)
+                        .padding(.horizontal, 4)
+                }
+                ForEach(sheet.paragraphs) { paragraph in
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let title = paragraph.title {
+                            Text(title)
+                                .font(.headline)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                        Text(paragraph.text)
+                            .font(.body)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
             ForEach(sheet.sections) { section in
                 sectionView(section)
@@ -644,6 +688,12 @@ struct MapChromePlaceCard: View {
                     .padding(.horizontal, 4)
             }
         }
+    }
+
+    private func captionLabel(_ caption: String) -> some View {
+        Label(caption, systemImage: "mappin.and.ellipse")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
     }
 
     private func detailRow(_ row: MapChromeSheetRow) -> some View {

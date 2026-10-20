@@ -4,10 +4,12 @@ const { nearbyCandidates, drawRecommendation, personalizeCandidates } = require(
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
 const { getUserLocation } = require('../../accounts/services/userLocation');
 const { resolveQQUser } = require('./qqIdentity');
+const { getGroupCenter } = require('./randomCenter');
 
 // !随机: the website's random pick (5 km circle, same weights, personalised for
-// accounts with a taste profile). The centre is the account's last located
-// position (map locate button or a QQ location card), else the configured default.
+// accounts with a taste profile). The centre is the group's own centre (!随机中心)
+// in a group that set one; otherwise the account's last located position (map
+// locate button or a QQ location card), else the configured default.
 const RECENT_TTL_MS = 60 * 60 * 1000;
 const recentPicks = new Map();
 
@@ -34,8 +36,10 @@ function pickRandomPlace(ctx, { random = Math.random } = {}) {
     const identity = resolveQQUser(ctx.senderQq);
     // A restricted account may still browse; only an unambiguous account counts.
     const user = identity.user && (identity.status === 'ok' || identity.status === 'banned') ? identity.user : null;
-    const saved = user ? getUserLocation(user.id) : null;
-    const center = saved ? { lat: saved.lat, lng: saved.lng } : config.random.center;
+    const group = ctx.isGroup ? getGroupCenter(ctx.chatId) : null;
+    const saved = !group && user ? getUserLocation(user.id) : null;
+    const pinned = group || saved;
+    const center = pinned ? { lat: pinned.lat, lng: pinned.lng } : config.random.center;
     const now = ctx.now.getTime();
     const personalize = user && isVectorSearchAvailable() ? (candidates) => {
         try {
@@ -49,8 +53,8 @@ function pickRandomPlace(ctx, { random = Math.random } = {}) {
     return {
         ...result,
         center,
-        centerSource: saved ? 'user' : 'default',
-        centerLabel: saved ? saved.label : config.random.centerName,
+        centerSource: group ? 'group' : saved ? 'user' : 'default',
+        centerLabel: pinned ? pinned.label : config.random.centerName,
         registered: !!user
     };
 }

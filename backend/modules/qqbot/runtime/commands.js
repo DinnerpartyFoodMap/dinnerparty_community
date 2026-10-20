@@ -5,6 +5,9 @@ const { parseCommand, COMMAND_PREFIX } = require('./messageParser');
 const conversation = require('./placeConversation');
 const interpreter = require('./commandInterpreter');
 const { pickRandomPlace } = require('./randomPick');
+const randomCenter = require('./randomCenter');
+const { resolveQQUser } = require('./qqIdentity');
+const { hasPermission } = require('../../admin/services/adminPermissions');
 const { fastSearch } = require('../../discovery/services/placeSearch');
 const { EMPTY_MESSAGE } = require('../../discovery/services/randomRecommendation');
 
@@ -41,6 +44,7 @@ const HELP_TEXT = [
     '!查询 (关键词)：查询已有地点',
     '!随机 / !roll：随机推荐 5 km 内的地点',
     '!定位：记录你的位置，作为随机推荐的中心',
+    '!随机中心：查看本群的随机中心（群主 / 管理员可设置）',
     '',
     '以上指令!/！均可，也可以直接说，例如：!创建xx餐厅，人均60，菜很正宗',
     '群内发送店名、描述时，请回复 Bot 的提问或 @Bot。'
@@ -127,8 +131,9 @@ function distanceText(km) {
 function formatRandomPick(result) {
     const centerText = result.centerSource === 'user'
         ? `你上次定位的位置${result.centerLabel ? `（${shorten(result.centerLabel, 20)}）` : ''}`
+        : result.centerSource === 'group' ? `本群中心「${shorten(result.centerLabel, 20)}」`
         : result.centerLabel;
-    const centerHint = result.centerSource === 'user' ? ''
+    const centerHint = result.centerSource === 'user' || result.centerSource === 'group' ? ''
         : result.registered
             ? `你的账号还没有定位记录，所以按${result.centerLabel}附近推荐。在网站或 App 的地图上点“定位”，或私聊发我 QQ 位置后，会改为以你的位置为中心。`
             : '注册网站账号并填写本人 QQ 后，可以按你的位置推荐。';
@@ -159,6 +164,50 @@ function randomPick(ctx) {
     return replies;
 }
 
+// !随机中心: show the group's centre; its owner/admins (or a site admin) set or clear it.
+const CLEAR_CENTER_WORDS = new Set(['清除', '重置', '默认', '取消', '删除', 'clear', 'reset']);
+
+function canSetGroupCenter(ctx) {
+    if (ctx.senderRole === 'owner' || ctx.senderRole === 'admin') return true;
+    const identity = resolveQQUser(ctx.senderQq);
+    if (identity.status !== 'ok') return false;
+    const row = db._raw.prepare('SELECT admin_level FROM User WHERE id = ?').get(identity.user.id);
+    return hasPermission(row, 'manage_invites');
+}
+
+function describeCenter(center) {
+    return `「${center.label}」（${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}）`;
+}
+
+function groupRandomCenter(ctx, args) {
+    if (!ctx.isGroup) return [{ text: '随机中心按群设置，请在群里发送 !随机中心。私聊里的 !随机 以你最近一次定位为中心。' }];
+    const value = String(args || '').trim();
+    if (!value) {
+        const current = randomCenter.getGroupCenter(ctx.chatId);
+        return [{ text: [
+            current
+                ? `本群随机中心：${describeCenter(current)}。本群的 !随机 都以这里为中心推荐 5 km 内的店。`
+                : `本群还没有设置随机中心：!随机 以发送者最近一次定位为中心，没有定位时以${botConfig.get().random.centerName}为中心。`,
+            '群主或管理员可以发送：',
+            '!随机中心 店名（用已收录地点的位置）',
+            '!随机中心 展会（用当前展会的地点）',
+            '!随机中心 纬度,经度 名称',
+            '!随机中心 清除'
+        ].join('\n') }];
+    }
+    if (!canSetGroupCenter(ctx)) return [{ text: '只有群主、群管理员或网站管理员可以设置本群的随机中心。' }];
+    if (CLEAR_CENTER_WORDS.has(value.toLowerCase())) {
+        return [{ text: randomCenter.clearGroupCenter(ctx.chatId)
+            ? '已清除本群随机中心，!随机 恢复为以发送者的定位为中心。'
+            : '本群没有设置随机中心。' }];
+    }
+    const resolved = randomCenter.resolveCenterArgument(value);
+    if (resolved.error) return [{ text: resolved.error }];
+    const saved = randomCenter.setGroupCenter(ctx.chatId, resolved, ctx.senderQq, ctx.now);
+    logger.info('QQ bot group random centre set', { event: 'qqbot.random_center.set', groupId: ctx.chatId, source: saved.source });
+    return [{ text: `已将本群随机中心设为${describeCenter(saved)}。之后本群的 !随机 都以这里为中心推荐 5 km 内的店。` }];
+}
+
 function commonTagNames() {
     return db._raw.prepare('SELECT name FROM Category WHERE is_common = 1 ORDER BY sort_order, name LIMIT 40').all().map((r) => r.name);
 }
@@ -177,6 +226,7 @@ function dispatch(ctx, command) {
         case 'help': return [{ text: HELP_TEXT }];
         case 'search': return search(ctx, command.args);
         case 'random': return randomPick(ctx);
+        case 'random_center': return groupRandomCenter(ctx, command.args);
         case 'tag_list': return tagList();
         case 'add': return conversation.startDraft(ctx);
         case 'cancel': return conversation.cancelDraft(ctx);

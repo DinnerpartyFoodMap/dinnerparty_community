@@ -160,7 +160,7 @@ function makeSession(plugin, extra = {}) {
 
 // ---- v3 原生搜索栏：状态清洗、随快照下发、输入事件只接受当前会话与白名单类型 ----
 {
-    assert.deepEqual(sanitizeSearch(undefined), { expanded: false, placeholder: '搜索', busy: false, text: '', textVersion: 0, focusToken: 0, focus: false });
+    assert.deepEqual(sanitizeSearch(undefined), { expanded: false, placeholder: '搜索', hint: '', busyLabel: '', busy: false, text: '', textVersion: 0, focusToken: 0, focus: false });
     const clean = sanitizeSearch({ expanded: 1, text: 'x'.repeat(300), textVersion: -3, focusToken: 2.5, placeholder: 'p'.repeat(80), token: 'secret' });
     assert.equal(clean.expanded, true);
     assert.equal(clean.text.length, 100);
@@ -176,7 +176,7 @@ function makeSession(plugin, extra = {}) {
         timing: { selfHideMs: 30, retryMs: 10000, handshakeMs: 200 },
         onAction: () => true, onModeChange: () => { }, onSearch: (event) => events.push(event)
     });
-    const search = { expanded: true, text: '火锅', textVersion: 3, focusToken: 1, focus: true, busy: false, placeholder: '搜店名' };
+    const search = { expanded: true, text: '火锅', textVersion: 3, focusToken: 1, focus: true, busy: false, placeholder: '搜店名', hint: '输入和回车搜索已收录地点', busyLabel: '查找未收录地点' };
     assert.equal(await session.start({ items, search }), true);
     await session.activate();
     assert.deepEqual(plugin.state.search, { ...search });
@@ -269,6 +269,28 @@ function makeSession(plugin, extra = {}) {
     assert.deepEqual(sanitizeSheet({ id: 'account' }).actions, []);
     assert.deepEqual(sanitizeSheet({ id: 'account' }).gallery, []);
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
+
+    // v7 展会卡片：标题左侧图标只收 https，分段正文最多 4 段、空段丢弃、截断
+    assert.equal(NATIVE_CHROME_PROTOCOL, 7);
+    const exhibition = sanitizeSheet({
+        id: 'exhibition', token: 2, title: '秋日展会', size: 'card', image: 'https://cdn.example.com/icon.png',
+        paragraphs: [
+            { id: 'description', title: '展会简介', text: 's'.repeat(2600) },
+            { id: 'empty', title: '空', text: '   ' },
+            false,
+            { title: 't'.repeat(60), text: '上海 · 周六' },
+            { id: 'p3', text: '3' }, { id: 'p4', text: '4' }, { id: 'p5', text: '5' }
+        ]
+    });
+    assert.equal(exhibition.id, 'exhibition');
+    assert.equal(exhibition.image, 'https://cdn.example.com/icon.png');
+    assert.deepEqual(exhibition.paragraphs.map((p) => p.id), ['description', 'paragraph-3', 'p3', 'p4']);
+    assert.equal(exhibition.paragraphs[0].text.length, 2000);
+    assert.equal(exhibition.paragraphs[1].title.length, 40);
+    for (const image of ['http://cdn.example.com/icon.png', 'capacitor://localhost/favicon.png', '/uploads/a.png', 'https://u:p@cdn.example.com/a.png']) {
+        assert.equal(sanitizeSheet({ id: 'exhibition', image }).image, undefined, `不下发 ${image}`);
+    }
+    assert.deepEqual(sanitizeSheet({ id: 'place' }).paragraphs, []);
 
     // v6 更多功能（工具栏上滑）：没有可显示的行时不下发，行数封顶
     assert.equal(sanitizeDrawer(null), null);

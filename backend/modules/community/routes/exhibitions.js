@@ -2,7 +2,8 @@ const router = require('express').Router();
 const { db } = require('../../../infrastructure/database');
 
 router.get('/current', (req, res) => {
-    db.get('SELECT id, name, description, information, icon_url, created_time FROM SiteExhibition WHERE is_active = 1', [], (err, row) => {
+    db.get(`SELECT id, name, description, information, icon_url, location_name, latitude, longitude, created_time
+        FROM SiteExhibition WHERE is_active = 1`, [], (err, row) => {
         if (err) return res.status(500).json({ error: '展会加载失败，请稍后重试' });
         res.set('Cache-Control', 'no-store');
         return res.json({ exhibition: row || null });

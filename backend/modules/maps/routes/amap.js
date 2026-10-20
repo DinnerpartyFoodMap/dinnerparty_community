@@ -12,6 +12,9 @@ const express = require('express');
 const logger = require('../../../infrastructure/logger');
 
 const router = express.Router();
+// Search owns its validation, budget and errors; do not gate it through the
+// unrelated regeo/staticmap rate limiter or hide missing configuration as no data.
+router.use('/search', require('./amapSearch').createAmapSearchRouter());
 const AMAP_REST_BASE = 'https://restapi.amap.com';
 const REQUEST_TIMEOUT_MS = 8000;
 const RATE_WINDOW_MS = 60 * 1000;

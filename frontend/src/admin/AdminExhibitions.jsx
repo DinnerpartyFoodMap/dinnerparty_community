@@ -6,9 +6,17 @@ import TextArea from '../components/forms/TextArea';
 import { useTips } from '../components/feedback/Tips';
 import { useConfirm } from '../components/feedback/Confirm';
 import { useAuth } from '../auth/AuthContext';
+import { FullScreenMapPicker } from '../map/MapView';
+import { exhibitionCenter } from '../map/exhibition';
 import { t } from '../i18n/index.js';
 
-const EMPTY = { name: '', description: '', information: '', icon_url: '' };
+const TEXT_FIELDS = ['name', 'description', 'information', 'icon_url', 'location_name'];
+const EMPTY = { name: '', description: '', information: '', icon_url: '', location_name: '', latitude: null, longitude: null };
+const formFrom = (exhibition) => {
+    const form = { ...EMPTY, ...exhibition };
+    for (const key of TEXT_FIELDS) form[key] = form[key] || '';
+    return form;
+};
 
 export default function AdminExhibitions({ backendUrl }) {
     const { token, onRequireAuth } = useAuth();
@@ -22,6 +30,8 @@ export default function AdminExhibitions({ backendUrl }) {
     const [error, setError] = useState('');
     const [loadFailed, setLoadFailed] = useState(false);
     const [reload, setReload] = useState(0);
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const center = exhibitionCenter(form);
 
     async function request(path, options = {}) {
         const res = await fetch(`${backendUrl}${path}`, {
@@ -44,7 +54,7 @@ export default function AdminExhibitions({ backendUrl }) {
         request('/admin/exhibitions/current', { signal: controller.signal }).then(data => {
             if (controller.signal.aborted) return;
             setCurrent(data.exhibition);
-            setForm(data.exhibition ? { ...EMPTY, ...data.exhibition } : EMPTY);
+            setForm(data.exhibition ? formFrom(data.exhibition) : EMPTY);
         }).catch(e => {
             if (controller.signal.aborted) return;
             setLoadFailed(true);
@@ -76,10 +86,24 @@ export default function AdminExhibitions({ backendUrl }) {
         finally { setBusy(false); }
     }
 
+    // 选中站内地点时顺带填入场馆名（未填写时）；选图钉位置只更新坐标
+    function pickLocation(point) {
+        const latitude = Number(point?.lat ?? point?.latitude);
+        const longitude = Number(point?.lng ?? point?.longitude);
+        setPickerOpen(false);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+        setForm(prev => ({ ...prev, latitude, longitude,
+            location_name: prev.location_name.trim() || String(point?.name || '').trim().slice(0, 80) }));
+    }
+
     async function publish(event) {
         event.preventDefault();
         if (disabled) return;
-        const fields = Object.fromEntries(Object.keys(EMPTY).map(key => [key, form[key].trim()]));
+        const fields = {
+            ...Object.fromEntries(TEXT_FIELDS.map(key => [key, form[key].trim()])),
+            latitude: center ? center.lat : null,
+            longitude: center ? center.lng : null
+        };
         if (!fields.name || !fields.description || !fields.information) {
             setError(t('admin:exhibitions.fillRequired'));
             return;
@@ -136,6 +160,21 @@ export default function AdminExhibitions({ backendUrl }) {
             <TextArea id="exhibition-description" value={form.description} onChange={change('description')} maxLength={2000} required disabled={disabled} rows={4} style={{ width: '100%' }} />
             <label htmlFor="exhibition-information">{t('admin:exhibitions.information')}</label>
             <TextInput id="exhibition-information" value={form.information} onChange={change('information')} maxLength={1000} required disabled={disabled} style={{ width: '100%' }} />
+            <label htmlFor="exhibition-location">{t('admin:exhibitions.location')}</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <TextInput id="exhibition-location" value={form.location_name} onChange={change('location_name')} maxLength={80} disabled={disabled}
+                    placeholder={t('admin:exhibitions.locationPlaceholder')} style={{ flex: '1 1 220px' }} />
+                <Button themeAware disabled={disabled} onClick={() => setPickerOpen(true)}>
+                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18, marginRight: 4, verticalAlign: '-3px' }}>location_on</span>
+                    {t('admin:exhibitions.pickLocation')}
+                </Button>
+                {center && <Button themeAware disabled={disabled} onClick={() => setForm(prev => ({ ...prev, latitude: null, longitude: null }))}>
+                    {t('admin:exhibitions.clearLocation')}
+                </Button>}
+            </div>
+            <small aria-live="polite" style={{ color: 'var(--color-text-secondary)', marginTop: -6 }}>
+                {center ? t('admin:exhibitions.coordinates', { lat: center.lat.toFixed(6), lng: center.lng.toFixed(6) }) : t('admin:exhibitions.locationHint')}
+            </small>
             {error && <div role="alert" style={{ color: 'var(--color-danger)' }}>{error}</div>}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <Button type="submit" themeAware disabled={disabled}>{busy ? t('admin:exhibitions.saving') : t('admin:exhibitions.publish')}</Button>
@@ -143,5 +182,9 @@ export default function AdminExhibitions({ backendUrl }) {
                 {loadFailed && <Button themeAware onClick={() => setReload(value => value + 1)}>{t('admin:exhibitions.retry')}</Button>}
             </div>
         </form>
+        <FullScreenMapPicker open={pickerOpen} title={t('admin:exhibitions.pickLocation')} context="exhibition"
+            center={center ? { lat: center.lat, lng: center.lng } : null}
+            backendUrl={backendUrl} token={token} isAuthenticated={!!token} onRequireAuth={onRequireAuth}
+            onPickPlace={pickLocation} onPickPoint={pickLocation} onClose={() => setPickerOpen(false)} />
     </section>;
 }

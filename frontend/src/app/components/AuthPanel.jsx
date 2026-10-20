@@ -8,7 +8,7 @@ import AnchoredPopover from "../../components/overlay/AnchoredPopover";
 import { t } from "../../i18n/index.js";
 import PrivacyPolicyLink from '../../auth/components/PrivacyPolicyLink.jsx';
 
-const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
+const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
     const [userOpen, setUserOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const [showUsername, setShowUsername] = useState(true);
@@ -151,6 +151,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {!isAuth && (
                     <Button
+                        data-tour="account"
                         onClick={onOpenAuth}
                         disabled={interactionDisabled}
                         style={{ minHeight: 38, padding: '7px 13px', borderRadius: 999, background: themeColor, color: pickContrastTextColor(themeColor), fontWeight: 700 }}
@@ -161,6 +162,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                 {isAuth && user && (
                     <div ref={userAnchorRef} style={{ position: 'relative' }}>
                         <Button
+                            data-tour="account"
                             onClick={() => {
                                 if (interactionDisabled) return;
                                 setUserOpen((value) => !value);
@@ -216,6 +218,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
 
             <div ref={moreAnchorRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Button
+                    data-tour="more"
                     onClick={() => { if (!interactionDisabled) { setMoreOpen((value) => !value); setUserOpen(false); } }}
                     aria-haspopup="menu"
                     aria-expanded={moreOpen}
@@ -249,6 +252,14 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                         {isAuth && (isAdmin || isOnAdmin) && (
                             <>
                                 <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnAdmin ? onGoHome?.() : onOpenAdmin?.(); }}>{isOnAdmin ? t('common:action.backToMap') : t('auth:panel.admin')}</Button>
+                                {divider}
+                            </>
+                        )}
+                        {onOpenGuide && (
+                            <>
+                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenGuide(); }}>
+                                    {t('auth:panel.guide')}
+                                </Button>
                                 {divider}
                             </>
                         )}

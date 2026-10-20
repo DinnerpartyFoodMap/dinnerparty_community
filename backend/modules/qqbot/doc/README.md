@@ -1,6 +1,6 @@
 # QQ Bot
 
-`runtime/index.js` 导出 startQQBot/getQQBotStatus，由后端入口启动。runtime 内按协议与交互职责拆分：onebotClient 传输；config 配置；messageParser / qqIdentity 解析；commands 分派；commandInterpreter AI 解释；placeConversation 草稿；memberSync 白名单；notificationWorker 推送；directMessage 私信；randomPick 推荐；placeCard / tuwenArk 卡片。services/qqBotSchema.js 负责表结构。
+`runtime/index.js` 导出 startQQBot/getQQBotStatus，由后端入口启动。runtime 内按协议与交互职责拆分：onebotClient 传输；config 配置；messageParser / qqIdentity 解析；commands 分派；commandInterpreter AI 解释；placeConversation 草稿；memberSync 白名单；notificationWorker 推送；directMessage 私信；randomPick 推荐；randomCenter 每群随机中心（`!随机中心`，表 QQBotGroupRandomCenter，群主 / 管理员或网站管理员设置；有群中心时该群的 !随机 一律以它为中心）；placeCard / tuwenArk 卡片。services/qqBotSchema.js 负责表结构。
 
 ```mermaid
 flowchart TD

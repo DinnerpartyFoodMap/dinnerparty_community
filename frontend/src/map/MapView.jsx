@@ -65,6 +65,10 @@ export default function MapView({
     onOpenPosterExport,
     desktopHeaderMenu = null,
     randomFoodRequestId = 0,
+    onboardingRequestId = 0,
+    exhibition = null,
+    exhibitionOpen = false,
+    onCloseExhibition,
     routeSearch = '',
     pickerMode = false,
     pickerContext = 'dinner',
@@ -91,6 +95,7 @@ export default function MapView({
     if (!nearbyGateRef.current) nearbyGateRef.current = new RequestGate();
     const nearbyFailureRef = useRef(0);
     const userLocationMarkerRef = useRef(null);
+    const locateAbortRef = useRef(null);
     const addModeRef = useRef(false);
     const saveViewTimerRef = useRef(null);
     const lastSavedViewRef = useRef(null);
@@ -722,6 +727,7 @@ export default function MapView({
                 userLocationMarkerRef.current.setMap(null);
                 userLocationMarkerRef.current = null;
             }
+            locateAbortRef.current?.abort();
             releaseLocationControl(mapRef.current);
             if (mapRef.current && typeof mapRef.current.destroy === 'function') {
                 try {
@@ -1018,7 +1024,7 @@ export default function MapView({
     };
 
     // 提交搜索时同时启动快速字面匹配与 AI 语义推荐；快速结果不会等待 AI。
-    const searchServer = async ({ q = "", center = undefined, bounds = undefined, limit = undefined, autoFit = true, includeUnmarked = true } = {}) => {
+    const searchServer = async ({ q = "", center = undefined, bounds = undefined, limit = undefined, autoFit = true } = {}) => {
         const query = String(q || '').trim();
         if (!query) return;
         const readMapPoint = (point) => {
@@ -1116,88 +1122,7 @@ export default function MapView({
                 return Number.isFinite(distanceKm) ? { ...place, dist: distanceKm * 1000 } : place;
             });
 
-            let unmarkedData = [];
-            if (includeUnmarked && window.AMap) {
-                unmarkedData = await new Promise(resolve => {
-                    window.AMap.plugin('AMap.PlaceSearch', () => {
-                        const ps = new window.AMap.PlaceSearch({
-                            pageSize: 20,
-                            pageIndex: 1
-                        });
-                        const cpoint = effectiveCenter
-                            ? [effectiveCenter.lng, effectiveCenter.lat]
-                            : (mapRef.current ? [mapRef.current.getCenter().lng, mapRef.current.getCenter().lat] : null);
-
-                        if (cpoint) {
-                            ps.searchNearBy(query, cpoint, 20000, (status, result) => {
-                                if (status === 'complete' && result.info === 'OK') {
-                                    resolve(result.poiList.pois || []);
-                                } else {
-                                    resolve([]);
-                                }
-                            });
-                        } else {
-                            ps.search(query, (status, result) => {
-                                if (status === 'complete' && result.info === 'OK') {
-                                    resolve(result.poiList.pois || []);
-                                } else {
-                                    resolve([]);
-                                }
-                            });
-                        }
-                    });
-                });
-            }
-            if (requestId !== searchRequestIdRef.current) return;
-
-            const processUnmarked = unmarkedData.map(p => {
-                const lng = p.location?.lng;
-                const lat = p.location?.lat;
-                if (!lng || !lat) return null;
-
-                const allKnown = [...(places || []), ...markedResults];
-                let isKnown = false;
-                if (window.AMap) {
-                    for (const kp of allKnown) {
-                        if (!kp.longitude || !kp.latitude) continue;
-                        const d = window.AMap.GeometryUtil.distance(
-                            new window.AMap.LngLat(lng, lat),
-                            new window.AMap.LngLat(kp.longitude, kp.latitude)
-                        );
-                        if (d < 50) {
-                            isKnown = true;
-                            break;
-                        }
-                    }
-                }
-                if (isKnown) return null;
-
-                const dist = effectiveCenter && window.AMap
-                    ? window.AMap.GeometryUtil.distance(
-                        new window.AMap.LngLat(effectiveCenter.lng, effectiveCenter.lat),
-                        new window.AMap.LngLat(lng, lat)
-                    )
-                    : null;
-
-                // 高德的空地址可能是 []，统一成字符串
-                const street = typeof p.address === 'string' ? p.address.trim() : '';
-                const amapCategory = MapUtils.categoryFromAmapType(p.type);
-                return {
-                    id: 'amap_' + p.id,
-                    name: p.name,
-                    longitude: lng,
-                    latitude: lat,
-                    address: street || `${p.pname || ''}${p.cityname || ''}${p.adname || ''}`,
-                    category: amapCategory || t('common:label.amapPlace'),
-                    // 收录为标记时预填的分类（“高德地点”只是展示用的占位）
-                    amapCategory,
-                    isMarked: false,
-                    showOnMap: false,
-                    ...(Number.isFinite(dist) ? { dist } : {})
-                };
-            }).filter(Boolean);
-
-            baseData = includeUnmarked ? [...markedResults, ...processUnmarked] : markedResults;
+            baseData = markedResults;
             fastSettled = true;
 
             publishResults(baseData, resolvedRecommendations);
@@ -1388,14 +1313,33 @@ export default function MapView({
             return;
         }
 
+        // 再次定位时，上一次还在提高精度的定位作废
+        locateAbortRef.current?.abort();
+        const controller = new AbortController();
+        locateAbortRef.current = controller;
+        const map = mapRef.current;
         setLocating(true);
         setLocationError("");
-        const startCenter = auto ? mapRef.current.getCenter?.() : null;
+        const startCenter = auto ? map.getCenter?.() : null;
+
+        // 网页端之后更准的位置：移动蓝点并补报；地图已移到首个位置、之后用户没拖动也没打开地点卡片时跟着平移（不改缩放）
+        let follow = false;
+        const stopFollowing = () => { follow = false; };
+        map.on?.("dragstart", stopFollowing);
+        controller.signal.addEventListener("abort", () => map.off?.("dragstart", stopFollowing), { once: true });
+        const onUpdate = (next) => {
+            if (controller.signal.aborted || mapRef.current !== map) return;
+            ensureUserLocationMarker([next.lng, next.lat]);
+            locationReporterRef.current.located(next);
+            if (!follow || selectedPlaceRef.current) return;
+            if (typeof map.panTo === "function") map.panTo([next.lng, next.lat]);
+            else map.setCenter([next.lng, next.lat]);
+        };
 
         try {
-            // 统一返回 GCJ-02：网页端为高德定位结果，App 端为系统定位 + 本地转换（只转换一次）
-            const position = await getCurrentLocation({ map: mapRef.current });
-            if (!mapRef.current) return;
+            // 统一返回 GCJ-02：网页端为浏览器定位（本地转换）或高德 IP 定位，App 端为系统定位 + 本地转换（只转换一次）
+            const position = await getCurrentLocation({ map, onUpdate, signal: controller.signal });
+            if (controller.signal.aborted || !mapRef.current) return;
 
             ensureUserLocationMarker([position.lng, position.lat]);
             locationReporterRef.current.located(position);
@@ -1417,7 +1361,9 @@ export default function MapView({
                 mapRef.current.setCenter([position.lng, position.lat]);
                 mapRef.current.setZoom(nextZoom);
             }
+            follow = true;
         } catch (error) {
+            if (controller.signal.aborted) return;
             if (auto) {
                 console.warn("启动时自动定位失败", error);
                 return;
@@ -1427,7 +1373,7 @@ export default function MapView({
             console.error("定位失败", error);
             showTip(message);
         } finally {
-            setLocating(false);
+            if (locateAbortRef.current === controller) setLocating(false);
         }
     };
 
@@ -1782,6 +1728,10 @@ export default function MapView({
                 onOpenPosterExport={onOpenPosterExport}
                 desktopHeaderMenu={desktopHeaderMenu}
                 randomFoodRequestId={randomFoodRequestId}
+                onboardingRequestId={onboardingRequestId}
+                exhibition={exhibition}
+                exhibitionOpen={exhibitionOpen}
+                onCloseExhibition={onCloseExhibition}
                 pickerMode={pickerMode}
                 pickerContext={pickerContext}
                 pickedPlaces={pickedPlaces}
@@ -1832,10 +1782,10 @@ export default function MapView({
 }
 
 /**
- * 日记与地点编辑共用的全屏地图选点：与地图首页相同的标记、聚合与搜索。可以选中站内标记或搜索结果，
+ * 日记、地点编辑与展会设置共用的全屏地图选点：与地图首页相同的标记、聚合与搜索。可以选中站内标记或搜索结果，
  * 也可以移动地图，用中心图钉选择任意位置。
  */
-function FullScreenMapPicker({ open, title, context = 'journey', center, backendUrl, token, isAuthenticated, onRequireAuth, onPickPlace, onPickPoint, onClose }) {
+export function FullScreenMapPicker({ open, title, context = 'journey', center, backendUrl, token, isAuthenticated, onRequireAuth, onPickPlace, onPickPoint, onClose }) {
     const label = title || t('common:action.pickOnMap');
     return (
         <MotionSurface

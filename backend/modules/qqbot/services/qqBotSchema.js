@@ -84,6 +84,19 @@ function initQQBotSchema(db) {
       CREATE INDEX IF NOT EXISTS idx_qq_verification_qq ON QQVerificationCode(qq, created_at);
       CREATE INDEX IF NOT EXISTS idx_qq_verification_ip ON QQVerificationCode(ip, created_at);
       CREATE INDEX IF NOT EXISTS idx_qq_verification_created ON QQVerificationCode(created_at);
+
+      -- !随机 centre per group, set in the group with !随机中心 or through the admin API.
+      -- Groups without a row use the sender's last position, then QQ_BOT_RANDOM_CENTER.
+      CREATE TABLE IF NOT EXISTS QQBotGroupRandomCenter (
+        group_id TEXT PRIMARY KEY,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        label TEXT NOT NULL,
+        source TEXT NOT NULL,
+        place_id INTEGER,
+        set_by TEXT,
+        updated_at TEXT NOT NULL
+      );
     `);
 }
 

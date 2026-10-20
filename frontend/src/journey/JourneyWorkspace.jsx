@@ -143,7 +143,7 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
 
     const style={'--journey-on-primary':palette.onPrimary};
     return <>
-        {!entryOpen&&!stack.length&&!mapView&&<button type="button" className="journey-launch" style={style} onClick={openEntry}>{t('journey:workspace.launcher')}</button>}
+        {!entryOpen&&!stack.length&&!mapView&&<button type="button" className="journey-launch" data-tour="journey" style={style} onClick={openEntry}>{t('journey:workspace.launcher')}</button>}
         {mapView&&<button type="button" className="journey-launch journey-launch--visible" style={style} onClick={()=>setMapView(null)}>{tx('journey:workspace.backToDiary', { title: mapView.document.title })}</button>}
         <JourneyEntrySheet open={entryOpen} counts={counts} onSelect={selectEntry} onClose={()=>setEntryOpen(false)}/>
         <ResponsivePanel open={stack.length>0&&!mapView} onClose={onPanelClose} label={top?LABELS[top.page]:t('journey:common.feature.diary')} kind="journey" desktop="full" mobile="full"

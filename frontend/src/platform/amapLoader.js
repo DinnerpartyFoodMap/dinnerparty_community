@@ -6,7 +6,7 @@ import { getPlatform } from './env.js';
 import { t } from '../i18n/index.js';
 import { readPrivacyConsent } from './privacyConsent.js';
 
-const AMAP_PLUGINS = ['AMap.PlaceSearch', 'AMap.Geolocation'];
+const AMAP_PLUGINS = ['AMap.Geolocation'];
 const LOAD_TIMEOUT_MS = 20000;
 const KEY_TIMEOUT_MS = 8000;
 const KEY_CACHE_STORAGE = 'foodmap.amapJsKey';
