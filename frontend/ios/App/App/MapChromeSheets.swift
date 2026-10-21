@@ -73,7 +73,6 @@ final class MapChromeSheetPresenter: NSObject {
         }
         let desired = model.presentedCard
         if let controller = shownController, let presented {
-            applyInterfaceStyle(to: controller)
             if let desired, desired.id == presented.id, desired.style == presented.style {
                 // 同一面板原地更新：内容由 SwiftUI 观察模型刷新，这里只更新停靠高度
                 if desired != presented {
@@ -107,7 +106,7 @@ final class MapChromeSheetPresenter: NSObject {
         let root = MapChromeSheetRoot(model: model, initial: sheet, onToggleCard: { [weak self] in
             self?.toggleCardExpanded()
         })
-        let controller = UIHostingController(rootView: root)
+        let controller = MapChromeHostingController(rootView: root, model: model)
         // 背景交给系统：iOS 26 的面板是 Liquid Glass，视图不铺底色
         controller.view.backgroundColor = .clear
         controller.modalPresentationStyle = .pageSheet
@@ -115,7 +114,6 @@ final class MapChromeSheetPresenter: NSObject {
             configure(sheetController)
             sheetController.delegate = self
         }
-        applyInterfaceStyle(to: controller)
         self.controller = controller
         presented = sheet
         model.cardExpanded = false
@@ -124,17 +122,6 @@ final class MapChromeSheetPresenter: NSObject {
             self?.endTransition(id)
             self?.setNeedsUpdate()
         }
-        // 容器视图在开始呈现时才创建：赶在第一帧之前补上，弹出动画里的玻璃底就是正确的明暗
-        applyInterfaceStyle(to: controller)
-    }
-
-    /// 只作用于这个面板：跟随应用主题而不是系统外观。只设面板控制器不够，
-    /// 面板的玻璃底、全屏时的底色和遮罩画在呈现控制器的容器视图里，仍会跟随系统，所以容器视图也要指定。
-    /// 只用视图 / 控制器的 overrideUserInterfaceStyle：呈现控制器的 traitOverrides 曾在弹出卡片时闪退（原因未确认），不再使用。
-    private func applyInterfaceStyle(to controller: UIViewController) {
-        let style: UIUserInterfaceStyle = model.theme.dark ? .dark : .light
-        controller.overrideUserInterfaceStyle = style
-        controller.sheetPresentationController?.containerView?.overrideUserInterfaceStyle = style
     }
 
     private func configure(_ sheet: UISheetPresentationController) {
@@ -199,12 +186,6 @@ extension MapChromeSheetPresenter: UISheetPresentationControllerDelegate {
     func sheetPresentationControllerDidChangeSelectedDetentIdentifier(_ sheetPresentationController: UISheetPresentationController) {
         model.cardExpanded = sheetPresentationController.selectedDetentIdentifier == .large
     }
-
-    /// 弹出动画开始前容器视图已经创建：此时指定明暗，第一帧的玻璃底就是应用主题
-    func presentationController(_ presentationController: UIPresentationController, willPresentWithAdaptiveStyle style: UIModalPresentationStyle, transitionCoordinator: UIViewControllerTransitionCoordinator?) {
-        guard let controller, presentationController.presentedViewController === controller else { return }
-        applyInterfaceStyle(to: controller)
-    }
 }
 
 /// 面板内容入口。只显示创建时那一个面板：换成别的面板时，正在收起的旧面板保留最后一次内容，不闪成新面板。
@@ -219,6 +200,7 @@ struct MapChromeSheetRoot: View {
         let sheet = live ?? initial
         MapChromePlaceCard(model: model, sheet: sheet, onToggleExpand: onToggleCard)
         .tint(Color(uiColor: model.theme.primary))
+        .environment(\.colorScheme, model.theme.dark ? .dark : .light)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 }

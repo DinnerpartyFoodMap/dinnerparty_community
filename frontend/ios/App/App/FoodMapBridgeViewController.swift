@@ -169,7 +169,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
             host.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
 
-        let hosting = UIHostingController(rootView: MapChromeView(model: chromeModel))
+        let hosting = MapChromeHostingController(rootView: MapChromeView(model: chromeModel), model: chromeModel)
         // 宿主已避开容器安全区，SwiftUI 只保留键盘避让：根视图原点不变，测量坐标与 UIKit hitTest 一致。
         hosting.safeAreaRegions = .keyboard
         hosting.view.backgroundColor = .clear

@@ -1,4 +1,56 @@
 import SwiftUI
+import UIKit
+import Combine
+
+/// SwiftUI 的 colorScheme 只覆盖内容；Liquid Glass 和系统 sheet 的底色还读取 UIKit traits。
+/// 两类地图控件共用这个宿主，在加载视图前绑定地图主题，并在呈现容器创建后、首帧绘制前同步。
+@available(iOS 26.0, *)
+final class MapChromeHostingController<Content: View>: UIHostingController<Content> {
+    private var mapInterfaceStyle: UIUserInterfaceStyle = .light
+    private var themeObservation: AnyCancellable?
+
+    init(rootView: Content, model: MapChromeModel) {
+        super.init(rootView: rootView)
+        // @Published 在赋值前发出事件，使用传入值，不能在这里重新读取 model.theme。
+        themeObservation = model.$theme.map(\.dark).removeDuplicates().sink { [weak self] dark in
+            self?.mapInterfaceStyle = dark ? .dark : .light
+            self?.applyInterfaceStyle()
+        }
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        applyInterfaceStyle()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        applyInterfaceStyle()
+    }
+
+    override func viewWillLayoutSubviews() {
+        // pageSheet 容器可能晚于 viewWillAppear 创建，布局时仍要赶在转场的第一帧前设置。
+        applyInterfaceStyle()
+        super.viewWillLayoutSubviews()
+    }
+
+    private func applyInterfaceStyle() {
+        if overrideUserInterfaceStyle != mapInterfaceStyle {
+            overrideUserInterfaceStyle = mapInterfaceStyle
+        }
+        if let view = viewIfLoaded, view.overrideUserInterfaceStyle != mapInterfaceStyle {
+            view.overrideUserInterfaceStyle = mapInterfaceStyle
+        }
+        // 玻璃底和全屏底色属于 UIKit 容器。只设置 view/controller 的 override，避免呈现控制器的 traitOverrides。
+        if let container = presentationController?.containerView, container.overrideUserInterfaceStyle != mapInterfaceStyle {
+            container.overrideUserInterfaceStyle = mapInterfaceStyle
+        }
+    }
+}
 
 /// iOS 26 地图浮动按钮组与底部工具栏（系统 Liquid Glass）。
 /// - 工具栏是一块整体玻璃（按钮与头像都在里面，内部不再叠加玻璃）；顶部拖动条上滑展开“更多功能”，下滑或点地图收起。
