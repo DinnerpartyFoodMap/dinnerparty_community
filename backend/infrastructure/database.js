@@ -728,6 +728,7 @@ function init() {
         require('../modules/journeys/services/journeySchema').initJourneySchema(rawDb);
         require('../modules/qqbot/services/qqBotSchema').initQQBotSchema(rawDb);
         require('../modules/accounts/services/userLocation').initUserLocationSchema(rawDb);
+        require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_sitenotice_active_created_time ON SiteNotice(is_active, created_time DESC);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_request_id ON AdminAudit(request_id);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_admin_time ON AdminAudit(admin_id, time DESC);`);

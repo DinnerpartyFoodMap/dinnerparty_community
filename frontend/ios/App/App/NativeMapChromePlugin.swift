@@ -2,17 +2,21 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 7）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 8）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
-/// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer }) -> { appliedRevision }
+/// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer, skin }) -> { appliedRevision }
+///   items: [{ id, title, symbol, image?, imageTemplate?, selected, disabled, busy, badge?, avatarURL?, placement, tone?, opensOverlay }]
 ///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
 ///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, caption?,
 ///                   image?: https, paragraphs?: [{ id, title?, text }],
-///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }] }
+///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
+///                   closeImage?, closeImageTemplate? }
 ///   drawer: null | { sections: [section] }
-///   row: { id, title, subtitle?, symbol?, tone?, disabled?, keepsOpen?, expands? }
+///   row: { id, title, subtitle?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands? }
+///   skin: { avatarFrame?: { image, scale }, ornamentStart? / ornamentEnd?: { image, width, height, x, y },
+///           pedestal?: { image, width, height, y }, selectedColor?: #RRGGBB }
 /// ackAction({ sessionId, eventId, outcome, overlayOpened, revision })
 /// suspend({ sessionId, reason }) -> { hidden }
 /// resume({ sessionId, revision }) -> { visible }
@@ -29,6 +33,8 @@ import Capacitor
 /// - v6：去掉“更多”按钮，改为工具栏上滑展开（drawer）；地点卡片改为两段停靠（摘要 / 上滑全屏详情），
 ///   左上角收藏圆钮、等宽操作按钮、正文与图片；面板改由 UIKit 呈现，宿主被系统界面（分享等）占用时等待而不是顶掉它。
 /// - v7：展会面板（exhibition）也是两段停靠的卡片：标题左侧图标（image）、分段正文（paragraphs）、“展会附近随机美食”操作。
+/// - v8：主题皮肤。按钮与行的 image 代替 SF Symbol（imageTemplate 时按单色跟随前景色），卡片关闭钮 closeImage，
+///   skin 为头像框、工具栏两端装饰、选中底座与选中色；值已按网页当前的浅色 / 深色模式取好。玻璃的底色与底纹不下发。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -48,7 +54,9 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 7
+    static let protocolVersion = 8
+    /// 皮肤图片地址的长度上限（base64 data URL）
+    static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "add", "search", "alongRoute", "account", "locate"]
     static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition"]
     /// 单个面板最多的行数（收藏列表）
@@ -157,6 +165,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let search = NativeMapChromePlugin.parseSearch(call.getObject("search"))
         let sheet = NativeMapChromePlugin.parseSheet(call.getObject("sheet"))
         let drawer = NativeMapChromePlugin.parseDrawer(call.getObject("drawer"))
+        let skin = NativeMapChromePlugin.parseSkin(call.getObject("skin"))
         DispatchQueue.main.async {
             guard let model = self.model, self.isCurrent(sessionId, ownerId) else {
                 call.reject("会话已失效", "STALE_SESSION")
@@ -177,7 +186,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 self.bridge?.statusBarStyle = theme.dark ? .lightContent : .darkContent
             }
             model.revision = revision
-            model.apply(items: items, theme: theme, floatingGap: floatingGap.map { CGFloat($0) }, search: search, sheet: sheet, drawer: drawer)
+            model.apply(items: items, theme: theme, floatingGap: floatingGap.map { CGFloat($0) }, search: search, sheet: sheet, drawer: drawer, skin: skin)
             self.lastHeartbeat = Date()
             call.resolve(["appliedRevision": revision])
             // 占位尺寸不变时 SwiftUI 不会再回调几何变化，握手所需的首个布局由这里主动发出
@@ -304,7 +313,9 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             avatarURL: raw["avatarURL"] as? String,
             placement: id == "account" ? "account" : ((raw["placement"] as? String) == "floating" ? "floating" : "toolbar"),
             tone: raw["tone"] as? String,
-            opensOverlay: (raw["opensOverlay"] as? Bool) ?? false
+            opensOverlay: (raw["opensOverlay"] as? Bool) ?? false,
+            image: skinImage(raw["image"]),
+            imageTemplate: (raw["imageTemplate"] as? Bool) ?? false
         )
     }
 
@@ -348,7 +359,9 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             paragraphs: parseParagraphs(raw["paragraphs"]),
             actions: parseRows(raw["actions"], budget: &actionBudget),
             sections: sections,
-            gallery: parseGallery(raw["gallery"])
+            gallery: parseGallery(raw["gallery"]),
+            closeImage: skinImage(raw["closeImage"]),
+            closeImageTemplate: (raw["closeImageTemplate"] as? Bool) ?? false
         )
     }
 
@@ -389,7 +402,9 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 tone: rawRow["tone"] as? String,
                 disabled: (rawRow["disabled"] as? Bool) ?? false,
                 keepsOpen: (rawRow["keepsOpen"] as? Bool) ?? false,
-                expands: (rawRow["expands"] as? Bool) ?? false
+                expands: (rawRow["expands"] as? Bool) ?? false,
+                image: skinImage(rawRow["image"]),
+                imageTemplate: (rawRow["imageTemplate"] as? Bool) ?? false
             ))
         }
         return rows
@@ -433,6 +448,52 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             ))
         }
         return groups
+    }
+
+    /// 皮肤图片：App 包内网页资源（capacitor:）、开发时的 http(s)，或 PNG / JPEG / WebP / GIF 的 base64 data URL；不带凭据
+    private static func skinImage(_ value: JSValue?) -> String? {
+        guard let text = value as? String, !text.isEmpty, text.count <= skinImageLimit else { return nil }
+        if text.hasPrefix("data:") {
+            let allowed = ["data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,", "data:image/gif;base64,"]
+            return allowed.contains(where: { text.hasPrefix($0) }) ? text : nil
+        }
+        guard text.count <= 2048, let url = URL(string: text), let scheme = url.scheme?.lowercased(),
+              ["capacitor", "https", "http"].contains(scheme), url.host != nil, url.user == nil, url.password == nil else { return nil }
+        return text
+    }
+
+    private static func numberValue(_ value: JSValue?) -> CGFloat? {
+        if let number = value as? NSNumber { return CGFloat(number.doubleValue) }
+        if let number = value as? Double { return CGFloat(number) }
+        if let number = value as? Int { return CGFloat(number) }
+        return nil
+    }
+
+    /// 皮肤装饰：只收有图片的项，尺寸按网页同样的范围截断
+    private static func parseSkin(_ raw: JSObject?) -> MapChromeSkin {
+        var skin = MapChromeSkin()
+        guard let raw else { return skin }
+        func decor(_ key: String) -> MapChromeSkinDecor? {
+            guard let object = raw[key] as? JSObject, let image = skinImage(object["image"]) else { return nil }
+            func value(_ name: String, _ fallback: CGFloat, _ range: ClosedRange<CGFloat>) -> CGFloat {
+                guard let parsed = numberValue(object[name]), parsed.isFinite else { return fallback }
+                return min(range.upperBound, max(range.lowerBound, parsed))
+            }
+            return MapChromeSkinDecor(
+                image: image,
+                width: value("width", 40, 1...200),
+                height: value("height", 40, 1...200),
+                x: value("x", 0, -200...200),
+                y: value("y", 0, -200...200),
+                scale: value("scale", 1.3, 1...2)
+            )
+        }
+        skin.avatarFrame = decor("avatarFrame")
+        skin.ornamentStart = decor("ornamentStart")
+        skin.ornamentEnd = decor("ornamentEnd")
+        skin.pedestal = decor("pedestal")
+        if let hex = raw["selectedColor"] as? String, hex.count == 7 { skin.selectedColor = UIColor(cssHex: hex) }
+        return skin
     }
 
     private static func httpsURL(_ value: JSValue?) -> URL? {

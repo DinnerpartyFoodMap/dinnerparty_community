@@ -55,6 +55,7 @@ function buildLabels() {
         passwordNew: t('settings:editPassword.new'),
         passwordConfirm: t('settings:editPassword.confirm'),
         themesTitle: t('common:nav.customThemes'),
+        skinsTitle: t('common:nav.skins'),
         darkMode: t('settings:customThemes.darkMode'),
         darkModeHint: t('settings:customThemes.darkModeHint'),
         themeColor: t('settings:customThemes.themeColor'),

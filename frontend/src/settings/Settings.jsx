@@ -10,7 +10,7 @@ import { t } from "../i18n/index.js";
 
 // headless：App 内原生设置打开期间不渲染任何网页内容（地图留在底下，原生页直接从地图上弹起）；
 // 原生不可用或异常结束时通过 onNativeUnavailable 让 App 切回网页版设置页，此后以 nativeDisabled 渲染、不再重试原生。
-export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUsername, onOpenEditPassword, onOpenPersonalize, onOpenThemes, backendUrl, token, onLogout, onUpdateUser, headless = false, nativeDisabled = false, onNativeUnavailable }) {
+export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUsername, onOpenEditPassword, onOpenPersonalize, onOpenThemes, onOpenSkins, backendUrl, token, onLogout, onUpdateUser, headless = false, nativeDisabled = false, onNativeUnavailable }) {
     const [deleting, setDeleting] = useState(false);
     const { showTip } = React.useContext(TipsContext);
     const confirm = useConfirm();
@@ -74,7 +74,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
 
     const nativeSettings = useNativeSettings({ user, backendUrl, token, onUpdateUser, disabled: nativeDisabled, actions: {
         back: onBack, avatar: onOpenEditAvatar, username: onOpenEditUsername, password: onOpenEditPassword,
-        themes: onOpenThemes, personalize: onOpenPersonalize,
+        themes: onOpenThemes, personalize: onOpenPersonalize, skins: onOpenSkins,
         logoutAll: () => handleLogoutAll(true), deleteAccount: () => handleDeleteAccount(true)
     } });
 
@@ -163,6 +163,21 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                     </div>
 
                     <div style={{ paddingLeft: 10, paddingRight: 10, paddingBottom: 2, background: sepBg, margin: 0 }} />
+
+                    {onOpenSkins && <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 12 }}>
+                            <div><strong>{t('common:nav.skins')}</strong></div>
+                            <div>
+                                <Tooltip text={t('common:nav.skins')} placement="top">
+                                    <Button themeAware onClick={onOpenSkins} style={{ padding: '8px 12px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}>
+                                        <span className="material-symbols-outlined">chevron_right</span>
+                                    </Button>
+                                </Tooltip>
+                            </div>
+                        </div>
+
+                        <div style={{ paddingLeft: 10, paddingRight: 10, paddingBottom: 2, background: sepBg, margin: 0 }} />
+                    </>}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 12 }}>
                         <div><strong>{t('common:nav.personalizeMap')}</strong></div>

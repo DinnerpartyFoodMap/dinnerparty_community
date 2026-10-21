@@ -6,6 +6,7 @@ import { useLayoutPolicy } from "../../motion/MotionProvider";
 import { normalizeImageUrl } from "../../map/utils";
 import { imageThumbnailUrl } from "../../platform/runtimeConfig";
 import PlaceDiaryList from "../../journey/PlaceDiaryList";
+import SkinIcon from "../../skins/SkinIcon";
 import { t, tx } from "../../i18n/index.js";
 import { tierForAverage, tierLabel, formatAverage, summaryText } from "../rating";
 
@@ -129,7 +130,9 @@ function RatingLine({ rating, onOpen }) {
             className="fm-pressable"
             style={{ marginTop: 10, padding: 0, border: 0, background: 'transparent', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer', textAlign: 'left' }}
         >
-            <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, color: tier ? tier.tone : 'var(--color-text-muted)' }}>{tier ? tier.icon : 'rate_review'}</span>
+            <SkinIcon slot={tier ? `rating.${tier.key}` : 'rating.none'} size={20}>
+                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, color: tier ? tier.tone : 'var(--color-text-muted)' }}>{tier ? tier.icon : 'rate_review'}</span>
+            </SkinIcon>
             <span>
                 {summary.count > 0
                     ? tx('map:rating.card.summary', { tier: <strong style={{ color: tier.tone }}>{tierLabel(tier)}</strong>, average: formatAverage(summary.average), count: summary.count })

@@ -135,5 +135,33 @@
       "deleting": "除名中...",
       "button": "确认除名"
     }
+  },
+  "skins": {
+    "intro": "输入皮肤兑换码解锁新的地图皮肤。皮肤替换地点卡片、评分表情、底部功能栏、头像框和地图标记的外观，没有素材的位置保持原样。",
+    "glassNote": "iOS 上的液态玻璃保持通透，不叠加皮肤底纹。",
+    "mine": "我的皮肤",
+    "defaultName": "默认样式",
+    "defaultDescription": "地图原本的样子",
+    "inUse": "使用中",
+    "use": "使用",
+    "unlockedAt": "{{date}} 解锁",
+    "needsUpdate": "当前版本还没有这套皮肤的素材，更新后即可使用",
+    "loading": "正在读取皮肤…",
+    "loadFailed": "读取失败：{{message}}",
+    "retry": "重试",
+    "redeemTitle": "兑换皮肤",
+    "redeemHint": "兑换码不区分大小写，带不带连字符都可以。",
+    "codeLabel": "皮肤兑换码",
+    "codePlaceholder": "例如 ABCD-EFGH-JKMN",
+    "redeem": "兑换",
+    "redeeming": "兑换中…",
+    "codeRequired": "请输入兑换码",
+    "unlocked": "已解锁「{{name}}」并换上",
+    "unlockedNeedsUpdate": "已解锁「{{name}}」。当前版本还没有这套皮肤的素材，更新后即可使用",
+    "alreadyOwned": "你已经拥有「{{name}}」，已为你换上",
+    "switched": "已换上「{{name}}」",
+    "switchedDefault": "已恢复默认样式",
+    "switchFailed": "切换失败：{{message}}",
+    "requestFailed": "请求失败（HTTP {{status}}）"
   }
 }

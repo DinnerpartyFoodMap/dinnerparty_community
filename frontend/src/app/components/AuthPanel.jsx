@@ -7,6 +7,7 @@ import { APP_VERSION, getPlatform } from "../../platform/env";
 import AnchoredPopover from "../../components/overlay/AnchoredPopover";
 import { t } from "../../i18n/index.js";
 import PrivacyPolicyLink from '../../auth/components/PrivacyPolicyLink.jsx';
+import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
 
 const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
     const [userOpen, setUserOpen] = useState(false);
@@ -19,6 +20,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
     const userAnchorRef = useRef(null);
     const moreAnchorRef = useRef(null);
     const expandedUserProbeRef = useRef(null);
+    const accountDefaultAvatar = useSkinDefaultAvatar(defaultAvatar);
 
     useLayoutEffect(() => {
         const openMenu = isMobile ? null : (moreOpen ? 'more' : (isAuth && userOpen ? 'user' : null));
@@ -185,7 +187,9 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                                 gap: 7
                             }}
                         >
-                            <img src={user.has_avatar ? `${backendUrl}/users/${user.id}/avatar?t=${Date.now()}` : (user.avatar || defaultAvatar)} alt={user.username || t('common:label.avatar')} style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', objectFit: 'cover' }} />
+                            <SkinAvatarFrame size={32}>
+                                <img src={user.has_avatar ? `${backendUrl}/users/${user.id}/avatar?t=${Date.now()}` : (user.avatar || accountDefaultAvatar)} alt={user.username || t('common:label.avatar')} style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', objectFit: 'cover' }} />
+                            </SkinAvatarFrame>
                             {showUsername && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 700 }}>{user.username}</span>}
                         </Button>
 

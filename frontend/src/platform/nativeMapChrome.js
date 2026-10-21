@@ -17,9 +17,11 @@ import { t } from '../i18n/index.js';
 // v2 增加搜索动作与独立头像；v3 搜索展开后工具栏变为原生输入框（search 状态与事件）；
 // v4 更多 / 住民 / 收藏面板改为系统 sheet（sheet 快照与事件）；v5 地点卡片也改为系统 sheet（操作按钮、正文、地图可操作）；
 // v6 “更多”改为工具栏上滑展开（drawer 快照与事件），地点卡片改为两段停靠（收藏圆钮、等宽操作按钮、上滑全屏详情与图片）；
-// v7 展会面板也改为两段停靠的原生卡片（exhibition 面板、标题左侧图标 image、分段正文 paragraphs）。
+// v7 展会面板也改为两段停靠的原生卡片（exhibition 面板、标题左侧图标 image、分段正文 paragraphs）；
+// v8 主题皮肤：按钮与面板行可带皮肤图片（image / imageTemplate，代替 SF Symbol），地点卡片关闭钮 closeImage，
+// skin 快照（头像框、工具栏两端装饰、选中底座、选中色）。玻璃底纹与底色不下发。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
-export const NATIVE_CHROME_PROTOCOL = 7;
+export const NATIVE_CHROME_PROTOCOL = 8;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
@@ -130,6 +132,7 @@ export function sanitizeItems(items) {
             busy: !!item.busy,
             badge: item.badge == null ? undefined : String(item.badge).slice(0, 4),
             avatarURL: item.id === 'account' ? sanitizeAvatarURL(item.avatarURL) : undefined,
+            ...sanitizeSkinIcon(item),
             placement: item.id === 'account' ? 'account' : (item.placement === 'floating' ? 'floating' : 'toolbar'),
             tone: item.tone === 'accent' || item.tone === 'danger' ? item.tone : undefined,
             opensOverlay: !!item.opensOverlay
@@ -180,8 +183,72 @@ export function sanitizeSheet(sheet) {
         paragraphs: sanitizeParagraphs(sheet.paragraphs),
         actions: sanitizeSheetRows(sheet.actions, { rows: SHEET_ACTION_LIMIT }),
         sections: sanitizeSections(sheet.sections, { rows: SHEET_ROW_LIMIT }),
-        gallery: sanitizeGallery(sheet.gallery)
+        gallery: sanitizeGallery(sheet.gallery),
+        // 地点卡片右上角关闭钮的皮肤图片
+        ...renameSkinIcon(sanitizeSkinIcon({ image: sheet.closeImage, imageTemplate: sheet.closeImageTemplate }), 'closeImage')
     };
+}
+
+const SKIN_IMAGE_LIMIT = 300_000;
+const BASE64_IMAGE = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/;
+
+/**
+ * 皮肤图片：App 包里的网页资源（capacitor:）、开发时的 http(s)，或 PNG / JPEG / WebP / GIF 的 base64 data URL
+ * （PNG 由 skins/nativeSkin.js 直接提供）。不带凭据，长度封顶。
+ */
+export function sanitizeSkinImage(value) {
+    if (typeof value !== 'string' || !value || value.length > SKIN_IMAGE_LIMIT) return undefined;
+    if (value.startsWith('data:')) return BASE64_IMAGE.test(value) ? value : undefined;
+    if (value.length > 2048) return undefined;
+    try {
+        const url = new URL(value);
+        return ['capacitor:', 'https:', 'http:'].includes(url.protocol) && url.hostname && !url.username && !url.password ? url.href : undefined;
+    } catch { return undefined; }
+}
+
+function sanitizeSkinIcon(source) {
+    const image = sanitizeSkinImage(source && source.image);
+    return image ? { image, imageTemplate: !!source.imageTemplate } : {};
+}
+
+function renameSkinIcon(icon, key) {
+    return icon.image ? { [key]: icon.image, [`${key}Template`]: icon.imageTemplate } : {};
+}
+
+const clampNumber = (value, min, max, fallback) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+};
+
+/** 工具栏装饰（v8）：头像框、两端装饰、选中底座、选中色（#RRGGBB）。没有图片的项不下发 */
+export function sanitizeSkin(skin) {
+    const source = skin && typeof skin === 'object' ? skin : {};
+    const out = {};
+    const decor = (value, build) => {
+        const image = value && typeof value === 'object' ? sanitizeSkinImage(value.image) : undefined;
+        return image ? build(value, image) : undefined;
+    };
+    const frame = decor(source.avatarFrame, (value, image) => ({ image, scale: clampNumber(value.scale, 1, 2, 1.3) }));
+    if (frame) out.avatarFrame = frame;
+    for (const key of ['ornamentStart', 'ornamentEnd']) {
+        const ornament = decor(source[key], (value, image) => ({
+            image,
+            width: clampNumber(value.width, 1, 200, 40),
+            height: clampNumber(value.height, 1, 200, 40),
+            x: clampNumber(value.x, -200, 200, 0),
+            y: clampNumber(value.y, -200, 200, -20)
+        }));
+        if (ornament) out[key] = ornament;
+    }
+    const pedestal = decor(source.pedestal, (value, image) => ({
+        image,
+        width: clampNumber(value.width, 1, 120, 48),
+        height: clampNumber(value.height, 1, 120, 48),
+        y: clampNumber(value.y, -60, 60, 0)
+    }));
+    if (pedestal) out.pedestal = pedestal;
+    if (typeof source.selectedColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.selectedColor)) out.selectedColor = source.selectedColor;
+    return out;
 }
 
 function sanitizeParagraphs(list) {
@@ -260,6 +327,7 @@ function sanitizeSheetRows(list, budget) {
             title: clipText(row.title, 60) || id,
             subtitle: clipText(row.subtitle, 80),
             symbol: clipText(row.symbol, 64),
+            ...sanitizeSkinIcon(row),
             tone: SHEET_TONES.includes(row.tone) ? row.tone : undefined,
             disabled: !!row.disabled,
             keepsOpen: !!row.keepsOpen,
@@ -272,6 +340,8 @@ function sanitizeSheetRows(list, budget) {
 function sanitizeAvatarURL(value) {
     try {
         if (typeof value !== 'string' || !value.trim()) return undefined;
+        // 皮肤的默认头像可能是 base64 PNG（构建时小图被内联）
+        if (value.startsWith('data:')) return sanitizeSkinImage(value);
         const url = new URL(value, typeof window !== 'undefined' ? window.location.href : undefined);
         return ['https:', 'http:', 'capacitor:'].includes(url.protocol) && !url.username && !url.password ? url.href : undefined;
     } catch { return undefined; }
@@ -456,7 +526,8 @@ export class NativeMapChromeSession {
                 floatingGap: Number.isFinite(Number(snapshot.floatingGap)) ? Number(snapshot.floatingGap) : 14,
                 search: sanitizeSearch(snapshot.search),
                 sheet: sanitizeSheet(snapshot.sheet),
-                drawer: sanitizeDrawer(snapshot.drawer)
+                drawer: sanitizeDrawer(snapshot.drawer),
+                skin: sanitizeSkin(snapshot.skin)
             }), CALL_TIMEOUT_MS);
             if (!result || result.appliedRevision !== this.revision) {
                 if (!(result && result.ignored)) throw new Error('setState');

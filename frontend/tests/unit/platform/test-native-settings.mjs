@@ -13,7 +13,7 @@ function harness(open) {
     return { session, actions, errors, closed, snapshots };
 }
 
-for (const action of ['back', 'avatar', 'username', 'password', 'themes', 'personalize', 'logoutAll', 'deleteAccount']) {
+for (const action of ['back', 'avatar', 'username', 'password', 'themes', 'personalize', 'skins', 'logoutAll', 'deleteAccount']) {
     const h = harness(({ id }) => ({ id, action }));
     await h.session.start();
     assert.deepEqual(h.actions, [action]);

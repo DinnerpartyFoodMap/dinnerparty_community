@@ -164,6 +164,15 @@ export class MarkerLayerController {
         this._scheduleLabels();
     }
 
+    /** 皮肤等外观来源变化后重画全部标记（不重建、不打断转场） */
+    refreshAppearance() {
+        if (this.destroyed) return;
+        for (const entry of this.entries.values()) {
+            if (!entry.ghost) this._refreshAppearance(entry);
+        }
+        this._scheduleLabels();
+    }
+
     getEngine() {
         return this.engine;
     }

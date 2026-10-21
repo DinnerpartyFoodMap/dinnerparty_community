@@ -28,6 +28,7 @@ import { getQueryParams, removeQueryParams, openExternal, shareParamValue } from
 import { onAppStateChange } from "../platform/lifecycle";
 import { isNativePlatform } from "../platform/env";
 import { getRuntimeConfig } from "../platform/runtimeConfig";
+import { subscribeSkin } from "../skins/skinStore";
 import { t } from "../i18n/index.js";
 
 const DEFAULT_CENTER = MapUtils.DEFAULT_CENTER;
@@ -271,6 +272,9 @@ export default function MapView({
         window.addEventListener('themechange', onThemeChange);
         return () => window.removeEventListener('themechange', onThemeChange);
     }, []);
+
+    // 换皮肤：标记图跟着换（只重画外观，不重建标记）
+    useEffect(() => subscribeSkin(() => markerLayerRef.current?.refreshAppearance()), []);
 
     // Helper: try multiple AMap APIs to set a map style string (robust across versions)
     const trySetAmapStyle = (map, styleStr) => {

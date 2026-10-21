@@ -23,7 +23,7 @@ const SIDE_TOP = 76;
  *   width?: string, maxHeight?: string, sheetHeight?: string, snap?: 'half' | null,
  *   modal?: boolean, backdrop?: boolean, dismissOnBackdrop?: boolean, showClose?: boolean, closeLabel?: string,
  *   label?: string, role?: string, kind?: string, suspendNative?: boolean, closeOnEscape?: boolean,
- *   initialFocusRef?: any, bodyStyle?: object, surfaceStyle?: object, headerExtra?: React.ReactNode,
+ *   initialFocusRef?: any, bodyStyle?: object, surfaceStyle?: object, surfaceClassName?: string, headerExtra?: React.ReactNode,
  *   bodyProps?: object, onExitComplete?: Function, plain?: boolean, sideInset?: number, sideTop?: number, sideBottom?: number, draggable?: boolean
  * }} props
  * draggable=false 关闭底部/全屏面板的下滑关闭（例如正在输入的创作页，避免误触退出）。
@@ -97,7 +97,7 @@ function outerStyle(mode, { width, maxHeight, sheetHeight, sideInset = 20, sideT
     };
 }
 
-function PanelChrome({ mode, onClose, title, children, footer, showClose = true, closeLabel = t('common:action.close'), snap = null, bodyStyle, surfaceStyle, headerExtra, bodyProps, plain = false, draggable = true }) {
+function PanelChrome({ mode, onClose, title, children, footer, showClose = true, closeLabel = t('common:action.close'), snap = null, bodyStyle, surfaceStyle, surfaceClassName, headerExtra, bodyProps, plain = false, draggable = true }) {
     const flags = useMotionFlags();
     const sheetRef = useRef(null);
     const iosFull = mode === 'full' && getPlatform() === 'ios';
@@ -117,6 +117,7 @@ function PanelChrome({ mode, onClose, title, children, footer, showClose = true,
     const classes = ['fm-surface'];
     if (iosFull) classes.push('fm-full-page');
     if (mode === 'sheet') classes.push('fm-sheet');
+    if (surfaceClassName) classes.push(surfaceClassName);
     const style = {
         display: 'flex',
         flexDirection: 'column',

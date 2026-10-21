@@ -16,6 +16,18 @@ export { PLACE_GLYPH, CLUSTER_GLYPH, MIN_HIT_SIZE, LABEL_MAX_WIDTH, LABEL_HEIGHT
 import { glyphSize, hitSize, formatCount, countFontSize } from './cluster/glyph.js';
 import { t } from '../i18n/index.js';
 import { isAvoidedPlace } from "../places/rating.js";
+import { skinSlot, skinRevision } from '../skins/skinStore.js';
+
+/** 标记图：皮肤提供时用皮肤的图，否则用默认图（图片加载失败时也回到默认图，见 createMarkerParts） */
+function markerIcon(slot, fallback) {
+    const src = skinSlot(slot);
+    return typeof src === 'string' && src ? src : fallback;
+}
+
+function setMarkerImage(img, src, fallback) {
+    img.dataset.fallback = fallback;
+    if (img.getAttribute('src') !== src) img.src = src;
+}
 
 /** 避雷图标：综合评价落在“均线之下 / 强烈拒绝”；没人评价时看“避雷”标签（见 rating.js） */
 export function isThunderPlace(place) {
@@ -33,6 +45,10 @@ export function createMarkerParts() {
     img.alt = '';
     img.draggable = false;
     img.decoding = 'async';
+    img.addEventListener('error', () => {
+        const fallback = img.dataset.fallback;
+        if (fallback && img.getAttribute('src') !== fallback) img.src = fallback;
+    });
     glyph.appendChild(img);
     const label = document.createElement('div');
     label.className = 'fm-marker__label';
@@ -54,7 +70,7 @@ export function applyNodeAppearance(parts, node, { selected = false } = {}) {
     const place = node.kind === 'place' ? node.place || {} : null;
     const thunder = place ? isThunderPlace(place) : false;
     const name = place ? String(place.name || '') : '';
-    const signature = `${node.kind}|${node.count}|${thunder}|${name}|${selected}`;
+    const signature = `${node.kind}|${node.count}|${thunder}|${name}|${selected}|${skinRevision()}`;
     if (parts.appearance === signature) return size;
     parts.appearance = signature;
 
@@ -73,7 +89,7 @@ export function applyNodeAppearance(parts, node, { selected = false } = {}) {
     hit.style.top = `${-Math.max(hitBox.height, size.height + 2)}px`;
 
     if (node.kind === 'cluster') {
-        img.src = unionIcon;
+        setMarkerImage(img, markerIcon('markers.cluster', unionIcon), unionIcon);
         if (!parts.count) {
             parts.count = document.createElement('div');
             parts.count.className = 'fm-marker__count';
@@ -87,7 +103,7 @@ export function applyNodeAppearance(parts, node, { selected = false } = {}) {
         label.dataset.hidden = '';
         hit.setAttribute('aria-label', t('map:marker.clusterLabel', { count: node.count }));
     } else {
-        img.src = thunder ? noIcon : yesIcon;
+        setMarkerImage(img, thunder ? markerIcon('markers.avoid', noIcon) : markerIcon('markers.place', yesIcon), thunder ? noIcon : yesIcon);
         if (parts.count) {
             parts.count.remove();
             parts.count = null;

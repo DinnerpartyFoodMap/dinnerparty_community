@@ -172,6 +172,9 @@ struct MapChromeView: View {
         .frame(maxWidth: .infinity)
         .glassEffect(revealed > 0 ? Glass.regular : Glass.regular.interactive(), in: shape)
         .glassEffectID("toolbar", in: glassNamespace)
+        // 皮肤的两端装饰画在玻璃之上（不是玻璃的一部分、不叠底纹），随工具栏上沿移动，不接收触摸
+        .overlay(alignment: .topLeading) { ornament(model.skin.ornamentStart, leading: true) }
+        .overlay(alignment: .topTrailing) { ornament(model.skin.ornamentEnd, leading: false) }
         .onGeometryChange(for: CGRect.self, of: { proxy in
             proxy.frame(in: .named(Self.coordinateSpaceName))
         }, action: { rect in
@@ -180,6 +183,18 @@ struct MapChromeView: View {
         .highPriorityGesture(drawerGesture, including: model.drawerAvailable ? .all : .subviews)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("地图主要操作"))
+    }
+
+    /// 皮肤装饰：以工具栏左上 / 右上角为原点，x 向内、y 向下；图片贴着装饰框的底边与外侧
+    @ViewBuilder
+    private func ornament(_ decor: MapChromeSkinDecor?, leading: Bool) -> some View {
+        if let decor {
+            MapChromeSkinImage(source: decor.image, width: decor.width, height: decor.height,
+                               alignment: leading ? .bottomLeading : .bottomTrailing) { EmptyView() }
+                .offset(x: leading ? decor.x : -decor.x, y: decor.y)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     /// 拖动条：上滑展开、下滑收起；点按切换（读屏也可用）
@@ -286,11 +301,13 @@ struct MapChromeView: View {
             }
         } label: {
             VStack(spacing: 6) {
-                Image(systemName: row.symbol ?? "circle")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(row.tone == "danger" ? Color.red : accent)
-                    .frame(width: 56, height: 56)
-                    .background(Circle().fill(accent.opacity(0.14)))
+                MapChromeSkinImage(source: row.image, template: row.imageTemplate, width: 28, height: 28) {
+                    Image(systemName: row.symbol ?? "circle")
+                        .font(.system(size: 22, weight: .semibold))
+                }
+                .foregroundStyle(row.tone == "danger" ? Color.red : accent)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(accent.opacity(0.14)))
                 Text(row.title)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.primary)
@@ -365,8 +382,8 @@ struct MapChromeView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 52)
             .contentShape(Rectangle())
-            // 工具栏按钮统一用主文字色（深色模式为白色），选中只靠高亮底与实心图标区分
-            .foregroundStyle(.primary)
+            // 工具栏按钮统一用主文字色（深色模式为白色），选中只靠高亮底与实心图标区分；皮肤可指定选中色
+            .foregroundStyle(item.selected ? skinSelectedColor : Color.primary)
             .background { toolbarHighlight(item) }
             .opacity(item.disabled ? 0.45 : 1)
         }
@@ -376,11 +393,18 @@ struct MapChromeView: View {
         .accessibilityAddTraits(item.selected ? .isSelected : [])
     }
 
+    /// 皮肤的选中色（网页已按浅色 / 深色模式取好）；没有时用主文字色
+    private var skinSelectedColor: Color {
+        model.skin.selectedColor.map { Color(uiColor: $0) } ?? Color.primary
+    }
+
     @ViewBuilder
     private func toolbarIcon(_ item: MapChromeItem) -> some View {
-        let image = Image(systemName: item.symbol)
-            .font(.system(size: 21, weight: .semibold))
-            .symbolRenderingMode(.hierarchical)
+        let image = MapChromeSkinImage(source: item.image, template: item.imageTemplate, width: 24, height: 24) {
+            Image(systemName: item.symbol)
+                .font(.system(size: 21, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+        }
         if item.id == "search" {
             // 展开时图标滑到输入框左侧
             image.matchedGeometryEffect(id: "searchIcon", in: morphNamespace)
@@ -397,7 +421,25 @@ struct MapChromeView: View {
                 .fill(accent.opacity(item.selected ? 0.16 : 0))
                 .matchedGeometryEffect(id: "searchHighlight", in: morphNamespace)
         } else if item.selected {
-            Capsule().fill(Color.primary.opacity(0.12))
+            if let pedestal = model.skin.pedestal {
+                // 皮肤的选中底座：画在图标后面，选中时亮起（图片读不到时退回原来的高亮）
+                MapChromeSkinImage(source: pedestal.image, width: pedestal.width, height: pedestal.height) {
+                    Capsule().fill(Color.primary.opacity(0.12))
+                }
+                .offset(y: pedestal.y)
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+            } else {
+                Capsule().fill(Color.primary.opacity(0.12))
+            }
+        }
+    }
+
+    /// 皮肤头像框：比头像大 scale 倍、居中，画在头像之上，住民自己的头像不变
+    @ViewBuilder
+    private func avatarFrame(diameter: CGFloat) -> some View {
+        if let frame = model.skin.avatarFrame {
+            MapChromeSkinImage(source: frame.image, width: diameter * frame.scale, height: diameter * frame.scale) { EmptyView() }
+                .allowsHitTesting(false)
         }
     }
 
@@ -407,6 +449,7 @@ struct MapChromeView: View {
             avatar(item.avatarURL)
                 .frame(width: 42, height: 42)
                 .clipShape(Circle())
+                .overlay { avatarFrame(diameter: 42) }
                 .matchedGeometryEffect(id: "accountAvatar", in: morphNamespace)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .contentShape(Rectangle())
@@ -467,12 +510,16 @@ struct MapChromeView: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(accent)
-                .matchedGeometryEffect(id: "searchIcon", in: morphNamespace)
-                .accessibilityHidden(true)
+        let searchItem = model.toolbarItems.first { $0.id == "search" }
+        return HStack(spacing: 8) {
+            // 与工具栏“搜索”按钮同一个图标（皮肤图片或 SF Symbol），展开时原样滑过来
+            MapChromeSkinImage(source: searchItem?.image, template: searchItem?.imageTemplate ?? false, width: 20, height: 20) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .foregroundStyle(accent)
+            .matchedGeometryEffect(id: "searchIcon", in: morphNamespace)
+            .accessibilityHidden(true)
             TextField(text: searchText, prompt: Text(model.search.placeholder)) {
                 Text(model.search.placeholder)
             }
@@ -550,6 +597,7 @@ struct MapChromeView: View {
             avatar(item.avatarURL)
                 .frame(width: 42, height: 42)
                 .clipShape(Circle())
+                .overlay { avatarFrame(diameter: 42) }
                 .matchedGeometryEffect(id: "accountAvatar", in: morphNamespace)
                 .frame(width: 52, height: 52)
                 .contentShape(Circle())
@@ -564,15 +612,11 @@ struct MapChromeView: View {
 
     @ViewBuilder
     private func avatar(_ source: String?) -> some View {
-        let url = source.flatMap { URL(string: $0) }
-        // 默认头像由 Vite 打包在 public/assets，URLSession 无法读取 capacitor://。
-        if let url, url.scheme == "capacitor", url.path.hasPrefix("/assets/"),
-           !url.pathComponents.contains(".."),
-           let root = Bundle.main.resourceURL,
-           let image = UIImage(contentsOfFile: root.appendingPathComponent("public" + url.path).path) {
+        // 默认头像（含皮肤的默认头像）在 App 包里或是 base64，同步读取；住民上传的头像走网络
+        if let source, let image = MapChromeSkinImages.local(source) {
             Image(uiImage: image).resizable().scaledToFill()
         } else {
-            AsyncImage(url: url) { image in
+            AsyncImage(url: source.flatMap { URL(string: $0) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill")
@@ -590,8 +634,10 @@ struct MapChromeView: View {
                 if item.busy {
                     ProgressView()
                 } else {
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 20, weight: .semibold))
+                    MapChromeSkinImage(source: item.image, template: item.imageTemplate, width: 24, height: 24) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 20, weight: .semibold))
+                    }
                 }
             }
             .frame(width: 50, height: 50)

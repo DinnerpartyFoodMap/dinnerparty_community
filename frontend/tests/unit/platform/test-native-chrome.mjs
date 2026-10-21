@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
 
-const { NativeMapChromeSession, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, NATIVE_CHROME_PROTOCOL } = await import("../../../src/platform/nativeMapChrome.js");
+const { NativeMapChromeSession, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, NATIVE_CHROME_PROTOCOL } = await import("../../../src/platform/nativeMapChrome.js");
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -270,8 +270,43 @@ function makeSession(plugin, extra = {}) {
     assert.deepEqual(sanitizeSheet({ id: 'account' }).gallery, []);
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
+    // v8 主题皮肤：按钮、面板行与关闭钮可带皮肤图片；装饰只下发有图片的项；不传底纹
+    assert.equal(NATIVE_CHROME_PROTOCOL, 8);
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    for (const good of [png, 'capacitor://localhost/assets/icon-1a2b.png', 'https://cdn.example.com/a.webp', 'http://192.168.1.2:5173/src/skins/packs/a/i.png']) {
+        assert.equal(typeof sanitizeSkinImage(good), 'string', good);
+    }
+    for (const bad of ['data:image/svg+xml;base64,PHN2Zz4=', 'data:text/html;base64,PGI+', 'data:image/png;base64,<script>', 'javascript:alert(1)',
+        '/assets/a.png', 'https://u:p@cdn.example.com/a.png', 'data:image/png;base64,' + 'A'.repeat(300_001), 42, null]) {
+        assert.equal(sanitizeSkinImage(bad), undefined, String(bad).slice(0, 40));
+    }
+    const skinned = sanitizeItems([{ id: 'favorites', symbol: 'heart', image: png, imageTemplate: 1 }, { id: 'add', symbol: 'plus', image: 'javascript:x', imageTemplate: true }]);
+    assert.deepEqual([skinned[0].image, skinned[0].imageTemplate], [png, true]);
+    assert.equal('image' in skinned[1] || 'imageTemplate' in skinned[1], false, '无效图片时只用 SF Symbol');
+    const skinCard = sanitizeSheet({ id: 'place', size: 'card', closeImage: png, closeImageTemplate: true, leading: { id: 'share', image: png },
+        actions: [{ id: 'navigate', image: 'capacitor://localhost/assets/nav.png' }, { id: 'edit' }], sections: [{ rows: [{ id: 'rating', image: png }] }] });
+    assert.deepEqual([skinCard.closeImage, skinCard.closeImageTemplate, skinCard.leading.image, skinCard.leading.imageTemplate], [png, true, png, false]);
+    assert.equal(skinCard.actions[0].image, 'capacitor://localhost/assets/nav.png');
+    assert.equal('image' in skinCard.actions[1], false);
+    assert.equal(skinCard.sections[0].rows[0].image, png);
+    assert.equal('closeImage' in sanitizeSheet({ id: 'place', closeImage: 'nope' }), false);
+    assert.deepEqual(sanitizeSkin(null), {});
+    assert.deepEqual(sanitizeSkin({
+        avatarFrame: { image: png, scale: 9 },
+        ornamentStart: { image: png, width: 500, height: 30, x: -999, y: 'up' },
+        ornamentEnd: { width: 40 },
+        pedestal: { image: png, width: 52, height: 52, y: -6 },
+        selectedColor: '#8C6BB1',
+        toolbarTexture: png
+    }), {
+        avatarFrame: { image: png, scale: 2 },
+        ornamentStart: { image: png, width: 200, height: 30, x: -200, y: -20 },
+        pedestal: { image: png, width: 52, height: 52, y: -6 },
+        selectedColor: '#8C6BB1'
+    });
+    assert.equal(sanitizeSkin({ selectedColor: 'rgba(0,0,0,.5)' }).selectedColor, undefined, '原生只收 #RRGGBB');
+
     // v7 展会卡片：标题左侧图标只收 https，分段正文最多 4 段、空段丢弃、截断
-    assert.equal(NATIVE_CHROME_PROTOCOL, 7);
     const exhibition = sanitizeSheet({
         id: 'exhibition', token: 2, title: '秋日展会', size: 'card', image: 'https://cdn.example.com/icon.png',
         paragraphs: [

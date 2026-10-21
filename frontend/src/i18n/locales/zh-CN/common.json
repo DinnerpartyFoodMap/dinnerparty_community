@@ -75,7 +75,8 @@
     "editUsername": "修改住民名",
     "editPassword": "修改通行密码",
     "customThemes": "个性化主题",
-    "personalizeMap": "个性化地图"
+    "personalizeMap": "个性化地图",
+    "skins": "主题皮肤"
   },
   "pageTemplate": {
     "backToSettings": "返回设置"

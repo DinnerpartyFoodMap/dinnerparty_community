@@ -225,5 +225,50 @@
     "amber": "灯笼橙",
     "rose": "樱华粉",
     "slate": "魂灵紫灰"
+  },
+  "skinCodes": {
+    "title": "皮肤兑换码",
+    "intro": "为已登记的皮肤批量生成兑换码。住民在“住民设置 → 主题皮肤”输入后解锁；作废后不能再兑换，已解锁的住民保留皮肤。",
+    "emptyCatalog": "还没有可兑换的皮肤：先在 backend/modules/skins/catalog.json 登记，并在 frontend/src/skins/packs 放入素材。",
+    "skin": "皮肤",
+    "notInBuild": "{{name}}（当前版本没有素材）",
+    "count": "生成数量",
+    "maxUses": "每个码可用次数",
+    "expiresDays": "有效天数",
+    "expiresHint": "留空为长期有效",
+    "note": "备注",
+    "notePlaceholder": "例如：秋季活动",
+    "generate": "生成兑换码",
+    "generating": "生成中…",
+    "generated": "已生成 {{count}} 个兑换码",
+    "newCodes": "本次生成",
+    "copyAll": "复制全部",
+    "copied": "已复制",
+    "copyFailed": "复制失败，请手动选择文字复制",
+    "listTitle": "最近的兑换码",
+    "empty": "还没有皮肤兑换码",
+    "loading": "正在读取…",
+    "loadFailed": "读取失败：{{message}}",
+    "retry": "重试",
+    "requestFailed": "请求失败",
+    "column": {
+      "code": "兑换码",
+      "skin": "皮肤",
+      "uses": "已用 / 总次数",
+      "expires": "有效期至",
+      "status": "状态",
+      "note": "备注"
+    },
+    "usage": "{{used}} / {{max}}",
+    "never": "长期",
+    "status": {
+      "active": "可用",
+      "exhausted": "已用完",
+      "expired": "已过期",
+      "revoked": "已作废"
+    },
+    "revoke": "作废",
+    "confirmRevoke": "作废兑换码 {{code}}？作废后不能再兑换，已解锁的住民保留皮肤。",
+    "revokedTip": "已作废 {{code}}"
   }
 }

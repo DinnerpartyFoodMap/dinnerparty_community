@@ -509,6 +509,8 @@ struct MapChromePlaceCard: View {
             if let leading = sheet.leading {
                 circleButton(
                     symbol: leading.symbol ?? "square.and.arrow.up",
+                    image: leading.image,
+                    template: leading.imageTemplate,
                     label: leading.title,
                     tint: leading.tone == "accent" ? accent : Color.primary,
                     disabled: leading.disabled
@@ -536,7 +538,8 @@ struct MapChromePlaceCard: View {
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
-            circleButton(symbol: "xmark", label: "关闭", tint: Color.primary, disabled: false) {
+            circleButton(symbol: "xmark", image: sheet.closeImage, template: sheet.closeImageTemplate,
+                         label: "关闭", tint: Color.primary, disabled: false) {
                 model.dismissSheet()
             }
         }
@@ -561,14 +564,18 @@ struct MapChromePlaceCard: View {
         .accessibilityHidden(true)
     }
 
-    private func circleButton(symbol: String, label: String, tint: Color, disabled: Bool, action: @escaping () -> Void) -> some View {
+    /// 圆形玻璃按钮；image 为皮肤图标（v8），读不到时仍显示 symbol
+    private func circleButton(symbol: String, image: String? = nil, template: Bool = false, label: String, tint: Color, disabled: Bool,
+                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(tint)
-                .contentTransition(.symbolEffect(.replace))
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+            MapChromeSkinImage(source: image, template: template, width: 22, height: 22) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .foregroundStyle(tint)
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .glassEffect(Glass.regular.interactive(), in: .circle)
@@ -589,10 +596,13 @@ struct MapChromePlaceCard: View {
             }
         } label: {
             VStack(spacing: 5) {
-                Image(systemName: row.symbol ?? "circle")
-                    .font(.system(size: 19, weight: .semibold))
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(height: 24)
+                // 皮肤图标：单色（template）时与按钮文字同色，原色图标按原样显示
+                MapChromeSkinImage(source: row.image, template: row.imageTemplate, width: 24, height: 24) {
+                    Image(systemName: row.symbol ?? "circle")
+                        .font(.system(size: 19, weight: .semibold))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .frame(height: 24)
                 Text(row.title)
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
@@ -701,10 +711,13 @@ struct MapChromePlaceCard: View {
             model.selectSheetRow(row)
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: row.symbol ?? "circle")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(accent)
-                    .frame(width: 24)
+                // 评价一行：皮肤的评价表情（原色）代替 SF Symbol
+                MapChromeSkinImage(source: row.image, template: row.imageTemplate, width: 24, height: 24) {
+                    Image(systemName: row.symbol ?? "circle")
+                        .font(.body.weight(.semibold))
+                }
+                .foregroundStyle(accent)
+                .frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.title)
                         .foregroundStyle(.primary)

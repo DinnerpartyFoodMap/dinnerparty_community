@@ -273,6 +273,7 @@ app.use("/admin/qq-bot", requireAuth, require('./modules/admin/routes/adminQQBot
 app.use("/admin/notices", requireAuth, adminNoticesRouter);
 app.use("/api/admin/notices", requireAuth, adminNoticesRouter);
 app.use(["/admin/exhibitions", "/api/admin/exhibitions"], requireAuth, require('./modules/admin/routes/adminExhibitions'));
+app.use("/admin/skin-codes", requireAuth, require('./modules/admin/routes/adminSkinCodes'));
 
 
 init();
@@ -304,6 +305,7 @@ app.use("/api/dinners", dinnersRouter);
 app.use("/api/favorites", favoritesRouter);
 app.use('/api/preferences', preferencesRouter);
 app.use('/api/ratings', require('./modules/ratings/routes/placeRatings'));
+app.use('/api/skins', require('./modules/skins/routes/skins'));
 app.use('/api/journeys', require('./modules/journeys/routes/journeys'));
 app.use('/internal/journey-algorithms/places', require('./modules/journeys/routes/algorithmPlaces'));
 app.use('/api/public/journeys', require('./modules/journeys/routes/publicJourneys'));

@@ -19,6 +19,10 @@ struct MapChromeItem: Identifiable, Equatable {
     var tone: String?
     /// 点击后会打开网页浮层：原生先本地收起，等待网页回执
     var opensOverlay: Bool
+    /// 皮肤图标（v8）：有时代替 SF Symbol，加载不到时仍显示 symbol
+    var image: String? = nil
+    /// 皮肤图标按单色处理（跟随前景色，浅色 / 深色模式自动适配）
+    var imageTemplate = false
 }
 
 /// 底部搜索栏状态（网页下发）。展开后工具栏变为原生输入框。
@@ -50,6 +54,9 @@ struct MapChromeSheetRow: Identifiable, Equatable {
     var keepsOpen: Bool
     /// 点按只在原生侧展开 / 收起地点卡片（“详情”），不回传网页
     var expands: Bool
+    /// 皮肤图标（v8，地点卡片的操作按钮、评价表情、更多功能）
+    var image: String? = nil
+    var imageTemplate = false
 }
 
 struct MapChromeSheetSection: Identifiable, Equatable {
@@ -103,6 +110,9 @@ struct MapChromeSheet: Identifiable, Equatable {
     var actions: [MapChromeSheetRow]
     var sections: [MapChromeSheetSection]
     var gallery: [MapChromeSheetGallery]
+    /// 地点卡片右上角关闭钮的皮肤图标（v8）
+    var closeImage: String? = nil
+    var closeImageTemplate = false
 
     var id: String { "\(sheetId)#\(token)" }
     var isCard: Bool { style == "card" }
@@ -121,12 +131,36 @@ struct MapChromeTheme: Equatable {
     var dark: Bool = false
 }
 
+/// 皮肤装饰图片（v8）：工具栏两端装饰（以工具栏左上 / 右上角为原点，x 向内、y 向下）、选中底座（y 为相对按钮中心的下移）、
+/// 头像框（比头像大 scale 倍）。尺寸单位为点。
+struct MapChromeSkinDecor: Equatable {
+    var image: String
+    var width: CGFloat = 40
+    var height: CGFloat = 40
+    var x: CGFloat = 0
+    var y: CGFloat = 0
+    var scale: CGFloat = 1.3
+}
+
+/// 网页下发的皮肤（已按当前浅色 / 深色模式取值，切换时随下一次快照更新）。
+/// 只有图标与装饰：液态玻璃的底色、底纹与边框始终是系统材质，保持通透。
+struct MapChromeSkin: Equatable {
+    var avatarFrame: MapChromeSkinDecor?
+    var ornamentStart: MapChromeSkinDecor?
+    var ornamentEnd: MapChromeSkinDecor?
+    var pedestal: MapChromeSkinDecor?
+    /// 工具栏选中按钮的图标与文字颜色；nil 时与其他按钮相同（主文字色）
+    var selectedColor: UIColor?
+}
+
 /// 网页、插件与 SwiftUI 共享的状态。只在主线程读写。
 final class MapChromeModel: ObservableObject {
     @Published private(set) var items: [MapChromeItem] = []
     @Published private(set) var theme = MapChromeTheme() {
         didSet { onPresentationChange?() }
     }
+    /// 主题皮肤的装饰（头像框、两端装饰、选中底座、选中色）；图标在各按钮 / 行自己的 image 里
+    @Published private(set) var skin = MapChromeSkin()
     /// 网页请求显示（attach 后默认隐藏，resume 后显示）
     @Published var visible = false {
         didSet {
@@ -250,14 +284,17 @@ final class MapChromeModel: ObservableObject {
         cardExpanded = false
         drawer = nil
         drawerExpanded = false
+        skin = MapChromeSkin()
         // frames 是占位视图的几何信息，与会话无关，不清空：
         // 占位位置不变时 SwiftUI 不会再次回调，清空后新会话就拿不到工具栏位置（浮动按钮的过期位置由 apply 按 id 剔除）
         onFramesChanged?()
     }
 
     func apply(items next: [MapChromeItem], theme nextTheme: MapChromeTheme, floatingGap gap: CGFloat?,
-               search nextSearch: MapChromeSearch?, sheet nextSheet: MapChromeSheet?, drawer nextDrawer: MapChromeDrawer?) {
+               search nextSearch: MapChromeSearch?, sheet nextSheet: MapChromeSheet?, drawer nextDrawer: MapChromeDrawer?,
+               skin nextSkin: MapChromeSkin) {
         if items != next { items = next }
+        if skin != nextSkin { skin = nextSkin }
         if sheet?.id != nextSheet?.id { cardExpanded = false }
         if sheet != nextSheet { sheet = nextSheet }
         if let nextSheet, sheetContent != nextSheet { sheetContent = nextSheet }
@@ -389,6 +426,71 @@ final class MapChromeModel: ObservableObject {
     private func sendSearch(_ type: String, _ data: [String: Any]) {
         guard isShowing, searchExpanded else { return }
         onSearchEvent?(type, data)
+    }
+}
+
+/// 网页下发的图片地址（皮肤图标与装饰、默认头像）。
+/// - App 包里的网页资源（capacitor://localhost/assets/…，Vite 打包在 public/assets；URLSession 读不了 capacitor://）
+///   与 base64 data URL（PNG 等位图小图被 Vite 内联）同步读取并缓存；
+/// - 开发时的 http(s) 地址交给 AsyncImage。
+enum MapChromeSkinImages {
+    private static let cache = NSCache<NSString, UIImage>()
+
+    static func local(_ source: String) -> UIImage? {
+        let key = source as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        var image: UIImage?
+        if source.hasPrefix("data:image/"), let comma = source.firstIndex(of: ","),
+           source[..<comma].hasSuffix(";base64"),
+           let data = Data(base64Encoded: String(source[source.index(after: comma)...])) {
+            image = UIImage(data: data, scale: 3)
+        } else if let url = URL(string: source), url.scheme == "capacitor", url.path.hasPrefix("/assets/"),
+                  !url.pathComponents.contains(".."), let root = Bundle.main.resourceURL {
+            image = UIImage(contentsOfFile: root.appendingPathComponent("public" + url.path).path)
+        }
+        if let image { cache.setObject(image, forKey: key) }
+        return image
+    }
+
+    static func remote(_ source: String) -> URL? {
+        guard let url = URL(string: source), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
+        return url
+    }
+}
+
+/// 皮肤图片：有图时显示图片，没有或读不到时显示 fallback（原来的 SF Symbol），缺图、坏图都回到默认样式。
+/// template 为真时按单色图标渲染（跟随 foregroundStyle，浅色 / 深色模式自动取色）；否则保持原色。
+struct MapChromeSkinImage<Fallback: View>: View {
+    let source: String?
+    var template = false
+    var width: CGFloat? = nil
+    var height: CGFloat? = nil
+    var alignment: Alignment = .center
+    @ViewBuilder var fallback: () -> Fallback
+
+    var body: some View {
+        if let source, let image = MapChromeSkinImages.local(source) {
+            styled(Image(uiImage: image))
+        } else if let source, let url = MapChromeSkinImages.remote(source) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    styled(image)
+                } else {
+                    fallback()
+                }
+            }
+        } else {
+            fallback()
+        }
+    }
+
+    private func styled(_ image: Image) -> some View {
+        image
+            .renderingMode(template ? .template : .original)
+            .resizable()
+            .scaledToFit()
+            .frame(width: width, height: height, alignment: alignment)
+            .accessibilityHidden(true)
     }
 }
 

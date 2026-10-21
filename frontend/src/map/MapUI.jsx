@@ -43,6 +43,11 @@ import { getOverlayEntries, subscribeOverlays } from '../components/overlay/over
 import { ExhibitionPanel } from './MapExhibition';
 import { exhibitionChromeSheet, exhibitionRandomOrigin } from './exhibition';
 import { exhibitionIconSource } from '../components/primitives/ExhibitionIcon';
+import SkinIcon from '../skins/SkinIcon';
+import SkinAvatarFrame, { useSkinDefaultAvatar } from '../skins/SkinAvatar';
+import { SkinFrame, SkinOrnaments, useSkinFrameActive } from '../skins/SkinDecor';
+import { useSkinRevision } from '../skins/useSkin';
+import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../skins/nativeSkin';
 import { t, tx } from '../i18n/index.js';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
@@ -411,6 +416,17 @@ export default function MapUI(props) {
     const dinnerBtnRef = useRef(null);
     // 系统返回与 Escape：所有面板/弹层登记到统一浮层栈，按真实打开顺序逐层关闭（见 components/overlay）
     const dark = useDarkMode();
+    // 账号入口：没有上传头像时的默认头像（皮肤可替换，住民自己的头像不变）
+    const accountDefaultAvatar = useSkinDefaultAvatar(defaultAvatar);
+    const cardFrameActive = useSkinFrameActive('placeCard.frame');
+    // iOS 原生控件直接使用 PNG 皮肤图片；换皮肤、深浅色切换后重新下发快照
+    useSkinRevision();
+    const nativeIcon = (slot) => (iosApp ? nativeSkinIcon(slot) : {});
+    // 底栏选中按钮的图标与文字颜色（皮肤可换）
+    const toolbarSelectedColor = customThemeColor ? `var(--skin-toolbar-selected-color, ${customThemeColor})` : 'var(--skin-toolbar-selected-color)';
+    const accountAvatarSrc = isAuthenticated && currentUser
+        ? (currentUser.has_avatar ? `${backendUrl}/users/${currentUser.id}/avatar` : (currentUser.avatar || accountDefaultAvatar))
+        : accountDefaultAvatar;
     const hideNonSearchButtons = false;
     const isPosterPicker = pickerMode && pickerContext === 'poster';
     // 日记选点：除了标记与搜索结果，还可以用地图中心的图钉选择任意位置
@@ -425,8 +441,8 @@ export default function MapUI(props) {
     const normalizedPickedPlaces = Array.isArray(pickedPlaces) ? pickedPlaces : [];
     const selectedPlaceAlreadyPicked = !!selectedPlace && normalizedPickedPlaces.some((place) => getPlaceKey(place) === getPlaceKey(selectedPlace));
     const popupActionButtonStyle = {
-        background: 'transparent',
-        border: '1px solid var(--color-border)',
+        background: 'var(--skin-action-bg, transparent)',
+        border: '1px solid var(--skin-action-border-color, var(--color-border))',
         color: 'var(--color-text-primary)',
         padding: '9px 10px',
         minWidth: 44,
@@ -440,6 +456,8 @@ export default function MapUI(props) {
         touchAction: 'manipulation'
     };
     const popupActionIconStyle = { display: 'inline-block', fontSize: 20 };
+    // “更多功能”行前的皮肤图标
+    const panelIconStyle = { marginRight: 10, verticalAlign: 'middle' };
     const popupActionLabelStyle = { fontSize: 11, fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap' };
     const mobileNavButtonStyle = {
         flex: 1,
@@ -669,29 +687,31 @@ export default function MapUI(props) {
     // ---- iOS 原生玻璃控件：按钮快照与动作白名单（网页工具栏的同一组操作） ----
     // sheetWhenNative：原生模式下打开系统面板（未登录时仍是网页登录浮层）。“更多”不在工具栏里：原生工具栏上滑展开（drawer）
     const chromeItems = [
-        { id: 'favorites', title: t('map:ui.favorites'), symbol: favPageOpen ? 'heart.fill' : 'heart', selected: favPageOpen, opensOverlay: true, sheetWhenNative: isAuthenticated },
-        { id: 'journey', title: t('map:ui.diaryCommunity'), symbol: 'book.closed', opensOverlay: true },
+        { id: 'favorites', title: t('map:ui.favorites'), symbol: favPageOpen ? 'heart.fill' : 'heart', ...nativeIcon('toolbar.icons.favorites'), selected: favPageOpen, opensOverlay: true, sheetWhenNative: isAuthenticated },
+        { id: 'journey', title: t('map:ui.diaryCommunity'), symbol: 'book.closed', ...nativeIcon('toolbar.icons.journey'), opensOverlay: true },
         {
             id: 'add',
             title: addMode ? t('map:ui.cancelAdd') : t('map:ui.add'),
             symbol: addMode ? 'xmark.circle.fill' : 'plus.circle.fill',
+            ...nativeIcon(addMode ? 'toolbar.icons.addCancel' : 'toolbar.icons.add'),
             tone: addMode ? 'danger' : 'accent',
             selected: addMode,
             disabled: !mapReady || authPending,
             opensOverlay: false
         },
-        { id: 'search', title: t('common:action.search'), symbol: 'magnifyingglass', selected: searchExpanded, disabled: !mapReady, opensOverlay: false },
+        { id: 'search', title: t('common:action.search'), symbol: 'magnifyingglass', ...nativeIcon('toolbar.icons.search'), selected: searchExpanded, disabled: !mapReady, opensOverlay: false },
         {
             id: 'account',
             title: isAuthenticated ? t('map:ui.openUserMenu') : t('map:ui.login'),
             symbol: isAuthenticated ? 'person.crop.circle.badge.checkmark' : 'person.crop.circle',
-            avatarURL: isAuthenticated && currentUser ? (currentUser.has_avatar ? `${backendUrl}/users/${currentUser.id}/avatar` : (currentUser.avatar || defaultAvatar)) : defaultAvatar,
+            // 默认头像（含皮肤的默认头像）交给原生时按原生能读的格式准备；住民上传的头像原样
+            avatarURL: iosApp && accountAvatarSrc === accountDefaultAvatar ? (nativeImageSource(accountDefaultAvatar) || defaultAvatar) : accountAvatarSrc,
             placement: 'account',
             selected: mobileAccountOpen,
             opensOverlay: true,
             sheetWhenNative: isAuthenticated
         },
-        { id: 'locate', title: locating ? t('map:ui.locating') : t('map:ui.locate'), symbol: locating ? 'location.fill' : 'location', placement: 'floating', busy: locating, disabled: !mapReady || locating, opensOverlay: false }
+        { id: 'locate', title: locating ? t('map:ui.locating') : t('map:ui.locate'), symbol: locating ? 'location.fill' : 'location', ...nativeIcon('toolbar.icons.locate'), placement: 'floating', busy: locating, disabled: !mapReady || locating, opensOverlay: false }
     ];
     const handleChromeAction = (actionId) => {
         switch (actionId) {
@@ -729,12 +749,12 @@ export default function MapUI(props) {
 
     // ---- 原生面板（iOS 26 系统 sheet）：与网页面板同一组操作。原生只拿到展示字段，点按回传行 id，这里查表执行 ----
     const moreMenuEntries = [
-        iosApp && { id: 'alongRoute', title: t('map:ui.alongRoute'), symbol: 'point.topleft.down.to.point.bottomright.curvepath', disabled: !mapReady, run: openAlongRoute },
-        { id: 'random', title: t('map:ui.randomFood'), symbol: 'dice', disabled: !mapReady, run: openRandomFood },
-        isAuthenticated && { id: 'dinners', title: t('map:ui.dinners'), symbol: 'fork.knife', run: onOpenDinners },
-        isAuthenticated && { id: 'poster', title: t('map:ui.posterExport'), symbol: 'photo.on.rectangle', run: onOpenPosterExport },
-        isAdmin && { id: 'admin', title: t('map:ui.admin'), symbol: 'gearshape.2', run: onOpenAdmin },
-        { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: 'questionmark.circle', run: openOnboarding }
+        iosApp && { id: 'alongRoute', title: t('map:ui.alongRoute'), symbol: 'point.topleft.down.to.point.bottomright.curvepath', ...nativeIcon('expanded.panel.icons.alongRoute'), disabled: !mapReady, run: openAlongRoute },
+        { id: 'random', title: t('map:ui.randomFood'), symbol: 'dice', ...nativeIcon('expanded.panel.icons.random'), disabled: !mapReady, run: openRandomFood },
+        isAuthenticated && { id: 'dinners', title: t('map:ui.dinners'), symbol: 'fork.knife', ...nativeIcon('expanded.panel.icons.dinners'), run: onOpenDinners },
+        isAuthenticated && { id: 'poster', title: t('map:ui.posterExport'), symbol: 'photo.on.rectangle', ...nativeIcon('expanded.panel.icons.poster'), run: onOpenPosterExport },
+        isAdmin && { id: 'admin', title: t('map:ui.admin'), symbol: 'gearshape.2', ...nativeIcon('expanded.panel.icons.admin'), run: onOpenAdmin },
+        { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: 'questionmark.circle', ...nativeIcon('expanded.panel.icons.guide'), run: openOnboarding }
     ].filter(Boolean);
     const moreFootnoteEntries = [
         ICP_BEIAN_TEXT && ICP_BEIAN_URL && { id: 'icp', title: ICP_BEIAN_TEXT, symbol: 'doc.text', url: ICP_BEIAN_URL },
@@ -812,6 +832,7 @@ export default function MapUI(props) {
                 myRatingTier ? t('map:rating.native.rowSubtitleMine', { tier: tierLabel(myRatingTier) }) : t('map:rating.native.rowSubtitleRate')
             ].filter(Boolean).join(' · '),
             symbol: ratingTier ? ratingTier.symbol : 'hand.thumbsup',
+            ...nativeIcon(ratingTier ? `rating.${ratingTier.key}` : 'rating.none'),
             keepsOpen: true
         };
         chromeSheet = {
@@ -819,16 +840,17 @@ export default function MapUI(props) {
             title: selectedPlace.name || t('common:label.unnamedPlace'),
             subtitle: [ratingCompact, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
             size: 'card',
-            leading: { id: 'share', title: t('map:ui.share.title'), symbol: 'square.and.arrow.up', keepsOpen: true },
+            leading: { id: 'share', title: t('map:ui.share.title'), symbol: 'square.and.arrow.up', ...nativeIcon('cardActions.share'), keepsOpen: true },
             detail: String(selectedPlace.description || '').trim() || undefined,
             caption: String(selectedPlace.address || '').trim() || undefined,
             actions: [
-                { id: 'navigate', title: t('map:ui.nav.title'), symbol: 'arrow.triangle.turn.up.right.diamond.fill', tone: 'accent', disabled: !hasNavigationTarget, keepsOpen: true },
+                { id: 'navigate', title: t('map:ui.nav.title'), symbol: 'arrow.triangle.turn.up.right.diamond.fill', ...nativeIcon('cardActions.navigate'), tone: 'accent', disabled: !hasNavigationTarget, keepsOpen: true },
                 // 高德临时地点还没有收录，不能收藏
                 !unmarked && {
                     id: 'favorite',
                     title: favorited ? t('map:ui.favorited') : t('map:ui.favorites'),
                     symbol: favorited ? 'heart.fill' : 'heart',
+                    ...nativeIcon(favorited ? 'cardActions.favoriteActive' : 'cardActions.favorite'),
                     disabled: !!favoriteLoading,
                     keepsOpen: true
                 },
@@ -837,13 +859,14 @@ export default function MapUI(props) {
                     id: 'rate',
                     title: myRatingTier ? tierLabel(myRatingTier) : t('map:rating.card.rate'),
                     symbol: myRatingTier ? myRatingTier.symbol : 'hand.thumbsup',
+                    ...nativeIcon(myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none'),
                     keepsOpen: true
                 },
                 unmarked
-                    ? { id: 'create', title: t('map:ui.createPlace'), symbol: 'plus.circle', keepsOpen: true }
-                    : { id: 'edit', title: t('map:ui.edit'), symbol: 'pencil', keepsOpen: true },
+                    ? { id: 'create', title: t('map:ui.createPlace'), symbol: 'plus.circle', ...nativeIcon('cardActions.create'), keepsOpen: true }
+                    : { id: 'edit', title: t('map:ui.edit'), symbol: 'pencil', ...nativeIcon('cardActions.edit'), keepsOpen: true },
                 // 原生侧展开到全屏详情，不回传
-                { id: 'details', title: t('map:ui.details'), symbol: 'info.circle', keepsOpen: true, expands: true }
+                { id: 'details', title: t('map:ui.details'), symbol: 'info.circle', ...nativeIcon('cardActions.details'), keepsOpen: true, expands: true }
             ].filter(Boolean),
             sections: [
                 ratingRow && { id: 'rating', title: t('map:rating.panel.title'), rows: [ratingRow] },
@@ -854,6 +877,8 @@ export default function MapUI(props) {
                 nativeGalleryGroup('menu', t('common:label.menu'), selectedPlace.menu_images)
             ]
         };
+        const closeIcon = nativeIcon('cardActions.close');
+        if (closeIcon.image) Object.assign(chromeSheet, { closeImage: closeIcon.image, closeImageTemplate: closeIcon.imageTemplate });
     }
     if (chromeSheet) chromeSheet.token = sheetTokenRef.current.token;
 
@@ -927,6 +952,7 @@ export default function MapUI(props) {
         } : undefined,
         sheet: chromeSheet,
         drawer: chromeDrawer,
+        skin: iosApp ? nativeSkinChrome() : undefined,
         onAction: handleChromeAction,
         onSearch: handleNativeSearch,
         onSheet: handleNativeSheet,
@@ -1347,7 +1373,9 @@ export default function MapUI(props) {
                     color: 'var(--color-text-primary)', fontSize: 13, textAlign: 'left', cursor: 'pointer', touchAction: 'manipulation'
                 }}
             >
-                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, flexShrink: 0, color: tier ? tier.tone : 'var(--color-text-muted)' }}>{tier ? tier.icon : 'rate_review'}</span>
+                <SkinIcon slot={tier ? `rating.${tier.key}` : 'rating.none'} size={20}>
+                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, flexShrink: 0, color: tier ? tier.tone : 'var(--color-text-muted)' }}>{tier ? tier.icon : 'rate_review'}</span>
+                </SkinIcon>
                 <span style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', columnGap: 8, rowGap: 2, alignItems: 'baseline' }}>
                     <span style={{ whiteSpace: 'nowrap' }}>
                         {ratingSummary.count > 0
@@ -1372,19 +1400,33 @@ export default function MapUI(props) {
         );
     };
 
-    // 地点卡片内容：宽屏卡片与窄屏底部面板共用
+    // 地点卡片内容：宽屏卡片与窄屏底部面板共用。外框可由皮肤替换（窄屏面板的外框见 skins/skin.css 的 .fm-skin-card）；
+    // App 内的底部面板是液态玻璃，不画主题边框
     const renderPlaceCard = (inSheet) => (
         <div
             ref={popupRef}
             onClickCapture={handlePopupButtonClickCapture}
             style={inSheet
                 ? { padding: '2px 16px 14px', color: 'var(--color-text-primary)' }
-                : { background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', padding: 10, borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-surface)', minWidth: 200, width: 'min(92vw, 320px)', maxWidth: 'min(92vw, 320px)', boxSizing: 'border-box' }}
+                : {
+                    backgroundColor: 'var(--skin-card-bg, var(--color-bg-surface))',
+                    backgroundImage: 'var(--skin-card-texture, none)',
+                    backgroundSize: 'var(--skin-card-texture-size, auto)',
+                    color: 'var(--color-text-primary)', padding: 10,
+                    borderRadius: 'var(--skin-card-radius, var(--radius-md))',
+                    border: 'var(--skin-card-border-width, 1px) solid var(--skin-card-border-color, var(--color-border))',
+                    boxShadow: 'var(--skin-card-shadow, var(--shadow-surface))',
+                    minWidth: 200, width: 'min(92vw, 320px)', maxWidth: 'min(92vw, 320px)', boxSizing: 'border-box',
+                    ...(cardFrameActive ? { position: 'relative' } : null)
+                }}
         >
+            <SkinFrame slot="placeCard.frame" disabled={inSheet && platform !== 'web'} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <strong style={{ fontSize: 14, color: 'var(--color-text-primary)' }}>{selectedPlace.name}</strong>
                 {!hideNonSearchButtons && (
-                    <Button onClick={closePopup} style={{ padding: "2px 8px", borderRadius: 'var(--radius-sm)', border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, color: 'var(--color-text-secondary)' }} title={t('common:action.close')}>×</Button>
+                    <Button onClick={closePopup} style={{ padding: "2px 8px", borderRadius: 'var(--radius-sm)', border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, color: 'var(--color-text-secondary)' }} title={t('common:action.close')}>
+                        <SkinIcon slot="cardActions.close" size={18}>×</SkinIcon>
+                    </Button>
                 )}
             </div>
             <div style={{ marginTop: 6, fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.5, wordBreak: 'break-word' }}>
@@ -1454,7 +1496,9 @@ export default function MapUI(props) {
                                 aria-label={t('map:ui.card.navigateLabel')}
                                 style={popupActionButtonStyle}
                             >
-                                <span className="material-symbols-outlined" style={popupActionIconStyle}>near_me</span>
+                                <SkinIcon slot="cardActions.navigate" size={20}>
+                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>near_me</span>
+                                </SkinIcon>
                                 <span style={popupActionLabelStyle}>{t('map:ui.nav.title')}</span>
                             </Button>
                         </Tooltip>
@@ -1464,9 +1508,11 @@ export default function MapUI(props) {
                                 aria-label={t('map:ui.card.share')}
                                 style={popupActionButtonStyle}
                             >
-                                <span className="material-symbols-outlined" style={popupActionIconStyle}>
-                                    share
-                                </span>
+                                <SkinIcon slot="cardActions.share" size={20}>
+                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>
+                                        share
+                                    </span>
+                                </SkinIcon>
                                 <span style={popupActionLabelStyle}>{t('map:ui.share.title')}</span>
                             </Button>
                         </Tooltip>
@@ -1484,26 +1530,34 @@ export default function MapUI(props) {
                                     aria-pressed={favoriteIds && favoriteIds.has(selectedPlace.id)}
                                     style={{ ...popupActionButtonStyle, color: favoriteIds && favoriteIds.has(selectedPlace.id) ? 'var(--color-primary)' : popupActionButtonStyle.color }}
                                 >
-                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>
-                                        {favoriteIds && favoriteIds.has(selectedPlace.id) ? 'heart_minus' : 'heart_plus'}
-                                    </span>
+                                    <SkinIcon slot={favoriteIds && favoriteIds.has(selectedPlace.id) ? 'cardActions.favoriteActive' : 'cardActions.favorite'} size={20}>
+                                        <span className="material-symbols-outlined" style={popupActionIconStyle}>
+                                            {favoriteIds && favoriteIds.has(selectedPlace.id) ? 'heart_minus' : 'heart_plus'}
+                                        </span>
+                                    </SkinIcon>
                                 </Button>
                             </Tooltip>
                         )}
                         <Tooltip text={selectedPlace.isMarked === false ? t('map:ui.card.create') : t('map:ui.card.manage')}>
                             {selectedPlace.isMarked === false ? (
                                 <Button onClick={openCreateFromPoi} aria-label={t('map:ui.card.create')} style={popupActionButtonStyle}>
-                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>add_circle</span>
+                                    <SkinIcon slot="cardActions.create" size={20}>
+                                        <span className="material-symbols-outlined" style={popupActionIconStyle}>add_circle</span>
+                                    </SkinIcon>
                                 </Button>
                             ) : (
                                 <Button onClick={openManagePanel} aria-label={t('map:ui.card.editLabel')} style={popupActionButtonStyle}>
-                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>edit</span>
+                                    <SkinIcon slot="cardActions.edit" size={20}>
+                                        <span className="material-symbols-outlined" style={popupActionIconStyle}>edit</span>
+                                    </SkinIcon>
                                 </Button>
                             )}
                         </Tooltip>
                         <Tooltip text={t('map:ui.card.detailsTooltip')}>
                             <Button onClick={() => { setDetailFocus(null); setDetailOpen(true); }} aria-label={t('map:ui.card.detailsLabel')} style={popupActionButtonStyle}>
-                                <span className="material-symbols-outlined" style={popupActionIconStyle}>more_horiz</span>
+                                <SkinIcon slot="cardActions.details" size={20}>
+                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>more_horiz</span>
+                                </SkinIcon>
                             </Button>
                         </Tooltip>
                     </div>
@@ -1738,8 +1792,11 @@ export default function MapUI(props) {
                             boxSizing: 'border-box',
                             padding: '6px 34px 6px 12px',
                             borderRadius: 22,
-                            border: `2px solid ${dark ? 'var(--color-border)' : customThemeColor}`,
-                            background: 'var(--color-bg-overlay)',
+                            // 底栏展开后的搜索框：边框与底纹默认延续底栏的皮肤（见 skins/slots.js）
+                            border: `2px solid var(--skin-search-border-color, ${dark ? 'var(--color-border)' : customThemeColor})`,
+                            backgroundColor: 'var(--skin-search-bg, var(--color-bg-overlay))',
+                            backgroundImage: 'var(--skin-search-texture, none)',
+                            backgroundSize: 'var(--skin-search-texture-size, auto)',
                             color: 'var(--color-text-primary)',
                             outline: 'none',
                             boxShadow: `0 4px 12px ${hexToRgba(customThemeColor, 0.2)}, 0 0 8px ${hexToRgba(customThemeColor, 0.25)}`,
@@ -1884,9 +1941,11 @@ export default function MapUI(props) {
                                     opacity: (!mapReady || locating) ? 0.65 : 1
                                 }}
                             >
-                                <span className="material-symbols-outlined" style={{ fontSize: 26 }}>
-                                    {locating ? 'my_location' : 'location_searching'}
-                                </span>
+                                <SkinIcon slot="toolbar.icons.locate" size={26}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: 26 }}>
+                                        {locating ? 'my_location' : 'location_searching'}
+                                    </span>
+                                </SkinIcon>
                             </Button>
                         </div>
                     </Tooltip>
@@ -2102,11 +2161,13 @@ export default function MapUI(props) {
                                             opacity: (!mapReady || authPending) ? 0.6 : 1
                                         }}
                                     >
-                                        {locating ? (
-                                            <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 30 }}>my_location</span>
-                                        ) : (
-                                            <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 30 }}>location_searching</span>
-                                        )}
+                                        <SkinIcon slot="toolbar.icons.locate" size={28}>
+                                            {locating ? (
+                                                <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 30 }}>my_location</span>
+                                            ) : (
+                                                <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 30 }}>location_searching</span>
+                                            )}
+                                        </SkinIcon>
                                     </Button>
                                 </div>
                             </Tooltip>
@@ -2124,33 +2185,42 @@ export default function MapUI(props) {
                         kind="more-menu"
                         mobile="sheet"
                         desktop="center"
+                        surfaceClassName="fm-skin-panel"
                     >
                         <div role="menu" aria-label={t('map:ui.moreFeatures')} className="fm-menu" style={{ display: 'flex', flexDirection: 'column', padding: '4px 0' }}>
+                            {/* 皮肤提供“更多功能”图标时显示在文字前；默认没有图标 */}
                             {iosApp && <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} disabled={!mapReady} onClick={() => runMobileMoreAction(openAlongRoute)}>
+                                <SkinIcon slot="expanded.panel.icons.alongRoute" size={22} style={panelIconStyle} />
                                 {t('map:ui.alongRoute')}
                             </Button>}
                             <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} disabled={!mapReady} onClick={() => runMobileMoreAction(openRandomFood)}>
+                                <SkinIcon slot="expanded.panel.icons.random" size={22} style={panelIconStyle} />
                                 {t('map:ui.randomFood')}
                             </Button>
                             <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(props.onOpenJourney)}>
+                                <SkinIcon slot="expanded.panel.icons.journey" size={22} style={panelIconStyle} />
                                 {t('map:ui.diaryCommunity')}
                             </Button>
                             {isAuthenticated && (
                                 <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenDinners)}>
+                                    <SkinIcon slot="expanded.panel.icons.dinners" size={22} style={panelIconStyle} />
                                     {t('map:ui.dinners')}
                                 </Button>
                             )}
                             {isAuthenticated && (
                                 <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenPosterExport)}>
+                                    <SkinIcon slot="expanded.panel.icons.poster" size={22} style={panelIconStyle} />
                                     {t('map:ui.posterExport')}
                                 </Button>
                             )}
                             {isAdmin && (
                                 <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenAdmin)}>
+                                    <SkinIcon slot="expanded.panel.icons.admin" size={22} style={panelIconStyle} />
                                     {t('map:ui.admin')}
                                 </Button>
                             )}
                             <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={openOnboarding}>
+                                <SkinIcon slot="expanded.panel.icons.guide" size={22} style={panelIconStyle} />
                                 {t('map:onboarding.menuEntry')}
                             </Button>
                             <div style={{ marginTop: 4, padding: '10px', borderTop: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 12 }}>
@@ -2188,6 +2258,7 @@ export default function MapUI(props) {
                         kind="account-menu"
                         mobile="sheet"
                         desktop="center"
+                        surfaceClassName="fm-skin-panel"
                     >
                         <div role="menu" aria-label={t('map:ui.userMenu')} className="fm-menu" style={{ display: 'flex', flexDirection: 'column', padding: '4px 0 8px' }}>
                             <div style={{ padding: '4px 16px 10px', fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:ui.verified')}</div>
@@ -2218,18 +2289,26 @@ export default function MapUI(props) {
                             display: 'flex',
                             alignItems: 'stretch',
                             gap: 2,
-                            background: 'color-mix(in srgb, var(--color-bg-surface) 94%, transparent)',
-                            borderTop: '1px solid var(--color-border)',
+                            // 皮肤可换底板、浅底纹与上边框；App 内的液态玻璃由 overlay.css 固定（iOS 不叠底纹）
+                            backgroundColor: 'var(--skin-toolbar-bg, color-mix(in srgb, var(--color-bg-surface) 94%, transparent))',
+                            backgroundImage: 'var(--skin-toolbar-texture, none)',
+                            backgroundSize: 'var(--skin-toolbar-texture-size, auto)',
+                            borderTop: '1px solid var(--skin-toolbar-border-color, var(--color-border))',
                             boxShadow: '0 -6px 20px rgba(18, 16, 22, 0.10)',
                             backdropFilter: 'blur(12px)'
                         }}
                     >
-                        <Button data-tour="more" onClick={toggleMobileMore} aria-pressed={mobileMoreOpen} style={{ ...mobileNavButtonStyle, color: mobileMoreOpen ? customThemeColor : mobileNavButtonStyle.color }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: 24 }}>more_horiz</span>
+                        <SkinOrnaments prefix="toolbar" />
+                        <Button data-tour="more" onClick={toggleMobileMore} aria-pressed={mobileMoreOpen} style={{ ...mobileNavButtonStyle, color: mobileMoreOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}>
+                            <SkinIcon slot="toolbar.icons.more" size={24}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>more_horiz</span>
+                            </SkinIcon>
                             <span>{t('common:action.more')}</span>
                         </Button>
-                        <Button data-tour="favorites" onClick={toggleFavorites} aria-pressed={favPageOpen} style={{ ...mobileNavButtonStyle, color: favPageOpen ? customThemeColor : mobileNavButtonStyle.color }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: 24 }}>favorite</span>
+                        <Button data-tour="favorites" onClick={toggleFavorites} aria-pressed={favPageOpen} style={{ ...mobileNavButtonStyle, color: favPageOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}>
+                            <SkinIcon slot="toolbar.icons.favorites" size={24}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>favorite</span>
+                            </SkinIcon>
                             <span>{t('map:ui.favorites')}</span>
                         </Button>
                         <Button
@@ -2243,7 +2322,9 @@ export default function MapUI(props) {
                             aria-pressed={addMode}
                             style={{ ...mobileNavButtonStyle, color: addMode ? 'var(--color-danger)' : customThemeColor }}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: 25 }}>{addMode ? 'close' : 'add_location_alt'}</span>
+                            <SkinIcon slot={addMode ? 'toolbar.icons.addCancel' : 'toolbar.icons.add'} size={25}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 25 }}>{addMode ? 'close' : 'add_location_alt'}</span>
+                            </SkinIcon>
                             <span>{addMode ? t('map:ui.cancelAdd') : t('map:ui.add')}</span>
                         </Button>
                         {iosApp ? <Button
@@ -2251,9 +2332,11 @@ export default function MapUI(props) {
                             onClick={() => handleChromeAction('search')}
                             disabled={!mapReady}
                             aria-pressed={searchFocused}
-                            style={{ ...mobileNavButtonStyle, color: searchFocused ? customThemeColor : mobileNavButtonStyle.color }}
+                            style={{ ...mobileNavButtonStyle, color: searchFocused ? toolbarSelectedColor : mobileNavButtonStyle.color }}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: 24 }}>search</span>
+                            <SkinIcon slot="toolbar.icons.search" size={24}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>search</span>
+                            </SkinIcon>
                             <span>{t('common:action.search')}</span>
                         </Button> : <Button
                             data-tour="alongRoute"
@@ -2261,9 +2344,11 @@ export default function MapUI(props) {
                             disabled={!mapReady}
                             aria-pressed={alongRouteOpen}
                             aria-label={alongRouteOpen ? t('map:ui.alongRouteClose') : t('map:ui.alongRouteOpen')}
-                            style={{ ...mobileNavButtonStyle, color: alongRouteOpen ? customThemeColor : mobileNavButtonStyle.color }}
+                            style={{ ...mobileNavButtonStyle, color: alongRouteOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: 24 }}>route</span>
+                            <SkinIcon slot="toolbar.icons.alongRoute" size={24}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>route</span>
+                            </SkinIcon>
                             <span>{t('map:ui.alongRoute')}</span>
                         </Button>}
                         {!iosApp && <Button
@@ -2272,16 +2357,22 @@ export default function MapUI(props) {
                             aria-label={isAuthenticated ? t('map:ui.openUserMenuNamed', { username: currentUser?.username || '' }) : t('map:ui.openLoginEntry')}
                             aria-haspopup={isAuthenticated ? 'menu' : undefined}
                             aria-expanded={isAuthenticated ? mobileAccountOpen : undefined}
-                            style={{ ...mobileNavButtonStyle, color: mobileAccountOpen ? customThemeColor : mobileNavButtonStyle.color }}
+                            style={{ ...mobileNavButtonStyle, color: mobileAccountOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}
                         >
                             {isAuthenticated && currentUser ? (
-                                <img
-                                    src={currentUser.has_avatar ? `${backendUrl}/users/${currentUser.id}/avatar` : (currentUser.avatar || defaultAvatar)}
-                                    alt={currentUser.username || t('map:ui.avatarAlt')}
-                                    style={{ width: 25, height: 25, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${customThemeColor}` }}
-                                />
+                                <SkinAvatarFrame size={25}>
+                                    <img
+                                        src={accountAvatarSrc}
+                                        alt={currentUser.username || t('map:ui.avatarAlt')}
+                                        style={{ width: 25, height: 25, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${customThemeColor}` }}
+                                    />
+                                </SkinAvatarFrame>
+                            ) : isAuthenticated ? (
+                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>person</span>
                             ) : (
-                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>{isAuthenticated ? 'person' : 'login'}</span>
+                                <SkinIcon slot="toolbar.icons.login" size={24}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: 24 }}>login</span>
+                                </SkinIcon>
                             )}
                             <span style={{ maxWidth: '64px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {isAuthenticated ? (currentUser?.username || t('map:ui.resident')) : t('map:ui.login')}
@@ -2308,11 +2399,13 @@ export default function MapUI(props) {
                         aria-label={isAuthenticated ? t('map:ui.openUserMenu') : t('map:ui.login')}
                         aria-expanded={isAuthenticated ? mobileAccountOpen : undefined}
                     >
-                        <img
-                            src={isAuthenticated && currentUser ? (currentUser.has_avatar ? `${backendUrl}/users/${currentUser.id}/avatar` : (currentUser.avatar || defaultAvatar)) : defaultAvatar}
-                            alt=""
-                            onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = defaultAvatar; }}
-                        />
+                        <SkinAvatarFrame>
+                            <img
+                                src={accountAvatarSrc}
+                                alt=""
+                                onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = defaultAvatar; }}
+                            />
+                        </SkinAvatarFrame>
                     </button>}
                 </>
             )}
@@ -2375,6 +2468,7 @@ export default function MapUI(props) {
                     kind="place-card"
                     label={selectedPlace ? t('map:ui.placeIntroNamed', { name: selectedPlace.name }) : t('map:ui.placeIntro')}
                     maxHeight="min(62%, 520px)"
+                    surfaceClassName="fm-skin-card"
                 >
                     {selectedPlace && renderPlaceCard(true)}
                 </ResponsivePanel>

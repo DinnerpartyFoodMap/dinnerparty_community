@@ -11,6 +11,10 @@ import EditPassword from "../settings/EditPassword";
 import PersonalizeMap from "../settings/PersonalizeMap";
 import CustomThemes from "../settings/CustomThemes";
 import EditAvatar from "../settings/EditAvatar";
+import SkinSettings from "../settings/SkinSettings";
+import "../skins/packs";
+import "../skins/skin.css";
+import useSkinSession from "../skins/useSkinSession";
 import AuthPanel from "./components/AuthPanel";
 import AuthModal from "../auth/components/AuthModal";
 import Notice from "../components/feedback/Notice";
@@ -501,6 +505,8 @@ export default function App() {
 
     const isAuth = !!token && !!user;
     const isAdmin = !!(user && user.admin_level);
+    // 主题皮肤：随住民切换；冷启动时按通行凭证里的住民先换上本机记住的皮肤
+    useSkinSession({ backendUrl: BACKEND_URL, token, userId: user ? user.id : null, pendingUserId: token && !user ? (decodeTokenPayload(token)?.id || null) : null });
     const showAdminPage = pathname === "/admin" && !!token;
     const showSettingsBase = pathname === "/settings";
     // App 内原生住民设置：/settings 不渲染网页页面（没有推入动画与“正在打开设置”），地图留在底下，原生页直接从地图上弹起
@@ -509,6 +515,7 @@ export default function App() {
     const showSettingsPassword = pathname === "/settings/password";
     const showSettingsPersonalize = pathname === "/settings/personalize";
     const showSettingsThemes = pathname === "/settings/themes";
+    const showSettingsSkins = pathname === "/settings/skins";
     const showSettingsAny = typeof pathname === 'string' && pathname.startsWith("/settings");
     const showSettingsAvatar = pathname === "/settings/avatar";
     const showDinnerList = pathname === "/dinners";
@@ -726,6 +733,7 @@ export default function App() {
                     onOpenEditPassword={() => goPath('/settings/password')}
                     onOpenPersonalize={() => goPath('/settings/personalize')}
                     onOpenThemes={() => goPath('/settings/themes')}
+                    onOpenSkins={() => goPath('/settings/skins')}
                     nativeDisabled={nativeSettingsFailed}
                 />
             ) : (
@@ -775,6 +783,21 @@ export default function App() {
                     backendUrl={BACKEND_URL}
                     token={token}
                     onUpdateUser={handleLoginSuccess}
+                />
+            ) : (
+                <div style={placeholderStyle}>
+                    {t('common:app.verifyingSession')}
+                </div>
+            )
+        );
+
+        if (showSettingsSkins) return (
+            user ? (
+                <SkinSettings
+                    user={user}
+                    onBack={() => goPath('/settings')}
+                    backendUrl={BACKEND_URL}
+                    token={token}
                 />
             ) : (
                 <div style={placeholderStyle}>
@@ -917,6 +940,7 @@ export default function App() {
                                 onOpenEditPassword={() => goPath('/settings/password')}
                                 onOpenPersonalize={() => goPath('/settings/personalize')}
                                 onOpenThemes={() => goPath('/settings/themes')}
+                                onOpenSkins={() => goPath('/settings/skins')}
                                 headless
                                 onNativeUnavailable={() => setNativeSettingsFailed(true)}
                             />

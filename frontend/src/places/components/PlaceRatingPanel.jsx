@@ -1,5 +1,6 @@
 import React from 'react';
 import ResponsivePanel from "../../components/overlay/ResponsivePanel";
+import SkinIcon from "../../skins/SkinIcon";
 import { t, tx } from "../../i18n/index.js";
 import {
     RATING_TIERS, FEW_RATINGS, ratingTierFor, tierForAverage, tierLabel, tierHint, formatAverage, summaryFromPlace
@@ -155,7 +156,9 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
                                 touchAction: 'manipulation'
                             }}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: 24, color: item.tone, flexShrink: 0 }}>{item.icon}</span>
+                            <SkinIcon slot={`rating.${item.key}`} size={24}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 24, color: item.tone, flexShrink: 0 }}>{item.icon}</span>
+                            </SkinIcon>
                             <span style={{ minWidth: 0 }}>
                                 <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: selected ? item.tone : undefined }}>{tierLabel(item)}</span>
                                 <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 1 }}>{tierHint(item)}</span>

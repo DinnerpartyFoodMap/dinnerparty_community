@@ -14,15 +14,16 @@ const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: t
 
 /**
  * @param {{ enabled: boolean, visible?: boolean, items: Array, theme: object, floatingGap?: number, search?: object, sheet?: object|null,
- *           drawer?: object|null, onAction: (id: string) => (boolean|void), onSearch?: (event: object) => void,
+ *           drawer?: object|null, skin?: object, onAction: (id: string) => (boolean|void), onSearch?: (event: object) => void,
  *           onSheet?: (event: object) => void, onDrawer?: (event: object) => void }} options
  * enabled 决定是否持有原生会话；visible 为假时（地图页被盖住）原生控件收起但会话保留。
  * items 中 sheetWhenNative 为真的按钮在原生模式下打开系统面板而不是网页浮层：不需要先收起工具栏等回执。
+ * skin：原生控件的皮肤装饰（skins/nativeSkin.js 的 nativeSkinChrome），按当前深浅色取值。
  * @returns {{ mode: 'web'|'native', bottomOccupied: number, connecting: boolean, holdWeb: boolean }}
  * connecting：可以使用原生控件、握手还没有结果（成功或回退网页）；依赖当前按钮布局的界面（操作指引）等它结束。
  * holdWeb：预计原生会接管、首次握手还没有结果：网页工具栏先不显示，免得启动时先闪一下网页工具栏再换成原生控件。
  */
-export function useMapChrome({ enabled, visible = true, items, theme, floatingGap = 14, search, sheet = null, drawer = null, onAction, onSearch, onSheet, onDrawer }) {
+export function useMapChrome({ enabled, visible = true, items, theme, floatingGap = 14, search, sheet = null, drawer = null, skin, onAction, onSearch, onSheet, onDrawer }) {
     const policy = useMotionPolicy();
     const active = !!enabled && policy.nativeGlass && canUseNativeMapChrome();
     const [state, setState] = useState(INITIAL_STATE);
@@ -42,7 +43,7 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
     const resolvedItems = items.map(({ sheetWhenNative, ...item }) => (
         sheetWhenNative && nativeMode ? { ...item, opensOverlay: false } : item
     ));
-    const snapshot = { items: resolvedItems, theme, floatingGap, search, sheet: nativeMode ? sheet : null, drawer: nativeMode ? drawer : null };
+    const snapshot = { items: resolvedItems, theme, floatingGap, search, sheet: nativeMode ? sheet : null, drawer: nativeMode ? drawer : null, skin };
     const snapshotRef = useRef(snapshot);
     snapshotRef.current = snapshot;
 

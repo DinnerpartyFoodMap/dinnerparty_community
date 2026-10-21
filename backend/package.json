@@ -35,6 +35,7 @@
         "test:qq-verification": "node tests/accounts/test_qq_verification.js",
         "test:images": "node tests/media/test_image_storage.js",
         "test:place-share": "node tests/places/test_place_share.js",
+        "test:skins": "node tests/skins/test_skins.js",
         "images:repair": "node scripts/images/repair_place_images.js",
         "images:migrate-oss": "node scripts/images/migrate_uploads_to_oss.js"
     },

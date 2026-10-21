@@ -5,7 +5,7 @@ import { t } from "../../i18n/index.js";
 
 const TITLES = {
     '/settings': t('common:nav.accountSettings'), '/settings/avatar': t('common:nav.editAvatar'), '/settings/username': t('common:nav.editUsername'),
-    '/settings/password': t('common:nav.editPassword'), '/settings/themes': t('common:nav.customThemes'), '/settings/personalize': t('common:nav.personalizeMap'),
+    '/settings/password': t('common:nav.editPassword'), '/settings/themes': t('common:nav.customThemes'), '/settings/personalize': t('common:nav.personalizeMap'), '/settings/skins': t('common:nav.skins'),
     '/admin': t('common:routePageShell.admin'), '/posters/new': t('common:routePageShell.posterExport'), '/dinners': t('common:routePageShell.dinners'), '/dinners/new': t('common:routePageShell.dinnerCreate')
 };
 

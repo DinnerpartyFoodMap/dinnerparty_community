@@ -1,0 +1,81 @@
+/* 主题皮肤。规则都挂在 :root[data-skin] 上，默认样式（没有皮肤）时一条也不生效。
+   行内样式里的值用 var(--skin-…, 原值) 读取，见 slots.js。
+   App 内的液态玻璃（overlay.css）用 !important 固定底色、边框与阴影，皮肤不改玻璃材质：
+   - iOS：不写底纹变量，玻璃上只换图标、表情、头像框、两端装饰与选中底座；
+   - 安卓：在玻璃底色之上叠一层底纹（下面以 android 开头的规则），模糊与边缘折射保留。 */
+
+/* 窄屏地点卡片与底栏菜单面板（底部面板 .fm-surface）：网页上替换外框 */
+:root[data-skin] .fm-skin-card.fm-surface {
+    /* 主题边框（SkinFrame）以面板为定位基准，不随内容滚动 */
+    position: relative;
+    background-color: var(--skin-card-bg, var(--color-bg-surface));
+    background-image: var(--skin-card-texture, none);
+    background-size: var(--skin-card-texture-size, auto);
+    border-color: var(--skin-card-border-color, var(--color-border));
+    border-width: var(--skin-card-border-width, 1px);
+    box-shadow: var(--skin-card-shadow, var(--shadow-surface));
+}
+
+:root[data-skin] .fm-skin-card.fm-sheet {
+    border-bottom-width: 0;
+    border-radius: var(--skin-card-radius, 16px) var(--skin-card-radius, 16px) 0 0;
+}
+
+:root[data-skin] .fm-skin-panel.fm-surface {
+    background-color: var(--skin-panel-bg, var(--color-bg-surface));
+    background-image: var(--skin-panel-texture, none);
+    background-size: var(--skin-panel-texture-size, auto);
+    border-color: var(--skin-panel-border-color, var(--color-border));
+}
+
+:root[data-platform='android'][data-skin] .fm-skin-card.fm-surface {
+    background: var(--skin-card-texture, none) 0 0 / var(--skin-card-texture-size, auto), var(--glass-sheen), var(--glass-fill-panel) !important;
+}
+
+:root[data-platform='android'][data-skin] .fm-skin-panel.fm-surface {
+    background: var(--skin-panel-texture, none) 0 0 / var(--skin-panel-texture-size, auto), var(--glass-sheen), var(--glass-fill-panel) !important;
+}
+
+:root[data-platform='android'][data-skin] .fm-map-toolbar {
+    background: var(--skin-toolbar-texture, none) 0 0 / var(--skin-toolbar-texture-size, auto), var(--glass-sheen), var(--glass-fill) !important;
+}
+
+:root[data-platform='android'][data-skin] .fm-map-search__input {
+    background: var(--skin-search-texture, none) 0 0 / var(--skin-search-texture-size, auto), var(--glass-sheen), var(--glass-fill) !important;
+}
+
+/* 底栏选中时亮起的小底座：画在按钮内容后面 */
+:root[data-skin-pedestal] .fm-map-toolbar > button {
+    position: relative;
+    isolation: isolate;
+}
+
+:root[data-skin-pedestal] .fm-map-toolbar > button::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: -1;
+    width: var(--skin-pedestal-width, 48px);
+    height: var(--skin-pedestal-height, 48px);
+    background: var(--skin-pedestal) center / contain no-repeat;
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + var(--skin-pedestal-y, 0px))) scale(0.6);
+    transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1.2);
+    pointer-events: none;
+}
+
+:root[data-skin-pedestal] .fm-map-toolbar > button:is([aria-pressed='true'], [aria-expanded='true'])::before {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% + var(--skin-pedestal-y, 0px))) scale(1);
+}
+
+/* 皮肤的标记图与默认图比例可能不同：等比缩放并贴着底部（锚点在底边中点） */
+:root[data-skin] .fm-marker__glyph img {
+    object-fit: contain;
+    object-position: 50% 100%;
+}
+
+:root[data-motion='reduced'] .fm-map-toolbar > button::before {
+    transition: none;
+}

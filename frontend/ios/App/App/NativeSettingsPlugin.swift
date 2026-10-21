@@ -7,7 +7,8 @@ import WebKit
 /// 住民设置整套由 SwiftUI 呈现：首页与头像、住民名、通行密码、个性化主题、个性化地图五个二级页。
 /// 编辑都在原生里完成，但凭证和账号请求不离开现有业务层：二级页把用户输入经 settingsEvent 交给网页，
 /// 网页发出请求后按 requestId 用 respond 回传结果（附带住民名、头像、明暗、主题色等需要刷新的状态）。
-/// 退出全部设备、除名仍以白名单动作交回网页执行。动效开关是本机偏好，切换后立即通知网页。
+/// 退出全部设备、除名仍以白名单动作交回网页执行；“主题皮肤”（兑换码与切换）是网页页面，以 skins 动作交回网页打开。
+/// 动效开关是本机偏好，切换后立即通知网页。
 @objc(NativeSettingsPlugin)
 public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeSettingsPlugin"
@@ -412,6 +413,13 @@ private struct NativeSettingsView: View {
                     page("个性化主题", symbol: "paintpalette.fill", action: "themes", destination: NativeThemesView(store: store)) { EmptyView() }
                     page("个性化地图", symbol: "map.fill", action: "personalize", available: store.mapPageAvailable,
                          destination: NativeMapSettingsView(store: store)) { EmptyView() }
+                    // 主题皮肤（兑换码与切换）是网页页面：交回网页打开，返回时再回到这里
+                    Button { perform("skins") } label: {
+                        HStack(spacing: 10) {
+                            settingLabel(store.text("skinsTitle", "主题皮肤"), symbol: "sparkles", color: .brown)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                    }
                 }
                 Section {
                     Button { confirmation = .logoutAll } label: {

@@ -33,11 +33,11 @@
 
 .fm-marker__count {
     position: absolute;
-    left: 54%;
-    top: 30%;
+    left: var(--skin-marker-count-x, 54%);
+    top: var(--skin-marker-count-y, 30%);
     transform: translate(-50%, -50%);
     font-weight: 600;
-    color: #000;
+    color: var(--skin-marker-count-color, #000);
     line-height: 1;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -58,9 +58,9 @@
     font-size: 12px;
     line-height: 16px;
     border-radius: var(--radius-sm, 8px);
-    border: 1px solid var(--theme-primary, #c77dff);
-    background: var(--color-bg-surface, #fff);
-    color: var(--color-text-primary, #222);
+    border: 1px solid var(--skin-marker-label-border, var(--theme-primary, #c77dff));
+    background: var(--skin-marker-label-bg, var(--color-bg-surface, #fff));
+    color: var(--skin-marker-label-color, var(--color-text-primary, #222));
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
     pointer-events: none;
     opacity: 1;
