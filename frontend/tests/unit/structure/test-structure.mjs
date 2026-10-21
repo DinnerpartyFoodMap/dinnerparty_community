@@ -58,4 +58,13 @@ for (const [backend, harness] of [['journeys/test_journey_ui.js', 'journey-harne
 }
 assert.ok(fs.readFileSync(path.join(root, 'index.html'), 'utf8').includes('/src/main.jsx'));
 assert.ok(fs.existsSync(path.join(root, 'scripts/support/json-hooks.mjs')), 'backend tests use the stable JSON loader entry');
-console.log(`Frontend structure passed: ${sources.length} parsed sources, ${imports} relative imports, module docs, links and integration entries.`);
+// Android 定位使用应用内的高德插件（AMapLocationPlugin），只排除 @capacitor/geolocation；新增 Capacitor 插件需同时列入 android.includePlugins
+{
+    const capacitorConfig = JSON.parse(fs.readFileSync(path.join(root, 'capacitor.config.json'), 'utf8'));
+    const { dependencies } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const androidPlugins = Object.keys(dependencies).filter(name =>
+        JSON.parse(fs.readFileSync(path.join(root, 'node_modules', name, 'package.json'), 'utf8')).capacitor?.android);
+    assert.deepEqual([...capacitorConfig.android.includePlugins].sort(), androidPlugins.filter(name => name !== '@capacitor/geolocation').sort(),
+        'capacitor.config.json android.includePlugins must list every Capacitor plugin except @capacitor/geolocation');
+}
+console.log(`Frontend structure passed: ${sources.length} parsed sources, ${imports} relative imports, module docs, links and integration entries, Android plugin list.`);

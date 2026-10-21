@@ -8,6 +8,8 @@ frontend/ios 是 Xcode/Swift 工程，含原生地图 chrome、设置、键盘�
 
 已有 [iOS 玻璃验收清单](ios-glass-checklist.md) 保留。另需真实设备验证账号恢复、相册/定位权限、系统返回、分享取消、App 前后台、原生设置关闭及协议降级；Node bridge 检查不能替代这些环节。本次范围与限制见 [验证记录](../../doc/VERIFICATION.md)。
 
+Android 定位使用高德定位 SDK（应用内插件 AMapLocationPlugin）；模拟器复现、修复与真机覆盖边界见 [定位回归记录](android-location-checklist.md)。
+
 ## 地图明暗主题回归（2026-10-21，待 iOS 26+ 真机执行）
 
 工具栏与地点卡共用 MapChromeHostingController，按桥接快照的 theme.dark 同步 UIKit 外观；SwiftUI 内容使用同一地图主题。WebView 保留系统外观，以便“跟随系统”仍能读取真实的系统偏好。

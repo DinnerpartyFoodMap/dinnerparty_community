@@ -45,15 +45,22 @@
             </intent-filter>
             <meta-data android:name="photopicker_activity:0:required" android:value="" />
         </service>
+
+        <!-- 高德定位 SDK：Key 由 app/build.gradle 注入（AMAP_ANDROID_KEY），绑定包名与签名 SHA1 -->
+        <meta-data android:name="com.amap.api.v2.apikey" android:value="${AMAP_ANDROID_KEY}" />
+        <service android:name="com.amap.api.location.APSService" android:exported="false" />
 </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- @capacitor/geolocation -->
+    <!-- 定位（Android 为高德定位 SDK）；网络与 WiFi 状态用于网络定位，不申请后台定位 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
     <!-- Android 11+ 软件包可见性：允许查询能打开网页/地图链接的应用（导航、备案链接等） -->
     <queries>

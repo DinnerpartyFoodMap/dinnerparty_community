@@ -4,7 +4,7 @@
 //   node scripts/patch-native-projects.mjs android    # 只处理 Android
 //   node scripts/patch-native-projects.mjs ios        # 只处理 iOS
 //
-// Android：定位权限、外部链接/地图应用可见性（<queries>）、Android 11/12 照片选择器回补
+// Android：定位权限与高德定位 SDK（依赖、Key、插件注册）、外部链接/地图应用可见性（<queries>）、Android 11/12 照片选择器回补
 // iOS：相机/相册/定位用途说明、出口合规声明、隐私清单（PrivacyInfo.xcprivacy）、SPM 版本兼容
 
 import { existsSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
@@ -31,17 +31,31 @@ function insertBefore(text, anchor, block, marker) {
     return text.slice(0, index) + block + text.slice(index);
 }
 
+// 与 android/app/build.gradle 中的版本一致
+const AMAP_LOCATION_VERSION = '11.3.000';
+const ANDROID_LOCATION_PERMISSIONS = ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'ACCESS_NETWORK_STATE', 'ACCESS_WIFI_STATE', 'CHANGE_WIFI_STATE'];
+
 function patchAndroid() {
     const manifest = resolve(root, 'android/app/src/main/AndroidManifest.xml');
     if (!existsSync(manifest)) {
         console.log('跳过 Android：尚未生成 android/ 工程（npm run cap:add:android）');
         return;
     }
-    patchFile(manifest, 'Android 定位权限', (text) => insertBefore(text, '</manifest>', `
-    <!-- @capacitor/geolocation -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-`, 'android.permission.ACCESS_FINE_LOCATION'));
+    // 旧工程已有部分权限时只补缺少的，避免重复声明
+    patchFile(manifest, 'Android 定位权限', (text) => {
+        const missing = ANDROID_LOCATION_PERMISSIONS.filter((name) => !text.includes(`"android.permission.${name}"`));
+        if (!missing.length) return text;
+        const lines = missing.map((name) => `    <uses-permission android:name="android.permission.${name}" />\n`).join('');
+        const index = text.lastIndexOf('</manifest>');
+        return `${text.slice(0, index)}
+    <!-- 定位（Android 为高德定位 SDK）；网络与 WiFi 状态用于网络定位，不申请后台定位 -->
+${lines}${text.slice(index)}`;
+    });
+    patchFile(manifest, 'Android 高德定位 SDK 配置', (text) => insertBefore(text, '</application>', `
+        <!-- 高德定位 SDK：Key 由 app/build.gradle 注入（AMAP_ANDROID_KEY），绑定包名与签名 SHA1 -->
+        <meta-data android:name="com.amap.api.v2.apikey" android:value="\${AMAP_ANDROID_KEY}" />
+        <service android:name="com.amap.api.location.APSService" android:exported="false" />
+`, 'com.amap.api.location.APSService'));
     patchFile(manifest, 'Android 外部链接可见性', (text) => insertBefore(text, '</manifest>', `
     <!-- Android 11+ 软件包可见性：允许查询能打开网页/地图链接的应用（导航、备案链接等） -->
     <queries>
@@ -107,6 +121,85 @@ function patchAndroidGradle() {
             }`;
         if (!/    buildTypes \{\n        release \{/.test(text)) throw new Error('android/app/build.gradle 结构与预期不同，请手动配置发布签名');
         return text.replace(/    buildTypes \{\n        release \{/, signing);
+    });
+    // 高德定位 SDK：依赖与 Key（AMAP_ANDROID_KEY 注入 Manifest 占位符），发布包缺 Key 时中止
+    patchFile(gradle, 'Android 高德定位 SDK 依赖与 Key', (text) => {
+        if (text.includes('AMAP_ANDROID_KEY')) return text;
+        const anchors = {
+            plugin: /apply plugin: 'com\.android\.application'\n/,
+            defaultConfig: /( *)testInstrumentationRunner [^\n]*\n/,
+            dependency: /( *)implementation project\(':capacitor-android'\)\n/,
+            capacitor: /apply from: 'capacitor\.build\.gradle'\n/
+        };
+        for (const [name, pattern] of Object.entries(anchors)) {
+            if (!pattern.test(text)) throw new Error(`android/app/build.gradle 结构与预期不同，请手动配置高德定位 SDK（缺少锚点 ${name}）`);
+        }
+        return text
+            .replace(anchors.plugin, (line) => `${line}
+// 高德 Android 平台 Key（定位 SDK），与包名和签名 SHA1 绑定：环境变量 / -P 参数 / android/local.properties 的 amap.android.key
+def amapAndroidKey = System.getenv("AMAP_ANDROID_KEY") ?: (project.findProperty("AMAP_ANDROID_KEY") ?: {
+    def local = rootProject.file("local.properties")
+    if (!local.exists()) return ""
+    def props = new Properties()
+    local.withInputStream { props.load(it) }
+    return props.getProperty("amap.android.key", "")
+}())
+`)
+            .replace(anchors.defaultConfig, (line, indent) => `${line}${indent}manifestPlaceholders = [AMAP_ANDROID_KEY: amapAndroidKey]\n`)
+            .replace(anchors.dependency, (line, indent) => `${line}${indent}implementation "com.amap.api:location:${AMAP_LOCATION_VERSION}"\n`)
+            .replace(anchors.capacitor, (line) => `${line}
+// 缺少 Key 时定位会报 KEY 鉴权失败：调试包只提示，发布包直接中止
+if (!amapAndroidKey) {
+    logger.warn("未配置 AMAP_ANDROID_KEY，App 定位将不可用")
+    tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+        doFirst { throw new GradleException("发布包需要高德 Android Key：设置环境变量 AMAP_ANDROID_KEY 或 local.properties 的 amap.android.key") }
+    }
+}
+`);
+    });
+    const proguard = resolve(root, 'android/app/proguard-rules.pro');
+    if (existsSync(proguard)) {
+        patchFile(proguard, 'Android 高德定位混淆规则', (text) => text.includes('com.amap.api.location') ? text : `${text.trimEnd()}
+
+# 高德定位 SDK（当前未开启混淆；开启 minifyEnabled 时需保留）
+-keep class com.amap.api.location.** { *; }
+-keep class com.amap.api.fence.** { *; }
+-keep class com.loc.** { *; }
+-keep class com.autonavi.aps.amapapi.model.** { *; }
+-dontwarn com.amap.api.**
+-dontwarn com.loc.**
+`);
+    }
+}
+
+// Android 应用内插件：源码直接维护在 android/app/src/main/java/cc/dinnerparty/foodmap/，这里只校验存在并在 MainActivity 注册
+function patchAndroidPlugins() {
+    const sourceDir = resolve(root, 'android/app/src/main/java/cc/dinnerparty/foodmap');
+    const mainActivity = resolve(sourceDir, 'MainActivity.java');
+    if (!existsSync(mainActivity)) return;
+    if (!existsSync(resolve(sourceDir, 'AMapLocationPlugin.java'))) {
+        throw new Error('缺少高德定位插件源码 AMapLocationPlugin.java（应位于 android/app/src/main/java/cc/dinnerparty/foodmap/）');
+    }
+    patchFile(mainActivity, 'Android 注册高德定位插件', (text) => {
+        if (text.includes('AMapLocationPlugin')) return text;
+        if (!/public class MainActivity extends BridgeActivity \{\s*\}/.test(text)) {
+            throw new Error('MainActivity.java 结构与预期不同，请在 super.onCreate 前手动 registerPlugin(AMapLocationPlugin.class)');
+        }
+        return `package cc.dinnerparty.foodmap;
+
+import android.os.Bundle;
+
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        // 应用内插件需在桥接创建前注册
+        registerPlugin(AMapLocationPlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+}
+`;
     });
 }
 
@@ -232,6 +325,7 @@ try {
     if (!only || only === 'android') {
         patchAndroid();
         patchAndroidGradle();
+        patchAndroidPlugins();
     }
     if (!only || only === 'ios') {
         patchIosSwiftPackage();

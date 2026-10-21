@@ -5,6 +5,17 @@
   "server": {
     "androidScheme": "https"
   },
+  "android": {
+    "includePlugins": [
+      "@aparajita/capacitor-secure-storage",
+      "@capacitor/app",
+      "@capacitor/app-launcher",
+      "@capacitor/camera",
+      "@capacitor/filesystem",
+      "@capacitor/keyboard",
+      "@capacitor/share"
+    ]
+  },
   "plugins": {
     "Keyboard": {
       "resize": "native",

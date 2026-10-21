@@ -1,6 +1,6 @@
 # 平台能力与原生协议
 
-业务通过本目录访问配置、导航/返回、凭证、定位、媒体、分享、生命周期、本机草稿和原生桥接；index.js 是能力导出入口，允许现有消费者直接导入单项文件。nativeMapChrome/nativeSettings 是 JS 会话，Swift 实现在 ios 工程；nativeShell 负责启动与深链。
+业务通过本目录访问配置、导航/返回、凭证、定位、媒体、分享、生命周期、本机草稿和原生桥接；index.js 是能力导出入口，允许现有消费者直接导入单项文件。nativeMapChrome/nativeSettings 是 JS 会话，Swift 实现在 ios 工程；Android 定位走应用内高德插件 AMapLocation（android/app/.../AMapLocationPlugin.java，高德失败时插件改用系统定位），iOS 用 @capacitor/geolocation；nativeShell 负责启动与深链。
 
 `privacyConsent.js` 保存本机隐私选择与政策版本。缺失、损坏、旧版本记录均需重新确认；存储异常时保留本次选择。`main.jsx` 在同意前不导入业务 App、不初始化原生容器、不加载字体 CDN；`amapLoader.js` 拒绝未同意时的加载请求，包括已有 `window.AMap` 的情况。拒绝界面可独立阅读政策并重新选择。验证入口为 `npm run test:privacy`，它不访问真实高德或用户账号。
 

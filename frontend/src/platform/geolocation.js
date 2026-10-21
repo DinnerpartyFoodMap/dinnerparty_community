@@ -1,8 +1,9 @@
 // 定位接口：返回统一的 GCJ-02 坐标与来源信息，交给高德前只按需转换一次。
 //   网页：浏览器定位（WGS-84，本地转换为 GCJ-02），拿不到时用高德 IP 定位（已是 GCJ-02）补一个粗略位置
-//   App：系统定位插件（结果为 WGS-84，本地转换为 GCJ-02）
+//   Android：应用内高德定位 SDK 插件 AMapLocation（国内已是 GCJ-02；境外结果及高德失败时的系统定位兜底为 WGS-84，本地转换）
+//   iOS：系统定位插件（结果为 WGS-84，本地转换为 GCJ-02）
 
-import { isNativePlatform } from './env.js';
+import { getPlatform, isNativePlatform } from './env.js';
 import { wgs84ToGcj02 } from './coordTransform.js';
 import { t } from '../i18n/index.js';
 
@@ -85,28 +86,78 @@ export function isLocationAvailable() {
     return isNativePlatform() || canUseBrowserLocation();
 }
 
-async function locateNative({ timeout }) {
-    const { Geolocation } = await import('@capacitor/geolocation');
-    let permission;
-    try {
-        permission = await Geolocation.checkPermissions();
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') {
-            permission = await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
-        }
-    } catch (error) {
-        // 系统定位总开关关闭时，检查权限本身就会失败
-        throw classify(error);
+// 插件的 timeout 不覆盖所有桥接/设备异常；JS 也设置截止时间，并响应地图卸载时的取消。
+// 授权弹窗只响应取消，不设置获取位置的倒计时。
+function nativeCall(operation, { timeout, signal }) {
+    if (signal?.aborted) return Promise.reject(new LocationError(LOCATION_ERROR.ABORTED));
+    let timer;
+    let onAbort;
+    const interrupted = new Promise((_, reject) => {
+        onAbort = () => reject(new LocationError(LOCATION_ERROR.ABORTED));
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (timeout != null) timer = setTimeout(() => reject(new LocationError(LOCATION_ERROR.TIMEOUT)), timeout);
+    });
+    const pending = Promise.resolve().then(() => {
+        if (signal?.aborted) throw new LocationError(LOCATION_ERROR.ABORTED);
+        return operation();
+    });
+    return Promise.race([pending, interrupted]).finally(() => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+    });
+}
+
+// 高德定位 SDK 的错误码（AMapLocation.ERROR_CODE_*）；未列出的按暂时无法定位处理。
+// 7（Key 鉴权，包名/签名 SHA1 与 Key 不符）、9、10 和 AMAP_INIT 是配置或 SDK 启动问题，归为未知错误并保留原始信息。
+const AMAP_ERRORS = {
+    4: LOCATION_ERROR.TIMEOUT, // 请求高德服务器异常，多为网络差
+    7: LOCATION_ERROR.UNKNOWN,
+    9: LOCATION_ERROR.UNKNOWN,
+    10: LOCATION_ERROR.UNKNOWN,
+    12: LOCATION_ERROR.PERMISSION_DENIED,
+    INIT: LOCATION_ERROR.UNKNOWN
+};
+
+function classifyAmap(errorLike) {
+    if (errorLike instanceof LocationError) return errorLike;
+    const code = String(errorLike?.code || '');
+    // 插件自己的 PERMISSION_DENIED / SERVICES_DISABLED / TIMEOUT / ABORTED
+    if (LOCATION_ERROR[code] === code) return new LocationError(code, errorLike);
+    const amap = /^AMAP_(\w+)$/.exec(code)?.[1];
+    if (amap) return new LocationError(AMAP_ERRORS[amap] || LOCATION_ERROR.POSITION_UNAVAILABLE, errorLike);
+    return classify(errorLike);
+}
+
+// 插件代理对任意属性（包括 then）都返回方法，不能直接作为 Promise 结果，包一层普通对象。
+let amapLocationPromise = null;
+function loadAmapLocation() {
+    if (!amapLocationPromise) {
+        amapLocationPromise = import('@capacitor/core').then(({ registerPlugin }) => ({ plugin: registerPlugin('AMapLocation') }));
+        amapLocationPromise.catch(() => { amapLocationPromise = null; });
     }
-    if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') {
-        throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
-    }
-    let position;
-    try {
-        position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout, maximumAge: 0 });
-    } catch (error) {
-        throw classify(error);
-    }
-    const { longitude, latitude, accuracy } = position.coords || {};
+    return amapLocationPromise;
+}
+
+function fromAmapPosition(raw) {
+    const { longitude, latitude, accuracy, coordType, timestamp } = raw || {};
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) throw new LocationError(LOCATION_ERROR.POSITION_UNAVAILABLE);
+    // 高德在其国内范围返回 GCJ-02，境外返回 WGS-84；高德失败时插件改用的系统定位也是 WGS-84（国内需转换，境外原样返回）
+    const wgs84 = coordType === 'WGS84';
+    const converted = wgs84 ? wgs84ToGcj02(longitude, latitude) : { lng: longitude, lat: latitude };
+    return {
+        lng: converted.lng,
+        lat: converted.lat,
+        accuracy: Number.isFinite(accuracy) && accuracy > 0 ? accuracy : null,
+        coordSystem: 'GCJ-02',
+        source: 'native',
+        converted: wgs84,
+        raw: { lng: longitude, lat: latitude, coordSystem: wgs84 ? 'WGS-84' : 'GCJ-02' },
+        timestamp: timestamp || Date.now()
+    };
+}
+
+function fromSystemPosition(position) {
+    const { longitude, latitude, accuracy } = position?.coords || {};
     if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) throw new LocationError(LOCATION_ERROR.POSITION_UNAVAILABLE);
     const converted = wgs84ToGcj02(longitude, latitude);
     return {
@@ -119,6 +170,49 @@ async function locateNative({ timeout }) {
         raw: { lng: longitude, lat: latitude, coordSystem: 'WGS-84' },
         timestamp: position.timestamp || Date.now()
     };
+}
+
+// 两个插件的权限别名相同（location 精确 / coarseLocation 模糊），授权流程共用
+async function nativeLocator() {
+    if (getPlatform() === 'android') {
+        const { plugin } = await loadAmapLocation();
+        return {
+            plugin,
+            classify: classifyAmap,
+            // 精度由高德 SDK 按已授予的权限决定（仅模糊权限时返回模糊位置），不会再请求升级为精确位置
+            locate: (permission, timeout) => plugin.getCurrentPosition({ timeout }).then(fromAmapPosition)
+        };
+    }
+    const { Geolocation } = await import('@capacitor/geolocation');
+    return {
+        plugin: Geolocation,
+        classify,
+        locate: (permission, timeout) => Geolocation.getCurrentPosition({
+            enableHighAccuracy: permission.location === 'granted', timeout, maximumAge: 0
+        }).then(fromSystemPosition)
+    };
+}
+
+async function locateNative({ timeout, signal }) {
+    const { plugin, classify: toLocationError, locate } = await nativeLocator();
+    let permission;
+    try {
+        permission = await nativeCall(() => plugin.checkPermissions(), { timeout, signal });
+        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') {
+            permission = await nativeCall(() => plugin.requestPermissions({ permissions: ['location', 'coarseLocation'] }), { signal });
+        }
+    } catch (error) {
+        // 系统定位总开关关闭时，iOS 插件检查权限本身就会失败
+        throw toLocationError(error);
+    }
+    if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') {
+        throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
+    }
+    try {
+        return await nativeCall(() => locate(permission, timeout), { timeout, signal });
+    } catch (error) {
+        throw toLocationError(error);
+    }
 }
 
 // 支付宝和安卓 UC 浏览器的 H5 定位已是 GCJ-02（与高德 JS 定位插件的判断一致），其余浏览器返回 WGS-84
@@ -376,10 +470,10 @@ function locateWeb({ map, timeout, onUpdate, signal }) {
 /**
  * 获取当前位置（GCJ-02）。
  * 网页端先返回最先拿到的位置（可能只是粗略位置）；传了 onUpdate 时，之后明显更准的位置继续回调，
- * 直到精度达到 20 米、超时（默认 30 秒）或 signal 取消。App 端只返回一次系统定位结果，不会回调 onUpdate。
+ * 直到精度达到 20 米、超时（默认 30 秒）或 signal 取消。App 端只返回一次定位结果（Android 高德定位 SDK，iOS 系统定位），不会回调 onUpdate。
  * @param {{ map?: any, timeout?: number, onUpdate?: (position: object) => void, signal?: AbortSignal }} options
  */
 export async function getCurrentLocation({ map, timeout, onUpdate, signal } = {}) {
-    if (isNativePlatform()) return locateNative({ timeout: timeout ?? NATIVE_LOCATE_TIMEOUT_MS });
+    if (isNativePlatform()) return locateNative({ timeout: timeout ?? NATIVE_LOCATE_TIMEOUT_MS, signal });
     return locateWeb({ map, timeout: timeout ?? WEB_LOCATE_TIMEOUT_MS, onUpdate, signal });
 }

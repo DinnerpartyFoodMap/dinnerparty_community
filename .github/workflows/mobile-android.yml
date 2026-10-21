@@ -73,9 +73,17 @@ jobs:
 
       - name: 调试包
         working-directory: frontend/android
+        env:
+          # 高德定位 SDK 的 Key 绑定签名 SHA1：提供固定的调试 keystore 时调试包才能精确定位，否则每次运行生成新的调试签名
+          AMAP_ANDROID_KEY: ${{ secrets.AMAP_ANDROID_KEY }}
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
         # 工程在 Windows 上提交时 gradlew 可能丢失可执行位，这里统一补上
         run: |
           chmod +x gradlew
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            mkdir -p "$HOME/.android"
+            echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 -d > "$HOME/.android/debug.keystore"
+          fi
           ./gradlew assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v6
@@ -91,9 +99,13 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          AMAP_ANDROID_KEY: ${{ secrets.AMAP_ANDROID_KEY }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "::error::未配置 ANDROID_KEYSTORE_BASE64 等签名 Secrets"; exit 1
+          fi
+          if [ -z "$AMAP_ANDROID_KEY" ]; then
+            echo "::error::未配置 AMAP_ANDROID_KEY（高德 Android Key，定位必需）"; exit 1
           fi
           export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_PATH"

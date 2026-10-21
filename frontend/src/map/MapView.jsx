@@ -1341,7 +1341,7 @@ export default function MapView({
         };
 
         try {
-            // 统一返回 GCJ-02：网页端为浏览器定位（本地转换）或高德 IP 定位，App 端为系统定位 + 本地转换（只转换一次）
+            // 统一返回 GCJ-02：网页端为浏览器定位（本地转换）或高德 IP 定位，Android 为高德定位 SDK（境外才本地转换），iOS 为系统定位 + 本地转换（只转换一次）
             const position = await getCurrentLocation({ map, onUpdate, signal: controller.signal });
             if (controller.signal.aborted || !mapRef.current) return;
 

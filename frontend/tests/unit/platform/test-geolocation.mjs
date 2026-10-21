@@ -1,6 +1,6 @@
-// 网页端定位流程：先返回最先拿到的（粗略）位置，再用持续定位提高精度；npm run test:platform
+// 网页渐进定位与 App 权限、超时、取消；npm run test:platform
 import assert from 'node:assert/strict';
-import { locateWithBrowser, LOCATION_ERROR } from '../../../src/platform/geolocation.js';
+import { getCurrentLocation, locateWithBrowser, LOCATION_ERROR } from '../../../src/platform/geolocation.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const permitted = () => Promise.resolve();
@@ -168,6 +168,191 @@ function fakeGeolocation() {
     const aborted = new AbortController();
     aborted.abort();
     await assert.rejects(locateWithBrowser({ geolocation: fakeGeolocation(), whenPermitted: permitted, signal: aborted.signal }), { code: LOCATION_ERROR.ABORTED });
+}
+
+// 使用真实 Capacitor JS 代理，仅替换跨设备的 nativePromise 边界。
+// @capacitor/core 只在首次导入时绑定 window.Capacitor，所以 Android / iOS 共用一个替身，平台由 androidBridge / webkit 决定。
+{
+    const originalWindow = globalThis.window;
+    const originalCapacitor = globalThis.Capacitor;
+    const originalBridge = globalThis.androidBridge;
+    const originalWebkit = globalThis.webkit;
+    const nativeError = (code, data) => Object.assign(new Error(`native ${code}`), { code, data });
+    const amapFix = (accuracy, lng = 116.397, lat = 39.908, coordType = 'GCJ02') => ({ longitude: lng, latitude: lat, accuracy, coordType, locationType: 5, timestamp: 1 });
+    const methods = ['checkPermissions', 'requestPermissions', 'getCurrentPosition'].map(name => ({ name, rtype: 'promise' }));
+    let permission = { location: 'denied', coarseLocation: 'granted' };
+    let checkPermission = async () => permission;
+    let requestPermission = async () => permission;
+    let request = async () => assert.fail('getCurrentPosition not expected');
+    const calls = [];
+    globalThis.window = globalThis;
+    globalThis.androidBridge = {};
+    globalThis.Capacitor = {
+        isNativePlatform: () => true,
+        getPlatform: () => (globalThis.androidBridge ? 'android' : 'ios'),
+        PluginHeaders: [{ name: 'AMapLocation', methods }, { name: 'Geolocation', methods }],
+        nativePromise: async (plugin, method, options) => {
+            calls.push(`${plugin}.${method}`);
+            assert.equal(plugin, globalThis.androidBridge ? 'AMapLocation' : 'Geolocation', 'each platform uses its own location plugin');
+            if (method === 'checkPermissions') return checkPermission();
+            if (method === 'requestPermissions') return requestPermission(options);
+            if (method === 'getCurrentPosition') return request(options);
+            assert.fail(`Unexpected native method: ${method}`);
+        }
+    };
+    try {
+        // Android：高德国内结果已是 GCJ-02，不再转换；只把超时交给插件，精度由插件按已授予的权限决定
+        request = async (options) => {
+            assert.deepEqual(options, { timeout: 10000 });
+            return amapFix(2000);
+        };
+        const approximate = await getCurrentLocation();
+        assert.deepEqual(calls, ['AMapLocation.checkPermissions', 'AMapLocation.getCurrentPosition']);
+        assert.equal(approximate.source, 'native');
+        assert.equal(approximate.accuracy, 2000);
+        assert.equal(approximate.lng, 116.397);
+        assert.equal(approximate.converted, false);
+        assert.deepEqual(approximate.raw, { lng: 116.397, lat: 39.908, coordSystem: 'GCJ-02' });
+
+        // 高德境外返回 WGS-84：境外坐标原样使用；精度缺失时为 null
+        request = async () => amapFix(undefined, -0.12, 51.5, 'WGS84');
+        const overseas = await getCurrentLocation();
+        assert.equal(overseas.coordSystem, 'GCJ-02');
+        assert.equal(overseas.lng, -0.12);
+        assert.equal(overseas.accuracy, null);
+        assert.deepEqual(overseas.raw, { lng: -0.12, lat: 51.5, coordSystem: 'WGS-84' });
+
+        // 高德失败后插件改用系统定位：国内的 WGS-84 结果要转换成 GCJ-02
+        request = async () => ({ ...amapFix(8, 116.397, 39.908, 'WGS84'), provider: 'gps' });
+        const fallback = await getCurrentLocation();
+        assert.equal(fallback.converted, true);
+        assert.ok(Math.abs(fallback.lng - 116.397) > 1e-4 && Math.abs(fallback.lat - 39.908) > 1e-4);
+        assert.deepEqual(fallback.raw, { lng: 116.397, lat: 39.908, coordSystem: 'WGS-84' });
+
+        // 插件与高德 SDK 的错误码
+        for (const [code, expected] of [
+            ['PERMISSION_DENIED', LOCATION_ERROR.PERMISSION_DENIED],
+            ['SERVICES_DISABLED', LOCATION_ERROR.SERVICES_DISABLED],
+            ['TIMEOUT', LOCATION_ERROR.TIMEOUT],
+            ['AMAP_12', LOCATION_ERROR.PERMISSION_DENIED],
+            ['AMAP_4', LOCATION_ERROR.TIMEOUT],
+            ['AMAP_7', LOCATION_ERROR.UNKNOWN],
+            ['AMAP_INIT', LOCATION_ERROR.UNKNOWN],
+            ['AMAP_13', LOCATION_ERROR.POSITION_UNAVAILABLE],
+            ['AMAP_20', LOCATION_ERROR.POSITION_UNAVAILABLE]
+        ]) {
+            request = async () => { throw nativeError(code, { amapCode: 0, detail: '#0000' }); };
+            await assert.rejects(getCurrentLocation(), (error) => {
+                assert.equal(error.code, expected, code);
+                assert.equal(error.cause.code, code, 'keeps the native error for diagnosis');
+                return true;
+            });
+        }
+        request = async () => ({ coordType: 'GCJ02' });
+        await assert.rejects(getCurrentLocation(), { code: LOCATION_ERROR.POSITION_UNAVAILABLE });
+
+        // 两种权限都被拒绝：不向高德索取位置
+        calls.length = 0;
+        permission = { location: 'prompt', coarseLocation: 'prompt' };
+        requestPermission = async (options) => {
+            assert.deepEqual(options, { permissions: ['location', 'coarseLocation'] });
+            return { location: 'denied', coarseLocation: 'denied' };
+        };
+        request = () => assert.fail('denied permission must not request a position');
+        await assert.rejects(getCurrentLocation(), { code: LOCATION_ERROR.PERMISSION_DENIED });
+        assert.deepEqual(calls, ['AMapLocation.checkPermissions', 'AMapLocation.requestPermissions']);
+        permission = { location: 'granted', coarseLocation: 'granted' };
+
+        // 原生无回调：JS 截止时间必须释放调用，不能永远锁住定位按钮。
+        request = () => new Promise(() => {});
+        const outcome = await Promise.race([
+            getCurrentLocation({ timeout: 15 }).then(() => 'resolved', error => error.code),
+            sleep(100).then(() => 'still pending')
+        ]);
+        assert.equal(outcome, LOCATION_ERROR.TIMEOUT);
+
+        // 权限检查自身无回调也必须超时，启动自动定位才不会一直占用按钮。
+        checkPermission = () => new Promise(() => {});
+        const stalledCheck = await Promise.race([
+            getCurrentLocation({ timeout: 15 }).then(() => 'resolved', error => error.code),
+            sleep(100).then(() => 'still pending')
+        ]);
+        assert.equal(stalledCheck, LOCATION_ERROR.TIMEOUT);
+        checkPermission = async () => permission;
+
+        // 离开地图时取消；迟到的原生位置不应恢复已结束的请求。
+        let late;
+        let started;
+        const began = new Promise(resolve => { started = resolve; });
+        request = () => new Promise(resolve => { late = resolve; started(); });
+        const controller = new AbortController();
+        const cancelled = getCurrentLocation({ signal: controller.signal, timeout: 5000 });
+        await began;
+        controller.abort();
+        const cancelledOutcome = await Promise.race([
+            cancelled.then(() => 'resolved', error => error.code),
+            sleep(100).then(() => 'still pending')
+        ]);
+        late(amapFix(5));
+        assert.equal(cancelledOutcome, LOCATION_ERROR.ABORTED);
+
+        // 授权弹窗等待不计入获取位置的超时；只授予模糊位置也可继续。
+        permission = { location: 'prompt', coarseLocation: 'prompt' };
+        requestPermission = async () => {
+            await sleep(30);
+            return { location: 'denied', coarseLocation: 'granted' };
+        };
+        request = async () => amapFix(2000);
+        assert.equal((await getCurrentLocation({ timeout: 15 })).accuracy, 2000);
+
+        // 已取消或在授权期间离开地图：不再向原生索取位置。
+        const alreadyAborted = new AbortController();
+        alreadyAborted.abort();
+        checkPermission = () => assert.fail('aborted request must not check permission');
+        await assert.rejects(getCurrentLocation({ signal: alreadyAborted.signal }), { code: LOCATION_ERROR.ABORTED });
+        checkPermission = async () => permission;
+        let answer;
+        let promptStarted;
+        const prompted = new Promise(resolve => { promptStarted = resolve; });
+        requestPermission = () => new Promise(resolve => { answer = resolve; promptStarted(); });
+        request = () => assert.fail('cancelled permission prompt must not request a position');
+        const leaving = new AbortController();
+        const awaitingPermission = getCurrentLocation({ signal: leaving.signal });
+        await prompted;
+        leaving.abort();
+        await assert.rejects(awaitingPermission, { code: LOCATION_ERROR.ABORTED });
+        answer({ location: 'granted', coarseLocation: 'granted' });
+        await sleep(0);
+
+        // iOS 仍用 @capacitor/geolocation：WGS-84 本地转换；只有精确权限时才请求高精度
+        delete globalThis.androidBridge;
+        globalThis.webkit = { messageHandlers: { bridge: {} } };
+        permission = { location: 'denied', coarseLocation: 'granted' };
+        request = async (options) => {
+            assert.equal(options.enableHighAccuracy, false, 'approximate permission must not trigger a precise-location upgrade');
+            return fix(2000);
+        };
+        const iosApproximate = await getCurrentLocation();
+        assert.equal(iosApproximate.accuracy, 2000);
+        assert.deepEqual(iosApproximate.raw, { lng: -0.12, lat: 51.5, coordSystem: 'WGS-84' });
+
+        permission = { location: 'granted', coarseLocation: 'granted' };
+        request = async (options) => {
+            assert.equal(options.enableHighAccuracy, true);
+            return fix(5, 116.397, 39.908);
+        };
+        const iosPrecise = await getCurrentLocation();
+        assert.equal(iosPrecise.coordSystem, 'GCJ-02');
+        assert.ok(Math.abs(iosPrecise.lng - 116.397) > 1e-4);
+
+        request = async () => { throw nativeError('OS-PLUG-GLOC-0017'); };
+        await assert.rejects(getCurrentLocation(), { code: LOCATION_ERROR.SERVICES_DISABLED });
+    } finally {
+        globalThis.window = originalWindow;
+        globalThis.Capacitor = originalCapacitor;
+        globalThis.androidBridge = originalBridge;
+        globalThis.webkit = originalWebkit;
+    }
 }
 
 console.log('geolocation tests passed');

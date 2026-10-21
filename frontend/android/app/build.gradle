@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// 高德 Android 平台 Key（定位 SDK），与包名和签名 SHA1 绑定：环境变量 / -P 参数 / android/local.properties 的 amap.android.key
+def amapAndroidKey = System.getenv("AMAP_ANDROID_KEY") ?: (project.findProperty("AMAP_ANDROID_KEY") ?: {
+    def local = rootProject.file("local.properties")
+    if (!local.exists()) return ""
+    def props = new Properties()
+    local.withInputStream { props.load(it) }
+    return props.getProperty("amap.android.key", "")
+}())
+
 android {
     namespace = "cc.dinnerparty.foodmap"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -10,6 +19,7 @@ android {
         versionCode((System.getenv("APP_BUILD_NUMBER") ?: "1").toInteger())
         versionName(new groovy.json.JsonSlurper().parse(file("../../package.json")).version)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders = [AMAP_ANDROID_KEY: amapAndroidKey]
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -49,6 +59,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation "com.amap.api:location:11.3.000"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
@@ -56,6 +67,14 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+// 缺少 Key 时定位会报 KEY 鉴权失败：调试包只提示，发布包直接中止
+if (!amapAndroidKey) {
+    logger.warn("未配置 AMAP_ANDROID_KEY，App 定位将不可用")
+    tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+        doFirst { throw new GradleException("发布包需要高德 Android Key：设置环境变量 AMAP_ANDROID_KEY 或 local.properties 的 amap.android.key") }
+    }
+}
 
 try {
     def servicesJSON = file('google-services.json')
