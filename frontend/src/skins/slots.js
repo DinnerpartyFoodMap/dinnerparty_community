@@ -48,6 +48,7 @@ export const SKIN_SLOTS = Object.freeze([
     icon('cardActions.edit'),
     icon('cardActions.create'),
     icon('cardActions.details'),
+    icon('cardActions.report'),
     icon('cardActions.close'),
     slot('cardActions.buttonBackground', 'color', { cssVar: '--skin-action-bg' }),
     slot('cardActions.buttonBorderColor', 'color', { cssVar: '--skin-action-border-color' }),

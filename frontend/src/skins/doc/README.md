@@ -72,7 +72,7 @@ App 内的玻璃材质（`overlay.css`，iOS 与安卓）以 `!important` 固定
 | | `placeCard.texture` + `textureSize` | 图片 + background-size | 可平铺淡纹理（透明度做进图里，约 5%–8%） |
 | | `placeCard.frame` | `{ image, slice, width, outset, repeat }` | 九宫格主题边框，四角含圆角；`slice` 是图里角的像素，`width` 是显示宽度 |
 | 评分条 | `rating.strongYes` / `aboveAverage` / `belowAverage` / `strongNo` / `none` | 图片 | 同一角色的连续情绪（强烈推荐 → 强烈拒绝，外加“还没评价”），正方形透明底，显示 20–24px |
-| 卡片操作按钮 | `cardActions.navigate` / `share` / `favorite` / `favoriteActive` / `edit` / `create` / `details` / `close` | 图片 | 统一画风的功能图标，显示 20px（关闭 18px）；收藏前后两态；`create` 是未收录地点的“添加” |
+| 卡片操作按钮 | `cardActions.navigate` / `share` / `favorite` / `favoriteActive` / `edit` / `create` / `details` / `report` / `close` | 图片 | 统一画风的功能图标，显示 20px（关闭 18px）；收藏前后两态；`create` 是未收录地点的“添加”；`details` 只在网页卡片，`report`（举报）只在 iOS 原生卡片 |
 | | `cardActions.buttonBackground` / `buttonBorderColor` | 颜色 | |
 | 底部功能栏 | `toolbar.background` / `borderColor` / `selectedColor` | 颜色 | 选中色用于选中按钮的图标与文字 |
 | | `toolbar.texture` + `textureSize` | 图片 | 浅底纹 |

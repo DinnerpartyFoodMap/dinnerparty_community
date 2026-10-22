@@ -22,14 +22,14 @@ export function parseImages(value) {
 }
 
 // 地点详情：宽屏为右侧信息板（非模态，地图仍可操作），窄屏为可在中/全屏两档停靠的底部面板。
-// 图片预览是嵌套浮层：返回键先关闭预览，再关闭详情。
-export default function PlaceDetailPanel({ open = true, place, onClose, onNavigate, focus = null, backendUrl, rating = null, onOpenRating }) {
+// 图片预览是嵌套浮层：返回键先关闭预览，再关闭详情。onReport 有值时店名后面跟一个小字“举报”。
+export default function PlaceDetailPanel({ open = true, place, onClose, onNavigate, focus = null, backendUrl, rating = null, onOpenRating, onReport }) {
     const layout = useLayoutPolicy();
     return (
         <ResponsivePanel
             open={open && !!place}
             onClose={onClose}
-            title={place ? place.name : t('map:placeDetail.title')}
+            title={place ? <>{place.name}{onReport && <ReportLink name={place.name} onReport={onReport} />}</> : t('map:placeDetail.title')}
             label={place ? t('map:placeDetail.titleNamed', { name: place.name }) : t('map:placeDetail.title')}
             kind="place-detail"
             desktop="side-right"
@@ -115,6 +115,21 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
 
             <ImagePreview preview={preview} onClose={() => setPreview(null)} />
         </>
+    );
+}
+
+/** 店名后的小字举报入口：跟在标题文字末尾（店名换行时也贴着最后一个字） */
+function ReportLink({ name, onReport }) {
+    return (
+        <button
+            type="button"
+            onClick={onReport}
+            aria-label={t('map:placeDetail.reportLabel', { name })}
+            className="fm-pressable"
+            style={{ marginLeft: 8, padding: '2px 0', border: 0, background: 'transparent', color: 'var(--color-text-muted)', fontFamily: 'inherit', fontSize: 12, fontWeight: 400, lineHeight: 1.4, verticalAlign: 'middle', cursor: 'pointer', whiteSpace: 'nowrap' }}
+        >
+            {t('map:placeDetail.report')}
+        </button>
     );
 }
 

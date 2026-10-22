@@ -252,6 +252,7 @@
     "createPlace": "收录",
     "edit": "编辑",
     "details": "详情",
+    "report": "举报",
     "lastModified": "最近修改：{{modifier}}",
     "diaryCount": "相关日记 {{diaryCount}} 篇",
     "exteriorImages": "外观 / 招牌",
@@ -379,7 +380,9 @@
     "noImages": "暂无相关图片",
     "imagePreview": "图片大图预览",
     "closePreview": "关闭大图",
-    "rateLabel": "查看或修改评价"
+    "rateLabel": "查看或修改评价",
+    "report": "举报",
+    "reportLabel": "举报{{name}}"
   },
   "imageInputs": {
     "pickFailed": "选择图片失败",

@@ -50,6 +50,7 @@ import { SkinFrame, SkinOrnaments, useSkinFrameActive } from '../skins/SkinDecor
 import { useSkinRevision } from '../skins/useSkin';
 import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../skins/nativeSkin';
 import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText';
+import { placeReportPrefill } from '../feedback/feedbackTypes';
 import { t, tx } from '../i18n/index.js';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
@@ -358,6 +359,9 @@ export default function MapUI(props) {
     const placeRating = usePlaceRating({ backendUrl, token: isAuthenticated ? token : null, placeId: ratingPlaceId, onSummary: onRatingSummary });
     const [ratingOpen, setRatingOpen] = useState(false);
     const openRating = () => setRatingOpen(true);
+    // 举报：打开预填好的意见反馈表（类型“不良信息举报”、地点名、编号与链接），住民接着写原因；高德临时地点没有收录，不能举报
+    const canReportPlace = !!(onOpenFeedback && ratingPlaceId != null);
+    const reportPlace = () => { if (canReportPlace) onOpenFeedback(placeReportPrefill(selectedPlace)); };
     const ratingSummary = placeRating.data ? placeRating.data.summary : summaryFromPlace(selectedPlace);
     const myRatingTier = placeRating.data && placeRating.data.mine ? ratingTierFor(placeRating.data.mine.score) : null;
     const personalizedRating = placeRating.data && placeRating.data.personalized;
@@ -835,8 +839,8 @@ export default function MapUI(props) {
         chromeSheet = exhibitionChromeSheet(exhibition, { iconUrl: exhibitionIconSource(exhibition.icon_url, backendUrl) });
     } else if (openSheetId === 'place') {
         // 地点卡片：两段停靠。第一段是摘要（左上角分享、右上角关闭、一排等宽操作按钮），地图保持可操作，点其他地点时原地更新；
-        // 上滑或点“详情”到全屏，显示完整简介、地址、相关日记与图片。操作按钮不收起面板：
-        // 打开的网页浮层（分享、导航选择、编辑、日记）期间原生面板暂时让位，关闭后回来。
+        // 上滑到全屏，显示完整简介、地址、相关日记与图片。操作按钮不收起面板：
+        // 打开的网页浮层（分享、导航选择、编辑、日记）与原生反馈页（举报）期间原生面板暂时让位，关闭后回来。
         const unmarked = selectedPlace.isMarked === false;
         const favorited = !!(favoriteIds && favoriteIds.has(selectedPlace.id));
         // 评价：摘要高度只显示标题行与按钮，所以评价汇总放在副标题最前面；全屏详情里另有一行可点开评价面板
@@ -887,8 +891,8 @@ export default function MapUI(props) {
                 unmarked
                     ? { id: 'create', title: t('map:ui.createPlace'), symbol: 'plus.circle', ...nativeIcon('cardActions.create'), keepsOpen: true }
                     : { id: 'edit', title: t('map:ui.edit'), symbol: 'pencil', ...nativeIcon('cardActions.edit'), keepsOpen: true },
-                // 原生侧展开到全屏详情，不回传
-                { id: 'details', title: t('map:ui.details'), symbol: 'info.circle', ...nativeIcon('cardActions.details'), keepsOpen: true, expands: true }
+                // 举报占了原来“详情”按钮的位置，全屏详情靠上滑展开
+                canReportPlace && { id: 'report', title: t('map:ui.report'), symbol: 'flag', ...nativeIcon('cardActions.report'), keepsOpen: true }
             ].filter(Boolean),
             sections: [
                 ratingRow && { id: 'rating', title: t('map:rating.panel.title'), rows: [ratingRow] },
@@ -950,6 +954,7 @@ export default function MapUI(props) {
                 case 'diaries': openDiaries(); break;
                 case 'rate':
                 case 'rating': openRating(); break;
+                case 'report': reportPlace(); break;
                 default:
             }
         }
@@ -2722,7 +2727,8 @@ export default function MapUI(props) {
             {!hideNonSearchButtons && !pickerMode && (
                 <>
                     <PlaceDetailPanel open={detailOpen && !!selectedPlace} place={selectedPlace} focus={detailFocus} backendUrl={backendUrl} onClose={() => setDetailOpen(false)} onNavigate={handleNavigate}
-                        rating={ratingPlaceId != null ? { summary: ratingSummary, mine: myRatingTier } : null} onOpenRating={openRating} />
+                        rating={ratingPlaceId != null ? { summary: ratingSummary, mine: myRatingTier } : null} onOpenRating={openRating}
+                        onReport={canReportPlace ? reportPlace : undefined} />
                     <PlaceRatingPanel
                         open={ratingOpen && ratingPlaceId != null}
                         onClose={() => setRatingOpen(false)}

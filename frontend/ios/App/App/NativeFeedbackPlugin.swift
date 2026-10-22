@@ -7,7 +7,8 @@ import WebKit
 /// 意见反馈的原生 SwiftUI 页：反馈类型、内容、最多 4 张图片（相册 / 拍照）都在原生里填写。
 /// 凭证与请求不离开网页层：点提交时经 feedbackEvent 把输入交给网页（图片已摆正、缩到 2048 内并编码为 JPEG），
 /// 网页发出请求后按 requestId 用 respond 回传结果。成功后收起并以 submitted 结束 open；
-/// 取消（按钮、下滑、网页重新加载）以 cancel 结束。类型、上限与文案都由网页下发（文案走网页 i18n）。
+/// 取消（按钮、下滑、网页重新加载）以 cancel 结束。类型、上限与文案都由网页下发（文案走网页 i18n）；
+/// 可选的 prefill { type, content } 是预填的类型与内容开头（地点举报）。
 @objc(NativeFeedbackPlugin)
 public class NativeFeedbackPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeFeedbackPlugin"
@@ -168,6 +169,9 @@ final class NativeFeedbackModel: ObservableObject {
     let maxImages: Int
     var onFinish: ((String) -> Void)?
     var onLockChange: ((Bool) -> Void)?
+    /// 预填的类型与内容：只有预填时不算草稿（下滑直接关闭），也不能提交（总要写点原因）
+    private let prefillType: String
+    private let prefillContent: String
     private let labels: [String: String]
     private let send: ([String: Any]) -> Void
     private var pendingRequest: (id: String, timeout: DispatchWorkItem)?
@@ -176,19 +180,29 @@ final class NativeFeedbackModel: ObservableObject {
         self.send = send
         dark = call.getBool("dark", false)
         tint = Color(uiColor: UIColor(cssHex: call.getString("primary") ?? "") ?? .systemPink)
-        types = (call.getArray("types", JSObject.self) ?? []).compactMap { item -> TypeOption? in
+        let types = (call.getArray("types", JSObject.self) ?? []).compactMap { item -> TypeOption? in
             guard let id = item["id"] as? String, !id.isEmpty else { return nil }
             return TypeOption(id: id, title: item["title"] as? String ?? id, hint: item["hint"] as? String ?? "",
                               symbol: item["symbol"] as? String ?? "bubble.left")
         }
+        self.types = types
         let limits = call.getObject("limits") ?? [:]
-        maxLength = max(1, (limits["contentLength"] as? NSNumber)?.intValue ?? 2000)
+        let maxLength = max(1, (limits["contentLength"] as? NSNumber)?.intValue ?? 2000)
+        self.maxLength = maxLength
         maxImages = max(0, (limits["images"] as? NSNumber)?.intValue ?? 4)
+        // 预填类型须在下发的类型里，否则整份预填作废
+        let prefill = call.getObject("prefill") ?? [:]
+        let prefillType = prefill["type"] as? String ?? ""
+        let validPrefill = types.contains { $0.id == prefillType }
+        self.prefillType = validPrefill ? prefillType : ""
+        prefillContent = validPrefill ? String((prefill["content"] as? String ?? "").prefix(maxLength)) : ""
         var labels: [String: String] = [:]
         for (key, value) in call.getObject("labels") ?? [:] {
             if let text = value as? String { labels[key] = text }
         }
         self.labels = labels
+        type = self.prefillType
+        content = prefillContent
     }
 
     /// 网页下发的文案；缺失时用中文兜底
@@ -198,10 +212,11 @@ final class NativeFeedbackModel: ObservableObject {
     }
 
     var trimmedContent: String { content.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var onlyPrefill: Bool { trimmedContent == prefillContent.trimmingCharacters(in: .whitespacesAndNewlines) }
     var selectedType: TypeOption? { types.first { $0.id == type } }
     var remainingImages: Int { max(0, maxImages - images.count) }
-    var canSubmit: Bool { !type.isEmpty && !trimmedContent.isEmpty && !submitting && !loadingImages }
-    var hasDraft: Bool { !type.isEmpty || !trimmedContent.isEmpty || !images.isEmpty }
+    var canSubmit: Bool { !type.isEmpty && !trimmedContent.isEmpty && !onlyPrefill && !submitting && !loadingImages }
+    var hasDraft: Bool { type != prefillType || !onlyPrefill || !images.isEmpty }
     var isLocked: Bool { hasDraft || submitting }
 
     // MARK: 图片

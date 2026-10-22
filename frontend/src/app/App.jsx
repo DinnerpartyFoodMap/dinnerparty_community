@@ -27,6 +27,7 @@ import useDarkMode from "../theme/useDarkMode";
 import { DinnerCreatePage, DinnerDetailPage, DinnerListPage, isDinnerPath, parseDinnerIdFromPath } from "../dinners/DinnerPages";
 import PosterExportPage from "../poster/PosterExportPage";
 import FeedbackHost from "../feedback/FeedbackHost";
+import { normalizeFeedbackPrefill } from "../feedback/feedbackTypes";
 import { getNoticeColorOption } from "../components/feedback/noticeColors";
 import { reportAuthStage } from "../auth/services/authDiagnostics";
 import { preserveJourneyBeforeLeave } from "../journey/navigation";
@@ -81,6 +82,7 @@ export default function App() {
     const [randomFoodRequestId, setRandomFoodRequestId] = useState(0);
     const [onboardingRequestId, setOnboardingRequestId] = useState(0);
     const [feedbackOpen, setFeedbackOpen] = useState(false);
+    const [feedbackPrefill, setFeedbackPrefill] = useState(null);
     const [siteNotice, setSiteNotice] = useState(null);
     const [dismissedNoticeId, setDismissedNoticeId] = useState(() => {
         try {
@@ -507,12 +509,13 @@ export default function App() {
 
     const isAuth = !!token && !!user;
     const isAdmin = !!(user && user.admin_level);
-    // 意见反馈需要登录：未登录时先打开登录框
-    const openFeedback = useCallback(() => {
+    // 意见反馈需要登录：未登录时先打开登录框。prefill（{ type, content }）预填一部分表单，例如地点举报；菜单入口不带
+    const openFeedback = useCallback((prefill) => {
         if (!isAuth) {
             setShowAuth(true);
             return;
         }
+        setFeedbackPrefill(normalizeFeedbackPrefill(prefill));
         setFeedbackOpen(true);
     }, [isAuth]);
     const closeFeedback = useCallback(() => setFeedbackOpen(false), []);
@@ -981,6 +984,7 @@ export default function App() {
 
                         <FeedbackHost
                             open={feedbackOpen && isAuth}
+                            prefill={feedbackPrefill}
                             onClose={closeFeedback}
                             backendUrl={BACKEND_URL}
                             token={token}

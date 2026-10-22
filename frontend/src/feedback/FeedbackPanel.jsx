@@ -13,8 +13,9 @@ let imageSequence = 0;
 const sectionTitleStyle = { fontSize: 13, fontWeight: 700, color: 'var(--color-text-secondary)', margin: '18px 0 8px' };
 
 // 意见反馈：类型 + 内容 + 最多 4 张图片，一次提交。面板常驻（不随关闭卸载），误关后再打开草稿还在；提交成功才清空。
-// iOS App 里由原生反馈页代替（见 useNativeFeedback），这里是网页、Android 与原生不可用时的版本。
-export default function FeedbackPanel({ open, onClose, backendUrl, token, onRequireAuth }) {
+// prefill（{ type, content }，例如从地点详情举报）预填类型与内容开头；同一份预填再打开时保留草稿，
+// 只有预填、没写别的内容时不能提交。iOS App 里由原生反馈页代替（见 useNativeFeedback），这里是网页、Android 与原生不可用时的版本。
+export default function FeedbackPanel({ open, onClose, backendUrl, token, onRequireAuth, prefill = null }) {
     const showTip = useTips();
     const [type, setType] = useState('');
     const [content, setContent] = useState('');
@@ -22,14 +23,23 @@ export default function FeedbackPanel({ open, onClose, backendUrl, token, onRequ
     const [picking, setPicking] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
+    const [prefillText, setPrefillText] = useState('');
     const imagesRef = useRef(images);
     imagesRef.current = images;
 
     useEffect(() => () => imagesRef.current.forEach((image) => URL.revokeObjectURL(image.url)), []);
 
+    useEffect(() => {
+        if (!open || !prefill) return;
+        setType(prefill.type);
+        setContent((current) => (prefill.content && current.startsWith(prefill.content) ? current : prefill.content));
+        setPrefillText(prefill.content.trim());
+        setError('');
+    }, [open, prefill]);
+
     const remaining = FEEDBACK_LIMITS.images - images.length;
     const trimmed = content.trim();
-    const canSubmit = !!type && !!trimmed && !submitting && !picking;
+    const canSubmit = !!type && !!trimmed && trimmed !== prefillText && !submitting && !picking;
     const selectedType = FEEDBACK_TYPES.find((item) => item.value === type);
 
     const addImages = async () => {
@@ -76,6 +86,7 @@ export default function FeedbackPanel({ open, onClose, backendUrl, token, onRequ
         setImages([]);
         setType('');
         setContent('');
+        setPrefillText('');
         showTip(result.message);
         onClose?.('submitted');
     };

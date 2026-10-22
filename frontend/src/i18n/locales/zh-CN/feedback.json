@@ -24,6 +24,9 @@
         "account": { "label": "账号问题", "hint": "登录、注册或账号相关的问题" },
         "other": { "label": "其他", "hint": "想说的其他事情" }
     },
+    "placeReport": {
+        "template": "举报地点：{{name}}（编号 {{id}}）\n{{link}}\n\n举报原因："
+    },
     "error": {
         "loginRequired": "登录已失效，请重新登录后再提交",
         "network": "网络连接失败，请稍后重试",

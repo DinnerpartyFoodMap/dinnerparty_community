@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createNativeFeedbackSession, pickSubmission, MAX_NATIVE_IMAGE_BASE64 } from "../../../src/platform/nativeFeedback.js";
-import { FEEDBACK_TYPE_VALUES } from "../../../src/feedback/feedbackTypes.js";
+import { FEEDBACK_LIMITS, FEEDBACK_TYPE_VALUES, normalizeFeedbackPrefill } from "../../../src/feedback/feedbackTypes.js";
 
 // 反馈类型取值前后端一致（后端按白名单拒绝未知类型）
 const backendService = readFileSync(new URL('../../../../backend/modules/feedback/services/feedbackService.js', import.meta.url), 'utf8');
 const backendTypes = JSON.parse(backendService.match(/FEEDBACK_TYPES = Object\.freeze\((\[[^\]]*\])\)/)[1].replace(/'/g, '"'));
 assert.deepEqual([...FEEDBACK_TYPE_VALUES], backendTypes);
+
+// 预填（地点举报）：类型须在白名单里，内容截到上限；菜单入口不带参数，点击事件之类的值按普通反馈打开
+assert.deepEqual(normalizeFeedbackPrefill({ type: 'report', content: '举报地点：B记鱼粥', extra: 1 }), { type: 'report', content: '举报地点：B记鱼粥' });
+assert.equal(normalizeFeedbackPrefill({ type: 'report', content: 'x'.repeat(5000) }).content.length, FEEDBACK_LIMITS.contentLength);
+assert.deepEqual(normalizeFeedbackPrefill({ type: 'report' }), { type: 'report', content: '' });
+for (const bad of [undefined, null, 'report', { type: 'spam', content: '类型不对' }, { nativeEvent: {}, type: 'click' }]) {
+    assert.equal(normalizeFeedbackPrefill(bad), null, JSON.stringify(bad));
+}
 
 const types = ['bug', 'suggestion', 'other'];
 const limits = { contentLength: 20, images: 2 };
