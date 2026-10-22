@@ -11,6 +11,12 @@ const PLACE_CATEGORY_MAX_LENGTH = 240;
 const PLACE_DESCRIPTION_MAX_LENGTH = 1000;
 const PLACE_ADDRESS_MAX_LENGTH = 250;
 const HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
+// The map (Web Mercator) ends at ±85.0511°. Clicking the blank area beyond it still yields
+// 85°–90°, and the frontend marker layer drops such points (cluster/engine.js
+// MAX_MERCATOR_LAT), so a place saved there could never be shown or selected.
+const PLACE_MAX_LATITUDE = 85.0511;
+const LATITUDE_RULE = { fieldLabel: '纬度', min: -PLACE_MAX_LATITUDE, max: PLACE_MAX_LATITUDE };
+const LONGITUDE_RULE = { fieldLabel: '经度', min: -180, max: 180 };
 
 const PLACE_WITH_NAMES_SQL = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
@@ -90,6 +96,18 @@ function normalizeCoordinate(value, {
     return { value: numericValue };
 }
 
+/** Validates whichever of latitude/longitude is present (edits and modification requests). */
+function normalizePlaceCoordinates(input = {}) {
+    const value = {};
+    for (const [key, rule] of [['latitude', LATITUDE_RULE], ['longitude', LONGITUDE_RULE]]) {
+        if (input[key] === undefined) continue;
+        const coordinate = normalizeCoordinate(input[key], rule);
+        if (coordinate.error) return coordinate;
+        value[key] = coordinate.value;
+    }
+    return { value };
+}
+
 // Optional positive integer. Decimals are rejected instead of truncated.
 function normalizePerPersonCost(value) {
     if (value === null || value === undefined || value === '') return { value: null };
@@ -117,9 +135,9 @@ function validateNewPlace(input = {}) {
     if (description.error) return description;
     const address = normalizePlainTextField(input.address, { fieldLabel: '地址', maxLength: PLACE_ADDRESS_MAX_LENGTH });
     if (address.error) return address;
-    const latitude = normalizeCoordinate(input.latitude, { fieldLabel: '纬度', min: -90, max: 90 });
+    const latitude = normalizeCoordinate(input.latitude, LATITUDE_RULE);
     if (latitude.error) return latitude;
-    const longitude = normalizeCoordinate(input.longitude, { fieldLabel: '经度', min: -180, max: 180 });
+    const longitude = normalizeCoordinate(input.longitude, LONGITUDE_RULE);
     if (longitude.error) return longitude;
     const cost = normalizePerPersonCost(input.per_person_cost);
     if (cost.error) return cost;
@@ -216,12 +234,14 @@ module.exports = {
     PLACE_NAME_MAX_LENGTH,
     PLACE_CATEGORY_MAX_LENGTH,
     PLACE_DESCRIPTION_MAX_LENGTH,
+    PLACE_MAX_LATITUDE,
     HTML_TAG_PATTERN,
     parseCategoryNames,
     getCategoryNameLength,
     normalizeCategoryList,
     normalizePlainTextField,
     normalizeCoordinate,
+    normalizePlaceCoordinates,
     normalizePerPersonCost,
     validateNewPlace,
     syncCategoryRegistry,

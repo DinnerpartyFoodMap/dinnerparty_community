@@ -7,7 +7,7 @@ import { installPinchGuard } from "./pinchGuard";
 import { OverseasTileLayer } from "./overseasTileLayer";
 import { PlaceRangeCache, RequestGate } from "./cluster/placeCache";
 import { expandBounds } from "./cluster/snapshot";
-import { placeKey } from "./cluster/engine";
+import { placeKey, isMappableCoordinate } from "./cluster/engine";
 import { readViewBounds, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
 import { createLocationReporter } from "./locationReport";
@@ -583,6 +583,11 @@ export default function MapView({
             handleMapClick = (e) => {
                 if (addModeRef.current) {
                     const { lng, lat } = e.lnglat;
+                    // 世界地图上下（或左右）边界外的空白处也能点出坐标，但那里的标记无法显示
+                    if (!isMappableCoordinate(lng, lat)) {
+                        showTip(t('map:main.addOutsideMap'));
+                        return;
+                    }
                     setAddingPos([lng, lat]);
                     return;
                 }

@@ -9,6 +9,7 @@ const {
     PLACE_CATEGORY_MAX_LENGTH,
     normalizeCategoryList,
     normalizePlainTextField,
+    normalizePlaceCoordinates,
     normalizePerPersonCost,
     syncCategoryRegistry,
     createPlace
@@ -180,8 +181,12 @@ router.put("/:id", requireAuth, (req, res) => {
             fields.push("category = ?");
             values.push(normalizedCategoryList.value);
         }
-        if (latitude != null) { fields.push("latitude = ?"); values.push(latitude); }
-        if (longitude != null) { fields.push("longitude = ?"); values.push(longitude); }
+        const coordinates = normalizePlaceCoordinates({
+            latitude: latitude ?? undefined,
+            longitude: longitude ?? undefined
+        });
+        if (coordinates.error) return res.status(400).json({ error: coordinates.error });
+        for (const [key, value] of Object.entries(coordinates.value)) { fields.push(`${key} = ?`); values.push(value); }
         if (exterior_images !== undefined) { fields.push("exterior_images = ?"); values.push(exterior_images ? JSON.stringify(normalizeImageUrls(exterior_images)) : null); }
         if (menu_images !== undefined) { fields.push("menu_images = ?"); values.push(menu_images ? JSON.stringify(normalizeImageUrls(menu_images)) : null); }
         if (per_person_cost !== undefined) {

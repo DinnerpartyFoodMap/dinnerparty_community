@@ -7,6 +7,7 @@ const { insertAdminAction } = require("../../admin/services/adminAudit");
 const { queuePlaceVectorSync } = require('../../preferences/services/placeVectorService');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
 const { createPlaceRequest } = require('../services/placeRequestService');
+const { normalizePlaceCoordinates } = require('../services/placeService');
 
 // 提交地点修改申请（需登录）
 router.post("/", requireAuth, (req, res) => {
@@ -75,6 +76,10 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
         'updated_time', 'updated_by'
     ].includes(key));
     if (!keys.length) throw reviewFailure(400, 'EMPTY_PLACE_REQUEST', '无可应用的变更');
+    // Requests filed before coordinates were validated may still point outside the map.
+    const coordinates = normalizePlaceCoordinates(proposed);
+    if (coordinates.error) throw reviewFailure(400, 'INVALID_PLACE_COORDINATE', coordinates.error);
+    Object.assign(proposed, coordinates.value);
 
     const semanticChanged = keys.some((key) => ['name', 'description', 'category', 'per_person_cost'].includes(key));
     const sets = [

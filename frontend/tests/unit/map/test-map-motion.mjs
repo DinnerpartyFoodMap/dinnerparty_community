@@ -1,7 +1,8 @@
 // 地图聚合与转场纯逻辑：npm run test:map（无需浏览器或 AMap）
 import assert from 'node:assert/strict';
 import {
-    ClusterEngine, normalizePlaces, dataSignature, placeKey, radiusForCssPixels, hashString
+    ClusterEngine, normalizePlaces, dataSignature, placeKey, radiusForCssPixels, hashString,
+    MAX_MERCATOR_LAT, isMappableCoordinate
 } from "../../../src/map/cluster/engine.js";
 import {
     buildSnapshot, computeLogicalZoom, expandBounds, boundsContains
@@ -77,6 +78,12 @@ const normalized = normalizePlaces([
 ]);
 assert.deepEqual(normalized.map((n) => n.key), ['place:1', 'place:2']);
 assert.equal(normalized[1].lng, 113.1);
+// 添加地点时用同一判断拒绝地图边界外的点击（后端 PLACE_MAX_LATITUDE 与 MAX_MERCATOR_LAT 一致）
+assert.equal(MAX_MERCATOR_LAT, 85.0511);
+assert.ok(isMappableCoordinate(180, MAX_MERCATOR_LAT) && isMappableCoordinate(-180, -MAX_MERCATOR_LAT));
+for (const [lng, lat] of [[113, 89.9], [113, -85.06], [180.01, 23], [-181, 23], [NaN, 23], [113, Infinity]]) {
+    assert.equal(isMappableCoordinate(lng, lat), false, `${lng},${lat}`);
+}
 
 // ---- 输入重排不影响聚类结果 ----
 const base = fixture(600, 7);

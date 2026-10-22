@@ -109,6 +109,23 @@ async function main() {
         m.options.content?.classList.contains('fm-marker') && Math.abs(m.position[0] - 120.012345) < 1e-6 && Math.abs(m.position[1] - 30.023456) < 1e-6));
     assert.equal(await page.evaluate(() => [...window.__TEST_MAPS[0].markers].filter(m => m.options.content?.classList.contains('fm-marker')).length), 1);
 
+    // Add mode: the blank area above the world still yields 85°–90°, which the marker layer
+    // cannot show, so the click only explains itself; a click on the map opens the form.
+    await page.goto(`${base}/__place_location_ui?user=owner`);
+    await page.getByRole('button', { name: '点击后在地图上选择位置以添加地点' }).click();
+    const clickMap = (lng, lat) => page.evaluate(([x, y]) => {
+        const map = window.__TEST_MAPS.filter(m => !m.destroyed).at(-1);
+        map.emit('click', { lnglat: { lng: x, lat: y }, target: map });
+    }, [lng, lat]);
+    const addDialog = page.getByRole('dialog', { name: '添加地点' });
+    await clickMap(120, 89.9);
+    await page.getByText('这里超出了地图范围，请在地图上选择位置').waitFor();
+    await page.waitForTimeout(300);
+    assert.equal(await addDialog.count(), 0, 'no add form for a point outside the map');
+    await clickMap(120.01, 30.01);
+    await addDialog.getByText('30.010000, 120.010000', { exact: true }).waitFor();
+    await snap('add-outside-map');
+
     await page.setViewportSize({ width: 390, height: 844 });
     await open('visitor');
     await form.locator('textarea').fill('申请修改位置');

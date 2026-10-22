@@ -436,6 +436,7 @@
     "markerLoadFailed": "地图标记加载失败，请稍后重试",
     "destination": "目的地",
     "addBanned": "您的通行凭证已受限，无法添加地点",
+    "addOutsideMap": "这里超出了地图范围，请在地图上选择位置",
     "manageBanned": "您的通行凭证已受限，无法进行管理操作",
     "deleteBanned": "您的通行凭证已受限，无法删除地点",
     "confirmDelete": "确认删除此地点？此操作不可恢复。",

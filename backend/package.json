@@ -37,7 +37,8 @@
         "test:place-share": "node tests/places/test_place_share.js",
         "test:skins": "node tests/skins/test_skins.js",
         "images:repair": "node scripts/images/repair_place_images.js",
-        "images:migrate-oss": "node scripts/images/migrate_uploads_to_oss.js"
+        "images:migrate-oss": "node scripts/images/migrate_uploads_to_oss.js",
+        "places:check-coordinates": "node scripts/places/check_place_coordinates.js"
     },
     "dependencies": {
         "ali-oss": "^6.23.0",

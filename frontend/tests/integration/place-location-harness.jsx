@@ -28,7 +28,7 @@ class TestMap {
     }
     on(event, fn) { (this.handlers[event] ||= new Set()).add(fn); }
     off(event, fn) { this.handlers[event]?.delete(fn); }
-    emit(event) { this.handlers[event]?.forEach(fn => fn()); }
+    emit(event, payload) { this.handlers[event]?.forEach(fn => fn(payload)); }
     getContainer() { return this.el; }
     getCenter() { return new LngLat(...this.center); }
     getZoom() { return this.zoom; }

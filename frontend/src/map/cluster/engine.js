@@ -50,7 +50,15 @@ const HASH_SEED_2 = 0x9747b28c;
 
 // ---- 地点规范化 ----
 
-const MAX_MERCATOR_LAT = 85.0511;
+// Web Mercator 只画到 ±85.0511°。地图上下边界外的空白处点击时高德仍会换算出 85°~90° 的纬度，
+// 这些点不会参与聚类、也就无法显示和选中；后端 placeService 使用同一上限拒绝保存。
+export const MAX_MERCATOR_LAT = 85.0511;
+
+/** 坐标是否落在地图可显示的范围内（标记层只渲染这些点）。 */
+export function isMappableCoordinate(lng, lat) {
+    return Number.isFinite(lng) && Number.isFinite(lat)
+        && lng >= -180 && lng <= 180 && Math.abs(lat) <= MAX_MERCATOR_LAT;
+}
 
 /** 数据库地点与高德临时 POI 使用不同的 key 命名空间。 */
 export function placeKey(place) {
@@ -81,8 +89,7 @@ export function normalizePlaces(list) {
         if (!key || byKey.has(key)) continue;
         const lng = Number(place.longitude);
         const lat = Number(place.latitude);
-        if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
-        if (lng < -180 || lng > 180 || Math.abs(lat) > MAX_MERCATOR_LAT) continue;
+        if (!isMappableCoordinate(lng, lat)) continue;
         byKey.set(key, { key, lng: Math.round(lng * 1e7) / 1e7, lat: Math.round(lat * 1e7) / 1e7, place });
     }
     return Array.from(byKey.values()).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));

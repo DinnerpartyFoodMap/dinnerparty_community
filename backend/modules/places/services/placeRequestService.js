@@ -1,6 +1,7 @@
 const { db } = require('../../../infrastructure/database');
 const { insertAdminAction } = require('../../admin/services/adminAudit');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
+const { normalizePlaceCoordinates } = require('./placeService');
 
 function placeRequestFailure(status, code, message) {
     const error = new Error(message);
@@ -14,8 +15,11 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
     if (!db._raw.prepare('SELECT id FROM Place WHERE id = ?').get(placeId)) {
         throw placeRequestFailure(404, 'PLACE_NOT_FOUND', '地点不存在');
     }
+    const coordinates = normalizePlaceCoordinates(proposed);
+    if (coordinates.error) throw placeRequestFailure(400, 'INVALID_PLACE_COORDINATE', coordinates.error);
     const normalizedProposed = {
         ...proposed,
+        ...coordinates.value,
         ...(proposed.exterior_images !== undefined
             ? { exterior_images: normalizeImageUrls(proposed.exterior_images) }
             : {}),

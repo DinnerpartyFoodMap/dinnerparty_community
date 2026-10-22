@@ -7,6 +7,7 @@
 | accounts | add_user / set_hashed_password | 旧开发工具含固定账号配置，会写 User；不纳入测试，不用于生产，见 ACC-02 |
 | images | repair_place_images | `npm run images:repair` 预演；`-- --apply` 才写入；drop-missing 有比例保护 |
 | images | migrate_uploads_to_oss | `npm run images:migrate-oss` 预演；`-- --apply` 上传、备份并按参数改库；不要当测试运行 |
+| places | check_place_coordinates | `npm run places:check-coordinates` 只读：列出地图无法显示的地点坐标（纬度超出 ±85.0511° 等）和提议坐标无效的待审核申请，有问题时退出码 2；不改库 |
 | vectors | backfill_place_vectors | `npm run vectors:backfill` 调外部 Embedding 并写库；需有明确数据维护任务再运行 |
 | diagnostics | read_logs | `npm run logs -- --since 2h` 只读查询日志 |
 | diagnostics | test_deepseek_latency | 真实模型探测，可能使用配置密钥和消耗请求，不由 npm test 发现 |
