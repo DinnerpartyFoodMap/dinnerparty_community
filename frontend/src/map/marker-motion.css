@@ -162,8 +162,9 @@
     }
 }
 
-/* 展会地点图钉：地点名标签 + 主题色水滴。标记锚点在容器底边中点，
-   水滴旋转后尖角比方框低约 5px，所以方框下留 5px，让尖角正好落在展会地点上 */
+/* 展会地点图钉：地点名标签（带关闭钮）+ 主题色水滴。标记锚点在容器底边中点，
+   水滴旋转后尖角比方框低约 5px，所以方框下留 5px，让尖角正好落在展会地点上。
+   只有关闭钮接收点按，其余部分不挡地图拖动 */
 .fm-exhibition-venue {
     display: flex;
     flex-direction: column;
@@ -173,13 +174,13 @@
 }
 
 .fm-exhibition-venue__label {
-    max-width: 160px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 180px;
     box-sizing: border-box;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     margin-bottom: 6px;
-    padding: 2px 8px;
+    padding: 2px 2px 2px 8px;
     font-size: 12px;
     font-weight: 600;
     line-height: 16px;
@@ -188,6 +189,54 @@
     background: var(--color-bg-surface, #fff);
     color: var(--color-text-primary, #222);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.fm-exhibition-venue__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 关闭钮画成 20px，::before 把可点范围扩到 36px（标签不裁切，扩出的部分也能点到） */
+.fm-exhibition-venue__close {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin: -2px 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-secondary, #666);
+    font: inherit;
+    cursor: pointer;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fm-exhibition-venue__close::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+}
+
+.fm-exhibition-venue__close:hover {
+    background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+}
+
+.fm-exhibition-venue__close:focus-visible {
+    outline: 2px solid var(--theme-primary, #c77dff);
+    outline-offset: 1px;
+}
+
+.fm-exhibition-venue__close .material-symbols-outlined {
+    font-size: 16px;
+    line-height: 1;
 }
 
 .fm-exhibition-venue__pin {

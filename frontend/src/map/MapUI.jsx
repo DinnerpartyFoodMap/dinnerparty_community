@@ -527,8 +527,9 @@ export default function MapUI(props) {
         openRandomFoodAt(origin);
     };
 
-    // 展会面板的地址：收起展会面板与地点卡片，地图移到展会地点并插上图钉
-    const showExhibitionVenuePin = useExhibitionVenuePin({ mapRef, mapReady, exhibition });
+    // 展会面板的地址：收起展会面板与地点卡片，地图移到展会地点并插上图钉。
+    // 图钉点关闭钮或地图空白处取消；添加地点、地点卡片打开时地图点按留给它们
+    const showExhibitionVenuePin = useExhibitionVenuePin({ mapRef, mapReady, exhibition, keepOnMapClick: !!addMode || !!selectedPlace });
     const showExhibitionVenue = () => {
         const venue = exhibitionVenue(exhibition);
         if (!venue) return;
