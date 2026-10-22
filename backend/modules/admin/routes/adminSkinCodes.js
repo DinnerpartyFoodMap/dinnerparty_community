@@ -2,8 +2,8 @@ const router = require('express').Router();
 const requireAdmin = require('../middleware/adminAuth');
 const skins = require('../../skins/services/skinService');
 
-// 皮肤兑换码沿用旧邀请码的权限 manage_invites（YUYUKO、YOUMU）
-router.use(requireAdmin('manage_invites'));
+// 兑换码独立授权，仅 YUYUKO 可管理；QQ 白名单和 Bot 仍用 manage_invites。
+router.use(requireAdmin('manage_skin_codes'));
 
 function sendError(res, error, fallback) {
     if (error instanceof skins.SkinError) return res.status(error.status).json({ error: error.message, reason: error.reason });

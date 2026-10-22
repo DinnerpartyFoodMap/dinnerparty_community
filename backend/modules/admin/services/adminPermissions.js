@@ -1,7 +1,7 @@
 const PERMISSIONS = {
-    YUYUKO: ["manage_users", "manage_places", "manage_invites", "manage_comments", "manage_announcements"],
-    YOUMU: ["manage_users_general", "manage_places", "manage_invites", "manage_comments", "manage_announcements"],
-    KOMACHI: ["manage_users_general", "manage_comments"]
+    YUYUKO: ["manage_users", "manage_bans", "view_audit", "manage_places", "manage_invites", "manage_skin_codes", "manage_comments", "manage_announcements"],
+    YOUMU: ["manage_users_general", "manage_bans", "view_audit", "manage_places", "manage_invites", "manage_comments", "manage_announcements"],
+    KOMACHI: ["manage_users_general", "view_audit", "manage_places", "manage_comments"]
 };
 
 function getPermissionsForLevel(adminLevel) {

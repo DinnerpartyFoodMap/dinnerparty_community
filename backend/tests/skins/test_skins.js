@@ -52,12 +52,12 @@ async function main() {
         return { status: res.status, body: await res.json() };
     }
 
-    // 权限：只有 manage_invites（YUYUKO、YOUMU）能管理兑换码
-    for (const [who, status] of [[undefined, 401], ['alice', 403], ['KOMACHI', 403]]) {
+    // 权限：独立 manage_skin_codes，仅 YUYUKO 能管理兑换码。
+    for (const [who, status] of [[undefined, 401], ['alice', 403], ['YOUMU', 403], ['KOMACHI', 403]]) {
         assert.equal((await request('/admin/skin-codes', 'GET', null, who)).status, status);
         assert.equal((await request('/admin/skin-codes', 'POST', { skin_id: 'sakura' }, who)).status, status);
     }
-    const listed = await request('/admin/skin-codes', 'GET', null, 'YOUMU');
+    const listed = await request('/admin/skin-codes', 'GET', null, 'YUYUKO');
     assert.deepEqual(listed.body.catalog.map(skin => skin.id), ['sakura', 'night']);
     assert.deepEqual(listed.body.codes, [], '旧邀请码不出现在皮肤兑换码列表里');
     for (const bad of [{ skin_id: 'unknown' }, { skin_id: 'default' }, { skin_id: 'sakura', count: 0 }, { skin_id: 'sakura', count: 201 },
@@ -101,7 +101,7 @@ async function main() {
     assert.equal((await request('/api/skins/redeem', 'POST', { code: shared.code, activate: false }, 'bob')).body.active, 'default', 'activate: false 只解锁');
     const exhausted = await request('/api/skins/redeem', 'POST', { code: shared.code }, 'carol');
     assert.deepEqual([exhausted.status, exhausted.body.reason], [410, 'exhausted']);
-    const adminView = (await request('/admin/skin-codes?skin_id=sakura', 'GET', null, 'YOUMU')).body.codes.find(code => code.id === shared.id);
+    const adminView = (await request('/admin/skin-codes?skin_id=sakura', 'GET', null, 'YUYUKO')).body.codes.find(code => code.id === shared.id);
     assert.deepEqual([adminView.current_uses, adminView.status], [2, 'exhausted']);
 
     // 切换：默认 ↔ 已解锁
@@ -111,12 +111,12 @@ async function main() {
 
     // 作废：之后不能兑换，已解锁的人保留
     assert.equal((await request(`/admin/skin-codes/${revoked.id}`, 'DELETE', null, 'alice')).status, 403);
-    const revokedView = await request(`/admin/skin-codes/${revoked.id}`, 'DELETE', null, 'YOUMU');
+    const revokedView = await request(`/admin/skin-codes/${revoked.id}`, 'DELETE', null, 'YUYUKO');
     assert.equal(revokedView.body.code.status, 'revoked');
-    assert.equal((await request(`/admin/skin-codes/${revoked.id}`, 'DELETE', null, 'YOUMU')).status, 200, '重复作废是幂等的');
+    assert.equal((await request(`/admin/skin-codes/${revoked.id}`, 'DELETE', null, 'YUYUKO')).status, 200, '重复作废是幂等的');
     assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM AdminAudit WHERE action = 'revoke-skin-code'").get().n, 1);
-    assert.equal((await request('/admin/skin-codes/999999', 'DELETE', null, 'YOUMU')).status, 404);
-    assert.equal((await request(`/admin/skin-codes/${legacy.id}`, 'DELETE', null, 'YOUMU')).status, 404, '旧邀请码不受皮肤管理影响');
+    assert.equal((await request('/admin/skin-codes/999999', 'DELETE', null, 'YUYUKO')).status, 404);
+    assert.equal((await request(`/admin/skin-codes/${legacy.id}`, 'DELETE', null, 'YUYUKO')).status, 404, '旧邀请码不受皮肤管理影响');
     const revokedTry = await request('/api/skins/redeem', 'POST', { code: revoked.code }, 'carol');
     assert.deepEqual([revokedTry.status, revokedTry.body.reason], [410, 'revoked']);
 

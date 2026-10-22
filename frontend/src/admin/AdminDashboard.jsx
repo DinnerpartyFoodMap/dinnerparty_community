@@ -14,8 +14,8 @@ import { t } from "../i18n/index.js";
 
 const PERMISSIONS = {
     YUYUKO: ["用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "皮肤兑换码"],
-    YOUMU: ["普通用户管理", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "皮肤兑换码"],
-    KOMACHI: ["普通用户管理", "评论管理"]
+    YOUMU: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布"],
+    KOMACHI: ["普通用户管理", "操作日志", "标记点管理", "评论管理"]
 };
 
 export default function AdminDashboard({ user, token, backendUrl, onBackHome, onLogout, onRequireAuth }) {
@@ -30,7 +30,7 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
     const canManageQQWhitelist = useMemo(() => perms.includes("QQ白名单管理"), [perms]);
     const canManageAnnouncements = useMemo(() => perms.includes("公告发布"), [perms]);
     const canViewAudit = useMemo(() => perms.includes("操作日志"), [perms]);
-    // 后端权限 manage_invites（旧邀请码权限）
+    // 后端独立权限 manage_skin_codes，仅 YUYUKO。
     const canManageSkinCodes = useMemo(() => perms.includes("皮肤兑换码"), [perms]);
 
     const rootStyle = { height: "100%", minHeight: 0, background: 'var(--color-bg-base)', padding: 20, boxSizing: "border-box", color: 'var(--color-text-primary)' };

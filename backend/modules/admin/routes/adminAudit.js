@@ -3,8 +3,8 @@ const router = express.Router();
 const { db } = require('../../../infrastructure/database');
 const requireAdmin = require('../middleware/adminAuth');
 
-// 获取最近操作日志（仅需 manage_users 权限或更高级别）
-router.get('/', requireAdmin('manage_users'), (req, res) => {
+// 三种管理员均可查看操作日志，不授予用户管理权限。
+router.get('/', requireAdmin('view_audit'), (req, res) => {
     const conditions = [];
     const params = [];
     const requestId = String(req.query.request_id || '').trim();

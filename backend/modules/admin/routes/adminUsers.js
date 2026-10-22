@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { db } = require("../../../infrastructure/database");
 const requireAdmin = require("../middleware/adminAuth");
+const { hasPermission } = require('../services/adminPermissions');
 const { insertAdminAction } = require("../services/adminAudit");
 
 const ALLOWED_LEVELS = new Set(["YUYUKO", "YOUMU", "KOMACHI", ""]);
@@ -41,9 +42,12 @@ const setLevelTransaction = db._raw.transaction(({ actingAdminId, userId, newLev
     );
 });
 
-const banStateTransaction = db._raw.transaction(({ actingAdminId, userId, mode, reason, banExpires }) => {
-    const target = db._raw.prepare('SELECT id, is_banned FROM User WHERE id = ?').get(userId);
+const banStateTransaction = db._raw.transaction(({ actingAdminId, userId, mode, reason, banExpires, canManageAdmins }) => {
+    const target = db._raw.prepare('SELECT id, admin_level, is_banned FROM User WHERE id = ?').get(userId);
     if (!target) throw adminMutationFailure(404, 'USER_NOT_FOUND', '用户不存在');
+    if (target.admin_level && !canManageAdmins) {
+        throw adminMutationFailure(403, 'ADMIN_TARGET_FORBIDDEN', '只能封禁或解封普通用户');
+    }
     if (mode === 'ban' && target.is_banned) throw adminMutationFailure(400, 'USER_ALREADY_BANNED', '用户已被封禁');
     if (mode === 'unban' && !target.is_banned) throw adminMutationFailure(400, 'USER_NOT_BANNED', '用户未被封禁');
 
@@ -110,8 +114,8 @@ router.post("/set-level", requireAdmin("manage_users"), (req, res) => {
     }
 });
 
-// 封禁用户（需 manage_users 权限）
-router.post('/ban', requireAdmin('manage_users'), (req, res) => {
+// YOUMU 仅可封禁普通用户，YUYUKO 保留原有目标范围。
+router.post('/ban', requireAdmin('manage_bans'), (req, res) => {
     const { userId, reason, durationDays } = req.body;
     const actingAdminId = req.user && req.user.id;
     if (!userId) return res.status(400).json({ error: '缺少 userId' });
@@ -123,21 +127,23 @@ router.post('/ban', requireAdmin('manage_users'), (req, res) => {
         banExpires = dt.toISOString();
     }
     try {
-        banStateTransaction.immediate({ actingAdminId, userId, mode: 'ban', reason, banExpires });
+        banStateTransaction.immediate({ actingAdminId, userId, mode: 'ban', reason, banExpires,
+            canManageAdmins: hasPermission(req.user, 'manage_users') });
         return res.json({ success: true });
     } catch (error) {
         return sendMutationError(res, error);
     }
 });
 
-// 解除封禁（需 manage_users 权限）
-router.post('/unban', requireAdmin('manage_users'), (req, res) => {
+// 解封沿用与封禁相同的权限和目标范围。
+router.post('/unban', requireAdmin('manage_bans'), (req, res) => {
     const { userId } = req.body;
     const actingAdminId = req.user && req.user.id;
     if (!userId) return res.status(400).json({ error: '缺少 userId' });
 
     try {
-        banStateTransaction.immediate({ actingAdminId, userId, mode: 'unban', reason: null, banExpires: null });
+        banStateTransaction.immediate({ actingAdminId, userId, mode: 'unban', reason: null, banExpires: null,
+            canManageAdmins: hasPermission(req.user, 'manage_users') });
         return res.json({ success: true });
     } catch (error) {
         return sendMutationError(res, error);
