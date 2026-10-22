@@ -1,0 +1,20 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["4L6GPAGHB7.cc.dinnerparty.foodmap"],
+        "components": [
+          { "/": "/backend/*", "exclude": true },
+          { "/": "/_AMapService*", "exclude": true },
+          { "/": "/uploads/*", "exclude": true },
+          { "/": "/assets/*", "exclude": true },
+          { "/": "/fonts/*", "exclude": true },
+          { "/": "/privacy*", "exclude": true },
+          { "/": "/beian*", "exclude": true },
+          { "/": "/p/*/card-*", "exclude": true },
+          { "/": "/*" }
+        ]
+      }
+    ]
+  }
+}

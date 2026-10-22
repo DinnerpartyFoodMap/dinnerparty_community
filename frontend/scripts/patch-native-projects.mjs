@@ -5,7 +5,7 @@
 //   node scripts/patch-native-projects.mjs ios        # 只处理 iOS
 //
 // Android：定位权限与高德定位 SDK（依赖、Key、插件注册）、外部链接/地图应用可见性（<queries>）、Android 11/12 照片选择器回补
-// iOS：相机/相册/定位用途说明、出口合规声明、隐私清单（PrivacyInfo.xcprivacy）、SPM 版本兼容
+// iOS：相机/相册/定位用途说明、出口合规声明、隐私清单（PrivacyInfo.xcprivacy）、通用链接（App.entitlements）、SPM 版本兼容
 
 import { existsSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -266,6 +266,38 @@ function patchIos() {
             .replace(anchors.fileRef, `$1\t\t${fileRefId} /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };\n`)
             .replace(anchors.groupChild, `$1\t\t\t\t${fileRefId} /* PrivacyInfo.xcprivacy */,\n`)
             .replace(anchors.resource, `$1\t\t\t\t${buildFileId} /* PrivacyInfo.xcprivacy in Resources */,\n`);
+    });
+
+    // 通用链接：点击 https://www.dinnerparty.cc/... 直接打开 App（网站侧见 public/.well-known/apple-app-site-association）
+    const entitlementsTarget = resolve(root, 'ios/App/App/App.entitlements');
+    if (!existsSync(entitlementsTarget)) {
+        copyFileSync(resolve(root, 'native/ios/App.entitlements'), entitlementsTarget);
+        changes.push('iOS 通用链接 entitlements 文件');
+    }
+    patchFile(pbxproj, 'iOS 通用链接 entitlements 加入工程', (text) => {
+        let next = text;
+        if (!next.includes('/* App.entitlements */ = {isa = PBXFileReference;')) {
+            const fileRefId = 'A7F1C0DE0000000000000003';
+            const anchors = {
+                fileRef: /(\t\t\S+ \/\* Info\.plist \*\/ = \{isa = PBXFileReference;[^\n]*\n)/,
+                groupChild: /(\t\t\t\t\S+ \/\* Info\.plist \*\/,\n)/
+            };
+            for (const [name, pattern] of Object.entries(anchors)) {
+                if (!pattern.test(next)) throw new Error(`Xcode 工程结构与预期不同，请在 Xcode 中手动添加 App.entitlements（缺少锚点 ${name}）`);
+            }
+            next = next
+                .replace(anchors.fileRef, `$1\t\t${fileRefId} /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };\n`)
+                .replace(anchors.groupChild, `$1\t\t\t\t${fileRefId} /* App.entitlements */,\n`);
+        }
+        // 只改 App 目标的 Debug/Release（以 INFOPLIST_FILE 识别），不影响 SPM 依赖包目标
+        return next.replace(/(buildSettings = \{\n)([\s\S]*?)(\n\t\t\t\};)/g, (match, head, body, tail) => {
+            if (!body.includes('INFOPLIST_FILE = App/Info.plist;') || body.includes('CODE_SIGN_ENTITLEMENTS')) return match;
+            const line = '\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;\n';
+            const patched = body.includes('\t\t\t\tCODE_SIGN_STYLE = ')
+                ? body.replace('\t\t\t\tCODE_SIGN_STYLE = ', `${line}\t\t\t\tCODE_SIGN_STYLE = `)
+                : line + body;
+            return `${head}${patched}${tail}`;
+        });
     });
 }
 
