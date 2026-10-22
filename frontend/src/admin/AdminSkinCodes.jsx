@@ -18,7 +18,7 @@ const STATUS_LABELS = {
     revoked: t('admin:skinCodes.status.revoked')
 };
 
-// 皮肤兑换码：沿用旧邀请码表与 manage_invites 权限（后端 /admin/skin-codes）
+// 皮肤兑换码：沿用旧邀请码表，独立使用 manage_skin_codes 权限（后端 /admin/skin-codes）
 export default function AdminSkinCodes({ backendUrl }) {
     const { token, onRequireAuth } = useAuth();
     const showTip = useTips();

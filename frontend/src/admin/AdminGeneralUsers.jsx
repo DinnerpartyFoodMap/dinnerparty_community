@@ -10,6 +10,7 @@ import defaultAvatar from '../img/default.png';
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
+import AdminBanModal from './AdminBanModal';
 
 function resolveBackendUrl() {
     return getApiBaseUrl();
@@ -28,10 +29,15 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
     const confirm = useConfirm();
     const [processing, setProcessing] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
+    const [banTarget, setBanTarget] = useState(null);
     const fetchIdRef = useRef(0);
     const isMobile = useMediaQuery('(max-width: 640px)');
 
     const canManage = user && user.admin_level;
+    const canBan = user?.admin_level === 'YOUMU';
+    // List refreshes and writes share a response generation; serialize writes so
+    // one user's operation cannot invalidate another user's successful result.
+    const isProcessing = Object.values(processing).some(Boolean);
 
     useEffect(() => {
         if (!canManage) return;
@@ -93,6 +99,7 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
     };
 
     const deleteUser = async (target) => {
+        if (isProcessing) return;
         const id = target.id;
         if (!(await confirm(t('admin:generalUsers.confirmDelete', { username: target.username || id })))) return;
         setProcessing(p => ({ ...p, [id]: true }));
@@ -133,6 +140,48 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
         }
     };
 
+    const updateBan = async (target, mode, details = {}) => {
+        if (!canBan || !target || isProcessing) return;
+        if (mode === 'unban' && !(await confirm(t('admin:users.confirmUnban', { username: target.username || target.id })))) return;
+        const thisFetchId = ++fetchIdRef.current;
+        setProcessing(current => ({ ...current, [target.id]: true }));
+        try {
+            const res = await fetch(`${base}/admin/users/${mode}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify({ userId: target.id, ...details })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (thisFetchId !== fetchIdRef.current) return;
+            if (!res.ok) {
+                if (res.status === 401) handleUnauthorized();
+                else showTip(data.error || (mode === 'ban' ? t('admin:users.banFailedStatus', { status: res.status }) : t('admin:users.unbanFailedStatus', { status: res.status })));
+                return;
+            }
+            setUsers(list => list.map(item => item.id === target.id ? { ...item, is_banned: mode === 'ban' ? 1 : 0 } : item));
+            showTip(mode === 'ban' ? t('admin:users.banned') : t('admin:users.unbanned'));
+            setBanTarget(current => current?.id === target.id ? null : current);
+        } catch (error) {
+            showTip(mode === 'ban' ? t('admin:users.banFailed', { message: error.message || error }) : t('admin:users.unbanFailed', { message: error.message || error }));
+        } finally {
+            setProcessing(current => ({ ...current, [target.id]: false }));
+        }
+    };
+
+    const renderActions = (target) => (
+        <ActionMenu disabled={isProcessing} items={[
+            ...(canBan ? [target.is_banned
+                ? { key: 'unban', label: t('admin:users.unban'), onClick: () => updateBan(target, 'unban') }
+                : { key: 'ban', label: t('admin:users.ban'), tone: 'warning', onClick: () => setBanTarget(target) }] : []),
+            { key: 'delete', label: t('admin:generalUsers.deleteAction'), tone: 'danger', onClick: () => deleteUser(target) }
+        ]} />
+    );
+    const renderStatus = (target) => (
+        <span style={{ color: target.is_banned ? 'var(--color-danger)' : 'var(--color-success)' }}>
+            {target.is_banned ? t('admin:users.statusBanned') : t('admin:users.statusNormal')}
+        </span>
+    );
+
     if (!canManage) return <div style={{ color: 'var(--color-danger)' }}>{t('admin:common.error.noPanelAccess')}</div>;
 
     const filteredUsers = users.filter(u => {
@@ -156,7 +205,7 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                         style={{ padding: '6px 12px', width: '100%', boxSizing: 'border-box', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)', borderRadius: 'var(--radius-sm)' }}
                     />
                 </div>
-                <Button themeAware onClick={fetchUsers} disabled={loading}>{t('common:action.refresh')}</Button>
+                <Button themeAware onClick={fetchUsers} disabled={loading || isProcessing}>{t('common:action.refresh')}</Button>
             </div>
 
 
@@ -176,8 +225,9 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                                             <div style={{ fontWeight: 700 }}>{target.username}</div>
                                             <div style={{ marginTop: 3, fontSize: 12, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{tx('admin:generalUsers.idLine', { id: target.id })}</div>
                                             <div style={{ marginTop: 3, fontSize: 12, color: 'var(--color-text-secondary)' }}>{tx('admin:generalUsers.qqLine', { qq: target.qq || '-' })}</div>
+                                            <div style={{ marginTop: 3, fontSize: 12 }}>{renderStatus(target)}</div>
                                         </div>
-                                        <ActionMenu disabled={processing[target.id]} items={[{ key: 'delete', label: t('admin:generalUsers.deleteAction'), tone: 'danger', onClick: () => deleteUser(target) }]} />
+                                        {renderActions(target)}
                                     </div>
                                 </article>
                             ))}
@@ -190,6 +240,7 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                                     <th style={{ textAlign: 'left', padding: 8 }}>{t('admin:generalUsers.col.username')}</th>
                                     <th style={{ textAlign: 'left', padding: 8 }}>{t('common:label.qq')}</th>
                                     <th style={{ textAlign: 'left', padding: 8 }}>{t('common:label.avatar')}</th>
+                                    <th style={{ textAlign: 'left', padding: 8 }}>{t('admin:users.status')}</th>
                                     <th style={{ textAlign: 'left', padding: 8, minWidth: 100 }}>{t('admin:common.table.actions')}</th>
                                 </tr>
                             </thead>
@@ -206,8 +257,9 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                                                 <img src={defaultAvatar} alt="default avatar" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
                                             )}
                                         </td>
+                                        <td>{renderStatus(u)}</td>
                                         <td style={{ minWidth: 100 }}>
-                                            <ActionMenu disabled={processing[u.id]} items={[{ key: 'delete', label: t('admin:generalUsers.deleteAction'), tone: 'danger', onClick: () => deleteUser(u) }]} />
+                                            {renderActions(u)}
                                         </td>
                                     </tr>
                                 ))}
@@ -216,6 +268,8 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                     )}
                 </div>
             )}
+            <AdminBanModal open={!!banTarget} targetUser={banTarget} onClose={() => setBanTarget(null)}
+                onConfirm={details => updateBan(banTarget, 'ban', details)} />
         </div>
     );
 }

@@ -1,6 +1,6 @@
 # 主题皮肤与兑换码
 
-入口：`routes/skins.js`（挂载 `/api/skins`，全部需要登录）、管理端 `../admin/routes/adminSkinCodes.js`（挂载 `/admin/skin-codes`，权限 `manage_invites`，即 YUYUKO、YOUMU）。服务 `services/skinService.js`，建表 `services/skinSchema.js`，可兑换皮肤登记在 `catalog.json`。
+入口：`routes/skins.js`（挂载 `/api/skins`，全部需要登录）、管理端 `../admin/routes/adminSkinCodes.js`（挂载 `/admin/skin-codes`，独立权限 `manage_skin_codes`，仅 YUYUKO）。服务 `services/skinService.js`，建表 `services/skinSchema.js`，可兑换皮肤登记在 `catalog.json`。
 
 兑换码沿用旧的 `InviteCode` 表（`code` / `max_uses` / `current_uses` 不变），新增 `skin_id`、`note`、`created_by`、`expires_time`、`revoked` 列：`skin_id` 非空的行才是皮肤兑换码；注册改为 QQ 验证码后留下的旧邀请码 `skin_id` 为空，既不能兑换，也不出现在管理列表里。`UserSkin(user_id, skin_id)` 记录已解锁的皮肤（随账号删除），`User.active_skin` 是正在使用的一套，空表示默认样式。
 
