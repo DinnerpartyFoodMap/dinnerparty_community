@@ -160,7 +160,7 @@ function parseName(value) {
 }
 
 function parseDescription(value) {
-    const result = placeService.normalizePlainTextField(value, { fieldLabel: '描述', maxLength: placeService.PLACE_DESCRIPTION_MAX_LENGTH });
+    const result = placeService.normalizePlainTextField(value, { fieldLabel: '描述', maxLength: placeService.PLACE_DESCRIPTION_MAX_LENGTH, allowHtml: true });
     return result.error ? { error: result.error } : { value: result.value };
 }
 

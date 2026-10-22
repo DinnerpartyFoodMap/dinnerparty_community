@@ -67,6 +67,8 @@ function getRaw(port, pathname) {
     assert.equal(placeShare.buildCardTitle({ name: '店' }), '店');
     assert.equal(placeShare.buildCardDescription({ description: '  好吃\n不贵 ' }), '好吃 不贵');
     assert.equal(placeShare.buildCardDescription({ description: '', address: '某路1号' }), '某路1号');
+    // 描述支持 Markdown，链接卡片不能显示：去掉标记，链接只留文字
+    assert.equal(placeShare.buildCardDescription({ description: '## 招牌\n**牛肉粉**很好吃\n- 汤底 *浓*\n[点评](https://x.com/a)' }), '招牌 牛肉粉很好吃 汤底 浓 点评');
     assert.match(placeShare.buildCardDescription({}), /东方饭联地图/);
     assert.deepEqual(placeShare.buildCardImage({ exterior_images: '[]' }, 'https://s.cc', ''),
         { url: 'https://s.cc/favicon.png', width: 256, height: 256 });

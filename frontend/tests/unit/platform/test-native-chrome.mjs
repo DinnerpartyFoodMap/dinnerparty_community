@@ -20,9 +20,10 @@ class FakePlugin {
     }
     async capabilities() { return { protocolVersion: this.options.protocol ?? NATIVE_CHROME_PROTOCOL, supportsGlass: this.options.glass !== false }; }
     async attach({ sessionId, ownerId }) { this.calls.push('attach'); this.state = { ...this.state, session: sessionId, owner: ownerId, visible: false }; return { ready: true }; }
-    async setState({ sessionId, revision, items, search, sheet, drawer, tour }) {
+    async setState({ sessionId, revision, items, search, sheet, drawer, tour, labels }) {
         this.calls.push(`setState:${revision}`);
         if (sessionId !== this.state.session) throw new Error('STALE_SESSION');
+        this.state.labels = labels;
         this.state.items = items;
         this.state.tour = tour;
         this.state.search = search;
@@ -105,6 +106,9 @@ function makeSession(plugin, extra = {}) {
     await session.activate();
     assert.equal(plugin.state.visible, true);
     assert.deepEqual(plugin.state.items.map((i) => i.id), ['more', 'locate']);
+    // 原生自带的文案随状态下发；图片序号的占位符留给原生替换
+    assert.ok(Object.values(plugin.state.labels).every((text) => typeof text === 'string' && text.length > 0));
+    assert.match(plugin.state.labels.imageNumber, /\{title\}.*\{index\}/);
 
     // 浮层打开 → 收起原生；浮层（含退出阶段）全部结束 → 恢复
     const overlay = registerOverlay({ kind: 'panel', onClose: () => { } });

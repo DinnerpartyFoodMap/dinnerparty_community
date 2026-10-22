@@ -289,7 +289,7 @@ final class NativeSettingsStore: ObservableObject {
         let work = DispatchWorkItem { [weak self] in
             guard let self, let entry = self.pending.removeValue(forKey: requestId) else { return }
             self.busy.remove(entry.type)
-            self.alertMessage = "请求超时，请稍后重试"
+            self.alertMessage = self.text("timeout", "请求超时，请稍后重试")
             entry.completion(false)
         }
         pending[requestId] = (type: type, timeout: work, completion: completion)
@@ -306,7 +306,7 @@ final class NativeSettingsStore: ObservableObject {
         if ok {
             if !message.isEmpty { showToast(message) }
         } else {
-            alertMessage = message.isEmpty ? "保存失败" : message
+            alertMessage = message.isEmpty ? text("saveFailed", "保存失败") : message
         }
         entry.completion(ok)
     }
@@ -399,19 +399,19 @@ private struct NativeSettingsView: View {
         NavigationStack {
             List {
                 Section {
-                    page("头像", symbol: "person.crop.circle", action: "avatar", destination: NativeAvatarView(store: store)) {
+                    page(store.text("avatar", "头像"), symbol: "person.crop.circle", action: "avatar", destination: NativeAvatarView(store: store)) {
                         AvatarImage(url: store.avatarURL)
                             .frame(width: 36, height: 36)
                             .clipShape(Circle())
                     }
-                    page("住民名", symbol: "person.text.rectangle", action: "username", destination: NativeUsernameView(store: store)) {
+                    page(store.text("usernameLabel", "住民名"), symbol: "person.text.rectangle", action: "username", destination: NativeUsernameView(store: store)) {
                         Text(store.username).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    page("修改通行密码", symbol: "key.fill", action: "password", destination: NativePasswordView(store: store)) { EmptyView() }
+                    page(store.text("passwordTitle", "修改通行密码"), symbol: "key.fill", action: "password", destination: NativePasswordView(store: store)) { EmptyView() }
                 }
                 Section {
-                    page("个性化主题", symbol: "paintpalette.fill", action: "themes", destination: NativeThemesView(store: store)) { EmptyView() }
-                    page("个性化地图", symbol: "map.fill", action: "personalize", available: store.mapPageAvailable,
+                    page(store.text("themesTitle", "个性化主题"), symbol: "paintpalette.fill", action: "themes", destination: NativeThemesView(store: store)) { EmptyView() }
+                    page(store.text("mapTitle", "个性化地图"), symbol: "map.fill", action: "personalize", available: store.mapPageAvailable,
                          destination: NativeMapSettingsView(store: store)) { EmptyView() }
                     // 主题皮肤（兑换码与切换）是网页页面：交回网页打开，返回时再回到这里
                     Button { perform("skins") } label: {
@@ -423,46 +423,50 @@ private struct NativeSettingsView: View {
                 }
                 Section {
                     Button { confirmation = .logoutAll } label: {
-                        settingLabel("退出全部设备", symbol: "rectangle.portrait.and.arrow.right", color: .brown)
+                        settingLabel(store.text("logoutAll", "退出全部设备"), symbol: "rectangle.portrait.and.arrow.right", color: .brown)
                     }
                 } footer: {
-                    Text("网页与手机可同时登录；退出后，所有设备都需要重新登录。")
+                    Text(store.text("logoutAllHint", "所有设备（包括本机）都需要重新登录。"))
                 }
                 Section {
                     Button(role: .destructive) { confirmation = .deleteAccount } label: {
-                        settingLabel("从幻想乡名册除名", symbol: "person.crop.circle.badge.minus", color: .red)
+                        settingLabel(store.text("deleteAccount", "从幻想乡名册除名"), symbol: "person.crop.circle.badge.minus", color: .red)
                     }
                 } footer: {
-                    Text("此操作不可恢复，会删除部分个人信息并取消住民身份的访问权限。")
+                    Text(store.text("deleteAccountHint", "删除账号和个人数据，无法恢复。"))
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("住民设置")
+            .navigationTitle(store.text("title", "住民设置"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { perform("back") } label: {
                         Image(systemName: "chevron.backward").font(.headline)
                     }
-                    .accessibilityLabel("返回地图")
+                    .accessibilityLabel(store.text("backToMap", "返回地图"))
                 }
             }
             .disabled(leaving)
             .alert(item: $confirmation) { action in
                 switch action {
                 case .logoutAll:
-                    return Alert(title: Text("退出全部设备？"), message: Text("包括本设备在内都需要重新登录。"),
-                                 primaryButton: .destructive(Text("全部退出")) { perform("logoutAll") }, secondaryButton: .cancel(Text("取消")))
+                    return Alert(title: Text(store.text("logoutAllConfirmTitle", "退出全部设备？")),
+                                 message: Text(store.text("logoutAllConfirmMessage", "包括本设备在内都需要重新登录。")),
+                                 primaryButton: .destructive(Text(store.text("logoutAllButton", "全部退出"))) { perform("logoutAll") },
+                                 secondaryButton: .cancel(Text(store.text("cancel", "取消"))))
                 case .deleteAccount:
-                    return Alert(title: Text("确认从幻想乡名册除名？"), message: Text("此操作不可恢复，所有个人数据可能被删除或无法恢复。"),
-                                 primaryButton: .destructive(Text("确认除名")) { perform("deleteAccount") }, secondaryButton: .cancel(Text("取消")))
+                    return Alert(title: Text(store.text("deleteAccountConfirmTitle", "从幻想乡名册除名？")),
+                                 message: Text(store.text("deleteAccountConfirmMessage", "账号和个人数据会被删除，无法恢复。")),
+                                 primaryButton: .destructive(Text(store.text("deleteAccountButton", "确认除名"))) { perform("deleteAccount") },
+                                 secondaryButton: .cancel(Text(store.text("cancel", "取消"))))
                 }
             }
         }
         .tint(store.primaryColor)
         // 二级页请求失败或超时的提示（任何一页都显示在这里）
         .alert(store.alertMessage ?? "", isPresented: Binding(get: { store.alertMessage != nil }, set: { if !$0 { store.alertMessage = nil } })) {
-            Button("好", role: .cancel) {}
+            Button(store.text("ok", "好"), role: .cancel) {}
         }
         // 二级页保存成功后回到首页，底部短暂提示
         .overlay(alignment: .bottom) {
@@ -916,7 +920,7 @@ private struct NativeThemesView: View {
                 }
                 .disabled(store.isBusy("setDarkMode"))
             } footer: {
-                Text(store.text("darkModeHint", "开启后界面将使用“冥界·夜樱”暗色主题"))
+                Text(store.text("darkModeHint", "使用“冥界·夜樱”暗色主题"))
             }
             Section {
                 ColorPicker(store.text("themeColor", "主题颜色"), selection: $primary, supportsOpacity: false)
@@ -936,8 +940,8 @@ private struct NativeThemesView: View {
             } header: {
                 Text(store.text("themeColor", "主题颜色"))
             } footer: {
-                Text(store.text("themeColorHint", "自定义页面主色（用于核心按钮、选中状态与头像外圈）") + "\n"
-                     + store.text("secondaryColorHint", "自定义辅色（用于标签、次要操作与强调图标）"))
+                Text(store.text("themeColorHint", "主色：用于主要按钮、选中状态和头像外圈") + "\n"
+                     + store.text("secondaryColorHint", "辅色：用于标签、次要操作和强调图标"))
             }
             if !store.currentStyleOptions.isEmpty {
                 Section {
@@ -951,7 +955,7 @@ private struct NativeThemesView: View {
                 } header: {
                     Text(store.text("mapStyleTitle", "地图样式"))
                 } footer: {
-                    Text(store.text("mapStyleHint", "为当前主题选择地图样式（选择后将保存到服务器或本地）。"))
+                    Text(store.text("mapStyleHint", "为当前明暗主题选择地图样式。"))
                 }
             }
         }

@@ -319,7 +319,7 @@ struct MapChromeMenuPanel: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("关闭"))
+            .accessibilityLabel(Text(model.text("close", "关闭")))
         }
     }
 
@@ -411,7 +411,7 @@ struct MapChromeMenuPanel: View {
         .buttonStyle(MapChromeRowButtonStyle())
         .disabled(row.disabled)
         .opacity(row.disabled ? 0.55 : 1)
-        .accessibilityLabel(Text(row.subtitle.map { "\(row.title)，\($0)" } ?? row.title))
+        .accessibilityLabel(Text(row.subtitle.map { "\(row.title), \($0)" } ?? row.title))
     }
 
     private func titleStyle(_ row: MapChromeSheetRow, footnote: Bool) -> Color {
@@ -467,7 +467,7 @@ struct MapChromePlaceCard: View {
         .scrollDisabled(!model.cardExpanded)
         .scrollBounceBehavior(.basedOnSize)
         .fullScreenCover(item: $preview) { item in
-            MapChromeImagePreview(item: item)
+            MapChromeImagePreview(item: item, closeLabel: model.text("closePreview", "关闭大图"))
         }
     }
 
@@ -508,7 +508,7 @@ struct MapChromePlaceCard: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             circleButton(symbol: "xmark", image: sheet.closeImage, template: sheet.closeImageTemplate,
-                         label: "关闭", tint: Color.primary, disabled: false) {
+                         label: model.text("close", "关闭"), tint: Color.primary, disabled: false) {
                 model.dismissSheet()
             }
         }
@@ -638,13 +638,22 @@ struct MapChromePlaceCard: View {
 
     // MARK: 详情（全屏）
 
+    /// 简介：优先按行内 Markdown 显示（粗体、斜体、删除线、代码、链接），解析失败或旧网页没有下发时显示纯文本
+    private var detailText: AttributedString {
+        if let markdown = sheet.detailMarkdown,
+           let parsed = try? AttributedString(markdown: markdown, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return parsed
+        }
+        return AttributedString(sheet.detail ?? model.text("noDescription", "暂无描述"))
+    }
+
     private var details: some View {
         VStack(alignment: .leading, spacing: 24) {
             if sheet.paragraphs.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("简介")
+                    Text(model.text("intro", "简介"))
                         .font(.headline)
-                    Text(sheet.detail ?? "暂无描述")
+                    Text(detailText)
                         .font(.body)
                         .foregroundStyle(sheet.detail == nil ? Color.secondary : Color.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -794,7 +803,9 @@ struct MapChromePlaceCard: View {
                             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(Text("\(group.title ?? "图片") 第 \(index + 1) 张"))
+                        .accessibilityLabel(Text(model.text("imageNumber", "{title} 第 {index} 张")
+                            .replacingOccurrences(of: "{title}", with: group.title ?? model.text("image", "图片"))
+                            .replacingOccurrences(of: "{index}", with: String(index + 1))))
                     }
                 }
             }
@@ -813,11 +824,13 @@ struct MapChromeImagePreviewItem: Identifiable {
 @available(iOS 26.0, *)
 struct MapChromeImagePreview: View {
     let item: MapChromeImagePreviewItem
+    let closeLabel: String
     @State private var selection: Int
     @Environment(\.dismiss) private var dismiss
 
-    init(item: MapChromeImagePreviewItem) {
+    init(item: MapChromeImagePreviewItem, closeLabel: String) {
         self.item = item
+        self.closeLabel = closeLabel
         _selection = State(initialValue: item.index)
     }
 
@@ -856,7 +869,7 @@ struct MapChromeImagePreview: View {
             .foregroundStyle(.white)
             .glassEffect(Glass.regular.interactive(), in: .circle)
             .padding(16)
-            .accessibilityLabel(Text("关闭大图"))
+            .accessibilityLabel(Text(closeLabel))
         }
         .environment(\.colorScheme, .dark)
     }

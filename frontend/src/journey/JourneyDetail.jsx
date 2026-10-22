@@ -63,7 +63,7 @@ export default function JourneyDetail({ctx,nav,params,active}) {
             </div>
             {revisions&&<section className="jw-card jw-stack" aria-label={t('journey:detail.history')}>
                 <div className="jw-row-between"><strong>{t('journey:detail.history')}</strong><button type="button" onClick={()=>setRevisions(null)}>{t('journey:detail.collapse')}</button></div>
-                <p className="jw-muted">{tx('journey:detail.restoreHint', { note: isPublic?t('journey:detail.restoreNotePublic'):t('journey:detail.restoreNotePrivate') })}</p>
+                <p className="jw-muted">{tx('journey:detail.restoreHint', { note: isPublic?t('journey:detail.restoreNotePublic'):'' })}</p>
                 {revisions.map(r=><button type="button" key={r.revision} disabled={busy||r.revision===journey.revision} onClick={()=>run(async()=>{
                     if(!await confirm(t('journey:detail.confirmRestore', { revision: r.revision })))return;
                     await api(`/${journey.id}/restore`,{method:'POST',body:JSON.stringify({revision:r.revision,base_revision:journey.revision})});

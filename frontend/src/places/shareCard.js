@@ -2,6 +2,7 @@
 // 地图来自后端 /api/amap/staticmap（同源、可缓存），标题与信息由 Canvas 绘制，
 // 不依赖 HTML 截图，App 与网页输出一致。版式见 doc/README.md 与 doc/TEST_CASES.md。
 import QRCode from 'qrcode';
+import { markdownToPlainText } from '../components/markdown/markdownText.js';
 
 export const CARD_SIZE = {
     portrait: { width: 1200, height: 1600 },
@@ -109,7 +110,8 @@ export function buildShareCardModel(place, options = {}) {
     return {
         name,
         category: truncate(place?.category || options.fallbackCategory, CATEGORY_MAX),
-        description: truncate(place?.description, DESCRIPTION_MAX),
+        // 卡片是图片，Markdown 去掉标记后再截断
+        description: truncate(markdownToPlainText(place?.description), DESCRIPTION_MAX),
         address: truncate(place?.address, ADDRESS_MAX),
         meta,
         title: singleLine(options.title),

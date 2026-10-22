@@ -88,6 +88,7 @@ export const SKIN_SLOTS = Object.freeze([
     icon('expanded.panel.icons.poster'),
     icon('expanded.panel.icons.admin'),
     icon('expanded.panel.icons.guide'),
+    icon('expanded.panel.icons.feedback'),
 
     // 账号入口：住民自己的头像始终保留
     slot('account.defaultAvatar', 'image', { native: true }),

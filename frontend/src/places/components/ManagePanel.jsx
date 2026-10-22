@@ -73,6 +73,8 @@ function ManageForm({
                     <label style={{ display: "block", fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:common.label.description')}</label>
                     <ScrollableView
                         as={TextArea}
+                        markdown
+                        maxLength={1000}
                         value={manageEdit.description}
                         onChange={(e) => setManageEdit(me => ({ ...me, description: e.target.value }))}
                         style={{
@@ -106,9 +108,9 @@ function ManageForm({
                     <PlaceImageInputs backendUrl={backendUrl} token={token} images={manageEdit.menu_images || []} setImages={(imgs) => setManageEdit(me => ({ ...me, menu_images: imgs }))} label={t('map:manage.field.menuImages')} />
                 </ScrollableView>
                 <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>
-                        {canDirectManage() ? t('map:manage.canEditDirectly') : t('map:manage.needsReview')}
-                    </div>
+                    {!canDirectManage() && (
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>{t('map:manage.needsReview')}</div>
+                    )}
                     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
                         <Button themeAware onClick={onClose} style={{ whiteSpace: 'nowrap' }}>{t('common:action.cancel')}</Button>
 

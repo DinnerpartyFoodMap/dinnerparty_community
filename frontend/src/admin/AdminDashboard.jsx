@@ -9,13 +9,14 @@ import AdminAuditModal from "./AdminAuditModal";
 import AdminNotices from "./AdminNotices";
 import AdminExhibitions from "./AdminExhibitions";
 import AdminSkinCodes from "./AdminSkinCodes";
+import AdminFeedback from "./AdminFeedback";
 import ScrollableView from "../components/layout/ScrollableView";
 import { t } from "../i18n/index.js";
 
 const PERMISSIONS = {
-    YUYUKO: ["用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "皮肤兑换码"],
-    YOUMU: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布"],
-    KOMACHI: ["普通用户管理", "操作日志", "标记点管理", "评论管理"]
+    YUYUKO: ["用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "皮肤兑换码", "住民反馈"],
+    YOUMU: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "住民反馈"],
+    KOMACHI: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "住民反馈"]
 };
 
 export default function AdminDashboard({ user, token, backendUrl, onBackHome, onLogout, onRequireAuth }) {
@@ -32,6 +33,8 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
     const canViewAudit = useMemo(() => perms.includes("操作日志"), [perms]);
     // 后端独立权限 manage_skin_codes，仅 YUYUKO。
     const canManageSkinCodes = useMemo(() => perms.includes("皮肤兑换码"), [perms]);
+    // 后端权限 manage_feedback，三个等级都有。
+    const canManageFeedback = useMemo(() => perms.includes("住民反馈"), [perms]);
 
     const rootStyle = { height: "100%", minHeight: 0, background: 'var(--color-bg-base)', padding: 20, boxSizing: "border-box", color: 'var(--color-text-primary)' };
     const containerStyle = { maxWidth: 960, margin: "0 auto" };
@@ -107,6 +110,12 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
                 {canManageSkinCodes && (
                     <div style={panelStyle}>
                         <AdminSkinCodes backendUrl={backendUrl} />
+                    </div>
+                )}
+
+                {canManageFeedback && (
+                    <div style={panelStyle}>
+                        <AdminFeedback backendUrl={backendUrl} />
                     </div>
                 )}
 

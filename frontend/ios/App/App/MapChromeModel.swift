@@ -31,7 +31,7 @@ struct MapChromeItem: Identifiable, Equatable {
 struct MapChromeSearch: Equatable {
     var expanded = false
     var placeholder = "搜索"
-    var hint = "输入和回车搜索已收录地点。查找未收录地点请使用结果列表中的按钮。"
+    var hint = "按回车搜索已收录的地点"
     var busyLabel = "正在搜索"
     var busy = false
     var text = ""
@@ -100,6 +100,8 @@ struct MapChromeSheet: Identifiable, Equatable {
     var leading: MapChromeSheetRow?
     /// 正文（地点简介，展开后完整显示）
     var detail: String?
+    /// 正文的行内 Markdown（网页 markdownToNativeInline 生成，块级结构已展开、HTML 已转义）；有时代替 detail 显示
+    var detailMarkdown: String?
     /// 正文下方的次要信息（地址）
     var caption: String?
     /// 标题左侧的图标（展会图标，https）；有 leading 圆钮时不显示
@@ -228,6 +230,13 @@ final class MapChromeModel: ObservableObject {
     /// 操作指引（nil 表示没有进行中的指引）；指引期间面板让位
     @Published private(set) var tour: MapChromeTour? {
         didSet { onPresentationChange?() }
+    }
+    /// 网页下发的固定文案（读屏标签等），缺失时用中文兜底
+    @Published var labels: [String: String] = [:]
+
+    func text(_ key: String, _ fallback: String) -> String {
+        guard let value = labels[key], !value.isEmpty else { return fallback }
+        return value
     }
 
     var sessionId: String? {

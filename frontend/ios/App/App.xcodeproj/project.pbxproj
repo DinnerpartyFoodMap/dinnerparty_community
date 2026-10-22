@@ -18,6 +18,7 @@
 		A7F1C0DE0000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000002 /* PrivacyInfo.xcprivacy */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		A7F1C0DE0000000000000026 /* NativeSettingsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000016 /* NativeSettingsPlugin.swift */; };
+		A7F1C0DE0000000000000027 /* NativeFeedbackPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000017 /* NativeFeedbackPlugin.swift */; };
 		A7F1C0DE0000000000000024 /* FoodMapBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000014 /* FoodMapBridgeViewController.swift */; };
 		A7F1C0DE0000000000000023 /* NativeMapChromePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000013 /* NativeMapChromePlugin.swift */; };
 		A7F1C0DE0000000000000022 /* PassThroughHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000012 /* PassThroughHostView.swift */; };
@@ -40,6 +41,7 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		A7F1C0DE0000000000000016 /* NativeSettingsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsPlugin.swift; sourceTree = "<group>"; };
+		A7F1C0DE0000000000000017 /* NativeFeedbackPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFeedbackPlugin.swift; sourceTree = "<group>"; };
 		A7F1C0DE0000000000000014 /* FoodMapBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodMapBridgeViewController.swift; sourceTree = "<group>"; };
 		A7F1C0DE0000000000000013 /* NativeMapChromePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapChromePlugin.swift; sourceTree = "<group>"; };
 		A7F1C0DE0000000000000012 /* PassThroughHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassThroughHostView.swift; sourceTree = "<group>"; };
@@ -83,6 +85,7 @@
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				A7F1C0DE0000000000000016 /* NativeSettingsPlugin.swift */,
+				A7F1C0DE0000000000000017 /* NativeFeedbackPlugin.swift */,
 				A7F1C0DE0000000000000014 /* FoodMapBridgeViewController.swift */,
 				A7F1C0DE0000000000000013 /* NativeMapChromePlugin.swift */,
 				A7F1C0DE0000000000000012 /* PassThroughHostView.swift */,
@@ -188,6 +191,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				A7F1C0DE0000000000000026 /* NativeSettingsPlugin.swift in Sources */,
+				A7F1C0DE0000000000000027 /* NativeFeedbackPlugin.swift in Sources */,
 				A7F1C0DE0000000000000024 /* FoodMapBridgeViewController.swift in Sources */,
 				A7F1C0DE0000000000000023 /* NativeMapChromePlugin.swift in Sources */,
 				A7F1C0DE0000000000000022 /* PassThroughHostView.swift in Sources */,

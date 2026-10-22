@@ -15,7 +15,7 @@ const HAN = /[㐀-鿿]/;
 
 // 这些中文是数据而不是界面文案：提交给后端或与后端、高德约定的取值，按原样保留
 const DATA_STRINGS = {
-    "src/admin/AdminDashboard.jsx": ['用户管理', '操作日志', '标记点管理', '评论管理', 'QQ白名单管理', '公告发布', '普通用户管理', '皮肤兑换码'],
+    "src/admin/AdminDashboard.jsx": ['用户管理', '操作日志', '标记点管理', '评论管理', 'QQ白名单管理', '公告发布', '普通用户管理', '皮肤兑换码', '住民反馈'],
     // 后端未登录报错的匹配词
     'src/admin/AdminComments.jsx': ['未登录'],
     'src/admin/AdminGeneralUsers.jsx': ['未登录'],

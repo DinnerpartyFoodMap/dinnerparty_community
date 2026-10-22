@@ -9,6 +9,7 @@
 const express = require("express");
 const router = express.Router();
 const { db } = require("../../../infrastructure/database");
+const { markdownToPlainText } = require("../services/markdownText");
 const {
     SITE_NAME,
     SITE_TAGLINE,
@@ -85,7 +86,8 @@ function renderShareHtml({ place, canonicalUrl, frontendUrl, siteBaseUrl, isNavS
     const placeName = place.name || "地点";
     const safeName = htmlEscape(placeName);
     const safeCategory = htmlEscape(place.category || "");
-    const safePlaceDescription = htmlEscape(place.description || "");
+    // 跳转页只放纯文字：去掉 Markdown 标记后再转义
+    const safePlaceDescription = htmlEscape(markdownToPlainText(place.description));
     const safeAddress = htmlEscape(place.address || "");
 
     const actionLabel = isNavShare ? "打开高德地图导航" : "在地图中查看";

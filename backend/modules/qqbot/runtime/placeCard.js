@@ -1,6 +1,7 @@
 const { db } = require('../../../infrastructure/database');
 const botConfig = require('./config');
 const { buildPlaceCard, cardImageFile, truncate, singleLine } = require('../../places/services/placeCard');
+const { markdownToPlainText } = require('../../places/services/markdownText');
 const { sendTuwenArk } = require('./tuwenArk');
 
 // The card sent after a search or random pick, as its own message. Title and
@@ -19,7 +20,8 @@ const DETAILS_MAX = 120;
 function placeDetails(place) {
     const parts = [];
     if (place.per_person_cost) parts.push(`人均 ${place.per_person_cost} 元`);
-    const description = singleLine(place.description);
+    // QQ 卡片只能显示纯文字：去掉 Markdown 标记
+    const description = singleLine(markdownToPlainText(place.description));
     if (description) parts.push(description);
     const address = singleLine(place.address);
     if (address) parts.push(`地址：${address}`);

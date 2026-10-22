@@ -87,7 +87,6 @@ export default function JourneyPhotoPicker({draft,base,token,onError}) {
                 <div className="jw-segmented" role="radiogroup" aria-label={t('journey:photoPicker.kindLabel')}>
                     {[['',t('journey:photoPicker.kind.none')],['dish',t('journey:photoPicker.kind.dish')],['menu',t('common:label.menu')],['other',t('journey:photoPicker.kind.other')]].map(([value,label])=><button type="button" key={value} role="radio" aria-checked={(preview.kind||'')===value} onClick={()=>draft.setPhotoKind(preview.key,value)}>{label}</button>)}
                 </div>
-                <p className="jw-muted">{t('journey:photoPicker.kindHint')}</p>
                 <div className="jw-actions">
                     {(()=>{const index=photos.indexOf(preview);return <>
                         <button type="button" disabled={index<=0} onClick={()=>draft.movePhoto(index,index-1)}>{t('journey:photoPicker.moveEarlier')}</button>

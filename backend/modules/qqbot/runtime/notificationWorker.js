@@ -1,6 +1,7 @@
 const { db } = require('../../../infrastructure/database');
 const botConfig = require('./config');
 const { onNotificationWake } = require('../../places/services/placeNotifications');
+const { markdownToPlainText } = require('../../places/services/markdownText');
 
 // Delivers queued new-place notifications to QQ groups, one group at a time.
 // Status: pending → sending → sent | pending (retry) | failed | unknown | skipped.
@@ -32,7 +33,7 @@ function placeBlock(place) {
     if (place.address) lines.push(`地址：${place.address}`);
     if (place.category) lines.push(`标签：${place.category.split(/,\s*/).join('、')}`);
     if (place.per_person_cost) lines.push(`人均：${place.per_person_cost} 元`);
-    if (place.description) lines.push(`描述：${shorten(place.description, DESCRIPTION_PREVIEW)}`);
+    if (place.description) lines.push(`描述：${shorten(markdownToPlainText(place.description), DESCRIPTION_PREVIEW)}`);
     const link = botConfig.placeUrl(place.id);
     if (link) lines.push(`在地图中查看：${link}`);
     return lines.join('\n');

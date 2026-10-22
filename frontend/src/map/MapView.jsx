@@ -64,6 +64,7 @@ export default function MapView({
     onLogout,
     onOpenAdmin,
     onOpenPosterExport,
+    onOpenFeedback,
     desktopHeaderMenu = null,
     randomFoodRequestId = 0,
     onboardingRequestId = 0,
@@ -1735,6 +1736,7 @@ export default function MapView({
                 onLogout={onLogout}
                 onOpenAdmin={onOpenAdmin}
                 onOpenPosterExport={onOpenPosterExport}
+                onOpenFeedback={onOpenFeedback}
                 desktopHeaderMenu={desktopHeaderMenu}
                 randomFoodRequestId={randomFoodRequestId}
                 onboardingRequestId={onboardingRequestId}

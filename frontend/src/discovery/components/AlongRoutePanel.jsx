@@ -470,9 +470,6 @@ export default function AlongRoutePanel({
                         autoComplete="off"
                         style={fieldStyle}
                     />
-                    <div style={{ marginTop: 5, color: 'var(--color-text-muted)', fontSize: 11, lineHeight: 1.45 }}>
-                        {t('map:alongRoute.privacyHint')}
-                    </div>
 
                     {trip && (
                         <div style={{ marginTop: 10, padding: '9px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-overlay)', fontSize: 12, lineHeight: 1.55 }}>

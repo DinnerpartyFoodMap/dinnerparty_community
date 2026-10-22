@@ -9,7 +9,7 @@ import Capacitor
 /// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer, skin, tour }) -> { appliedRevision }
 ///   items: [{ id, title, symbol, image?, imageTemplate?, selected, disabled, busy, badge?, avatarURL?, placement, tone?, opensOverlay }]
 ///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
-///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, caption?,
+///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
 ///                   image?: https, paragraphs?: [{ id, title?, text }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
 ///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row }
@@ -141,12 +141,12 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func attach(_ call: CAPPluginCall) {
         guard let sessionId = call.getString("sessionId"), !sessionId.isEmpty,
               let ownerId = call.getString("ownerId"), !ownerId.isEmpty else {
-            call.reject("sessionId 与 ownerId 必填", "INVALID_ARGUMENT")
+            call.reject("sessionId and ownerId are required", "INVALID_ARGUMENT")
             return
         }
         DispatchQueue.main.async {
             guard let model = self.model, model.hostReady else {
-                call.reject("原生控件不可用", "UNAVAILABLE")
+                call.reject("Native chrome unavailable", "UNAVAILABLE")
                 return
             }
             // 新会话替换旧会话：旧控件先收起
@@ -176,9 +176,10 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let drawer = NativeMapChromePlugin.parseDrawer(call.getObject("drawer"))
         let skin = NativeMapChromePlugin.parseSkin(call.getObject("skin"))
         let tour = NativeMapChromePlugin.parseTour(call.getObject("tour"))
+        let labels = NativeMapChromePlugin.parseLabels(call.getObject("labels"))
         DispatchQueue.main.async {
             guard let model = self.model, self.isCurrent(sessionId, ownerId) else {
-                call.reject("会话已失效", "STALE_SESSION")
+                call.reject("Stale session", "STALE_SESSION")
                 return
             }
             guard revision >= model.revision else {
@@ -196,6 +197,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 self.bridge?.statusBarStyle = theme.dark ? .lightContent : .darkContent
             }
             model.revision = revision
+            if let labels, model.labels != labels { model.labels = labels }
             model.apply(items: items, theme: theme, floatingGap: floatingGap.map { CGFloat($0) }, search: search, sheet: sheet, drawer: drawer, skin: skin, tour: tour)
             self.lastHeartbeat = Date()
             call.resolve(["appliedRevision": revision])
@@ -210,7 +212,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let overlayOpened = call.getBool("overlayOpened") ?? false
         DispatchQueue.main.async {
             guard let model = self.model, self.isCurrent(sessionId, nil) else {
-                call.reject("会话已失效", "STALE_SESSION")
+                call.reject("Stale session", "STALE_SESSION")
                 return
             }
             if let pending = self.pendingAction, pending.eventId == eventId {
@@ -229,7 +231,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let sessionId = call.getString("sessionId")
         DispatchQueue.main.async {
             guard let model = self.model, self.isCurrent(sessionId, nil) else {
-                call.reject("会话已失效", "STALE_SESSION")
+                call.reject("Stale session", "STALE_SESSION")
                 return
             }
             self.pendingAction = nil
@@ -243,7 +245,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let sessionId = call.getString("sessionId")
         DispatchQueue.main.async {
             guard let model = self.model, self.isCurrent(sessionId, nil) else {
-                call.reject("会话已失效", "STALE_SESSION")
+                call.reject("Stale session", "STALE_SESSION")
                 return
             }
             model.visible = true
@@ -259,7 +261,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let sessionId = call.getString("sessionId")
         DispatchQueue.main.async {
             guard self.isCurrent(sessionId, nil) else {
-                call.reject("会话已失效", "STALE_SESSION")
+                call.reject("Stale session", "STALE_SESSION")
                 return
             }
             self.lastHeartbeat = Date()
@@ -329,6 +331,16 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    /// 固定文案（读屏标签等）：只收字符串，键数与长度封顶；旧版网页不下发时为 nil，保留原有文案
+    private static func parseLabels(_ raw: JSObject?) -> [String: String]? {
+        guard let raw else { return nil }
+        var labels: [String: String] = [:]
+        for (key, value) in raw where labels.count < 40 {
+            if let text = value as? String, !text.isEmpty { labels[key] = String(text.prefix(80)) }
+        }
+        return labels
+    }
+
     private static func parseSearch(_ raw: JSObject?) -> MapChromeSearch? {
         guard let raw else { return nil }
         var search = MapChromeSearch()
@@ -364,6 +376,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             style: style,
             leading: parseRows(leadingRaw, budget: &leadingBudget).first,
             detail: clip(raw["detail"], 2000),
+            detailMarkdown: clip(raw["detailMarkdown"], 4000),
             caption: clip(raw["caption"], 200),
             image: httpsURL(raw["image"]),
             paragraphs: parseParagraphs(raw["paragraphs"]),

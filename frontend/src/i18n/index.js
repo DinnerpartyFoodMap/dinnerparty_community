@@ -11,11 +11,12 @@ import poster from './locales/zh-CN/poster.json';
 import settings from './locales/zh-CN/settings.json';
 import admin from './locales/zh-CN/admin.json';
 import platform from './locales/zh-CN/platform.json';
+import feedback from './locales/zh-CN/feedback.json';
 
 export const DEFAULT_LANGUAGE = 'zh-CN';
 
 const RESOURCES = {
-    'zh-CN': { common, auth, map, journey, dinner, poster, settings, admin, platform }
+    'zh-CN': { common, auth, map, journey, dinner, poster, settings, admin, platform, feedback }
 };
 
 export const SUPPORTED_LANGUAGES = Object.keys(RESOURCES);
@@ -65,7 +66,10 @@ i18n.init({
     initAsync: false
 });
 
-if (typeof document !== 'undefined' && document.documentElement) document.documentElement.lang = i18n.language;
+if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.lang = i18n.language;
+    document.title = i18n.t('common:app.name');
+}
 
 export const t = i18n.t;
 

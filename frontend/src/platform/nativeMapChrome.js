@@ -24,6 +24,7 @@ import { t } from '../i18n/index.js';
 // v10 操作指引（tour）：指引打开时原生控件不收起，按下发的目标画高亮圈、其余变暗、触摸交给网页，
 // 目标位置随布局回传（"tour" slot 与 tour.step）；“更多功能”一步播放上滑示意并允许拖动工具栏练习（tour.drawerOpen）。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
+// labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 export const NATIVE_CHROME_PROTOCOL = 10;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
@@ -146,6 +147,24 @@ export function sanitizeItems(items) {
 
 const toCounter = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : 0);
 
+/** 原生控件自带的固定文案。imageNumber 里的 {title} / {index} 由原生替换 */
+export function nativeChromeLabels() {
+    return {
+        mainActions: t('map:ui.mainActions'),
+        expandDrawer: t('map:ui.expandMore'),
+        collapseDrawer: t('map:ui.collapseMore'),
+        exitSearch: t('map:ui.search.exit'),
+        dismissKeyboard: t('map:ui.dismissKeyboard'),
+        clearSearch: t('map:ui.search.clear'),
+        close: t('common:action.close'),
+        noDescription: t('map:placeDetail.noDescription'),
+        intro: t('map:placeDetail.intro'),
+        image: t('map:placeDetail.image'),
+        imageNumber: t('map:placeDetail.imageNumber', { title: '{title}', index: '{index}' }),
+        closePreview: t('map:placeDetail.closePreview')
+    };
+}
+
 /** 底部搜索栏状态：只传展示所需字段。textVersion 只在网页主动改写文本时递增，原生据此决定是否覆盖输入框。 */
 export function sanitizeSearch(search) {
     const s = search || {};
@@ -181,6 +200,8 @@ export function sanitizeSheet(sheet) {
         size: SHEET_SIZES.includes(sheet.size) ? sheet.size : 'fit',
         leading: sheet.leading ? sanitizeSheetRows([sheet.leading], { rows: 1 })[0] : undefined,
         detail: clipText(sheet.detail, 2000),
+        // 简介的行内 Markdown（markdownToNativeInline 生成，HTML 已转义）；旧版原生不认它，仍显示 detail
+        detailMarkdown: clipText(sheet.detailMarkdown, 4000),
         caption: clipText(sheet.caption, 200),
         // 标题左侧的图标（展会图标；有 leading 圆钮时不显示）
         image: sanitizeImageURL(sheet.image),
@@ -579,7 +600,8 @@ export class NativeMapChromeSession {
                 sheet: sanitizeSheet(snapshot.sheet),
                 drawer: sanitizeDrawer(snapshot.drawer),
                 skin: sanitizeSkin(snapshot.skin),
-                tour: sanitizeTour(snapshot.tour)
+                tour: sanitizeTour(snapshot.tour),
+                labels: nativeChromeLabels()
             }), CALL_TIMEOUT_MS);
             if (!result || result.appliedRevision !== this.revision) {
                 if (!(result && result.ignored)) throw new Error('setState');

@@ -26,6 +26,7 @@ import { applyDarkMode, applyThemeColors, resolveThemePrimary, resolveThemeSecon
 import useDarkMode from "../theme/useDarkMode";
 import { DinnerCreatePage, DinnerDetailPage, DinnerListPage, isDinnerPath, parseDinnerIdFromPath } from "../dinners/DinnerPages";
 import PosterExportPage from "../poster/PosterExportPage";
+import FeedbackHost from "../feedback/FeedbackHost";
 import { getNoticeColorOption } from "../components/feedback/noticeColors";
 import { reportAuthStage } from "../auth/services/authDiagnostics";
 import { preserveJourneyBeforeLeave } from "../journey/navigation";
@@ -79,6 +80,7 @@ export default function App() {
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
     const [randomFoodRequestId, setRandomFoodRequestId] = useState(0);
     const [onboardingRequestId, setOnboardingRequestId] = useState(0);
+    const [feedbackOpen, setFeedbackOpen] = useState(false);
     const [siteNotice, setSiteNotice] = useState(null);
     const [dismissedNoticeId, setDismissedNoticeId] = useState(() => {
         try {
@@ -505,6 +507,15 @@ export default function App() {
 
     const isAuth = !!token && !!user;
     const isAdmin = !!(user && user.admin_level);
+    // 意见反馈需要登录：未登录时先打开登录框
+    const openFeedback = useCallback(() => {
+        if (!isAuth) {
+            setShowAuth(true);
+            return;
+        }
+        setFeedbackOpen(true);
+    }, [isAuth]);
+    const closeFeedback = useCallback(() => setFeedbackOpen(false), []);
     // 主题皮肤：随住民切换；冷启动时按通行凭证里的住民先换上本机记住的皮肤
     useSkinSession({ backendUrl: BACKEND_URL, token, userId: user ? user.id : null, pendingUserId: token && !user ? (decodeTokenPayload(token)?.id || null) : null });
     const showAdminPage = pathname === "/admin" && !!token;
@@ -912,6 +923,7 @@ export default function App() {
                                     goPath('/settings');
                                 }}
                                 onLogout={handleLogout}
+                                onOpenFeedback={openFeedback}
                                 desktopHeaderMenu={desktopHeaderMenu}
                                 randomFoodRequestId={randomFoodRequestId}
                                 onboardingRequestId={onboardingRequestId}
@@ -961,9 +973,18 @@ export default function App() {
                             onMenuOpenChange={setDesktopHeaderMenu}
                             onOpenRandomFood={showMapPage ? () => setRandomFoodRequestId((id) => id + 1) : undefined}
                             onOpenGuide={showMapPage ? () => setOnboardingRequestId((id) => id + 1) : undefined}
+                            onOpenFeedback={openFeedback}
                             pathname={pathname}
                             backendUrl={BACKEND_URL}
                             interactionDisabled={authPanelDisabled}
+                        />
+
+                        <FeedbackHost
+                            open={feedbackOpen && isAuth}
+                            onClose={closeFeedback}
+                            backendUrl={BACKEND_URL}
+                            token={token}
+                            onRequireAuth={() => setShowAuth(true)}
                         />
 
                         <AuthModal

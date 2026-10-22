@@ -14,7 +14,7 @@
     }
   },
   "geolocation": {
-    "permissionDenied": "定位权限被拒绝。可以在系统设置中允许访问位置，或继续手动浏览地图选点。",
+    "permissionDenied": "没有定位权限，可以在系统设置中开启。",
     "servicesDisabled": "设备定位服务未开启，请在系统设置中打开定位后重试。",
     "positionUnavailable": "暂时无法获取当前位置，请确认设备定位服务已开启。",
     "timeout": "定位超时，请检查网络或稍后重试。",
@@ -28,8 +28,8 @@
     "noFile": "未选择图片",
     "notImage": "仅支持上传图片文件",
     "gifTooLarge": "动图过大，最大支持 {{formatMB}}",
-    "heicUnsupported": "当前设备无法读取 HEIC 格式照片，请在相机设置中选择“兼容性最佳”，或改用 JPG/PNG 图片。",
-    "decodeFailed": "图片无法读取，可能已损坏或格式不受支持。",
+    "heicUnsupported": "无法读取 HEIC 照片。可以在相机设置中改为“兼容性最佳”，或改用 JPG/PNG 图片。",
+    "decodeFailed": "图片无法读取",
     "imageTooLarge": "图片过大，最大支持 {{formatMB}}"
   },
   "nativeMapChrome": {

@@ -47,7 +47,6 @@ export default function PublicJourneyView({ctx,nav,params}) {
                     {!!s.media_ids.length&&<div className="jw-strip">{s.media_ids.map(id=><PublicPhoto key={id} publicId={journey.public_id} id={id} base={base} className="jw-strip__img"/>)}</div>}
                     {s.place_id&&<button type="button" className="jw-link" onClick={()=>showPlace(s.place_id)}>{t('journey:public.viewMarker')}</button>}
                 </li>)}</ol>
-                <p className="jw-muted">{t('journey:public.disclaimer')}</p>
             </>}
         </div></div>
     </div>;

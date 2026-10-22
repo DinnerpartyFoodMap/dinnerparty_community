@@ -1,0 +1,93 @@
+/* Markdown 渲染结果（Markdown.jsx）：清理后的 HTML 没有 style / class，排版只由这里决定 */
+.fm-markdown {
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.fm-markdown > :first-child { margin-top: 0; }
+.fm-markdown > :last-child { margin-bottom: 0; }
+
+.fm-markdown p,
+.fm-markdown ul,
+.fm-markdown ol,
+.fm-markdown blockquote,
+.fm-markdown pre,
+.fm-markdown table,
+.fm-markdown details {
+    margin: 0 0 0.5em;
+}
+
+/* 面板里正文的标题不能比面板标题还大 */
+.fm-markdown h1,
+.fm-markdown h2,
+.fm-markdown h3,
+.fm-markdown h4,
+.fm-markdown h5,
+.fm-markdown h6 {
+    margin: 0.6em 0 0.3em;
+    font-weight: 700;
+    line-height: 1.4;
+    font-size: 1em;
+}
+.fm-markdown h1 { font-size: 1.25em; }
+.fm-markdown h2 { font-size: 1.15em; }
+.fm-markdown h3 { font-size: 1.05em; }
+
+.fm-markdown ul,
+.fm-markdown ol { padding-left: 1.4em; }
+
+.fm-markdown blockquote {
+    padding-left: 10px;
+    border-left: 3px solid var(--color-border);
+    color: var(--color-text-secondary);
+}
+
+.fm-markdown code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92em;
+    background: var(--color-bg-overlay);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
+.fm-markdown pre {
+    padding: 8px 10px;
+    overflow-x: auto;
+    background: var(--color-bg-overlay);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    line-height: 1.5;
+}
+.fm-markdown pre code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    white-space: pre;
+}
+
+.fm-markdown a {
+    color: var(--theme-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.fm-markdown hr {
+    border: 0;
+    border-top: 1px solid var(--color-border);
+    margin: 0.6em 0;
+}
+
+.fm-markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+}
+.fm-markdown th,
+.fm-markdown td {
+    padding: 4px 8px;
+    border: 1px solid var(--color-border);
+}
+
+.fm-markdown summary { cursor: pointer; }

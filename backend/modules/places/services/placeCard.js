@@ -7,6 +7,7 @@ const path = require("path");
 const crypto = require("crypto");
 const sharp = require("sharp");
 const imageStorage = require("../../media/services/imageStorage");
+const { markdownToPlainText } = require("./markdownText");
 
 const SITE_NAME = "东方饭联地图";
 const SITE_TAGLINE = "与饭搭子一起发现身边的美食好店";
@@ -57,9 +58,9 @@ function buildCardTitle(place) {
     return category ? `${name} · ${category}` : name;
 }
 
-/** 小标题：地点详情，没有详情时依次用地址、站点介绍 */
+/** 小标题：地点详情（链接卡片不能显示 Markdown，去掉标记），没有详情时依次用地址、站点介绍 */
 function buildCardDescription(place) {
-    return singleLine(place?.description) || singleLine(place?.address) || `${SITE_NAME} · ${SITE_TAGLINE}`;
+    return singleLine(markdownToPlainText(place?.description)) || singleLine(place?.address) || `${SITE_NAME} · ${SITE_TAGLINE}`;
 }
 
 /**

@@ -97,7 +97,8 @@
         "dinners": null,
         "poster": null,
         "admin": null,
-        "guide": null
+        "guide": null,
+        "feedback": null
       }
     }
   },

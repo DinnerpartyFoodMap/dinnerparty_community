@@ -10,6 +10,7 @@ const { resolveQQUser } = require('./qqIdentity');
 const { hasPermission } = require('../../admin/services/adminPermissions');
 const { fastSearch } = require('../../discovery/services/placeSearch');
 const { EMPTY_MESSAGE } = require('../../discovery/services/randomRecommendation');
+const { markdownToPlainText } = require('../../places/services/markdownText');
 
 // Routes one incoming message to a reply list. Commands always win over free
 // text, so help/query/cancel are never stored as a shop name or description.
@@ -105,7 +106,7 @@ function formatSearchResults(query, rows) {
         if (place.per_person_cost) head.push(`人均 ${place.per_person_cost} 元`);
         if (place.category) head.push(place.category.split(/,\s*/).join('、'));
         lines.push(`${index + 1}. ${head.join(' · ')}`);
-        if (place.description) lines.push(`   ${shorten(place.description, 40)}`);
+        if (place.description) lines.push(`   ${shorten(markdownToPlainText(place.description), 40)}`);
         if (place.address) lines.push(`   地址：${shorten(place.address, 60)}`);
         const link = botConfig.placeUrl(place.id);
         if (link) lines.push(`   ${link}`);
@@ -146,7 +147,7 @@ function formatRandomPick(result) {
     if (place.per_person_cost) meta.push(`人均 ${place.per_person_cost} 元`);
     if (place.category) meta.push(place.category.split(/,\s*/).join('、'));
     if (meta.length) lines.push(meta.join(' · '));
-    if (place.description) lines.push(shorten(place.description, 60));
+    if (place.description) lines.push(shorten(markdownToPlainText(place.description), 60));
     if (place.address) lines.push(`地址：${shorten(place.address, 60)}`);
     lines.push(`距${centerText} ${distanceText(result.distanceKm)}`);
     const link = botConfig.placeUrl(place.id);

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Button from "../../components/primitives/Button";
 import TextInput from "../../components/forms/TextInput";
+import TextArea from "../../components/forms/TextArea";
 import PlaceImageInputs from './PlaceImageInputs';
 import { useTips } from "../../components/feedback/Tips";
 import ScrollableView from "../../components/layout/ScrollableView";
@@ -54,7 +55,8 @@ export default function AddForm({ backendUrl, token, defaultPos, defaultName = "
                 />
             </div>
             <div style={{ marginTop: 8 }}>
-                <TextInput placeholder={t('map:common.label.description')} value={description} onChange={(e) => setDescription(e.target.value)} style={{ width: "100%" }} />
+                {/* 描述可以写多行，支持基础 Markdown（与后端一致最多 1000 字） */}
+                <TextArea markdown rows={3} maxLength={1000} placeholder={t('map:common.label.description')} value={description} onChange={(e) => setDescription(e.target.value)} style={{ width: "100%", borderRadius: 16, minHeight: 72 }} />
             </div>
             <div style={{ marginTop: 8 }}>
                 <TextInput
@@ -96,7 +98,6 @@ export default function AddForm({ backendUrl, token, defaultPos, defaultName = "
                         );
                     })}
                 </div>
-                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-muted)' }}>{t('map:addForm.ratingHint')}</div>
             </div>
             <ScrollableView style={{ marginTop: 8, maxHeight: "200px", overflowY: "auto" }}>
                 <PlaceImageInputs backendUrl={backendUrl} token={token} images={exteriorImages} setImages={setExteriorImages} label={t('map:addForm.exteriorImages')} />

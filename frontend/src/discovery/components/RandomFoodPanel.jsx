@@ -4,6 +4,7 @@ import { fetchRandomPlace } from "../../api/client";
 import { normalizeLngLat } from "../../map/utils";
 import { Exposure, eventId, request } from "../../journey/feedback";
 import MotionSurface from "../../components/overlay/MotionSurface";
+import { markdownToPlainText } from "../../components/markdown/markdownText";
 import { t, tx } from "../../i18n/index.js";
 
 // 随机美食卡片：宽屏从按钮附近展开，窄屏浮在搜索框上方；非模态，地图仍可操作。
@@ -137,7 +138,8 @@ function RandomFoodContent({ mapRef, backendUrl, token, onClose, onSelectPlace, 
                             : tx('map:randomFood.meta', { category, distance: distanceText })}
                         {Number(place.per_person_cost) > 0 && t('common:label.perPersonCost', { per_person_cost: place.per_person_cost })}
                     </p>
-                    {place.description && <p style={{ fontSize: 14, lineHeight: 1.6, overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{place.description}</p>}
+                    {/* 只显示三行摘要：去掉 Markdown 标记 */}
+                    {place.description && <p style={{ fontSize: 14, lineHeight: 1.6, overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{markdownToPlainText(place.description)}</p>}
                     <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{tx('map:randomFood.candidates', { candidateCount: result.candidateCount })}</p>
                 </Exposure>}
             </div>

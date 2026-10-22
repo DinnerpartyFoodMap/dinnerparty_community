@@ -80,7 +80,7 @@ App 内的玻璃材质（`overlay.css`，iOS 与安卓）以 `!important` 固定
 | | `toolbar.selectedPedestal` | `{ image, width, height, y }` | 选中时亮起的小底座，画在图标后面，y 为相对按钮中心的下移量 |
 | | `toolbar.icons.more` / `favorites` / `journey` / `add` / `addCancel` / `search` / `alongRoute` / `locate` / `login` | 图片 | 显示 24px；`login` 是未登录时的账号图标；`journey` 只在 iOS 原生工具栏出现；`locate` 是定位圆钮 |
 | 底栏展开状态 | `expanded.search.*`、`expanded.panel.*`（background / borderColor / texture / textureSize） | 同上 | 搜索框与“更多功能”、账号菜单面板；边框和底纹不填时延续底栏 |
-| | `expanded.panel.icons.alongRoute` / `random` / `journey` / `dinners` / `poster` / `admin` / `guide` | 图片 | “更多功能”各行的图标：网页面板默认没有图标，皮肤提供时显示在文字前（22px）；iOS 原生抽屉代替圆形里的 SF Symbol（28pt） |
+| | `expanded.panel.icons.alongRoute` / `random` / `journey` / `dinners` / `poster` / `admin` / `guide` / `feedback` | 图片 | “更多功能”各行的图标：网页面板默认没有图标，皮肤提供时显示在文字前（22px）；iOS 原生抽屉代替圆形里的 SF Symbol（28pt） |
 | 图标画法 | `iconRendering` | `original` / `template` | 见上文“浅色与深色模式” |
 | 账号入口 | `account.defaultAvatar` | 图片 | 没有上传头像时的默认头像，正方形 |
 | | `account.avatarFrame` | `{ image, scale }` | 主题头像框，中间透明，比头像大 `scale` 倍（默认 1.3）；住民自己的头像保留 |

@@ -8,7 +8,6 @@ import { activateSkin } from "../skins/skinStore";
 import { useActiveSkin } from "../skins/useSkin";
 import { rememberSkin } from "../skins/useSkinSession";
 import { fetchSkinState, redeemSkinCode, saveActiveSkin } from "../skins/skinApi";
-import { getPlatform } from "../platform/env";
 import { t } from '../i18n/index.js';
 
 // 主题皮肤：已解锁的皮肤（含默认样式）与兑换码输入。解锁与切换都以服务器结果为准，再换到本机
@@ -100,7 +99,6 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
     return (
         <PageTemplate breadcrumb={[{ label: t('settings:common.nav.settings'), onClick: onBack }, { label: t('common:nav.skins') }]}>
             <div style={hintStyle}>{t('settings:skins.intro')}</div>
-            {getPlatform() === 'ios' && <div style={hintStyle}>{t('settings:skins.glassNote')}</div>}
 
             <div style={{ marginTop: 18 }}>
                 <div style={sectionTitle}>{t('settings:skins.mine')}</div>

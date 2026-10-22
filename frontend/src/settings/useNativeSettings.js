@@ -35,9 +35,26 @@ function buildMapPage(user) {
     };
 }
 
-// 头像、住民名、通行密码、个性化主题四个原生子页面的文案
+// 原生设置首页与头像、住民名、通行密码、个性化主题四个子页面的文案
 function buildLabels() {
     return {
+        title: t('common:nav.accountSettings'),
+        backToMap: t('common:action.backToMap'),
+        avatar: t('common:label.avatar'),
+        mapTitle: t('common:nav.personalizeMap'),
+        logoutAll: t('settings:main.logoutAll.title'),
+        logoutAllHint: t('settings:main.logoutAll.hint'),
+        logoutAllConfirmTitle: t('settings:main.logoutAll.confirmTitle'),
+        logoutAllConfirmMessage: t('settings:main.logoutAll.confirmMessage'),
+        logoutAllButton: t('settings:main.logoutAll.button'),
+        deleteAccount: t('settings:main.deleteAccount.title'),
+        deleteAccountHint: t('settings:main.deleteAccount.hint'),
+        deleteAccountConfirmTitle: t('settings:main.deleteAccount.confirmTitle'),
+        deleteAccountConfirmMessage: t('settings:main.deleteAccount.confirmMessage'),
+        deleteAccountButton: t('settings:main.deleteAccount.button'),
+        ok: t('common:action.ok'),
+        timeout: t('common:error.timeout'),
+        saveFailed: t('settings:common.status.saveFailed'),
         save: t('common:action.save'),
         saving: t('settings:common.status.saving'),
         cancel: t('common:action.cancel'),
@@ -60,6 +77,7 @@ function buildLabels() {
         darkModeHint: t('settings:customThemes.darkModeHint'),
         themeColor: t('settings:customThemes.themeColor'),
         themeColorHint: t('settings:customThemes.themeColorHint'),
+        secondaryColor: t('settings:customThemes.secondaryColor'),
         secondaryColorHint: t('settings:customThemes.secondaryColorHint'),
         mapStyleTitle: t('settings:customThemes.mapStyleTitle'),
         mapStyleHint: t('settings:customThemes.mapStyleHint'),

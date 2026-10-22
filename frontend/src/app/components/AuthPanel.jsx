@@ -9,7 +9,7 @@ import { t } from "../../i18n/index.js";
 import PrivacyPolicyLink from '../../auth/components/PrivacyPolicyLink.jsx';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
 
-const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
+const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onOpenFeedback, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
     const [userOpen, setUserOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const [showUsername, setShowUsername] = useState(true);
@@ -263,6 +263,14 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                             <>
                                 <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenGuide(); }}>
                                     {t('auth:panel.guide')}
+                                </Button>
+                                {divider}
+                            </>
+                        )}
+                        {onOpenFeedback && (
+                            <>
+                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenFeedback(); }}>
+                                    {t('feedback:menuEntry')}
                                 </Button>
                                 {divider}
                             </>

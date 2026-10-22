@@ -78,7 +78,7 @@ export function LocationPicker({open,value,base,mapRef,pickOnMap,onChange,onClos
             const position=await getCurrentLocation({map:mapRef?.current});
             const place=await reverseGeocode(position.lng,position.lat,base);
             onChange({name:place.name,city:place.city,lng:position.lng,lat:position.lat,source:'current'});
-        }catch(e){setError(t('journey:maps.locateFailed', { reason: describeLocationError(e) }));}
+        }catch(e){setError(describeLocationError(e));}
         finally{setBusy('');}
     };
     const search=e=>{

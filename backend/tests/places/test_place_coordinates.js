@@ -46,6 +46,13 @@ const sql = db._raw;
         assert.equal(PLACE_MAX_LATITUDE, 85.0511, 'must match frontend cluster/engine.js MAX_MERCATOR_LAT');
         assert.equal(validateNewPlace({ name: '边界', latitude: PLACE_MAX_LATITUDE, longitude: 180 }).value.latitude, PLACE_MAX_LATITUDE);
         assert.equal(validateNewPlace({ name: '边界', latitude: -PLACE_MAX_LATITUDE, longitude: -180 }).value.latitude, -PLACE_MAX_LATITUDE);
+        // 描述按 Markdown（含 HTML）显示且显示前会清理，保存时接受 HTML；店名、分类、地址仍只接受纯文本，描述仍限 1000 字
+        const point = { latitude: 23.1, longitude: 113.3 };
+        assert.equal(validateNewPlace({ ...point, name: '店', description: '**好吃** <b>推荐</b>' }).value.description, '**好吃** <b>推荐</b>');
+        for (const field of ['name', 'category', 'address']) {
+            assert.match(validateNewPlace({ ...point, name: '店', [field]: '<b>x</b>' }).error, /纯文本/, field);
+        }
+        assert.match(validateNewPlace({ ...point, name: '店', description: 'x'.repeat(1001) }).error, /1000/);
 
         // 新增：地图上方空白处（89.9°）与左右边界外都拒绝，库里不留记录。
         for (const [latitude, longitude] of [[89.9, 120], [-86, 120], [85.06, 120], [30, 181]]) {

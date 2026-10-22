@@ -49,6 +49,7 @@ import SkinAvatarFrame, { useSkinDefaultAvatar } from '../skins/SkinAvatar';
 import { SkinFrame, SkinOrnaments, useSkinFrameActive } from '../skins/SkinDecor';
 import { useSkinRevision } from '../skins/useSkin';
 import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../skins/nativeSkin';
+import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText';
 import { t, tx } from '../i18n/index.js';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
@@ -262,6 +263,7 @@ export default function MapUI(props) {
         onLogout,
         onOpenAdmin,
         onOpenPosterExport,
+        onOpenFeedback,
         desktopHeaderMenu,
         randomFoodRequestId = 0,
         onboardingRequestId = 0,
@@ -771,7 +773,8 @@ export default function MapUI(props) {
         isAuthenticated && { id: 'dinners', title: t('map:ui.dinners'), symbol: 'fork.knife', ...nativeIcon('expanded.panel.icons.dinners'), run: onOpenDinners },
         isAuthenticated && { id: 'poster', title: t('map:ui.posterExport'), symbol: 'photo.on.rectangle', ...nativeIcon('expanded.panel.icons.poster'), run: onOpenPosterExport },
         isAdmin && { id: 'admin', title: t('map:ui.admin'), symbol: 'gearshape.2', ...nativeIcon('expanded.panel.icons.admin'), run: onOpenAdmin },
-        { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: 'questionmark.circle', ...nativeIcon('expanded.panel.icons.guide'), run: openOnboarding }
+        { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: 'questionmark.circle', ...nativeIcon('expanded.panel.icons.guide'), run: openOnboarding },
+        onOpenFeedback && { id: 'feedback', title: t('feedback:menuEntry'), symbol: 'exclamationmark.bubble', ...nativeIcon('expanded.panel.icons.feedback'), run: onOpenFeedback }
     ].filter(Boolean);
     const moreFootnoteEntries = [
         ICP_BEIAN_TEXT && ICP_BEIAN_URL && { id: 'icp', title: ICP_BEIAN_TEXT, symbol: 'doc.text', url: ICP_BEIAN_URL },
@@ -858,7 +861,9 @@ export default function MapUI(props) {
             subtitle: [ratingCompact, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
             size: 'card',
             leading: { id: 'share', title: t('map:ui.share.title'), symbol: 'square.and.arrow.up', ...nativeIcon('cardActions.share'), keepsOpen: true },
-            detail: String(selectedPlace.description || '').trim() || undefined,
+            // 简介支持基础 Markdown：detail 是去掉标记的纯文本（旧版 App 只认它），detailMarkdown 是原生可显示的行内格式
+            detail: markdownToPlainText(selectedPlace.description) || undefined,
+            detailMarkdown: markdownToNativeInline(selectedPlace.description) || undefined,
             caption: String(selectedPlace.address || '').trim() || undefined,
             actions: [
                 { id: 'navigate', title: t('map:ui.nav.title'), symbol: 'arrow.triangle.turn.up.right.diamond.fill', ...nativeIcon('cardActions.navigate'), tone: 'accent', disabled: !hasNavigationTarget, keepsOpen: true },
@@ -1279,7 +1284,7 @@ export default function MapUI(props) {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, paddingRight: 8 }}>
-                                    {item.address || item.category || item.description || ''}
+                                    {item.address || item.category || markdownToPlainText(item.description) || ''}
                                 </span>
                                 {Number.isFinite(item.dist) && (
                                     <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -1368,7 +1373,8 @@ export default function MapUI(props) {
     };
 
     const getPopupDescriptionPreview = (place) => {
-        const raw = String(place?.description || '').replace(/\s+/g, ' ').trim();
+        // 小卡只放一段摘要：去掉 Markdown 标记后压成一行
+        const raw = markdownToPlainText(place?.description).replace(/\s+/g, ' ').trim();
         if (!raw) return { text: '', hasMore: false };
         const limit = 80;
         if (raw.length <= limit) return { text: raw, hasMore: false };
@@ -2247,6 +2253,12 @@ export default function MapUI(props) {
                                 <SkinIcon slot="expanded.panel.icons.guide" size={22} style={panelIconStyle} />
                                 {t('map:onboarding.menuEntry')}
                             </Button>
+                            {onOpenFeedback && (
+                                <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenFeedback)}>
+                                    <SkinIcon slot="expanded.panel.icons.feedback" size={22} style={panelIconStyle} />
+                                    {t('feedback:menuEntry')}
+                                </Button>
+                            )}
                             <div style={{ marginTop: 4, padding: '10px', borderTop: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 12 }}>
                                 <div>{tx('map:ui.versionFooter', { version: APP_VERSION })}</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 5, marginTop: 6 }}>

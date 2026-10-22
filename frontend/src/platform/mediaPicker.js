@@ -12,7 +12,8 @@ import { t } from '../i18n/index.js';
 export const UPLOAD_LIMITS = {
     placeImage: { maxBytes: 20 * 1024 * 1024, targetBytes: 10 * 1024 * 1024, maxDimension: 4096, quality: 0.92 }, // POST /upload
     avatar: { maxBytes: 5 * 1024 * 1024, targetBytes: 2 * 1024 * 1024, maxDimension: 2048, quality: 0.86 },        // PUT /users/me/avatar（裁剪后上传）
-    journeyMedia: { maxBytes: 5 * 1024 * 1024, targetBytes: 4 * 1024 * 1024, maxDimension: 2560, quality: 0.86 }  // POST /api/journeys/media
+    journeyMedia: { maxBytes: 5 * 1024 * 1024, targetBytes: 4 * 1024 * 1024, maxDimension: 2560, quality: 0.86 }, // POST /api/journeys/media
+    feedbackImage: { maxBytes: 10 * 1024 * 1024, targetBytes: 3 * 1024 * 1024, maxDimension: 2048, quality: 0.86 } // POST /api/feedback（后端再缩到 2048 内转 WebP）
 };
 
 // App 内选图 / 拍照：插件按质量 100 把照片（含 HEIC）转成 JPEG，几乎无损，只作为中间结果；

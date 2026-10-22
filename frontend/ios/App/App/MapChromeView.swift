@@ -297,7 +297,7 @@ struct MapChromeView: View {
         })
         .highPriorityGesture(drawerGesture, including: model.drawerAvailable ? .all : .subviews)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("地图主要操作"))
+        .accessibilityLabel(Text(model.text("mainActions", "地图主要操作")))
     }
 
     /// 皮肤装饰：以工具栏左上 / 右上角为原点，x 向内、y 向下；图片贴着装饰框的底边与外侧
@@ -331,7 +331,7 @@ struct MapChromeView: View {
         }
         .buttonStyle(.plain)
         .disabled(!available)
-        .accessibilityLabel(Text(model.drawerOpen ? "收起更多功能" : "展开更多功能"))
+        .accessibilityLabel(Text(model.drawerOpen ? model.text("collapseDrawer", "收起更多功能") : model.text("expandDrawer", "展开更多功能")))
         .accessibilityHidden(!available)
     }
 
@@ -593,7 +593,7 @@ struct MapChromeView: View {
     private func searchBar(showBack: Bool, editing: Bool) -> some View {
         HStack(spacing: 10) {
             if showBack {
-                circleButton(symbol: "chevron.backward", label: "退出搜索", glassID: "searchBack") {
+                circleButton(symbol: "chevron.backward", label: model.text("exitSearch", "退出搜索"), glassID: "searchBack") {
                     searchFocused = false
                     model.closeSearch()
                 }
@@ -613,7 +613,7 @@ struct MapChromeView: View {
     /// 输入中占用头像位置；与头像共用玻璃 ID，玻璃不动、只替换内容。
     /// 点按收起键盘；还没输入内容时同时退出搜索，回到工具栏。
     private func searchCloseButton(slotID: String) -> some View {
-        circleButton(symbol: "xmark", label: "收起键盘", glassID: slotID) {
+        circleButton(symbol: "xmark", label: model.text("dismissKeyboard", "收起键盘"), glassID: slotID) {
             searchFocused = false
             focusPending = false
             if model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -679,7 +679,7 @@ struct MapChromeView: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text("清空搜索内容"))
+                .accessibilityLabel(Text(model.text("clearSearch", "清空搜索内容")))
             }
         }
         .padding(.leading, 16)

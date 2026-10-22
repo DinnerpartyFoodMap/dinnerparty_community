@@ -14,7 +14,7 @@
     "handedToSystem": "海报已交给系统保存或分享",
     "exportFailed": "海报导出失败，请稍后重试",
     "title": "导出地点海报",
-    "intro": "选择多个地点，生成一张可直接分享的高清 PNG 海报",
+    "intro": "选择多个地点，生成一张高清海报",
     "titleLabel": "海报标题（必填）",
     "descriptionLabel": "海报简介（可选）",
     "choosePlaces": "选择地点",
@@ -40,7 +40,7 @@
     "mapLoadFailed": "地图加载失败（{{status}}）",
     "mapNoImage": "地图服务未返回图片",
     "canvasUnsupported": "当前浏览器无法创建海报",
-    "mapFailed": "地图加载失败，暂时无法准确生成海报，请稍后重试",
+    "mapFailed": "地图加载失败，请稍后重试",
     "scanToOpen": "扫码打开东方饭联地图"
   }
 }

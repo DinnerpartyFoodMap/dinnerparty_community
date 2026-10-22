@@ -47,10 +47,14 @@ function normalizeCategoryList(value) {
     return { value: names.join(', '), names };
 }
 
+// allowHtml：只给地点描述用。描述按 Markdown（含 HTML）显示，网页由 DOMPurify 按白名单清理后才插入，
+// 不能显示格式的地方（分享页、QQ 机器人等）先转成纯文字，所以保存时不必拒绝 HTML；
+// 店名、分类、地址等字段会被直接拼进各种文字与卡片，仍只接受纯文本。
 function normalizePlainTextField(value, {
     fieldLabel,
     maxLength,
-    required = false
+    required = false,
+    allowHtml = false
 }) {
     if (value == null || value === '') {
         if (required) {
@@ -70,7 +74,7 @@ function normalizePlainTextField(value, {
     if (normalized.length > maxLength) {
         return { error: `${fieldLabel}不能超过 ${maxLength} 个字符` };
     }
-    if (HTML_TAG_PATTERN.test(normalized)) {
+    if (!allowHtml && HTML_TAG_PATTERN.test(normalized)) {
         return { error: `${fieldLabel}仅支持纯文本` };
     }
     return { value: normalized };
@@ -131,7 +135,7 @@ function validateNewPlace(input = {}) {
     if (category.error) return category;
     const categoryList = normalizeCategoryList(category.value);
     if (categoryList.error) return categoryList;
-    const description = normalizePlainTextField(input.description, { fieldLabel: '描述', maxLength: PLACE_DESCRIPTION_MAX_LENGTH });
+    const description = normalizePlainTextField(input.description, { fieldLabel: '描述', maxLength: PLACE_DESCRIPTION_MAX_LENGTH, allowHtml: true });
     if (description.error) return description;
     const address = normalizePlainTextField(input.address, { fieldLabel: '地址', maxLength: PLACE_ADDRESS_MAX_LENGTH });
     if (address.error) return address;

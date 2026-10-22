@@ -7,6 +7,7 @@ import { normalizeImageUrl } from "../../map/utils";
 import { imageThumbnailUrl } from "../../platform/runtimeConfig";
 import PlaceDiaryList from "../../journey/PlaceDiaryList";
 import SkinIcon from "../../skins/SkinIcon";
+import Markdown from "../../components/markdown/Markdown";
 import { t, tx } from "../../i18n/index.js";
 import { tierForAverage, tierLabel, formatAverage, summaryText } from "../rating";
 
@@ -100,7 +101,7 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
             <div style={{ padding: isMobile ? 16 : 20, paddingBottom: 20 }}>
                 <div style={{ marginBottom: 24 }}>
                     <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 4 }}>{t('map:common.label.description')}</div>
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{place.description || t('map:placeDetail.noDescription')}</div>
+                    <Markdown text={place.description} style={{ lineHeight: 1.55 }} fallback={<div>{t('map:placeDetail.noDescription')}</div>} />
                     {place.address && <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-secondary)' }}>{place.address}</div>}
                 </div>
                 {/* 相关公开日记：放在基本信息之后、长图片列表之前；日记照片不混入外观/菜单图库 */}

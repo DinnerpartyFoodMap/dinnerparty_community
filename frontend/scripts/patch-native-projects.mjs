@@ -204,8 +204,8 @@ public class MainActivity extends BridgeActivity {
 }
 
 const IOS_PLIST_ENTRIES = [
-    ['NSCameraUsageDescription', '用于拍摄地点、菜单和行程照片并上传。'],
-    ['NSPhotoLibraryUsageDescription', '用于从相册选择地点、头像和行程照片。'],
+    ['NSCameraUsageDescription', '用于拍摄地点、菜单、行程和反馈照片并上传。'],
+    ['NSPhotoLibraryUsageDescription', '用于从相册选择地点、头像、行程和反馈图片。'],
     ['NSPhotoLibraryAddUsageDescription', '用于把海报和行程首图保存到相册。'],
     ['NSLocationWhenInUseUsageDescription', '用于在地图上显示你的位置并查找附近的饭店。'],
     ['NSLocationAlwaysAndWhenInUseUsageDescription', '本应用只在使用期间获取位置，用于在地图上显示你的位置。']
@@ -305,6 +305,7 @@ function patchIos() {
 // 从不覆盖手写的 Swift 逻辑；重复执行不会产生改动。
 const IOS_NATIVE_SOURCES = [
     ['NativeSettingsPlugin.swift', 'A7F1C0DE0000000000000016', 'A7F1C0DE0000000000000026'],
+    ['NativeFeedbackPlugin.swift', 'A7F1C0DE0000000000000017', 'A7F1C0DE0000000000000027'],
     ['MapChromeModel.swift', 'A7F1C0DE0000000000000010', 'A7F1C0DE0000000000000020'],
     ['MapChromeView.swift', 'A7F1C0DE0000000000000011', 'A7F1C0DE0000000000000021'],
     ['PassThroughHostView.swift', 'A7F1C0DE0000000000000012', 'A7F1C0DE0000000000000022'],
