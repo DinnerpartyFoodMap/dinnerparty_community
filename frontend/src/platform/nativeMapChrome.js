@@ -20,8 +20,9 @@ import { t } from '../i18n/index.js';
 // v7 展会面板也改为两段停靠的原生卡片（exhibition 面板、标题左侧图标 image、分段正文 paragraphs）；
 // v8 主题皮肤：按钮与面板行可带皮肤图片（image / imageTemplate，代替 SF Symbol），地点卡片关闭钮 closeImage，
 // skin 快照（头像框、工具栏两端装饰、选中底座、选中色）。玻璃底纹与底色不下发。
+// v9 卡片的副标题与地址行可点（subtitleAction / captionAction，展会地点），点按回传行 id。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
-export const NATIVE_CHROME_PROTOCOL = 8;
+export const NATIVE_CHROME_PROTOCOL = 9;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
@@ -185,7 +186,10 @@ export function sanitizeSheet(sheet) {
         sections: sanitizeSections(sheet.sections, { rows: SHEET_ROW_LIMIT }),
         gallery: sanitizeGallery(sheet.gallery),
         // 地点卡片右上角关闭钮的皮肤图片
-        ...renameSkinIcon(sanitizeSkinIcon({ image: sheet.closeImage, imageTemplate: sheet.closeImageTemplate }), 'closeImage')
+        ...renameSkinIcon(sanitizeSkinIcon({ image: sheet.closeImage, imageTemplate: sheet.closeImageTemplate }), 'closeImage'),
+        // 可点的副标题（摘要）与地址行（详情）：与面板行相同的字段，点按回传行 id
+        subtitleAction: sheet.subtitleAction ? sanitizeSheetRows([sheet.subtitleAction], { rows: 1 })[0] : undefined,
+        captionAction: sheet.captionAction ? sanitizeSheetRows([sheet.captionAction], { rows: 1 })[0] : undefined
     };
 }
 

@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 8）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 9）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
@@ -12,7 +12,7 @@ import Capacitor
 ///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, caption?,
 ///                   image?: https, paragraphs?: [{ id, title?, text }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
-///                   closeImage?, closeImageTemplate? }
+///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row }
 ///   drawer: null | { sections: [section] }
 ///   row: { id, title, subtitle?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands? }
 ///   skin: { avatarFrame?: { image, scale }, ornamentStart? / ornamentEnd?: { image, width, height, x, y },
@@ -35,6 +35,8 @@ import Capacitor
 /// - v7：展会面板（exhibition）也是两段停靠的卡片：标题左侧图标（image）、分段正文（paragraphs）、“展会附近随机美食”操作。
 /// - v8：主题皮肤。按钮与行的 image 代替 SF Symbol（imageTemplate 时按单色跟随前景色），卡片关闭钮 closeImage，
 ///   skin 为头像框、工具栏两端装饰、选中底座与选中色；值已按网页当前的浅色 / 深色模式取好。玻璃的底色与底纹不下发。
+/// - v9：卡片的副标题（摘要）与地址行（详情）可点（subtitleAction / captionAction，展会地点）：
+///   显示为主题色按钮，点按按行处理并回传行 id（select 事件）。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -54,7 +56,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 8
+    static let protocolVersion = 9
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "add", "search", "alongRoute", "account", "locate"]
@@ -361,8 +363,18 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             sections: sections,
             gallery: parseGallery(raw["gallery"]),
             closeImage: skinImage(raw["closeImage"]),
-            closeImageTemplate: (raw["closeImageTemplate"] as? Bool) ?? false
+            closeImageTemplate: (raw["closeImageTemplate"] as? Bool) ?? false,
+            subtitleAction: parseSingleRow(raw["subtitleAction"]),
+            captionAction: parseSingleRow(raw["captionAction"])
         )
+    }
+
+    /// 单独一行（可点的副标题 / 地址行）：与面板行相同的白名单字段
+    private static func parseSingleRow(_ raw: JSValue?) -> MapChromeSheetRow? {
+        guard let object = raw as? JSObject else { return nil }
+        let list: JSArray = [object]
+        var budget = 1
+        return parseRows(list, budget: &budget).first
     }
 
     /// 更多功能：与面板相同的分组行

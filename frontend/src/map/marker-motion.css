@@ -161,3 +161,67 @@
         opacity: 0.6;
     }
 }
+
+/* 展会地点图钉：地点名标签 + 主题色水滴。标记锚点在容器底边中点，
+   水滴旋转后尖角比方框低约 5px，所以方框下留 5px，让尖角正好落在展会地点上 */
+.fm-exhibition-venue {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+    animation: fm-exhibition-venue-drop 0.32s cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+
+.fm-exhibition-venue__label {
+    max-width: 160px;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 6px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1px solid var(--theme-primary, #c77dff);
+    background: var(--color-bg-surface, #fff);
+    color: var(--color-text-primary, #222);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.fm-exhibition-venue__pin {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    margin-bottom: 5px;
+    box-sizing: border-box;
+    border: 3px solid #fff;
+    border-radius: 50% 50% 50% 0;
+    background: var(--theme-primary, #c77dff);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    transform: rotate(-45deg);
+}
+
+.fm-exhibition-venue__pin::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+@keyframes fm-exhibition-venue-drop {
+    from { transform: translateY(-14px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fm-exhibition-venue {
+        animation: none;
+    }
+}

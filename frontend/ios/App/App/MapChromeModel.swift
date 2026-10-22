@@ -113,6 +113,9 @@ struct MapChromeSheet: Identifiable, Equatable {
     /// 地点卡片右上角关闭钮的皮肤图标（v8）
     var closeImage: String? = nil
     var closeImageTemplate = false
+    /// 可点的副标题 / 地址行（v9，展会地点）：点按与行相同，回传行 id；行标题用作读屏标签
+    var subtitleAction: MapChromeSheetRow? = nil
+    var captionAction: MapChromeSheetRow? = nil
 
     var id: String { "\(sheetId)#\(token)" }
     var isCard: Bool { style == "card" }

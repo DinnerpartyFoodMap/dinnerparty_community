@@ -270,8 +270,15 @@ function makeSession(plugin, extra = {}) {
     assert.deepEqual(sanitizeSheet({ id: 'account' }).gallery, []);
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
+    // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
+    assert.equal(NATIVE_CHROME_PROTOCOL, 9);
+    const linked = sanitizeSheet({ id: 'exhibition', size: 'card', subtitle: '场馆', caption: '场馆',
+        subtitleAction: { id: 'venue', title: '查看', symbol: 'mappin.and.ellipse', coords: [1, 2] }, captionAction: 'venue' });
+    assert.deepEqual(linked.subtitleAction, { id: 'venue', title: '查看', subtitle: undefined, symbol: 'mappin.and.ellipse', tone: undefined, disabled: false, keepsOpen: false, expands: false });
+    assert.equal(linked.captionAction, undefined);
+    assert.equal(sanitizeSheet({ id: 'place' }).subtitleAction, undefined);
+
     // v8 主题皮肤：按钮、面板行与关闭钮可带皮肤图片；装饰只下发有图片的项；不传底纹
-    assert.equal(NATIVE_CHROME_PROTOCOL, 8);
     const png = 'data:image/png;base64,iVBORw0KGgo=';
     for (const good of [png, 'capacitor://localhost/assets/icon-1a2b.png', 'https://cdn.example.com/a.webp', 'http://192.168.1.2:5173/src/skins/packs/a/i.png']) {
         assert.equal(typeof sanitizeSkinImage(good), 'string', good);

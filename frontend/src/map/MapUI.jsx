@@ -41,7 +41,8 @@ import MapOnboarding from './MapOnboarding';
 import { buildOnboardingSteps, readOnboardingSeen, rememberOnboardingSeen } from './onboarding';
 import { getOverlayEntries, subscribeOverlays } from '../components/overlay/overlayStack';
 import { ExhibitionPanel } from './MapExhibition';
-import { exhibitionChromeSheet, exhibitionRandomOrigin } from './exhibition';
+import { exhibitionChromeSheet, exhibitionRandomOrigin, exhibitionVenue } from './exhibition';
+import useExhibitionVenuePin from './useExhibitionVenuePin';
 import { exhibitionIconSource } from '../components/primitives/ExhibitionIcon';
 import SkinIcon from '../skins/SkinIcon';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../skins/SkinAvatar';
@@ -526,6 +527,17 @@ export default function MapUI(props) {
         openRandomFoodAt(origin);
     };
 
+    // 展会面板的地址：收起展会面板与地点卡片，地图移到展会地点并插上图钉
+    const showExhibitionVenuePin = useExhibitionVenuePin({ mapRef, mapReady, exhibition });
+    const showExhibitionVenue = () => {
+        const venue = exhibitionVenue(exhibition);
+        if (!venue) return;
+        onCloseExhibition?.();
+        closePopup?.();
+        showExhibitionVenuePin(venue);
+        navigateToPlace(venue.lng, venue.lat);
+    };
+
     // 打开展会面板时收起菜单类浮层（原生模式下它们与展会面板共用同一个系统面板位置）
     useEffect(() => {
         if (!exhibitionOpen) return;
@@ -911,6 +923,7 @@ export default function MapUI(props) {
         } else if (sheetId === 'exhibition') {
             if (type === 'dismiss') onCloseExhibition?.();
             else if (rowId === 'random') openExhibitionRandom();
+            else if (rowId === 'venue') showExhibitionVenue();
         } else if (sheetId === 'place') {
             if (type === 'dismiss') {
                 closePopup?.();
@@ -1897,6 +1910,7 @@ export default function MapUI(props) {
                 backendUrl={backendUrl}
                 onClose={() => onCloseExhibition?.()}
                 onRandomNearby={openExhibitionRandom}
+                onShowVenue={showExhibitionVenue}
             />}
 
             {!pickerMode && <RandomFoodPanel

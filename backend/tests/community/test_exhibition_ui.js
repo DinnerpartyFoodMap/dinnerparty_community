@@ -142,6 +142,11 @@ async function main() {
     await page.getByRole('button', { name: '查看展会：带地点的展会' }).click();
     const venuePanel = page.getByRole('dialog', { name: '带地点的展会', exact: true });
     await venuePanel.getByText('保利世贸博览馆', { exact: true }).waitFor();
+    // 地址可点：收起面板，地图移到展会地点
+    await venuePanel.getByRole('button', { name: '在地图上查看展会地点：保利世贸博览馆' }).click();
+    await venuePanel.waitFor({ state: 'hidden' });
+    assert.equal(await page.getByLabel('地图位置').innerText(), '保利世贸博览馆 23.0961,113.3653');
+    await page.getByRole('button', { name: '查看展会：带地点的展会' }).click();
     await venuePanel.getByRole('button', { name: '展会附近随机美食' }).click();
     await venuePanel.waitFor({ state: 'hidden' });
     assert.equal(await page.getByLabel('随机中心').innerText(), '带地点的展会 23.0961,113.3653');
@@ -159,7 +164,7 @@ async function main() {
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await entry.waitFor({ state: 'hidden' });
     assert.deepEqual(errors, []);
-    console.log('Exhibition browser flow passed: publish, favicon, upload, details, responsive notice collision, resize, dismiss, venue random, unpublish.');
+    console.log('Exhibition browser flow passed: publish, favicon, upload, details, responsive notice collision, resize, dismiss, venue link, venue random, unpublish.');
 }
 main().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {
     if (browser) await browser.close();

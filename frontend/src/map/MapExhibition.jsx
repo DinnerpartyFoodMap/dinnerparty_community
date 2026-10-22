@@ -105,20 +105,38 @@ export default function MapExhibition({ exhibition, open = false, onOpen, notice
 
 const paragraphStyle = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.7 };
 
-/** 网页展会面板：宽屏右侧板、窄屏全屏。有展会地点时提供“展会附近随机美食”（以展会地点为中心的随机美食）。 */
-export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRandomNearby }) {
+const locationRowStyle = { margin: '12px 0 0', display: 'flex', gap: 6, alignItems: 'flex-start', color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' };
+
+/**
+ * 网页展会面板：宽屏右侧板、窄屏全屏。有展会地点时地址可点（onShowVenue：收起面板、地图移到展会地点），
+ * 并提供“展会附近随机美食”（以展会地点为中心的随机美食）。
+ */
+export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRandomNearby, onShowVenue }) {
     const locationName = String(exhibition?.location_name || '').trim();
-    const canRandom = !!exhibitionRandomOrigin(exhibition) && typeof onRandomNearby === 'function';
+    const located = !!exhibitionRandomOrigin(exhibition);
+    const canRandom = located && typeof onRandomNearby === 'function';
+    const canShowVenue = located && typeof onShowVenue === 'function';
     return (
         <ResponsivePanel open={open && !!exhibition} onClose={onClose} title={exhibition?.name || ''}
             desktop="side-right" mobile="full" sideInset={12} sideTop={68} sideBottom={42} width="370px"
             backdrop draggable={false} bodyStyle={{ padding: 20 }}>
             {exhibition && <>
                 <ExhibitionIcon url={exhibition.icon_url} backendUrl={backendUrl} />
-                {locationName && <p style={{ margin: '12px 0 0', display: 'flex', gap: 6, alignItems: 'flex-start', color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>
-                    <span className="material-symbols-outlined" role="img" aria-label={t('map:exhibition.location')} style={{ fontSize: 20 }}>location_on</span>
-                    <span>{locationName}</span>
-                </p>}
+                {canShowVenue
+                    ? <p style={locationRowStyle}>
+                        {/* 没填地点名时显示“查看位置” */}
+                        <button type="button" data-exhibition-venue onClick={() => onShowVenue(exhibition)}
+                            aria-label={locationName ? t('map:exhibition.showVenueLabel', { location: locationName }) : undefined}
+                            style={{ display: 'inline-flex', gap: 6, alignItems: 'flex-start', padding: 0, border: 0, background: 'transparent',
+                                color: 'var(--theme-primary)', font: 'inherit', textAlign: 'left', cursor: 'pointer', overflowWrap: 'anywhere' }}>
+                            <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20 }}>location_on</span>
+                            <span style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>{locationName || t('map:exhibition.showVenue')}</span>
+                        </button>
+                    </p>
+                    : locationName && <p style={locationRowStyle}>
+                        <span className="material-symbols-outlined" role="img" aria-label={t('map:exhibition.location')} style={{ fontSize: 20 }}>location_on</span>
+                        <span>{locationName}</span>
+                    </p>}
                 {canRandom && <div style={{ marginTop: 14 }}>
                     <Button full style={{ minHeight: 44 }} onClick={() => onRandomNearby(exhibition)}>
                         <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, marginRight: 6, verticalAlign: '-4px' }}>casino</span>

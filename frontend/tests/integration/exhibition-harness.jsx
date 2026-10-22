@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import AdminExhibitions from '../../src/admin/AdminExhibitions';
 import MapExhibition, { ExhibitionPanel, useCurrentExhibition } from '../../src/map/MapExhibition';
-import { exhibitionRandomOrigin } from '../../src/map/exhibition';
+import { exhibitionRandomOrigin, exhibitionVenue } from '../../src/map/exhibition';
 import Notice from '../../src/components/feedback/Notice';
 import { AuthProvider } from '../../src/auth/AuthContext';
 import { MotionProvider } from '../../src/motion/MotionProvider';
@@ -17,6 +17,7 @@ function Harness() {
     const [expanded, setExpanded] = useState(false);
     const [open, setOpen] = useState(false);
     const [origin, setOrigin] = useState(null);
+    const [venue, setVenue] = useState(null);
     const noticeRef = useRef(null);
     const frameRef = useOverlayContentRef();
     // 与 App 相同：只在地图页轮询；入口在外层，面板由地图渲染（这里直接渲染网页面板）
@@ -32,8 +33,10 @@ function Harness() {
             <MapExhibition exhibition={exhibition} open={open} onOpen={() => setOpen(true)}
                 backendUrl={location.origin} noticeRef={noticeRef} noticeVisible={notice} noticeTop={67} />
             <ExhibitionPanel open={open} exhibition={exhibition} backendUrl={location.origin} onClose={() => setOpen(false)}
-                onRandomNearby={(item) => { setOpen(false); setOrigin(exhibitionRandomOrigin(item)); }} />
+                onRandomNearby={(item) => { setOpen(false); setOrigin(exhibitionRandomOrigin(item)); }}
+                onShowVenue={(item) => { setOpen(false); setVenue(exhibitionVenue(item)); }} />
             {origin && <output aria-label="随机中心">{`${origin.label} ${origin.lat},${origin.lng}`}</output>}
+            {venue && <output aria-label="地图位置">{`${venue.label} ${venue.lat},${venue.lng}`}</output>}
         </>}
     </div>;
 }

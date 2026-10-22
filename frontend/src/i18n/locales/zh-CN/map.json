@@ -5,6 +5,9 @@
     "information": "展会信息",
     "subtitle": "展会",
     "location": "展会地点",
+    "showVenue": "查看位置",
+    "showVenueLabel": "在地图上查看展会地点：{{location}}",
+    "venuePin": "展会地点：{{location}}",
     "randomNearby": "展会附近随机美食",
     "randomHint": "以展会地点为中心，在 5km 内随机挑一家。"
   },

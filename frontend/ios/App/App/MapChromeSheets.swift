@@ -504,11 +504,35 @@ struct MapChromePlaceCard: View {
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }
+            headerTitle
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+            circleButton(symbol: "xmark", image: sheet.closeImage, template: sheet.closeImageTemplate,
+                         label: "关闭", tint: Color.primary, disabled: false) {
+                model.dismissSheet()
+            }
+        }
+    }
+
+    private var titleText: some View {
+        Text(sheet.title)
+            .font(.title2.weight(.bold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
+    /// 标题与副标题。副标题可点（v9 subtitleAction，展会地点）时是主题色按钮，标题与按钮分开朗读；否则合并为一个标题
+    @ViewBuilder
+    private var headerTitle: some View {
+        if let subtitle = sheet.subtitle, let action = sheet.subtitleAction {
             VStack(spacing: 2) {
-                Text(sheet.title)
-                    .font(.title2.weight(.bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                titleText
+                    .accessibilityAddTraits(.isHeader)
+                linkButton(subtitle, action: action)
+            }
+        } else {
+            VStack(spacing: 2) {
+                titleText
                 if let subtitle = sheet.subtitle {
                     Text(subtitle)
                         .font(.subheadline)
@@ -516,15 +540,25 @@ struct MapChromePlaceCard: View {
                         .lineLimit(1)
                 }
             }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
-            circleButton(symbol: "xmark", image: sheet.closeImage, template: sheet.closeImageTemplate,
-                         label: "关闭", tint: Color.primary, disabled: false) {
-                model.dismissSheet()
-            }
         }
+    }
+
+    /// 可点的地点文字（副标题、地址行）：主题色，点按按行处理（默认收起面板）并回传行 id
+    private func linkButton(_ text: String, action: MapChromeSheetRow, lineLimit: Int? = 1) -> some View {
+        Button {
+            model.selectSheetRow(action)
+        } label: {
+            Label(text, systemImage: action.symbol ?? "mappin.and.ellipse")
+                .font(.subheadline)
+                .foregroundStyle(accent)
+                .lineLimit(lineLimit)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(action.disabled)
+        .accessibilityLabel(Text(action.title))
     }
 
     /// 标题左侧的图标（展会图标）：与右侧关闭钮同宽，标题保持居中；加载失败时显示占位符号
@@ -682,10 +716,17 @@ struct MapChromePlaceCard: View {
         }
     }
 
+    /// 地址行；可点（v9 captionAction，展会地点）时是主题色按钮
+    @ViewBuilder
     private func captionLabel(_ caption: String) -> some View {
-        Label(caption, systemImage: "mappin.and.ellipse")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+        if let action = sheet.captionAction {
+            linkButton(caption, action: action, lineLimit: nil)
+                .multilineTextAlignment(.leading)
+        } else {
+            Label(caption, systemImage: "mappin.and.ellipse")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func detailRow(_ row: MapChromeSheetRow) -> some View {
