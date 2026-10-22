@@ -80,11 +80,14 @@ export function resolveRuntimeConfig({ env = {}, location, native }) {
     const ossImageBaseUrl = clean(env.VITE_OSS_IMAGE_BASE_URL);
     // 海外底图（CARTO）的浏览器 key；未配置时不叠加海外底图（见 map/overseasTileLayer.js）
     const cartoApiKey = clean(env.VITE_CARTO_API_KEY);
-    // 备案信息：App 的 ICP 备案号与网站不同（App 单独备案），App 只读 VITE_APP_ICP_BEIAN_*，未配置时不显示；公安备案号共用
+    // 备案信息：App 单独备案，备案号与网站不同。App 只读 VITE_APP_ICP_BEIAN_* / VITE_APP_GONGAN_BEIAN_*，
+    // 不会显示网站的备案号；未配置时不显示
     const icpBeian = native
         ? filing(env.VITE_APP_ICP_BEIAN_TEXT, env.VITE_APP_ICP_BEIAN_URL)
         : filing(env.VITE_ICP_BEIAN_TEXT, env.VITE_ICP_BEIAN_URL);
-    const gonganBeian = filing(env.VITE_GONGAN_BEIAN_TEXT, env.VITE_GONGAN_BEIAN_URL);
+    const gonganBeian = native
+        ? filing(env.VITE_APP_GONGAN_BEIAN_TEXT, env.VITE_APP_GONGAN_BEIAN_URL)
+        : filing(env.VITE_GONGAN_BEIAN_TEXT, env.VITE_GONGAN_BEIAN_URL);
 
     if (native) {
         validateRemoteHttps('VITE_BACKEND_URL', apiBaseUrl, errors);

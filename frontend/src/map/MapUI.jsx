@@ -59,7 +59,7 @@ const POPUP_GHOST_CLICK_GUARD_MS = 400;
 // 窄屏底部元素需要避开底部安全区（iPhone 主屏指示条、Android 手势条）；桌面与多数浏览器场景下为 0
 const BOTTOM_INSET = 'var(--safe-bottom, env(safe-area-inset-bottom, 0px))';
 const aboveBottomInset = (px) => `calc(${px}px + ${BOTTOM_INSET})`;
-// 备案号：App 与网站的 ICP 备案号分开配置（见 runtimeConfig），没配置的不显示
+// 备案号：App 与网站的 ICP、公安备案号分开配置（见 runtimeConfig），没配置的不显示
 const { icpBeian: ICP_BEIAN, gonganBeian: GONGAN_BEIAN } = getRuntimeConfig();
 
 function getPlaceKey(place) {
