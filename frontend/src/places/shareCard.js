@@ -25,6 +25,7 @@ export const DEFAULT_MAP_ZOOM = 16;
 const NAME_MAX = 26;
 const CATEGORY_MAX = 12;
 const ADDRESS_MAX = 40;
+const DESCRIPTION_MAX = 80;
 const LABEL_MAX = 14;
 const TITLE_FONT = '"Songti SC", "STSong", "Noto Serif CJK SC", serif';
 const BODY_FONT = '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
@@ -36,11 +37,12 @@ export const CARD_LAYOUTS = {
         border: { inset: 24, width: 6, hairline: 44 },
         title: { x: 64, y: 150, size: 62 },
         subtitle: { x: 64, y: 192, size: 24 },
-        map: { x: 64, y: 236, w: 1072, h: 800 },
-        category: { x: 64, y: 1118, size: 28 },
-        name: { x: 64, bottom: 1272, size: 58, lineHeight: 72, maxWidth: 780 },
-        meta: { x: 64, y: 1330, size: 32 },
-        address: { x: 64, y: 1382, size: 28, lineHeight: 38, maxWidth: 780 },
+        map: { x: 64, y: 236, w: 1072, h: 700 },
+        category: { x: 64, y: 1018, size: 28 },
+        name: { x: 64, bottom: 1172, size: 58, lineHeight: 72, maxWidth: 780 },
+        meta: { x: 64, y: 1230, size: 32 },
+        description: { x: 64, y: 1282, size: 28, lineHeight: 40, maxWidth: 780 },
+        address: { x: 64, gap: 52, size: 28, lineHeight: 38, maxWidth: 780 },
         divider: { x: 64, y: 1452, w: 1072 },
         brand: { x: 64, y: 1496, size: 30 },
         tagline: { x: 64, y: 1528, size: 22 },
@@ -49,18 +51,19 @@ export const CARD_LAYOUTS = {
     },
     landscape: {
         border: { inset: 24, width: 6, hairline: 44 },
-        title: { x: 64, y: 140, size: 52 },
-        subtitle: { x: 64, y: 176, size: 22 },
+        title: { x: 64, y: 124, size: 52 },
+        subtitle: { x: 64, y: 164, size: 22 },
         map: { x: 628, y: 64, w: 908, h: 772 },
-        category: { x: 64, y: 238, size: 26 },
-        name: { x: 64, bottom: 356, size: 44, lineHeight: 54, maxWidth: 536 },
-        meta: { x: 64, y: 412, size: 30 },
-        address: { x: 64, y: 456, size: 26, lineHeight: 34, maxWidth: 536 },
-        divider: { x: 64, y: 500, w: 520 },
-        brand: { x: 64, y: 544, size: 26 },
-        tagline: { x: 64, y: 576, size: 21 },
-        qr: { box: 176, x: 64, y: 610 },
-        scanHint: { x: 152, y: 818, size: 21 }
+        category: { x: 64, y: 214, size: 26 },
+        name: { x: 64, bottom: 330, size: 44, lineHeight: 54, maxWidth: 536 },
+        meta: { x: 64, y: 380, size: 28 },
+        description: { x: 64, y: 420, size: 24, lineHeight: 32, maxWidth: 536 },
+        address: { x: 64, gap: 40, size: 24, lineHeight: 32, maxWidth: 536 },
+        divider: { x: 64, y: 540, w: 520 },
+        brand: { x: 64, y: 578, size: 26 },
+        tagline: { x: 64, y: 606, size: 21 },
+        qr: { box: 168, x: 64, y: 626 },
+        scanHint: { x: 148, y: 822, size: 21 }
     }
 };
 
@@ -89,8 +92,8 @@ export function sanitizeFileName(value, fallback = 'place-card') {
 
 /**
  * 卡片数据：把地点与界面文案整理成绘制需要的字段，纯函数便于测试。
- * @param {object} place 地点（name/category/address/longitude/latitude）
- * @param {{title?: string, siteName?: string, tagline?: string, metaText?: string, ratingText?: string,
+ * @param {object} place 地点（name/category/description/address/longitude/latitude）
+ * @param {{title?: string, subtitle?: string, siteName?: string, tagline?: string, metaText?: string, ratingText?: string,
  *   scanHint?: string, url?: string, mapServiceUrl?: string, fallbackName?: string,
  *   fallbackCategory?: string, zoom?: number}} options 文案与地图服务地址
  */
@@ -106,9 +109,11 @@ export function buildShareCardModel(place, options = {}) {
     return {
         name,
         category: truncate(place?.category || options.fallbackCategory, CATEGORY_MAX),
+        description: truncate(place?.description, DESCRIPTION_MAX),
         address: truncate(place?.address, ADDRESS_MAX),
         meta,
         title: singleLine(options.title),
+        subtitle: singleLine(options.subtitle),
         siteName: singleLine(options.siteName),
         tagline: singleLine(options.tagline),
         scanHint: singleLine(options.scanHint),
@@ -332,10 +337,10 @@ function paintTitle(ctx, layout, model) {
         ctx.fillStyle = CARD_BRAND.primary;
         ctx.fillRect(layout.title.x, layout.title.y + 14, Math.min(150, ctx.measureText(model.title).width), 4);
     }
-    if (model.siteName) {
+    if (model.subtitle) {
         ctx.fillStyle = CARD_BRAND.secondary;
         ctx.font = `500 ${layout.subtitle.size}px ${BODY_FONT}`;
-        ctx.fillText(model.siteName, layout.subtitle.x, layout.subtitle.y);
+        ctx.fillText(model.subtitle, layout.subtitle.x, layout.subtitle.y);
     }
 }
 
@@ -363,12 +368,24 @@ function paintInfo(ctx, layout, model) {
         ctx.fillText(model.meta, layout.meta.x, layout.meta.y, layout.name.maxWidth);
     }
 
+    // 简介最多两行，地址紧跟其后；没有简介时地址占简介的位置
+    let addressY = layout.description.y;
+    if (model.description) {
+        ctx.fillStyle = CARD_BRAND.inkSoft;
+        ctx.font = `400 ${layout.description.size}px ${BODY_FONT}`;
+        const descriptionLines = wrapText(ctx, model.description, layout.description.maxWidth, 2);
+        descriptionLines.forEach((line, index) => {
+            ctx.fillText(line, layout.description.x, layout.description.y + index * layout.description.lineHeight);
+        });
+        addressY += (descriptionLines.length - 1) * layout.description.lineHeight + layout.address.gap;
+    }
+
     if (model.address) {
         ctx.fillStyle = CARD_BRAND.inkFaint;
         ctx.font = `400 ${layout.address.size}px ${BODY_FONT}`;
         const addressLines = wrapText(ctx, model.address, layout.address.maxWidth, 2);
         addressLines.forEach((line, index) => {
-            ctx.fillText(line, layout.address.x, layout.address.y + index * layout.address.lineHeight);
+            ctx.fillText(line, layout.address.x, addressY + index * layout.address.lineHeight);
         });
     }
 

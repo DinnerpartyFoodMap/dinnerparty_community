@@ -373,6 +373,7 @@ export default function MapUI(props) {
         if (!place) return;
         const model = buildShareCardModel(place, {
             title: t('map:ui.share.cardTitle'),
+            subtitle: t('map:ui.share.cardSubtitle'),
             siteName: t('common:app.name'),
             tagline: t('map:ui.share.cardTagline'),
             metaText: place.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: place.per_person_cost }) : '',
