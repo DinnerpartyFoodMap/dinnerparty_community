@@ -76,12 +76,20 @@ struct MapChromeView: View {
     @State private var drawerContentHeight: CGFloat = 0
     /// 工具栏占位的顶边（根坐标系）：菜单面板的高度上限由它决定
     @State private var toolbarTop: CGFloat = 0
+    /// 操作指引“更多功能”一步：工具栏自动露出的一截更多功能（示意上滑），与手指示意同一节拍
+    @State private var tourPeek: CGFloat = 0
+    @State private var tourHintCycle = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let coordinateSpaceName = "mapChromeRoot"
     /// 工具栏收起时的高度：拖动条 14 + 按钮行 58
     static let dockHeight: CGFloat = 72
     static let grabberHeight: CGFloat = 14
+    /// 上滑示意露出的高度；指引挖空区域在工具栏上方多留的高度（容纳露出的一截与往上划的手指）
+    static let tourPeekHeight: CGFloat = 52
+    static let tourHintRise: CGFloat = 72
+    /// 操作指引中不是当前目标的控件内容的不透明度
+    static let tourDimOpacity: Double = 0.3
 
     private var accent: Color { Color(uiColor: model.theme.primary) }
 
@@ -98,10 +106,13 @@ struct MapChromeView: View {
         reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.42, dampingFraction: 0.86)
     }
 
-    /// 更多功能当前露出的高度：展开时为内容高度，拖动时跟手，超出范围时带阻尼
+    /// 操作指引正在示意上滑展开更多功能
+    private var swipeHinting: Bool { model.tour?.swipeHint == true }
+
+    /// 更多功能当前露出的高度：展开时为内容高度，拖动时跟手，超出范围时带阻尼；指引示意时露出一截
     private var drawerRevealed: CGFloat {
         guard model.drawerAvailable, drawerContentHeight > 0 else { return 0 }
-        let value = (model.drawerOpen ? drawerContentHeight : 0) + drawerDrag
+        let value = (model.drawerOpen ? drawerContentHeight : 0) + drawerDrag + tourPeek
         if value <= 0 { return 0 }
         if value > drawerContentHeight { return drawerContentHeight + min(40, (value - drawerContentHeight) * 0.2) }
         return value
@@ -156,6 +167,18 @@ struct MapChromeView: View {
                             model.setFrame("toolbar", rect)
                             toolbarTop = rect.minY
                         })
+                        .background(alignment: .bottom) {
+                            if swipeHinting {
+                                // 上滑示意的指引位置取占位（不随露出的一截跳动），向上多留出露出部分与手指的高度
+                                Color.clear
+                                    .frame(height: Self.dockHeight + Self.tourHintRise)
+                                    .onGeometryChange(for: CGRect.self, of: { proxy in
+                                        proxy.frame(in: .named(Self.coordinateSpaceName))
+                                    }, action: { rect in
+                                        model.setFrame("tour", rect)
+                                    })
+                            }
+                        }
                         .overlay(alignment: .bottom) {
                             if showing && !model.toolbarItems.isEmpty {
                                 if searching {
@@ -165,14 +188,20 @@ struct MapChromeView: View {
                                 }
                             }
                         }
+                        .overlay(alignment: .top) {
+                            if showing && swipeHinting && !searching {
+                                MapChromeSwipeHint(color: accent, cycle: tourHintCycle, animated: !reduceMotion)
+                            }
+                        }
                 }
             }
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        // 占位本身不接收触摸；可见控件由 PassThroughHostView 按区域放行
-        .accessibilityHidden(!showing)
+        // 占位本身不接收触摸；可见控件由 PassThroughHostView 按区域放行。
+        // 操作指引期间读屏只读网页的指引卡片（原生控件仍显示，但不可操作）
+        .accessibilityHidden(!showing || model.tour != nil)
         .coordinateSpace(.named(Self.coordinateSpaceName))
         .environment(\.colorScheme, model.theme.dark ? .dark : .light)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
@@ -181,7 +210,11 @@ struct MapChromeView: View {
         .animation(searchAnimation, value: searching)
         .animation(searchAnimation, value: editing)
         .animation(drawerAnimation, value: model.drawerExpanded)
+        .animation(drawerAnimation, value: model.tour)
         .animation(animation, value: panel?.id)
+        .task(id: swipeHinting && !reduceMotion) {
+            await playSwipeHint()
+        }
         // 焦点监听放在常驻根视图：输入框随浮层移出层级时失焦也能回传
         .onChange(of: searchFocused) { _, focused in
             model.searchFocusChanged(focused)
@@ -189,6 +222,30 @@ struct MapChromeView: View {
         .onChange(of: model.search.focusToken) {
             applyFocusRequest()
         }
+    }
+
+    /// 操作指引“更多功能”一步的上滑示意：手指从拖动条往上划，工具栏随之露出一截更多功能再落回，循环到这一步结束。
+    /// 减弱动态效果时不播放（手指静止显示）。
+    private func playSwipeHint() async {
+        guard swipeHinting, !reduceMotion else {
+            if tourPeek != 0 { withAnimation(drawerAnimation) { tourPeek = 0 } }
+            return
+        }
+        // 等网页的说明卡片移到位再开始
+        try? await Task.sleep(for: .milliseconds(450))
+        while !Task.isCancelled {
+            tourHintCycle += 1
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.2)) { tourPeek = Self.tourPeekHeight }
+            try? await Task.sleep(for: .milliseconds(1400))
+            if Task.isCancelled { break }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.9)) { tourPeek = 0 }
+            try? await Task.sleep(for: .milliseconds(1100))
+        }
+    }
+
+    /// 操作指引进行中、且不是当前目标：内容变暗。只调内容的不透明度，玻璃本身不淡出（原因见浮动按钮的说明）
+    private func tourDim(_ isTarget: Bool) -> Double {
+        model.tour == nil || isTarget ? 1 : Self.tourDimOpacity
     }
 
     /// 菜单面板的高度上限：扣掉面板与工具栏的间距、状态栏与灵动岛，最多约占工具栏上方空间的四分之三
@@ -224,6 +281,12 @@ struct MapChromeView: View {
         .frame(maxWidth: .infinity)
         .glassEffect(revealed > 0 ? Glass.regular : Glass.regular.interactive(), in: shape)
         .glassEffectID("toolbar", in: glassNamespace)
+        // 操作指引“更多功能”一步：整条工具栏就是要往上拖的东西，高亮圈随露出的一截一起移动
+        .overlay {
+            if swipeHinting {
+                MapChromeTourRing(shape: shape, color: accent)
+            }
+        }
         // 皮肤的两端装饰画在玻璃之上（不是玻璃的一部分、不叠底纹），随工具栏上沿移动，不接收触摸
         .overlay(alignment: .topLeading) { ornament(model.skin.ornamentStart, leading: true) }
         .overlay(alignment: .topTrailing) { ornament(model.skin.ornamentEnd, leading: false) }
@@ -249,18 +312,19 @@ struct MapChromeView: View {
         }
     }
 
-    /// 拖动条：上滑展开、下滑收起；点按切换（读屏也可用）
+    /// 拖动条：上滑展开、下滑收起；点按切换（读屏也可用）。操作指引示意上滑时换成主题色并加宽
     private var grabber: some View {
         let available = model.drawerAvailable
+        let hinting = swipeHinting
         return Button {
             withAnimation(drawerAnimation) {
                 model.setDrawerExpanded(!model.drawerOpen)
             }
         } label: {
             Capsule()
-                .fill(.secondary)
-                .frame(width: 36, height: 5)
-                .opacity(available ? 0.55 : 0)
+                .fill(hinting ? AnyShapeStyle(accent) : AnyShapeStyle(.secondary))
+                .frame(width: hinting ? 48 : 36, height: 5)
+                .opacity(available ? (hinting ? 1 : 0.55) : 0)
                 .frame(maxWidth: .infinity)
                 .frame(height: Self.grabberHeight)
                 .contentShape(Rectangle())
@@ -329,6 +393,7 @@ struct MapChromeView: View {
                 Text(title)
                     .font(.title3.weight(.bold))
                     .padding(.horizontal, 4)
+                    .opacity(model.tour == nil ? 1 : 0.6)
                     .accessibilityAddTraits(.isHeader)
             }
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
@@ -369,7 +434,9 @@ struct MapChromeView: View {
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
-            .opacity(row.disabled ? 0.45 : 1)
+            .opacity((row.disabled ? 0.45 : 1) * tourDim(model.isTourTarget(row: row.id)))
+            .tourMark(model.isTourTarget(row: row.id), shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                      color: accent, inset: -3, model: model)
         }
         .buttonStyle(.plain)
         .disabled(row.disabled)
@@ -401,6 +468,7 @@ struct MapChromeView: View {
             }
         }
         .padding(.horizontal, 4)
+        .opacity(tourDim(false))
     }
 
     private func toolbarButton(_ item: MapChromeItem) -> some View {
@@ -437,7 +505,9 @@ struct MapChromeView: View {
             // 工具栏按钮统一用主文字色（深色模式为白色），选中只靠高亮底与实心图标区分；皮肤可指定选中色
             .foregroundStyle(item.selected ? skinSelectedColor : Color.primary)
             .background { toolbarHighlight(item) }
-            .opacity(item.disabled ? 0.45 : 1)
+            .opacity((item.disabled ? 0.45 : 1) * tourDim(model.isTourTarget(item: item.id)))
+            .tourMark(model.isTourTarget(item: item.id), shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                      color: accent, inset: -2, model: model)
         }
         .buttonStyle(.plain)
         .disabled(item.disabled)
@@ -497,12 +567,17 @@ struct MapChromeView: View {
 
     /// 工具栏里的头像：与按钮同在一块玻璃上，不再单独叠加玻璃
     private func dockAvatar(_ item: MapChromeItem) -> some View {
-        Button { model.tap(item) } label: {
+        let targeted = model.isTourTarget(item: item.id)
+        // 高亮圈套在皮肤头像框外面
+        let ringInset = -(model.skin.avatarFrame.map { 42 * ($0.scale - 1) / 2 } ?? 0) - 4
+        return Button { model.tap(item) } label: {
             avatar(item.avatarURL)
                 .frame(width: 42, height: 42)
                 .clipShape(Circle())
                 .overlay { avatarFrame(diameter: 42) }
                 .matchedGeometryEffect(id: "accountAvatar", in: morphNamespace)
+                .opacity(tourDim(targeted))
+                .tourMark(targeted, shape: Circle(), color: accent, inset: ringInset, model: model)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .contentShape(Rectangle())
         }
@@ -695,12 +770,13 @@ struct MapChromeView: View {
             .frame(width: 50, height: 50)
             .contentShape(Circle())
             .foregroundStyle(foreground(for: item))
-            .opacity(item.disabled ? 0.45 : 1)
+            .opacity((item.disabled ? 0.45 : 1) * tourDim(model.isTourTarget(item: item.id)))
         }
         .buttonStyle(.plain)
         .disabled(item.disabled)
         .glassEffect(item.selected ? Glass.regular.tint(accent.opacity(0.35)).interactive() : Glass.regular.interactive(), in: .circle)
         .glassEffectID(item.id, in: glassNamespace)
+        .tourMark(model.isTourTarget(item: item.id), shape: Circle(), color: accent, model: model)
         .accessibilityLabel(Text(item.title))
         .accessibilityAddTraits(item.selected ? .isSelected : [])
     }
@@ -709,5 +785,111 @@ struct MapChromeView: View {
         if item.tone == "danger" { return .red }
         if item.selected || item.tone == "accent" { return accent }
         return .primary
+    }
+}
+
+// MARK: - 操作指引（v10）
+
+@available(iOS 26.0, *)
+private extension View {
+    /// 操作指引当前要指出的控件：画高亮圈，并把它在根坐标系中的位置记为 frames["tour"]（随布局回传，网页据此挖空遮罩、摆放说明卡片）。
+    /// 背景与叠层始终存在、只切换内容，控件本身的视图身份不变（玻璃形变、按压状态不受影响）。
+    func tourMark<S: InsettableShape>(_ marked: Bool, shape: S, color: Color, inset: CGFloat = -4, model: MapChromeModel) -> some View {
+        self
+            .background {
+                if marked {
+                    Color.clear.onGeometryChange(for: CGRect.self, of: { proxy in
+                        proxy.frame(in: .named(MapChromeView.coordinateSpaceName))
+                    }, action: { rect in
+                        model.setFrame("tour", rect)
+                    })
+                }
+            }
+            .overlay {
+                if marked {
+                    MapChromeTourRing(shape: shape, color: color, inset: inset)
+                }
+            }
+    }
+}
+
+/// 操作指引的高亮圈：主题色描边加外晕，缓慢呼吸（减弱动态效果时静止），与网页指引的高亮框同一种样式。
+/// 画在原生控件上：网页的遮罩在 WebView 里，盖不到原生控件，只能挖空它们下方的地图。
+@available(iOS 26.0, *)
+struct MapChromeTourRing<S: InsettableShape>: View {
+    let shape: S
+    let color: Color
+    var inset: CGFloat = -4
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let ring = shape
+            .strokeBorder(color, lineWidth: 2.5)
+            .shadow(color: color.opacity(0.6), radius: 5)
+            .padding(inset)
+        Group {
+            if reduceMotion {
+                ring
+            } else {
+                ring.phaseAnimator([false, true]) { content, expanded in
+                    content
+                        .scaleEffect(expanded ? 1.05 : 1)
+                        .opacity(expanded ? 0.65 : 1)
+                } animation: { _ in
+                    .easeInOut(duration: 0.8)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// 操作指引“更多功能”一步：手指从拖动条往上划的示意。cycle 每变一次播放一轮（与工具栏露出一截同一节拍）；
+/// 每轮从透明开始、以透明结束，两轮之间不会看到手指往回移。不播放动画时静止停在拖动条上。
+@available(iOS 26.0, *)
+struct MapChromeSwipeHint: View {
+    let color: Color
+    let cycle: Int
+    let animated: Bool
+
+    private struct Pose {
+        var y: CGFloat = 6
+        var opacity: Double = 0
+    }
+
+    var body: some View {
+        let hand = Image(systemName: "hand.point.up.left.fill")
+            .font(.system(size: 34))
+            .foregroundStyle(color)
+            .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+            // 指尖在图标左上角：往右挪一点，让指尖落在拖动条中间
+            .offset(x: 10)
+        Group {
+            if animated {
+                hand.keyframeAnimator(initialValue: Pose(), trigger: cycle) { content, pose in
+                    content
+                        .offset(y: pose.y)
+                        .opacity(pose.opacity)
+                } keyframes: { _ in
+                    KeyframeTrack(\.y) {
+                        MoveKeyframe(6)
+                        LinearKeyframe(6, duration: 0.2)
+                        CubicKeyframe(-52, duration: 0.7)
+                        LinearKeyframe(-52, duration: 0.4)
+                    }
+                    KeyframeTrack(\.opacity) {
+                        MoveKeyframe(0)
+                        LinearKeyframe(1, duration: 0.2)
+                        LinearKeyframe(1, duration: 0.7)
+                        LinearKeyframe(0, duration: 0.4)
+                    }
+                }
+            } else {
+                hand.offset(y: 6)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

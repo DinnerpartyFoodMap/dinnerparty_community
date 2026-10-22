@@ -2,11 +2,11 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 9）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 10）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
-/// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer, skin }) -> { appliedRevision }
+/// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer, skin, tour }) -> { appliedRevision }
 ///   items: [{ id, title, symbol, image?, imageTemplate?, selected, disabled, busy, badge?, avatarURL?, placement, tone?, opensOverlay }]
 ///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
 ///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, caption?,
@@ -17,6 +17,7 @@ import Capacitor
 ///   row: { id, title, subtitle?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands? }
 ///   skin: { avatarFrame?: { image, scale }, ornamentStart? / ornamentEnd?: { image, width, height, x, y },
 ///           pedestal?: { image, width, height, y }, selectedColor?: #RRGGBB }
+///   tour: null | { step, target?, drawer }
 /// ackAction({ sessionId, eventId, outcome, overlayOpened, revision })
 /// suspend({ sessionId, reason }) -> { hidden }
 /// resume({ sessionId, revision }) -> { visible }
@@ -26,6 +27,8 @@ import Capacitor
 ///   search: { sessionId, ownerId, type: input|submit|focus|close, text?, focused? }
 ///   sheet: { sessionId, ownerId, type: select|dismiss, sheetId, token, rowId? }
 ///   drawer: { sessionId, ownerId, type: select, rowId }
+///   layout: { sessionId, showing, occupiedRects, slots: [{ id, x, y, width, height }], bottomOccupied, viewport, safeArea,
+///             tour?: { step, drawerOpen } }（指引中的目标位置是 id 为 "tour" 的 slot）
 ///
 /// - v3：搜索展开后工具栏变为原生输入框，文本、提交、焦点与退出经 search 事件交给网页处理。
 /// - v4：更多 / 住民 / 收藏面板改为系统 sheet（iOS 26 Liquid Glass）；行内容由网页下发，选择交回网页执行。
@@ -37,6 +40,10 @@ import Capacitor
 ///   skin 为头像框、工具栏两端装饰、选中底座与选中色；值已按网页当前的浅色 / 深色模式取好。玻璃的底色与底纹不下发。
 /// - v9：卡片的副标题（摘要）与地址行（详情）可点（subtitleAction / captionAction，展会地点）：
 ///   显示为主题色按钮，点按按行处理并回传行 id（select 事件）。
+/// - v10：操作指引（tour）。网页的指引打开时不收起原生控件，而是下发当前一步要指出的控件：原生画高亮圈、其余内容变暗、
+///   触摸全部交给网页；目标位置作为 "tour" slot 随布局回传（带 step），网页据此挖空遮罩、摆放说明卡片。
+///   target 为 "drawer" 时播放上滑示意，并允许拖动工具栏练习，展开后布局的 tour.drawerOpen 为真，网页进入下一步；
+///   drawer 为真时展开更多功能，target 是其中一行。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -56,7 +63,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 9
+    static let protocolVersion = 10
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "add", "search", "alongRoute", "account", "locate"]
@@ -168,6 +175,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let sheet = NativeMapChromePlugin.parseSheet(call.getObject("sheet"))
         let drawer = NativeMapChromePlugin.parseDrawer(call.getObject("drawer"))
         let skin = NativeMapChromePlugin.parseSkin(call.getObject("skin"))
+        let tour = NativeMapChromePlugin.parseTour(call.getObject("tour"))
         DispatchQueue.main.async {
             guard let model = self.model, self.isCurrent(sessionId, ownerId) else {
                 call.reject("会话已失效", "STALE_SESSION")
@@ -188,7 +196,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 self.bridge?.statusBarStyle = theme.dark ? .lightContent : .darkContent
             }
             model.revision = revision
-            model.apply(items: items, theme: theme, floatingGap: floatingGap.map { CGFloat($0) }, search: search, sheet: sheet, drawer: drawer, skin: skin)
+            model.apply(items: items, theme: theme, floatingGap: floatingGap.map { CGFloat($0) }, search: search, sheet: sheet, drawer: drawer, skin: skin, tour: tour)
             self.lastHeartbeat = Date()
             call.resolve(["appliedRevision": revision])
             // 占位尺寸不变时 SwiftUI 不会再回调几何变化，握手所需的首个布局由这里主动发出
@@ -375,6 +383,15 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let list: JSArray = [object]
         var budget = 1
         return parseRows(list, budget: &budget).first
+    }
+
+    /// 操作指引：不展开更多功能时 target 只能是按钮 id 或 "drawer"，展开时是更多功能里的一行 id（未知 id 只是不高亮）
+    private static func parseTour(_ raw: JSObject?) -> MapChromeTour? {
+        guard let raw else { return nil }
+        let drawer = (raw["drawer"] as? Bool) ?? false
+        var target = clip(raw["target"], 64)
+        if !drawer, let value = target, value != MapChromeTour.drawerTarget, !allowedActions.contains(value) { target = nil }
+        return MapChromeTour(step: clip(raw["step"], 32) ?? "", target: target, drawer: drawer)
     }
 
     /// 更多功能：与面板相同的分组行
@@ -607,7 +624,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             slots.append(entry)
         }
         let insets = webView.safeAreaInsets
-        notifyListeners("layout", data: [
+        var payload: [String: Any] = [
             "sessionId": sessionId,
             "coordinateSpace": "webview-css",
             "showing": model.isShowing,
@@ -621,7 +638,12 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 "bottom": Double(insets.bottom / zoom),
                 "left": Double(insets.left / zoom)
             ]
-        ])
+        ]
+        if let tour = model.tour {
+            // 指引目标的位置在 slots 的 "tour" 里；step 让网页只认领当前一步的位置
+            payload["tour"] = ["step": tour.step, "drawerOpen": model.drawerOpen] as [String: Any]
+        }
+        notifyListeners("layout", data: payload)
     }
 
     private func accessibilitySnapshot() -> [String: Any] {

@@ -21,14 +21,18 @@ import { t } from '../i18n/index.js';
 // v8 主题皮肤：按钮与面板行可带皮肤图片（image / imageTemplate，代替 SF Symbol），地点卡片关闭钮 closeImage，
 // skin 快照（头像框、工具栏两端装饰、选中底座、选中色）。玻璃底纹与底色不下发。
 // v9 卡片的副标题与地址行可点（subtitleAction / captionAction，展会地点），点按回传行 id。
+// v10 操作指引（tour）：指引打开时原生控件不收起，按下发的目标画高亮圈、其余变暗、触摸交给网页，
+// 目标位置随布局回传（"tour" slot 与 tour.step）；“更多功能”一步播放上滑示意并允许拖动工具栏练习（tour.drawerOpen）。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
-export const NATIVE_CHROME_PROTOCOL = 9;
+export const NATIVE_CHROME_PROTOCOL = 10;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
 export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition']);
 export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss']);
 export const NATIVE_DRAWER_EVENTS = Object.freeze(['select']);
+// 操作指引的目标：上滑展开更多功能（工具栏本身）
+export const NATIVE_TOUR_DRAWER = 'drawer';
 const SHEET_ROW_LIMIT = 300;
 const SHEET_TONES = ['danger', 'muted', 'warning', 'accent'];
 const SHEET_ACTION_LIMIT = 6;
@@ -271,6 +275,49 @@ export function sanitizeDrawer(drawer) {
     if (!drawer) return null;
     const sections = sanitizeSections(drawer.sections, { rows: DRAWER_ROW_LIMIT });
     return sections.some((section) => section.rows.length) ? { sections } : null;
+}
+
+/**
+ * 操作指引（v10）：当前一步要原生指出的控件。null 表示没有指引。
+ * drawer 为假时 target 是按钮 id，或 'drawer'（上滑展开更多功能的示意与练习）；drawer 为真时展开更多功能，target 是其中一行的 id。
+ * target 为 null 时只把原生控件变暗（欢迎页）。
+ */
+export function sanitizeTour(tour) {
+    if (!tour || typeof tour !== 'object') return null;
+    const drawer = !!tour.drawer;
+    const target = clipText(tour.target, 64);
+    const allowed = drawer || target === NATIVE_TOUR_DRAWER || NATIVE_CHROME_ACTIONS.includes(target);
+    return { step: clipText(tour.step, 32) || '', target: allowed && target ? target : null, drawer };
+}
+
+const finiteRect = (slot) => {
+    if (!slot || typeof slot !== 'object') return null;
+    const [x, y, width, height] = [slot.x, slot.y, slot.width, slot.height].map(Number);
+    if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+    return { left: x, top: y, right: x + width, bottom: y + height };
+};
+
+/**
+ * 原生布局里的操作指引状态（WebView 视口 CSS 像素，与 getBoundingClientRect 同一坐标系）。原生控件收起或没有指引时为 null。
+ * rect：当前目标（"tour" slot，可能还没回传）；chrome：所有原生控件的外框，说明卡片要避开（原生控件画在网页之上）；
+ * drawerOpen：更多功能已展开（练习上滑成功）。
+ */
+export function readTourLayout(layout) {
+    const tour = layout && layout.showing ? layout.tour : null;
+    if (!tour || typeof tour !== 'object') return null;
+    let rect = null;
+    let chrome = null;
+    for (const slot of Array.isArray(layout.slots) ? layout.slots : []) {
+        // 菜单面板指引期间不显示，它的位置可能是旧的
+        if (!slot || slot.id === 'panel') continue;
+        const box = finiteRect(slot);
+        if (!box) continue;
+        if (slot.id === 'tour') rect = box;
+        chrome = chrome
+            ? { left: Math.min(chrome.left, box.left), top: Math.min(chrome.top, box.top), right: Math.max(chrome.right, box.right), bottom: Math.max(chrome.bottom, box.bottom) }
+            : box;
+    }
+    return { step: clipText(tour.step, 32) || '', rect, chrome, drawerOpen: !!tour.drawerOpen };
 }
 
 function sanitizeSections(list, budget) {
@@ -531,7 +578,8 @@ export class NativeMapChromeSession {
                 search: sanitizeSearch(snapshot.search),
                 sheet: sanitizeSheet(snapshot.sheet),
                 drawer: sanitizeDrawer(snapshot.drawer),
-                skin: sanitizeSkin(snapshot.skin)
+                skin: sanitizeSkin(snapshot.skin),
+                tour: sanitizeTour(snapshot.tour)
             }), CALL_TIMEOUT_MS);
             if (!result || result.appliedRevision !== this.revision) {
                 if (!(result && result.ignored)) throw new Error('setState');

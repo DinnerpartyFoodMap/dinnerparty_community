@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
 
-const { NativeMapChromeSession, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, NATIVE_CHROME_PROTOCOL } = await import("../../../src/platform/nativeMapChrome.js");
+const { NativeMapChromeSession, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, NATIVE_CHROME_PROTOCOL } = await import("../../../src/platform/nativeMapChrome.js");
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,10 +20,11 @@ class FakePlugin {
     }
     async capabilities() { return { protocolVersion: this.options.protocol ?? NATIVE_CHROME_PROTOCOL, supportsGlass: this.options.glass !== false }; }
     async attach({ sessionId, ownerId }) { this.calls.push('attach'); this.state = { ...this.state, session: sessionId, owner: ownerId, visible: false }; return { ready: true }; }
-    async setState({ sessionId, revision, items, search, sheet, drawer }) {
+    async setState({ sessionId, revision, items, search, sheet, drawer, tour }) {
         this.calls.push(`setState:${revision}`);
         if (sessionId !== this.state.session) throw new Error('STALE_SESSION');
         this.state.items = items;
+        this.state.tour = tour;
         this.state.search = search;
         this.state.sheet = sheet;
         this.state.drawer = drawer;
@@ -271,7 +272,7 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 9);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 10);
     const linked = sanitizeSheet({ id: 'exhibition', size: 'card', subtitle: '场馆', caption: '场馆',
         subtitleAction: { id: 'venue', title: '查看', symbol: 'mappin.and.ellipse', coords: [1, 2] }, captionAction: 'venue' });
     assert.deepEqual(linked.subtitleAction, { id: 'venue', title: '查看', subtitle: undefined, symbol: 'mappin.and.ellipse', tone: undefined, disabled: false, keepsOpen: false, expands: false });
@@ -334,6 +335,36 @@ function makeSession(plugin, extra = {}) {
     }
     assert.deepEqual(sanitizeSheet({ id: 'place' }).paragraphs, []);
 
+    // v10 操作指引：不展开更多功能时 target 只能是按钮 id 或 drawer；展开时是更多功能里的一行
+    assert.equal(sanitizeTour(null), null);
+    assert.equal(sanitizeTour(false), null);
+    assert.deepEqual(sanitizeTour({ step: 'search', target: 'search' }), { step: 'search', target: 'search', drawer: false });
+    assert.deepEqual(sanitizeTour({ step: 'more', target: 'drawer', drawer: 0 }), { step: 'more', target: 'drawer', drawer: false });
+    assert.deepEqual(sanitizeTour({ step: 'x', target: 'evil' }), { step: 'x', target: null, drawer: false }, '未知按钮只变暗');
+    assert.deepEqual(sanitizeTour({ step: 'alongRoute', target: 'alongRoute', drawer: true, rect: [1] }), { step: 'alongRoute', target: 'alongRoute', drawer: true });
+    assert.deepEqual(sanitizeTour({ step: 'welcome'.repeat(10), target: null }), { step: 'welcome'.repeat(10).slice(0, 32), target: null, drawer: false });
+    const tourLayout = {
+        showing: true,
+        tour: { step: 'locate', drawerOpen: false },
+        slots: [
+            { id: 'toolbar', x: 12, y: 740, width: 366, height: 72 },
+            { id: 'locate', x: 328, y: 676, width: 50, height: 50 },
+            { id: 'tour', x: 328, y: 676, width: 50, height: 50 },
+            { id: 'panel', x: 0, y: 0, width: 390, height: 300 },
+            { id: 'broken', x: 'a', y: 0, width: 10, height: 10 }
+        ]
+    };
+    assert.deepEqual(readTourLayout(tourLayout), {
+        step: 'locate',
+        rect: { left: 328, top: 676, right: 378, bottom: 726 },
+        chrome: { left: 12, top: 676, right: 378, bottom: 812 },
+        drawerOpen: false
+    }, '目标位置与原生控件外框（不含指引期间隐藏的面板）');
+    assert.equal(readTourLayout({ ...tourLayout, showing: false }), null, '原生控件收起时没有位置');
+    assert.equal(readTourLayout({ ...tourLayout, tour: undefined }), null);
+    assert.equal(readTourLayout({ ...tourLayout, slots: tourLayout.slots.filter((slot) => slot.id !== 'tour') }).rect, null, '目标还没回传');
+    assert.equal(readTourLayout({ ...tourLayout, tour: { step: 'more', drawerOpen: 1 } }).drawerOpen, true);
+
     // v6 更多功能（工具栏上滑）：没有可显示的行时不下发，行数封顶
     assert.equal(sanitizeDrawer(null), null);
     assert.equal(sanitizeDrawer({ sections: [{ id: 'actions', rows: [] }] }), null);
@@ -370,6 +401,10 @@ function makeSession(plugin, extra = {}) {
     assert.equal(plugin.state.sheet.id, 'account');
     assert.equal(plugin.state.sheet.sections[0].rows[0].symbol, 'gear');
     assert.equal(plugin.state.drawer.sections[0].rows[0].symbol, 'dice');
+    assert.equal(plugin.state.tour, null, '没有指引时下发 null');
+    session.update({ items, tour: { step: 'more', target: 'drawer', drawer: false, practice: 'drawer' } });
+    await tick(5);
+    assert.deepEqual(plugin.state.tour, { step: 'more', target: 'drawer', drawer: false }, '指引只下发步骤与目标');
 
     const emitSheet = (extra) => plugin.emit('sheet', { sessionId: plugin.state.session, ownerId: 'map-sheet', ...extra });
     emitSheet({ type: 'select', sheetId: 'account', token: 2, rowId: 'settings' });

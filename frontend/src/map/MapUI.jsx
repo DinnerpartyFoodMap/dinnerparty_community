@@ -570,8 +570,11 @@ export default function MapUI(props) {
     // 每次打开从第一步开始：关闭动画还没结束就再次打开时，浮层会复用退出中的实例，靠场次号重置步骤
     const [onboardingSession, setOnboardingSession] = useState(0);
     const handledOnboardingRequest = useRef(0);
+    // 指引当前一步（iOS 原生工具栏据此高亮对应控件）；每次打开从空开始，免得原生先高亮上一场停下的那一步
+    const [onboardingStep, setOnboardingStep] = useState(null);
     const showOnboarding = () => {
         setOnboardingSession((session) => session + 1);
+        setOnboardingStep(null);
         setOnboardingOpen(true);
     };
     const openOnboarding = () => {
@@ -968,6 +971,8 @@ export default function MapUI(props) {
         sheet: chromeSheet,
         drawer: chromeDrawer,
         skin: iosApp ? nativeSkinChrome() : undefined,
+        // 指引打开期间始终下发（第一步报上来之前只变暗）：原生控件不收起，必须同时停止接收触摸
+        tour: onboardingOpen ? { step: onboardingStep?.id || '', target: null, drawer: false, ...onboardingStep?.native } : null,
         onAction: handleChromeAction,
         onSearch: handleNativeSearch,
         onSheet: handleNativeSheet,
@@ -985,7 +990,7 @@ export default function MapUI(props) {
         [onboardingVariant, isAuthenticated]
     );
     const canAutoOnboard = chromeOwner && mapReady && !pickerMode && !chrome.connecting && !onboardingOpen
-        && !selectedPlace && !addMode && !searchFocused && !favPageOpen && !mobileAccountOpen && !mobileMoreOpen;
+        && !selectedPlace && !addMode && !searchFocused && !searchExpanded && !favPageOpen && !mobileAccountOpen && !mobileMoreOpen;
     useEffect(() => {
         if (!canAutoOnboard || readOnboardingSeen()) return undefined;
         let timer = 0;
@@ -1931,6 +1936,9 @@ export default function MapUI(props) {
                 accent={customThemeColor}
                 onAccent={pickContrastTextColor(customThemeColor)}
                 onClose={closeOnboarding}
+                keepNative={onboardingVariant === 'native'}
+                nativeTour={chrome.tour}
+                onStepChange={setOnboardingStep}
             />}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (

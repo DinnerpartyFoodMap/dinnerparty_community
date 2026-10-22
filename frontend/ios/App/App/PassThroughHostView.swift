@@ -23,6 +23,8 @@ final class PassThroughHostView: UIView {
         guard !isHidden, alpha > 0.01, model.isShowing else { return nil }
         let rects = model.touchRects
         guard rects.contains(where: { $0.insetBy(dx: -slop, dy: -slop).contains(point) }) else {
+            // 操作指引期间：触摸交给网页的指引层，不收起指引展开的更多功能
+            if model.tour != nil { return nil }
             // 展开更多功能时碰到地图：收起（触摸照常交给地图，拖动、缩放不受影响）
             if model.drawerOpen {
                 let model = self.model

@@ -38,7 +38,8 @@
     transition: opacity 200ms ease;
 }
 
-.fm-onboarding__spot.is-empty::after {
+.fm-onboarding__spot.is-empty::after,
+.fm-onboarding__spot.is-native::after {
     opacity: 0;
     animation: none;
 }
@@ -113,6 +114,40 @@
     font-size: 14px;
     line-height: 1.6;
     color: var(--color-text-secondary);
+}
+
+/* 在哪里找到它：原生工具栏的每一步、收在“更多”里的功能 */
+.fm-onboarding__where {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--onboarding-accent, var(--theme-primary)) 12%, transparent);
+    color: var(--color-text-primary);
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 600;
+}
+
+.fm-onboarding__where .material-symbols-outlined {
+    flex-shrink: 0;
+    width: 20px;
+    overflow: hidden;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--onboarding-accent, var(--theme-primary));
+}
+
+/* 需要用户动手的一步（上滑展开更多功能）的提示 */
+.fm-onboarding__hint {
+    margin: 8px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    /* 浅色主题色直接当文字太淡：混入正文色 */
+    color: color-mix(in srgb, var(--onboarding-accent, var(--theme-primary)) 72%, var(--color-text-primary));
+    font-weight: 600;
 }
 
 .fm-onboarding__footer {

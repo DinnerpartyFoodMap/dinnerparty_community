@@ -156,6 +156,21 @@ struct MapChromeSkin: Equatable {
     var selectedColor: UIColor?
 }
 
+/// 操作指引（v10）：网页的指引打开时下发当前一步要指出的控件。
+/// 指引期间原生控件照常显示但不接收触摸（交给网页的指引层）；目标画高亮圈并回传位置（frames["tour"]），其余控件内容变暗。
+struct MapChromeTour: Equatable {
+    static let drawerTarget = "drawer"
+    /// 指引的步骤 id：随布局回传，网页只认领与当前一步相同的位置
+    var step: String
+    /// drawer 为假：按钮 id，或 "drawer"（上滑展开更多功能的示意，可以拖动工具栏练习）；
+    /// drawer 为真：更多功能里的一行 id。nil 时只变暗（欢迎页）
+    var target: String?
+    /// 展开更多功能
+    var drawer: Bool
+
+    var swipeHint: Bool { !drawer && target == Self.drawerTarget }
+}
+
 /// 网页、插件与 SwiftUI 共享的状态。只在主线程读写。
 final class MapChromeModel: ObservableObject {
     @Published private(set) var items: [MapChromeItem] = []
@@ -210,6 +225,10 @@ final class MapChromeModel: ObservableObject {
     @Published private(set) var drawerExpanded = false {
         didSet { if drawerExpanded != oldValue { onFramesChanged?() } }
     }
+    /// 操作指引（nil 表示没有进行中的指引）；指引期间面板让位
+    @Published private(set) var tour: MapChromeTour? {
+        didSet { onPresentationChange?() }
+    }
 
     var sessionId: String? {
         didSet { onPresentationChange?() }
@@ -244,9 +263,9 @@ final class MapChromeModel: ObservableObject {
     var hasPendingFocusRequest: Bool { search.focus && search.focusToken != appliedFocusToken }
 
     /// 应当弹出的面板：网页要求显示、且这一次没有被用户关闭。
-    /// 网页浮层打开时（控件收起）面板也暂时让位，否则会盖住网页浮层；浮层关闭后重新出现。
+    /// 网页浮层打开时（控件收起）面板也暂时让位，否则会盖住网页浮层；浮层关闭后重新出现。操作指引期间同样让位。
     var presentedSheet: MapChromeSheet? {
-        guard isShowing, let sheet, sheet.token != dismissedSheetToken else { return nil }
+        guard isShowing, tour == nil, let sheet, sheet.token != dismissedSheetToken else { return nil }
         return sheet
     }
 
@@ -268,7 +287,11 @@ final class MapChromeModel: ObservableObject {
         return !drawer.isEmpty
     }
 
-    var drawerOpen: Bool { drawerExpanded && drawerAvailable }
+    /// 用户展开，或操作指引正在介绍更多功能里的一项
+    var drawerOpen: Bool { (drawerExpanded || tour?.drawer == true) && drawerAvailable }
+
+    func isTourTarget(item id: String) -> Bool { tour.map { !$0.drawer && $0.target == id } ?? false }
+    func isTourTarget(row id: String) -> Bool { tour.map { $0.drawer && $0.target == id } ?? false }
 
     func reset(session: String?, owner: String?) {
         sessionId = session
@@ -287,6 +310,7 @@ final class MapChromeModel: ObservableObject {
         cardExpanded = false
         drawer = nil
         drawerExpanded = false
+        tour = nil
         skin = MapChromeSkin()
         // frames 是占位视图的几何信息，与会话无关，不清空：
         // 占位位置不变时 SwiftUI 不会再次回调，清空后新会话就拿不到工具栏位置（浮动按钮的过期位置由 apply 按 id 剔除）
@@ -295,7 +319,7 @@ final class MapChromeModel: ObservableObject {
 
     func apply(items next: [MapChromeItem], theme nextTheme: MapChromeTheme, floatingGap gap: CGFloat?,
                search nextSearch: MapChromeSearch?, sheet nextSheet: MapChromeSheet?, drawer nextDrawer: MapChromeDrawer?,
-               skin nextSkin: MapChromeSkin) {
+               skin nextSkin: MapChromeSkin, tour nextTour: MapChromeTour?) {
         if items != next { items = next }
         if skin != nextSkin { skin = nextSkin }
         if sheet?.id != nextSheet?.id { cardExpanded = false }
@@ -316,8 +340,17 @@ final class MapChromeModel: ObservableObject {
             }
             if search != nextSearch { search = nextSearch }
         }
+        if tour != nextTour {
+            let retarget = tour?.target != nextTour?.target || tour?.drawer != nextTour?.drawer
+            tour = nextTour
+            if retarget {
+                // 换了要指出的控件：旧位置作废（新目标出现时重新回传）；练习时用户展开的更多功能收起，是否展开由指引决定
+                frames.removeValue(forKey: "tour")
+                drawerExpanded = false
+            }
+        }
         if drawerExpanded && !drawerAvailable { drawerExpanded = false }
-        let ids = Set(next.map(\.id)).union(["toolbar", "floating", "drawer", "panel"])
+        let ids = Set(next.map(\.id)).union(["toolbar", "floating", "drawer", "panel", "tour"])
         let pruned = frames.filter { ids.contains($0.key) }
         if pruned.count != frames.count {
             frames = pruned
@@ -351,8 +384,13 @@ final class MapChromeModel: ObservableObject {
         return rects
     }
 
-    /// 宿主视图实际拦截触摸的区域：占用区域加上展开的更多功能与菜单面板
+    /// 宿主视图实际拦截触摸的区域：占用区域加上展开的更多功能与菜单面板。
+    /// 操作指引期间触摸都交给网页的指引层，只有“上滑展开更多功能”这一步可以拖动工具栏练习。
     var touchRects: [CGRect] {
+        if let tour {
+            guard tour.swipeHint, isShowing, !toolbarItems.isEmpty, let toolbar = frames["toolbar"] else { return [] }
+            return [toolbar]
+        }
         var rects = interactiveRects
         if drawerOpen, let drawer = frames["drawer"] { rects.append(drawer) }
         if presentedPanel != nil, let panel = frames["panel"] { rects.append(panel) }
@@ -360,20 +398,22 @@ final class MapChromeModel: ObservableObject {
     }
 
     func tap(_ item: MapChromeItem) {
-        guard isShowing, !item.disabled else { return }
+        guard isShowing, tour == nil, !item.disabled else { return }
         drawerExpanded = false
         onTap?(item)
     }
 
     // MARK: - 更多功能（工具栏上滑）
 
+    /// 操作指引期间只有练习上滑的那一步可以展开 / 收起（展开后由网页进入下一步）
     func setDrawerExpanded(_ expanded: Bool) {
+        if let tour, !tour.swipeHint { return }
         let next = expanded && drawerAvailable
         if drawerExpanded != next { drawerExpanded = next }
     }
 
     func selectDrawerRow(_ row: MapChromeSheetRow) {
-        guard drawerOpen, !row.disabled else { return }
+        guard drawerOpen, tour == nil, !row.disabled else { return }
         drawerExpanded = false
         onDrawerEvent?("select", ["rowId": row.id])
     }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {
-    ONBOARDING_VERSION, buildOnboardingSteps, parseOnboardingSeen, placeOnboardingCard, spotlightFor
+    ONBOARDING_VERSION, buildOnboardingSteps, nativeTourRect, parseOnboardingSeen, placeOnboardingCard, spotlightFor, unionBox
 } from '../../../src/map/onboarding.js';
 
 // 已看过：只认当前版本，缺失或损坏的记录都要再显示
@@ -9,17 +9,50 @@ assert.equal(parseOnboardingSeen(JSON.stringify({ version: ONBOARDING_VERSION - 
 assert.equal(parseOnboardingSeen(null), false);
 assert.equal(parseOnboardingSeen('{broken'), false);
 
-// 步骤：各布局顺序相同；欢迎页和没有网页按钮的步骤（收在“更多”里、原生控件）居中显示
-const ORDER = ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'alongRoute', 'more', 'journey'];
-const centred = { desktop: ['welcome'], mobile: ['welcome', 'journey'], ios: ['welcome', 'alongRoute', 'journey'], native: ORDER };
+// 步骤：先是看得见的按钮，然后是“更多”，最后是收在“更多”里的功能；欢迎页居中，收在“更多”里的步骤指向“更多”按钮
+const ORDER = {
+    desktop: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'alongRoute', 'journey', 'more'],
+    mobile: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'alongRoute', 'more', 'journey'],
+    ios: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'more', 'alongRoute', 'journey'],
+    native: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'journey', 'more', 'alongRoute']
+};
+const inMore = { desktop: [], mobile: ['journey'], ios: ['alongRoute', 'journey'], native: ['alongRoute'] };
 for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
     const steps = buildOnboardingSteps({ variant });
-    assert.deepEqual(steps.map((step) => step.id), ORDER, `${variant} order`);
+    assert.deepEqual(steps.map((step) => step.id), ORDER[variant], `${variant} order`);
     for (const step of steps) {
         assert.ok(step.title && step.body && step.icon, `${variant}/${step.id} has copy and icon`);
-        assert.equal(step.target, centred[variant].includes(step.id) ? null : step.id, `${variant}/${step.id} target`);
+        const target = variant === 'native' || step.id === 'welcome' ? null : (inMore[variant].includes(step.id) ? 'more' : step.id);
+        assert.equal(step.target, target, `${variant}/${step.id} target`);
+        // 写给用户的位置：原生布局每一步都有（欢迎页除外），网页布局只有收在“更多”里的步骤有
+        const where = variant === 'native' ? step.id !== 'welcome' : inMore[variant].includes(step.id);
+        assert.equal(!!step.where?.text, where, `${variant}/${step.id} where`);
+        assert.equal('native' in step, variant === 'native', `${variant}/${step.id} native tour`);
     }
 }
+
+// 原生工具栏：网页指不到原生按钮，由原生高亮；“更多功能”一步示意并练习上滑，顺路吃在展开的更多功能里
+const nativeSteps = Object.fromEntries(buildOnboardingSteps({ variant: 'native' }).map((step) => [step.id, step]));
+assert.deepEqual(nativeSteps.welcome.native, { target: null, drawer: false });
+for (const id of ['account', 'search', 'locate', 'favorites', 'add', 'journey']) {
+    assert.deepEqual(nativeSteps[id].native, { target: id, drawer: false }, `native ${id}`);
+}
+assert.deepEqual(nativeSteps.more.native, { target: 'drawer', drawer: false });
+assert.equal(nativeSteps.more.practice, 'drawer');
+assert.ok(nativeSteps.more.hint, 'More asks the user to try swiping up');
+assert.equal(nativeSteps.more.where.icon, 'swipe_up');
+assert.deepEqual(nativeSteps.alongRoute.native, { target: 'alongRoute', drawer: true });
+assert.equal(buildOnboardingSteps({ variant: 'ios' }).some((step) => step.practice), false, 'only the native toolbar can practise');
+
+// 原生回传的位置只属于它报上来的那一步
+const rect = { left: 12, top: 700, right: 378, bottom: 772 };
+assert.equal(nativeTourRect(nativeSteps.search, { step: 'search', rect }), rect);
+assert.equal(nativeTourRect(nativeSteps.search, { step: 'account', rect }), null, 'stale position from the previous step');
+assert.equal(nativeTourRect(nativeSteps.search, null), null);
+assert.equal(nativeTourRect(buildOnboardingSteps({ variant: 'ios' })[2], { step: 'search', rect }), null, 'web steps use data-tour');
+assert.deepEqual(unionBox({ left: 300, top: 600, width: 50, height: 50 }, { left: 12, top: 640, width: 366, height: 80 }), { left: 12, top: 600, width: 366, height: 120 });
+assert.deepEqual(unionBox(null, rect), rect);
+
 const more = (variant) => buildOnboardingSteps({ variant }).find((step) => step.id === 'more').body;
 assert.equal(new Set(['desktop', 'mobile', 'ios', 'native'].map(more)).size, 4, 'More copy matches each layout');
 const account = (isAuthenticated) => buildOnboardingSteps({ variant: 'mobile', isAuthenticated }).find((step) => step.id === 'account');
