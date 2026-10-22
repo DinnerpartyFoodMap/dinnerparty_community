@@ -1,5 +1,6 @@
 import Capacitor
 import PhotosUI
+import SafariServices
 import SwiftUI
 import UIKit
 import WebKit
@@ -7,8 +8,9 @@ import WebKit
 /// 住民设置整套由 SwiftUI 呈现：首页与头像、住民名、通行密码、个性化主题、个性化地图五个二级页。
 /// 编辑都在原生里完成，但凭证和账号请求不离开现有业务层：二级页把用户输入经 settingsEvent 交给网页，
 /// 网页发出请求后按 requestId 用 respond 回传结果（附带住民名、头像、明暗、主题色等需要刷新的状态）。
-/// 退出全部设备、除名仍以白名单动作交回网页执行；“主题皮肤”（兑换码与切换）是网页页面，以 skins 动作交回网页打开。
+/// 退出全部设备、除名仍以白名单动作交回网页执行；“主题皮肤”（切换已拥有的皮肤；iOS 不提供兑换码）是网页页面，以 skins 动作交回网页打开。
 /// 动效开关是本机偏好，切换后立即通知网页。
+/// 首页最下方的用户协议、隐私权政策由网页下发标题与公开地址，在设置页之上用 Safari 视图打开，关闭后仍回到设置。
 @objc(NativeSettingsPlugin)
 public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeSettingsPlugin"
@@ -65,6 +67,12 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
             // 在“个性化主题”里切换暗黑模式：设置页本身立即跟着切换
             store.onDarkChange = { [weak host] dark in
                 host?.overrideUserInterfaceStyle = dark ? .dark : .light
+            }
+            store.onOpenLink = { [weak host, weak store] url in
+                guard let host, host.presentedViewController == nil else { return }
+                let safari = SFSafariViewController(url: url)
+                if let tint = store.flatMap({ UIColor(cssHex: $0.primaryHex) }) { safari.preferredControlTintColor = tint }
+                host.present(safari, animated: !UIAccessibility.isReduceMotionEnabled)
             }
             self.host = host
             self.pending = call
@@ -157,6 +165,14 @@ final class NativeSettingsStore: ObservableObject {
         let name: String
     }
 
+    /// 首页最下方的外部页面（用户协议、隐私权政策）
+    struct LinkRow: Identifiable {
+        let id: String
+        let title: String
+        let symbol: String
+        let url: URL
+    }
+
     // 首页
     @Published private(set) var username: String
     @Published private(set) var avatarURL: URL?
@@ -186,6 +202,8 @@ final class NativeSettingsStore: ObservableObject {
     let motionItems: [MotionItem]
     let darkStyleOptions: [StyleOption]
     let lightStyleOptions: [StyleOption]
+    /// 网页下发的外部页面；旧版网页包没有时不显示这一组
+    let links: [LinkRow]
     private let labels: [String: String]
     private let mapLabels: [String: String]
     private let send: ([String: Any]) -> Void
@@ -194,6 +212,7 @@ final class NativeSettingsStore: ObservableObject {
     private var shownPages = 0
     var onPageShownChange: ((Bool) -> Void)?
     var onDarkChange: ((Bool) -> Void)?
+    var onOpenLink: ((URL) -> Void)?
 
     init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
         self.send = send
@@ -231,6 +250,13 @@ final class NativeSettingsStore: ObservableObject {
             return MotionItem(key: key, label: item["label"] as? String ?? key, hint: item["hint"] as? String ?? "")
         }
         mapLabels = Self.strings(mapPage?["labels"] as? JSObject)
+        links = Array((call.getArray("links") ?? []).compactMap { entry -> LinkRow? in
+            guard let item = entry as? JSObject, let id = item["id"] as? String, !id.isEmpty,
+                  let title = item["title"] as? String, !title.isEmpty,
+                  let url = Self.safeURL(item["url"] as? String) else { return nil }
+            let symbol = (item["symbol"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "doc.text"
+            return LinkRow(id: String(id.prefix(32)), title: String(title.prefix(40)), symbol: String(symbol.prefix(64)), url: url)
+        }.prefix(4))
     }
 
     private static func strings(_ object: JSObject?) -> [String: String] {
@@ -413,7 +439,7 @@ private struct NativeSettingsView: View {
                     page(store.text("themesTitle", "个性化主题"), symbol: "paintpalette.fill", action: "themes", destination: NativeThemesView(store: store)) { EmptyView() }
                     page(store.text("mapTitle", "个性化地图"), symbol: "map.fill", action: "personalize", available: store.mapPageAvailable,
                          destination: NativeMapSettingsView(store: store)) { EmptyView() }
-                    // 主题皮肤（兑换码与切换）是网页页面：交回网页打开，返回时再回到这里
+                    // 主题皮肤（只切换已拥有的皮肤，iOS 不提供兑换码）是网页页面：交回网页打开，返回时再回到这里
                     Button { perform("skins") } label: {
                         HStack(spacing: 10) {
                             settingLabel(store.text("skinsTitle", "主题皮肤"), symbol: "sparkles", color: .brown)
@@ -434,6 +460,18 @@ private struct NativeSettingsView: View {
                     }
                 } footer: {
                     Text(store.text("deleteAccountHint", "删除账号和个人数据，无法恢复。"))
+                }
+                if !store.links.isEmpty {
+                    Section {
+                        ForEach(store.links) { link in
+                            Button { store.onOpenLink?(link.url) } label: {
+                                HStack(spacing: 10) {
+                                    settingLabel(link.title, symbol: link.symbol, color: .gray)
+                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .listStyle(.insetGrouped)

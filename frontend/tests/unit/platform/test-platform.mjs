@@ -79,6 +79,21 @@ assert.deepEqual(config.errors, []);
 assert.equal(config.amapServiceHost, 'https://cn.dinnerparty.cc:2053/_AMapService');
 assert.equal(config.publicWebBaseUrl, 'https://cn.dinnerparty.cc');
 
+// 备案信息：App 与网站的 ICP 备案号分开配置，App 不会显示网站的备案号；公安备案号共用；号码或链接缺一不显示
+const filingEnv = {
+    VITE_ICP_BEIAN_TEXT: '闽ICP备0000000号-2', VITE_ICP_BEIAN_URL: 'https://beian.miit.gov.cn/',
+    VITE_GONGAN_BEIAN_TEXT: '闽公网安备0号', VITE_GONGAN_BEIAN_URL: 'https://beian.mps.gov.cn/#/query/webSearch?code=0'
+};
+config = resolveRuntimeConfig({ env: filingEnv, location: webLocation, native: false });
+assert.deepEqual(config.icpBeian, { text: '闽ICP备0000000号-2', url: 'https://beian.miit.gov.cn/' });
+assert.deepEqual(config.gonganBeian, { text: '闽公网安备0号', url: 'https://beian.mps.gov.cn/#/query/webSearch?code=0' });
+config = resolveRuntimeConfig({ env: { ...filingEnv, VITE_APP_ICP_BEIAN_TEXT: '', VITE_APP_ICP_BEIAN_URL: 'https://beian.miit.gov.cn/' }, location: appLocation, native: true });
+assert.equal(config.icpBeian, null);
+assert.ok(config.gonganBeian);
+config = resolveRuntimeConfig({ env: { ...filingEnv, VITE_APP_ICP_BEIAN_TEXT: '闽ICP备0000000号-3A', VITE_APP_ICP_BEIAN_URL: 'https://beian.miit.gov.cn/' }, location: appLocation, native: true });
+assert.equal(config.icpBeian.text, '闽ICP备0000000号-3A');
+assert.equal(resolveRuntimeConfig({ env: { VITE_GONGAN_BEIAN_TEXT: '闽公网安备0号' }, location: webLocation, native: false }).gonganBeian, null);
+
 // 资源地址：兼容历史绝对 URL（旧域名映射）与 /uploads 相对路径；本地 blob/data 原样返回
 // （Node 中无 window，默认配置的资源地址为 https://localhost:2053）
 const resourceBase = getRuntimeConfig().resourceBaseUrl;

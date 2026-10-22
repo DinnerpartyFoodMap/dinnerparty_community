@@ -9,6 +9,7 @@ const {
     PLACE_CATEGORY_MAX_LENGTH,
     normalizeCategoryList,
     normalizePlainTextField,
+    normalizePlaceDescription,
     normalizePlaceCoordinates,
     normalizePerPersonCost,
     syncCategoryRegistry,
@@ -167,7 +168,13 @@ router.put("/:id", requireAuth, (req, res) => {
         const fields = [];
         const values = [];
         if (name != null) { fields.push("name = ?"); values.push(name); }
-        if (description != null) { fields.push("description = ?"); values.push(description); }
+        if (description != null) {
+            // 与新增相同：最多 1000 字，接受 HTML
+            const normalizedDescription = normalizePlaceDescription(description);
+            if (normalizedDescription.error) return res.status(400).json({ error: normalizedDescription.error });
+            fields.push("description = ?");
+            values.push(normalizedDescription.value);
+        }
         let normalizedCategoryNames = null;
         if (category != null) {
             const normalizedCategory = normalizePlainTextField(category, {

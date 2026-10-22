@@ -27,6 +27,13 @@
     "placeReport": {
         "template": "举报地点：{{name}}（编号 {{id}}）\n{{link}}\n\n举报原因："
     },
+    "userReport": {
+        "template": "举报住民：{{username}}（编号 {{id}}）\n\n举报原因："
+    },
+    "diaryReport": {
+        "template": "举报日记：{{title}}（作者 {{author}}）\n{{link}}\n\n举报原因：",
+        "untitled": "未命名日记"
+    },
     "error": {
         "loginRequired": "登录已失效，请重新登录后再提交",
         "network": "网络连接失败，请稍后重试",

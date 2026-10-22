@@ -80,6 +80,11 @@ function normalizePlainTextField(value, {
     return { value: normalized };
 }
 
+/** 地点描述：去首尾空白、最多 1000 字，接受 Markdown 与 HTML（显示前会清理或转纯文字）。新增、编辑、修改申请与 QQ 机器人共用 */
+function normalizePlaceDescription(value) {
+    return normalizePlainTextField(value, { fieldLabel: '描述', maxLength: PLACE_DESCRIPTION_MAX_LENGTH, allowHtml: true });
+}
+
 // Strict: null, '', booleans and arrays are rejected instead of becoming 0.
 function normalizeCoordinate(value, {
     fieldLabel,
@@ -135,7 +140,7 @@ function validateNewPlace(input = {}) {
     if (category.error) return category;
     const categoryList = normalizeCategoryList(category.value);
     if (categoryList.error) return categoryList;
-    const description = normalizePlainTextField(input.description, { fieldLabel: '描述', maxLength: PLACE_DESCRIPTION_MAX_LENGTH, allowHtml: true });
+    const description = normalizePlaceDescription(input.description);
     if (description.error) return description;
     const address = normalizePlainTextField(input.address, { fieldLabel: '地址', maxLength: PLACE_ADDRESS_MAX_LENGTH });
     if (address.error) return address;
@@ -244,6 +249,7 @@ module.exports = {
     getCategoryNameLength,
     normalizeCategoryList,
     normalizePlainTextField,
+    normalizePlaceDescription,
     normalizeCoordinate,
     normalizePlaceCoordinates,
     normalizePerPersonCost,

@@ -28,6 +28,26 @@ export function placeReportPrefill(place) {
     };
 }
 
+/** 举报住民（同好名片）：预填住民名与编号 */
+export function userReportPrefill(user) {
+    return {
+        type: 'report',
+        content: t('feedback:userReport.template', { username: user.username || '', id: user.id })
+    };
+}
+
+/** 举报公开日记：预填标题、作者与公开链接 */
+export function diaryReportPrefill(journey) {
+    return {
+        type: 'report',
+        content: t('feedback:diaryReport.template', {
+            title: journey.title || t('feedback:diaryReport.untitled'),
+            author: journey.author?.username || '',
+            link: buildPublicUrl(`/?diary=${encodeURIComponent(journey.public_id)}`)
+        })
+    };
+}
+
 /** 只保留合法的预填：类型在白名单里，内容截到上限；不合法时返回 null（按普通反馈打开） */
 export function normalizeFeedbackPrefill(prefill) {
     if (!prefill || typeof prefill !== 'object' || !FEEDBACK_TYPE_VALUES.includes(prefill.type)) return null;

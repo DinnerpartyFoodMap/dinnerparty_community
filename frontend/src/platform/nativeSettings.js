@@ -1,4 +1,4 @@
-// skins：主题皮肤（兑换码与切换）是网页页面，原生首页只放入口
+// skins：主题皮肤（切换已拥有的皮肤；iOS 不提供兑换码）是网页页面，原生首页只放入口
 const ACTIONS = new Set(['back', 'avatar', 'username', 'password', 'themes', 'personalize', 'skins', 'logoutAll', 'deleteAccount']);
 export const MOTION_KEYS = Object.freeze(['clusterMotion', 'webMotion', 'nativeGlass']);
 let sequence = 0;

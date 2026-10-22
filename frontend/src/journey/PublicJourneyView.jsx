@@ -2,11 +2,12 @@ import React,{useEffect,useRef,useState} from 'react';
 import {copyText} from '../platform/share';
 import {buildPublicUrl} from '../platform/runtimeConfig';
 import {PageHeader,Notice,PublicPhoto,formatRange} from './shared';
+import {diaryReportPrefill} from '../feedback/feedbackTypes';
 import { t, tx } from '../i18n/index.js';
 
-/** 整篇公开日记：未登录也可阅读；打开时定位到相关站点；有标记的站点可反向查看地图标记。 */
+/** 整篇公开日记：未登录也可阅读（举报需要登录）；打开时定位到相关站点；有标记的站点可反向查看地图标记。 */
 export default function PublicJourneyView({ctx,nav,params}) {
-    const {base,showPlace,tip}=ctx;
+    const {base,showPlace,tip,report,userId}=ctx;
     const [journey,setJourney]=useState(null),[error,setError]=useState('');
     const scrolled=useRef(false);
     useEffect(()=>{
@@ -35,7 +36,9 @@ export default function PublicJourneyView({ctx,nav,params}) {
                         {author.has_avatar?<img src={`${base}/users/${encodeURIComponent(author.id)}/avatar`} alt="" className="jw-avatar"/>:<span className="jw-avatar jw-avatar--empty" aria-hidden="true">{author.username.slice(0,1)}</span>}
                         <span>{author.username}</span>
                     </div>
-                    <h3>{journey.title}</h3>
+                    <h3>{journey.title}
+                        {report&&author.id!==userId&&<button type="button" className="jw-report" style={{marginLeft:8}} aria-label={t('journey:public.reportLabel', { title: journey.title })} onClick={()=>report(diaryReportPrefill(journey))}>{t('journey:public.report')}</button>}
+                    </h3>
                     <p className="jw-muted">{tx('journey:public.meta', { range: formatRange(journey.start_date,journey.end_date), count: journey.stops.length })}</p>
                 </header>
                 {journey.summary&&<p className="jw-detail-summary">{journey.summary}</p>}

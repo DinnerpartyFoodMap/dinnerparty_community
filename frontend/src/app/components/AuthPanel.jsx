@@ -6,7 +6,7 @@ import useMediaQuery from "../../hooks/useMediaQuery";
 import { APP_VERSION, getPlatform } from "../../platform/env";
 import AnchoredPopover from "../../components/overlay/AnchoredPopover";
 import { t } from "../../i18n/index.js";
-import PrivacyPolicyLink from '../../auth/components/PrivacyPolicyLink.jsx';
+import LegalLinks from '../../auth/components/LegalLinks.jsx';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
 
 const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onOpenFeedback, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
@@ -278,7 +278,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                         <div style={{ padding: '9px 12px', fontSize: 13 }}>
                             <div style={{ fontWeight: 700 }}>{t('auth:panel.about')}</div>
                             <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>v{APP_VERSION}</div>
-                            <PrivacyPolicyLink style={{ display: 'inline-block', marginTop: 8, color: 'var(--color-text-primary)' }} />
+                            <LegalLinks style={{ display: 'block', marginTop: 8 }} linkStyle={{ color: 'var(--color-text-primary)' }} onOpen={() => setMoreOpen(false)} />
                         </div>
                 </AnchoredPopover>
             </div>

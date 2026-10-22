@@ -1771,7 +1771,7 @@ export default function MapView({
             {!pickerMode && <React.Suspense fallback={null}><JourneyWorkspace ref={journeyRef} key={`${backendUrl}:${token || 'guest'}`} backendUrl={backendUrl} token={token}
                 isAuthenticated={isAuthenticated} onRequireAuth={onRequireAuth} mapRef={mapRef} mapReady={mapReady}
                 selectedPlace={selectedPlace} feedback={feedback} onOpen={() => setAddMode(false)}
-                onShowPlace={focusPlaceById} initialPublic={initialDiary} mapPicker={FullScreenMapPicker} /></React.Suspense>}
+                onShowPlace={focusPlaceById} onOpenFeedback={onOpenFeedback} initialPublic={initialDiary} mapPicker={FullScreenMapPicker} /></React.Suspense>}
             {!pickerMode && (
                 <CommentPanel
                     open={commentOpen && !!selectedPlace}

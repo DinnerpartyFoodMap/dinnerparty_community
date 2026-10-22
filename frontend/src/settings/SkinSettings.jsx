@@ -8,7 +8,12 @@ import { activateSkin } from "../skins/skinStore";
 import { useActiveSkin } from "../skins/useSkin";
 import { rememberSkin } from "../skins/useSkinSession";
 import { fetchSkinState, redeemSkinCode, saveActiveSkin } from "../skins/skinApi";
+import { getPlatform } from "../platform/env";
 import { t } from '../i18n/index.js';
+
+// iOS App 不提供兑换码：App Store 审核（3.1.1）不允许 App 内用兑换码这类自有机制解锁内容。
+// 那里只列出已拥有的皮肤并切换，页面上也不提兑换
+const REDEEM_AVAILABLE = getPlatform() !== 'ios';
 
 // 主题皮肤：已解锁的皮肤（含默认样式）与兑换码输入。解锁与切换都以服务器结果为准，再换到本机
 export default function SkinSettings({ user, onBack, backendUrl, token }) {
@@ -98,7 +103,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
 
     return (
         <PageTemplate breadcrumb={[{ label: t('settings:common.nav.settings'), onClick: onBack }, { label: t('common:nav.skins') }]}>
-            <div style={hintStyle}>{t('settings:skins.intro')}</div>
+            <div style={hintStyle}>{REDEEM_AVAILABLE ? t('settings:skins.intro') : t('settings:skins.introSwitchOnly')}</div>
 
             <div style={{ marginTop: 18 }}>
                 <div style={sectionTitle}>{t('settings:skins.mine')}</div>
@@ -149,7 +154,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                 )}
             </div>
 
-            <form onSubmit={redeem} style={{ marginTop: 24 }}>
+            {REDEEM_AVAILABLE && <form onSubmit={redeem} style={{ marginTop: 24 }}>
                 <label htmlFor="skin-code" style={sectionTitle}>{t('settings:skins.redeemTitle')}</label>
                 <div style={hintStyle}>{t('settings:skins.redeemHint')}</div>
                 <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -171,7 +176,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                     </Button>
                 </div>
                 {redeemError && <div role="alert" style={{ marginTop: 8, color: 'var(--color-danger)', fontSize: 13 }}>{redeemError}</div>}
-            </form>
+            </form>}
         </PageTemplate>
     );
 }

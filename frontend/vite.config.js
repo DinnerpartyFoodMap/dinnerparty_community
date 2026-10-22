@@ -42,22 +42,28 @@ function bundledIconFont() {
     };
 }
 
+// 独立的静态页面（隐私权政策、用户协议）
+const STATIC_PAGES = ['privacy', 'terms'];
+
 // 无扩展名的政策地址必须先于 Vite 的 SPA fallback 处理，否则会启动地图页。
-function privacyPageRoute() {
+function staticPageRoutes() {
     const install = (server) => {
         server.middlewares.use((req, res, next) => {
-            if (req.url === '/privacy' || req.url?.startsWith('/privacy?')) {
-                res.writeHead(302, { Location: `/privacy/${req.url.slice('/privacy'.length)}` });
-                res.end();
-                return;
-            }
-            if (req.url === '/privacy/' || req.url?.startsWith('/privacy/?')) {
-                req.url = `/privacy/index.html${req.url.slice('/privacy/'.length)}`;
+            for (const page of STATIC_PAGES) {
+                const base = `/${page}`;
+                if (req.url === base || req.url?.startsWith(`${base}?`)) {
+                    res.writeHead(302, { Location: `${base}/${req.url.slice(base.length)}` });
+                    res.end();
+                    return;
+                }
+                if (req.url === `${base}/` || req.url?.startsWith(`${base}/?`)) {
+                    req.url = `${base}/index.html${req.url.slice(base.length + 1)}`;
+                }
             }
             next();
         });
     };
-    return { name: 'yuyuko-privacy-page-route', configureServer: install, configurePreviewServer: install };
+    return { name: 'yuyuko-static-page-routes', configureServer: install, configurePreviewServer: install };
 }
 
 export default defineConfig(({ mode }) => {
@@ -73,7 +79,7 @@ export default defineConfig(({ mode }) => {
         define: {
             __APP_VERSION__: JSON.stringify(appVersion)
         },
-        plugins: [privacyPageRoute(), ...(isMobile ? [bundledIconFont()] : [])],
+        plugins: [staticPageRoutes(), ...(isMobile ? [bundledIconFont()] : [])],
         build: {
             rollupOptions: {
                 // motion 包内的 "use client" 指令对客户端打包无意义，Rollup 会逐个文件告警
@@ -83,7 +89,7 @@ export default defineConfig(({ mode }) => {
                 },
                 input: {
                     main: resolve(__dirname, 'index.html'),
-                    privacy: resolve(__dirname, 'privacy/index.html'),
+                    ...Object.fromEntries(STATIC_PAGES.map((page) => [page, resolve(__dirname, `${page}/index.html`)])),
                     beian: resolve(__dirname, 'beian/index.html')
                 }
             }

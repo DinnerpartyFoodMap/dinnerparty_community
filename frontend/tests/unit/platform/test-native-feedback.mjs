@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createNativeFeedbackSession, pickSubmission, MAX_NATIVE_IMAGE_BASE64 } from "../../../src/platform/nativeFeedback.js";
-import { FEEDBACK_LIMITS, FEEDBACK_TYPE_VALUES, normalizeFeedbackPrefill } from "../../../src/feedback/feedbackTypes.js";
+import { FEEDBACK_LIMITS, FEEDBACK_TYPE_VALUES, normalizeFeedbackPrefill, userReportPrefill, diaryReportPrefill } from "../../../src/feedback/feedbackTypes.js";
 
 // 反馈类型取值前后端一致（后端按白名单拒绝未知类型）
 const backendService = readFileSync(new URL('../../../../backend/modules/feedback/services/feedbackService.js', import.meta.url), 'utf8');
@@ -15,6 +15,15 @@ assert.deepEqual(normalizeFeedbackPrefill({ type: 'report' }), { type: 'report',
 for (const bad of [undefined, null, 'report', { type: 'spam', content: '类型不对' }, { nativeEvent: {}, type: 'click' }]) {
     assert.equal(normalizeFeedbackPrefill(bad), null, JSON.stringify(bad));
 }
+
+// 同好住民与公开日记的举报：类型预选“不良信息举报”，内容带住民名 / 编号或日记标题 / 作者 / 公开链接
+const userReport = userReportPrefill({ id: 'u-1', username: '幽幽子' });
+assert.equal(userReport.type, 'report');
+assert.ok(userReport.content.includes('幽幽子') && userReport.content.includes('u-1'));
+const diaryReport = diaryReportPrefill({ public_id: 'pub 1', title: '白玉楼一日游', author: { username: '妖梦' } });
+assert.equal(diaryReport.type, 'report');
+assert.ok(diaryReport.content.includes('白玉楼一日游') && diaryReport.content.includes('妖梦') && diaryReport.content.includes('/?diary=pub%201'));
+assert.deepEqual(normalizeFeedbackPrefill(diaryReport), diaryReport);
 
 const types = ['bug', 'suggestion', 'other'];
 const limits = { contentLength: 20, images: 2 };

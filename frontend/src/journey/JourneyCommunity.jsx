@@ -1,6 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {request} from './feedback';
 import {PageHeader,Notice,Empty} from './shared';
+import {userReportPrefill} from '../feedback/feedbackTypes';
 import { t, tx } from '../i18n/index.js';
 
 const KIND_LABEL={search:t('common:action.search'),exposure:t('journey:community.kind.exposure'),click:t('journey:community.kind.click'),favorite:t('journey:community.kind.favorite'),unfavorite:t('journey:community.kind.unfavorite'),correction:t('journey:community.kind.correction'),next:t('journey:community.kind.swap'),confirm_stop:t('journey:community.kind.confirmVisit')};
@@ -10,7 +11,7 @@ const KIND_LABEL={search:t('common:action.search'),exposure:t('journey:community
  * 「我的公开收藏夹」「发现设置」是页面内的明确入口。日记公开与同好设置分别管理。
  */
 export default function JourneyCommunity({ctx,nav}) {
-    const {base,token,feedback,confirm}=ctx;
+    const {base,token,feedback,confirm,report,userId}=ctx;
     const api=(path,options)=>request(base,token,`/api/community${path}`,options);
     const [section,setSection]=useState('neighbors'),[view,setView]=useState('list');
     const [settings,setSettings]=useState(null),[collections,setCollections]=useState([]),[favorites,setFavorites]=useState([]),[neighbors,setNeighbors]=useState(null),[person,setPerson]=useState(null),[stats,setStats]=useState(null);
@@ -64,7 +65,9 @@ export default function JourneyCommunity({ctx,nav}) {
                     </button>)}
                 </>:emptyState()}
                 {person&&<section className="jw-card jw-stack" aria-label={t('journey:community.collectionOf', { username: person.user.username })}>
-                    <div className="jw-row-between"><strong>{tx('journey:community.collectionOf', { username: person.user.username })}</strong><button type="button" onClick={()=>setPerson(null)}>{t('journey:community.collapse')}</button></div>
+                    <div className="jw-row-between"><strong>{tx('journey:community.collectionOf', { username: person.user.username })}
+                        {report&&person.user.id!==userId&&<button type="button" className="jw-report" style={{marginLeft:8}} aria-label={t('journey:community.reportLabel', { username: person.user.username })} onClick={()=>report(userReportPrefill(person.user))}>{t('journey:community.report')}</button>}
+                    </strong><button type="button" onClick={()=>setPerson(null)}>{t('journey:community.collapse')}</button></div>
                     {person.collections.length?person.collections.map(c=><div key={c.id}><strong>{c.title}</strong><ul>{c.places.map(p=><li key={p.id}>{p.name} · {p.category||t('common:label.uncategorized')}</li>)}</ul></div>)
                         :<p className="jw-muted">{t('journey:community.noPublicCollections')}</p>}
                 </section>}

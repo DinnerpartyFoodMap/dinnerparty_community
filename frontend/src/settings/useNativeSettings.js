@@ -10,6 +10,7 @@ import { readMapSettingsForm, buildMapSettings, saveMapSettings } from './mapSet
 import { saveUsername, savePassword, uploadAvatar, patchMapSettings } from './accountSettings';
 import { readThemeForm, styleOptionsFor, notifyMapStyleChange } from './themeOptions';
 import { MOTION_ITEMS, describeNativeChrome } from './MotionSettings';
+import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
 import { t } from '../i18n/index.js';
 
 // “个性化地图”原生页：初值、动效开关与全部文案都由网页提供（文案走 i18n），原生只负责展示与输入
@@ -84,6 +85,11 @@ function buildLabels() {
         darkStyleCurrent: t('settings:customThemes.darkStyleCurrent'),
         lightStyleCurrent: t('settings:customThemes.lightStyleCurrent')
     };
+}
+
+// 原生首页最下方的用户协议与隐私权政策：原生在 App 内用 Safari 视图打开公开网页（旧网页包不下发时原生不显示）
+function buildLinks() {
+    return LEGAL_PAGE_IDS.map((page) => ({ id: page, title: legalPageTitle(page), symbol: legalPageSymbol(page), url: legalPageUrl(page) }));
 }
 
 function buildThemes(user) {
@@ -189,6 +195,7 @@ export default function useNativeSettings({ user, backendUrl, token, onUpdateUse
                 avatarURL: avatarURLOf(current, false),
                 mapPage: buildMapPage(current),
                 themes: buildThemes(current),
+                links: buildLinks(),
                 labels: buildLabels()
             }, {
                 onAction: async action => {

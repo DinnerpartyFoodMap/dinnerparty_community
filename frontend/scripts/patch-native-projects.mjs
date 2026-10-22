@@ -5,7 +5,7 @@
 //   node scripts/patch-native-projects.mjs ios        # 只处理 iOS
 //
 // Android：定位权限与高德定位 SDK（依赖、Key、插件注册）、外部链接/地图应用可见性（<queries>）、Android 11/12 照片选择器回补
-// iOS：相机/相册/定位用途说明、出口合规声明、隐私清单（PrivacyInfo.xcprivacy）、通用链接（App.entitlements）、SPM 版本兼容
+// iOS：相机/相册/定位用途说明、只支持 iPhone 竖屏与 arm64、开发区域简体中文、出口合规声明、隐私清单（PrivacyInfo.xcprivacy）、通用链接（App.entitlements）、SPM 版本兼容
 
 import { existsSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -242,12 +242,27 @@ function patchIos() {
         return text.slice(0, index) + block + text.slice(index);
     });
 
+    // Capacitor 模板默认 iPhone + iPad、横竖屏、armv7、开发区域 en；本项目只做了 iPhone 竖屏，界面是简体中文
+    patchFile(plist, 'iOS 设备、方向与开发区域', (text) => {
+        const nl = text.includes('\r\n') ? '\r\n' : '\n';
+        const array = (...items) => `<array>${items.map((item) => `${nl}\t\t<string>${item}</string>`).join('')}${nl}\t</array>`;
+        return text
+            .replace(/(<key>CFBundleDevelopmentRegion<\/key>\s*<string>)[^<]*(<\/string>)/, '$1zh-Hans$2')
+            .replace(/(<key>UIRequiredDeviceCapabilities<\/key>\s*)<array>[\s\S]*?<\/array>/, `$1${array('arm64')}`)
+            .replace(/(<key>UISupportedInterfaceOrientations<\/key>\s*)<array>[\s\S]*?<\/array>/, `$1${array('UIInterfaceOrientationPortrait')}`)
+            .replace(/\s*<key>UISupportedInterfaceOrientations~ipad<\/key>\s*<array>[\s\S]*?<\/array>/, '');
+    });
+
     const privacyTarget = resolve(root, 'ios/App/App/PrivacyInfo.xcprivacy');
     if (!existsSync(privacyTarget)) {
         copyFileSync(resolve(root, 'native/ios/PrivacyInfo.xcprivacy'), privacyTarget);
         changes.push('iOS 隐私清单文件');
     }
     const pbxproj = resolve(root, 'ios/App/App.xcodeproj/project.pbxproj');
+    patchFile(pbxproj, 'iOS 只面向 iPhone、开发区域简体中文', (text) => text
+        .replace(/TARGETED_DEVICE_FAMILY = "1,2";/g, 'TARGETED_DEVICE_FAMILY = 1;')
+        .replace(/developmentRegion = en;/, 'developmentRegion = "zh-Hans";')
+        .replace(/(knownRegions = \(\s*)en,/, '$1"zh-Hans",'));
     patchFile(pbxproj, 'iOS 隐私清单加入工程', (text) => {
         if (text.includes('PrivacyInfo.xcprivacy')) return text;
         const buildFileId = 'A7F1C0DE0000000000000001';

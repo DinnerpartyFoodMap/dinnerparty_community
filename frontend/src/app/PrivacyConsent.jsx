@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import PrivacyPolicyLink from '../auth/components/PrivacyPolicyLink.jsx';
+import { LegalLink } from '../auth/components/LegalLinks.jsx';
 import { readPrivacyConsent, rememberPrivacyChoice } from '../platform/privacyConsent.js';
 import { t } from '../i18n/index.js';
 import { isNativePlatform } from '../platform/env.js';
@@ -48,7 +48,7 @@ export default function PrivacyConsent({ onAccept }) {
                 {choice === 'rejected' && <>
                     <h1>{t('common:privacy.rejectedTitle')}</h1>
                     <p>{t('common:privacy.rejectedBody')}</p>
-                    <PrivacyPolicyLink />
+                    <LegalLink page="privacy" />
                     <button type="button" className="fm-consent-button" onClick={() => setChoice('pending')}>
                         {t('common:privacy.reconsider')}
                     </button>
@@ -71,7 +71,7 @@ export default function PrivacyConsent({ onAccept }) {
                     <p>{t('common:privacy.permissions')}</p>
                 </div>
                 <p className="fm-consent-links">
-                    <PrivacyPolicyLink />
+                    <LegalLink page="privacy" />
                     <a href="https://lbs.amap.com/pages/privacy/" target="_blank" rel="noopener noreferrer"
                         onClick={(event) => {
                             if (!isNativePlatform()) return;

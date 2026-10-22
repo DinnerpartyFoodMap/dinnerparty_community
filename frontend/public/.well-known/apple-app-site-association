@@ -10,6 +10,7 @@
           { "/": "/assets/*", "exclude": true },
           { "/": "/fonts/*", "exclude": true },
           { "/": "/privacy*", "exclude": true },
+          { "/": "/terms*", "exclude": true },
           { "/": "/beian*", "exclude": true },
           { "/": "/p/*/card-*", "exclude": true },
           { "/": "/*" }

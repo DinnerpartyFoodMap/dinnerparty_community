@@ -24,7 +24,7 @@ import useShareCard from "../places/hooks/useShareCard";
 import RandomFoodPanel from "../discovery/components/RandomFoodPanel";
 import { Exposure } from '../journey/feedback';
 import { usePlaceDiaryCount } from '../journey/PlaceDiaryList';
-import { buildPublicUrl, imageThumbnailUrl } from '../platform/runtimeConfig';
+import { buildPublicUrl, getRuntimeConfig, imageThumbnailUrl } from '../platform/runtimeConfig';
 import { shareContent, copyText } from '../platform/share';
 import { openExternal } from '../platform/navigation';
 import { getPlatform, APP_VERSION } from '../platform/env';
@@ -51,16 +51,16 @@ import { useSkinRevision } from '../skins/useSkin';
 import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../skins/nativeSkin';
 import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText';
 import { placeReportPrefill } from '../feedback/feedbackTypes';
+import LegalLinks from '../auth/components/LegalLinks.jsx';
+import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
 import { t, tx } from '../i18n/index.js';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
 // 窄屏底部元素需要避开底部安全区（iPhone 主屏指示条、Android 手势条）；桌面与多数浏览器场景下为 0
 const BOTTOM_INSET = 'var(--safe-bottom, env(safe-area-inset-bottom, 0px))';
 const aboveBottomInset = (px) => `calc(${px}px + ${BOTTOM_INSET})`;
-const ICP_BEIAN_TEXT = import.meta.env.VITE_ICP_BEIAN_TEXT;
-const ICP_BEIAN_URL = import.meta.env.VITE_ICP_BEIAN_URL;
-const GONGAN_BEIAN_TEXT = import.meta.env.VITE_GONGAN_BEIAN_TEXT;
-const GONGAN_BEIAN_URL = import.meta.env.VITE_GONGAN_BEIAN_URL;
+// 备案号：App 与网站的 ICP 备案号分开配置（见 runtimeConfig），没配置的不显示
+const { icpBeian: ICP_BEIAN, gonganBeian: GONGAN_BEIAN } = getRuntimeConfig();
 
 function getPlaceKey(place) {
     if (place?.id !== undefined && place?.id !== null && String(place.id) !== '') {
@@ -780,9 +780,11 @@ export default function MapUI(props) {
         { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: 'questionmark.circle', ...nativeIcon('expanded.panel.icons.guide'), run: openOnboarding },
         onOpenFeedback && { id: 'feedback', title: t('feedback:menuEntry'), symbol: 'exclamationmark.bubble', ...nativeIcon('expanded.panel.icons.feedback'), run: onOpenFeedback }
     ].filter(Boolean);
+    // 底部小字：用户协议与隐私权政策放在一起，后面是备案号
     const moreFootnoteEntries = [
-        ICP_BEIAN_TEXT && ICP_BEIAN_URL && { id: 'icp', title: ICP_BEIAN_TEXT, symbol: 'doc.text', url: ICP_BEIAN_URL },
-        GONGAN_BEIAN_TEXT && GONGAN_BEIAN_URL && { id: 'gongan', title: GONGAN_BEIAN_TEXT, symbol: 'checkmark.shield', url: GONGAN_BEIAN_URL }
+        ...LEGAL_PAGE_IDS.map((page) => ({ id: page, title: legalPageTitle(page), symbol: legalPageSymbol(page), url: legalPageUrl(page) })),
+        ICP_BEIAN && { id: 'icp', title: ICP_BEIAN.text, symbol: 'doc.text', url: ICP_BEIAN.url },
+        GONGAN_BEIAN && { id: 'gongan', title: GONGAN_BEIAN.text, symbol: 'checkmark.shield', url: GONGAN_BEIAN.url }
     ].filter(Boolean);
     const accountMenuEntries = [
         { id: 'settings', title: t('map:ui.accountSettings'), symbol: 'person.crop.circle', run: onOpenMine },
@@ -2267,25 +2269,30 @@ export default function MapUI(props) {
                             <div style={{ marginTop: 4, padding: '10px', borderTop: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 12 }}>
                                 <div>{tx('map:ui.versionFooter', { version: APP_VERSION })}</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 5, marginTop: 6 }}>
-                                    <a
-                                        href={ICP_BEIAN_URL}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={() => setMobileMoreOpen(false)}
-                                        style={{ color: 'inherit', textDecoration: 'none' }}
-                                    >
-                                        {ICP_BEIAN_TEXT}
-                                    </a>
-                                    <a
-                                        href={GONGAN_BEIAN_URL}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={() => setMobileMoreOpen(false)}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
-                                    >
-                                        <img src="/ghs.png" alt="" aria-hidden="true" style={{ width: 14, height: 14, objectFit: 'contain' }} />
-                                        {GONGAN_BEIAN_TEXT}
-                                    </a>
+                                    <LegalLinks linkStyle={{ color: 'inherit' }} onOpen={() => setMobileMoreOpen(false)} />
+                                    {ICP_BEIAN && (
+                                        <a
+                                            href={ICP_BEIAN.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={() => setMobileMoreOpen(false)}
+                                            style={{ color: 'inherit', textDecoration: 'none' }}
+                                        >
+                                            {ICP_BEIAN.text}
+                                        </a>
+                                    )}
+                                    {GONGAN_BEIAN && (
+                                        <a
+                                            href={GONGAN_BEIAN.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={() => setMobileMoreOpen(false)}
+                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
+                                        >
+                                            <img src="/ghs.png" alt="" aria-hidden="true" style={{ width: 14, height: 14, objectFit: 'contain' }} />
+                                            {GONGAN_BEIAN.text}
+                                        </a>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -2451,7 +2458,7 @@ export default function MapUI(props) {
                 </>
             )}
 
-            {!isNarrow && !pickerMode && (
+            {!isNarrow && !pickerMode && (ICP_BEIAN || GONGAN_BEIAN) && (
                 <div
                     style={{
                         position: 'absolute',
@@ -2474,24 +2481,28 @@ export default function MapUI(props) {
                         whiteSpace: 'nowrap'
                     }}
                 >
-                    <a
-                        href={ICP_BEIAN_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none' }}
-                    >
-                        {ICP_BEIAN_TEXT}
-                    </a>
-                    <span aria-hidden="true" style={{ opacity: 0.55 }}>·</span>
-                    <a
-                        href={GONGAN_BEIAN_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
-                    >
-                        <img src="/ghs.png" alt="" aria-hidden="true" style={{ width: 14, height: 14, objectFit: 'contain' }} />
-                        {GONGAN_BEIAN_TEXT}
-                    </a>
+                    {ICP_BEIAN && (
+                        <a
+                            href={ICP_BEIAN.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none' }}
+                        >
+                            {ICP_BEIAN.text}
+                        </a>
+                    )}
+                    {ICP_BEIAN && GONGAN_BEIAN && <span aria-hidden="true" style={{ opacity: 0.55 }}>·</span>}
+                    {GONGAN_BEIAN && (
+                        <a
+                            href={GONGAN_BEIAN.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
+                        >
+                            <img src="/ghs.png" alt="" aria-hidden="true" style={{ width: 14, height: 14, objectFit: 'contain' }} />
+                            {GONGAN_BEIAN.text}
+                        </a>
+                    )}
                 </div>
             )}
 

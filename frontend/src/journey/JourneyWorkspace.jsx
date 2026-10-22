@@ -38,7 +38,7 @@ function readPalette(){
  * 页面栈与系统返回 / Esc / 页面返回按钮共用：先关闭最上层浮层，再逐页返回，最后回到地图。
  * 下层页面保持挂载（隐藏且不可交互），返回时保留月份、选中日期与滚动位置。
  */
-export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token,isAuthenticated,onRequireAuth,mapRef,mapReady,selectedPlace,feedback,onOpen,onShowPlace,initialPublic,mapPicker:MapPicker},ref) {
+export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token,isAuthenticated,onRequireAuth,mapRef,mapReady,selectedPlace,feedback,onOpen,onShowPlace,onOpenFeedback,initialPublic,mapPicker:MapPicker},ref) {
     const [palette,setPalette]=useState(readPalette);
     useEffect(()=>{const update=()=>setPalette(readPalette());window.addEventListener('themechange',update);return()=>window.removeEventListener('themechange',update);},[]);
     const confirm=useConfirm(),tip=useTips();
@@ -84,8 +84,9 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
         setPicker(pickerRef.current);
     }),[MapPicker,tip]);
     useEffect(()=>()=>pickerRef.current?.resolve(null),[]);
-    const ctx=useMemo(()=>({api,base,token,cap,mapRef,mapReady,selectedPlace,feedback,confirm,tip,showPlace,showJourneyOnMap,pickOnMap,userId:getTokenUserId(token)}),
-        [api,base,token,cap,mapRef,mapReady,selectedPlace,feedback,confirm,tip,showPlace,showJourneyOnMap,pickOnMap]);
+    // report：举报住民或公开日记，打开预填好的意见反馈表（叠在日记页面之上，提交或关闭后回到原页面）
+    const ctx=useMemo(()=>({api,base,token,cap,mapRef,mapReady,selectedPlace,feedback,confirm,tip,showPlace,showJourneyOnMap,pickOnMap,report:onOpenFeedback,userId:getTokenUserId(token)}),
+        [api,base,token,cap,mapRef,mapReady,selectedPlace,feedback,confirm,tip,showPlace,showJourneyOnMap,pickOnMap,onOpenFeedback]);
 
     const openEntry=useCallback(()=>{
         if(!authed){onRequireAuth?.();return;}

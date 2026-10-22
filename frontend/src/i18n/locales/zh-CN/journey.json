@@ -103,6 +103,8 @@
     "neighborMeta": "口味相似度 {{similarity}}% · {{confidence}}{{value}}",
     "collectionOf": "{{username}} 的公开收藏夹",
     "collapse": "收起",
+    "report": "举报",
+    "reportLabel": "举报住民{{username}}",
     "noPublicCollections": "对方还没有公开收藏夹。",
     "collectionsHint": "收藏夹默认私密，公开后同好可以看到。",
     "newCollectionName": "新收藏夹",
@@ -624,7 +626,9 @@
     "linkCopied": "链接已复制",
     "copyLink": "复制链接",
     "meta": "{{range}} · {{count}} 站",
-    "viewMarker": "查看地图标记"
+    "viewMarker": "查看地图标记",
+    "report": "举报",
+    "reportLabel": "举报日记{{title}}"
   },
   "resolution": {
     "stale": "地点或顺序已变化，请重新选择候选。"

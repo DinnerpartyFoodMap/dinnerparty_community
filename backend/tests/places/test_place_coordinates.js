@@ -1,6 +1,6 @@
 // 地点坐标只能落在地图可显示的范围内（Web Mercator ±85.0511°）：地图上下边界外点出的 85°~90°
 // 会被前端标记层丢弃，存进库就再也无法显示和选中。覆盖新增、编辑、修改申请与审核四条写入路径，
-// 以及检查已有数据的 places:check-coordinates 脚本。
+// 以及检查已有数据的 places:check-coordinates 脚本。描述在同样四条路径上最多 1000 字、接受 HTML。
 // 临时 SQLite + 本地 express，不访问外网。
 const assert = require('assert/strict');
 const fs = require('fs');
@@ -107,6 +107,39 @@ const sql = db._raw;
             { place_id: 1, proposed: { latitude: 31, longitude: 121 } })).json()).id}/review`, admin, { action: 'approve' });
         assert.equal(approve.status, 200, await approve.clone().text());
         assert.deepEqual(coords(), { longitude: 121, latitude: 31 });
+
+        // 描述：编辑与修改申请同新增一样最多 1000 字、去首尾空白、接受 HTML（显示前会清理）；修复前的超长申请不能批准。
+        const description = () => sql.prepare('SELECT description FROM Place WHERE id = 1').get().description;
+        const tooLong = 'x'.repeat(1001);
+        const longEdit = await call('PUT', '/places/1', owner, { description: tooLong });
+        assert.equal(longEdit.status, 400);
+        assert.match((await longEdit.json()).error, /1000/);
+        assert.equal((await call('PUT', '/places/1', owner, { description: 123 })).status, 400, 'non-string description');
+        assert.equal(description(), '只改描述');
+        assert.equal((await call('PUT', '/places/1', owner, { description: '  **好吃** <b>推荐</b>  ' })).status, 200);
+        assert.equal(description(), '**好吃** <b>推荐</b>', 'trimmed, HTML kept');
+        for (const [url, body] of [
+            ['/place-requests', { place_id: 1, proposed: { description: tooLong } }],
+            ['/places/1/requests', { proposed: { description: tooLong } }]
+        ]) {
+            const res = await call('POST', url, visitor, body);
+            assert.equal(res.status, 400, url);
+            assert.equal((await res.json()).code, 'INVALID_PLACE_DESCRIPTION');
+        }
+        const htmlRequest = await call('POST', '/place-requests', visitor, { place_id: 1, proposed: { description: ' 申请<i>描述</i> ' } });
+        assert.equal(htmlRequest.status, 201);
+        const htmlRequestRow = await htmlRequest.json();
+        assert.equal(JSON.parse(htmlRequestRow.proposed).description, '申请<i>描述</i>');
+        const legacyLong = sql.prepare('INSERT INTO PlaceRequest (place_id, requester_id, proposed, note) VALUES (1, ?, ?, ?)')
+            .run(visitor, JSON.stringify({ description: tooLong }), '').lastInsertRowid;
+        const approveLong = await call('POST', `/place-requests/${legacyLong}/review`, admin, { action: 'approve' });
+        assert.equal(approveLong.status, 400);
+        assert.equal((await approveLong.json()).code, 'INVALID_PLACE_DESCRIPTION');
+        assert.equal(description(), '**好吃** <b>推荐</b>', 'failed approval leaves the place unchanged');
+        assert.equal(sql.prepare('SELECT status FROM PlaceRequest WHERE id = ?').get(legacyLong).status, 'pending');
+        assert.equal((await call('POST', `/place-requests/${legacyLong}/review`, admin, { action: 'reject' })).status, 200);
+        assert.equal((await call('POST', `/place-requests/${htmlRequestRow.id}/review`, admin, { action: 'approve' })).status, 200);
+        assert.equal(description(), '申请<i>描述</i>');
 
         // 已有数据检查：只读列出修复前存进库的越界地点和待审核申请。
         const runCheck = () => spawnSync(process.execPath, [path.join(__dirname, '../../scripts/places/check_place_coordinates.js')],

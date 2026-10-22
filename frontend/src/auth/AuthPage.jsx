@@ -8,7 +8,7 @@ import { getThemeColor, getThemeSecondary, colorToRgba, darkenColor } from "../t
 import { reportAuthStage } from "./services/authDiagnostics";
 import { getClientInfo } from "../platform/env";
 import { t, tx } from "../i18n/index.js";
-import PrivacyPolicyLink from './components/PrivacyPolicyLink.jsx';
+import LegalLinks, { LegalLink } from './components/LegalLinks.jsx';
 
 const REQUEST_TIMEOUT_MS = 12000;
 const MAX_USERNAME_LENGTH = 64;
@@ -281,6 +281,8 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
     const [showPassword, setShowPassword] = useState(false);
     const [qq, setQq] = useState("");
     const [verificationCode, setVerificationCode] = useState("");
+    // 登记名册前须勾选同意用户协议与隐私权政策
+    const [agreedTerms, setAgreedTerms] = useState(false);
     // 验证码已私聊发到哪个 QQ，显示在验证码输入框下方
     const [codeSentTo, setCodeSentTo] = useState(null); // { qq, minutes } | null
     // 重新获取的倒计时只对刚发送过的那个 QQ 生效，改了 QQ 号可以立即获取
@@ -528,6 +530,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         if (password !== confirmPassword) return setMessage(t('auth:page.register.passwordMismatch'));
         if (!QQ_PATTERN.test(normalizedQq)) return setMessage(t('auth:page.code.invalidQq'));
         if (!VERIFICATION_CODE_PATTERN.test(normalizedCode)) return setMessage(t('auth:page.code.invalidCode'));
+        if (!agreedTerms) return setMessage(t('auth:page.register.agreeRequired'));
         const request = startRequest();
         try {
             const { response: res, data } = await fetchResponseWithTimeout(withRequestId(`${backendUrl}/users/register`, request.requestId), {
@@ -933,6 +936,21 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                         onChange: handleConfirmPasswordChange
                     })}
                     {renderVerificationFields("auth-register")}
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13, lineHeight: 1.5, color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                        <input
+                            type="checkbox"
+                            checked={agreedTerms}
+                            onChange={(e) => {
+                                setAgreedTerms(e.target.checked);
+                                if (message) setMessage("");
+                            }}
+                            style={{ width: 16, height: 16, margin: '2px 0 0', flexShrink: 0, accentColor: 'var(--theme-primary)' }}
+                        />
+                        <span>{tx('auth:page.register.agreeTerms', {
+                            terms: <LegalLink page="terms" style={{ color: 'var(--color-text-primary)' }} />,
+                            privacy: <LegalLink page="privacy" style={{ color: 'var(--color-text-primary)' }} />
+                        })}</span>
+                    </label>
                     <Button
                         type="submit"
                         disabled={loading}
@@ -945,7 +963,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
             )}
 
             <p style={{ margin: '14px 0 0', fontSize: 13, textAlign: 'center' }}>
-                <PrivacyPolicyLink style={{ color: 'var(--color-text-secondary)' }} />
+                <LegalLinks linkStyle={{ color: 'var(--color-text-secondary)' }} />
             </p>
 
             {slowConnection && (

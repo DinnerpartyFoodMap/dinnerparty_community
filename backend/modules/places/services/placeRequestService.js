@@ -1,7 +1,7 @@
 const { db } = require('../../../infrastructure/database');
 const { insertAdminAction } = require('../../admin/services/adminAudit');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
-const { normalizePlaceCoordinates } = require('./placeService');
+const { normalizePlaceCoordinates, normalizePlaceDescription } = require('./placeService');
 
 function placeRequestFailure(status, code, message) {
     const error = new Error(message);
@@ -17,9 +17,17 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
     }
     const coordinates = normalizePlaceCoordinates(proposed);
     if (coordinates.error) throw placeRequestFailure(400, 'INVALID_PLACE_COORDINATE', coordinates.error);
+    // 描述与直接编辑相同：最多 1000 字，接受 HTML
+    let description = {};
+    if (proposed.description !== undefined) {
+        const normalized = normalizePlaceDescription(proposed.description);
+        if (normalized.error) throw placeRequestFailure(400, 'INVALID_PLACE_DESCRIPTION', normalized.error);
+        description = { description: normalized.value };
+    }
     const normalizedProposed = {
         ...proposed,
         ...coordinates.value,
+        ...description,
         ...(proposed.exterior_images !== undefined
             ? { exterior_images: normalizeImageUrls(proposed.exterior_images) }
             : {}),

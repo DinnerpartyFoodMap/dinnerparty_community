@@ -19,6 +19,13 @@ function clean(value) {
     return text.replace(/\/+$/g, '');
 }
 
+// 备案号与查询链接都配置了才显示
+function filing(text, url) {
+    const label = clean(text);
+    const href = String(url || '').trim();
+    return label && href ? { text: label, url: href } : null;
+}
+
 function originOf(value) {
     try {
         return new URL(value).origin;
@@ -73,6 +80,11 @@ export function resolveRuntimeConfig({ env = {}, location, native }) {
     const ossImageBaseUrl = clean(env.VITE_OSS_IMAGE_BASE_URL);
     // 海外底图（CARTO）的浏览器 key；未配置时不叠加海外底图（见 map/overseasTileLayer.js）
     const cartoApiKey = clean(env.VITE_CARTO_API_KEY);
+    // 备案信息：App 的 ICP 备案号与网站不同（App 单独备案），App 只读 VITE_APP_ICP_BEIAN_*，未配置时不显示；公安备案号共用
+    const icpBeian = native
+        ? filing(env.VITE_APP_ICP_BEIAN_TEXT, env.VITE_APP_ICP_BEIAN_URL)
+        : filing(env.VITE_ICP_BEIAN_TEXT, env.VITE_ICP_BEIAN_URL);
+    const gonganBeian = filing(env.VITE_GONGAN_BEIAN_TEXT, env.VITE_GONGAN_BEIAN_URL);
 
     if (native) {
         validateRemoteHttps('VITE_BACKEND_URL', apiBaseUrl, errors);
@@ -88,6 +100,8 @@ export function resolveRuntimeConfig({ env = {}, location, native }) {
         resourceBaseUrl,
         ossImageBaseUrl,
         cartoApiKey,
+        icpBeian,
+        gonganBeian,
         errors
     };
 }

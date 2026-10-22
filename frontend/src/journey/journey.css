@@ -40,6 +40,9 @@
 .jw-wide{width:100%;min-height:48px!important}
 .jw-root .jw-danger,.jw-pad .jw-danger{color:var(--color-danger);border-color:color-mix(in srgb,var(--color-danger) 45%,var(--color-border))}
 .jw-root .jw-link,.jw-place-diaries .jw-link{border:0;background:transparent;color:var(--theme-primary);padding:4px 0;min-height:32px;text-decoration:underline;text-underline-offset:3px}
+/* 名字或标题后的小字举报入口（与地点详情店名后的“举报”一致） */
+.jw-root .jw-report{border:0;background:transparent;color:var(--color-text-muted);padding:2px 0;min-height:24px;font-size:12px;font-weight:400;line-height:1.4;vertical-align:middle;white-space:nowrap}
+.jw-root .jw-report:not(:disabled):hover{color:var(--color-text-secondary)}
 .jw-icon-button{border:0!important;background:transparent!important;min-height:32px!important;padding:2px 8px!important;font-size:18px;color:var(--color-text-secondary)}
 .jw-stack{display:flex;flex-direction:column;gap:12px}.jw-stack h3,.jw-stack p{margin:0}
 .jw-pad{padding:16px}
