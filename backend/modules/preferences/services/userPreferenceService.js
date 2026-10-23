@@ -72,7 +72,8 @@ function recordBehavior(userId, payload) {
 }
 
 const changeFavoriteTransaction = db._raw.transaction((userId, placeId, favorite) => {
-    if (favorite && !db._raw.prepare('SELECT id FROM Place WHERE id = ?').get(placeId)) fail(404, '地点不存在');
+    // 别人还在复核中的地点看不到，也不能收藏
+    if (favorite && !db._raw.prepare("SELECT id FROM Place WHERE id = ? AND (moderation_status = 'visible' OR creator_id = ?)").get(placeId, userId)) fail(404, '地点不存在');
     const result = favorite
         ? db._raw.prepare('INSERT OR IGNORE INTO Favorite(user_id, place_id) VALUES (?, ?)').run(userId, placeId)
         : db._raw.prepare('DELETE FROM Favorite WHERE user_id = ? AND place_id = ?').run(userId, placeId);

@@ -139,4 +139,24 @@ async function requireAuth(req, res, next) {
     }
 }
 
-module.exports = { requireAuth, extractBearerToken, setSessionStoreForTesting, sessionStore };
+/**
+ * 公开接口用：带有效 token 时把住民放进 req.viewer（{ id, admin_level }），否则为 null。
+ * token 缺失、无效、过期或会话已撤销都按游客处理，不返回 401——看自己未公开的地点
+ * 不应让地图因为过期 token 加载失败。只用于读取，写操作仍用 requireAuth。
+ */
+async function attachViewer(req, res, next) {
+    req.viewer = null;
+    const token = extractBearerToken(req);
+    if (!token) return next();
+    try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        if (!payload || !payload.id) return next();
+        const session = await sessionStore().verifySession(payload, token);
+        if (!session.ok) return next();
+        const row = db._raw.prepare('SELECT id, admin_level FROM User WHERE id = ?').get(payload.id);
+        if (row) req.viewer = row;
+    } catch (_) { /* 游客 */ }
+    return next();
+}
+
+module.exports = { requireAuth, attachViewer, extractBearerToken, setSessionStoreForTesting, sessionStore };

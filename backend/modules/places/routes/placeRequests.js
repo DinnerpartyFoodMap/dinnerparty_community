@@ -8,6 +8,9 @@ const { queuePlaceVectorSync } = require('../../preferences/services/placeVector
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
 const { createPlaceRequest } = require('../services/placeRequestService');
 const { normalizePlaceCoordinates, normalizePlaceDescription } = require('../services/placeService');
+const { reviewCreationRequestSync } = require('../services/placeModeration');
+const { wakeNotificationWorker } = require('../services/placeNotifications');
+const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
 
 // 提交地点修改申请（需登录）
 router.post("/", requireAuth, (req, res) => {
@@ -41,6 +44,8 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
     if (reqRow.status !== 'pending') {
         throw reviewFailure(409, 'PLACE_REQUEST_ALREADY_REVIEWED', '此申请已被处理');
     }
+    // AI 初筛拦下的新地点（doc/placeModeration.md）：通过即公开，驳回后只留给创建者
+    if (reqRow.request_type === 'create') return reviewCreationRequestSync(reqRow, action, adminId);
 
     if (action === 'reject') {
         const reviewed = db._raw.prepare(
@@ -121,12 +126,18 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
     return { action, placeId: reqRow.place_id, semanticChanged };
 });
 
-// 管理员获取所有申请（需 manage_places 权限）
+// 管理员获取所有申请（需 manage_places 权限）。新增复核申请（request_type = 'create'）
+// 另带地点当前内容 place 和 AI 报告 moderation
 router.get("/", requireAuth, requireAdmin("manage_places"), (req, res) => {
     db.all("SELECT * FROM PlaceRequest ORDER BY created_time DESC", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        // 解析 proposed 字段
-        const parsed = rows.map(r => ({ ...r, proposed: tryParseJSON(r.proposed) }));
+        const selectPlace = db._raw.prepare(`SELECT p.*, u.username AS creator_name,${RATING_COLUMNS_SQL}
+            FROM Place p LEFT JOIN User u ON u.id = p.creator_id WHERE p.id = ?`);
+        const parsed = rows.map(r => {
+            const row = { ...r, request_type: r.request_type || 'modify', proposed: tryParseJSON(r.proposed), moderation: r.moderation ? tryParseJSON(r.moderation) : null };
+            if (row.request_type === 'create' && row.status === 'pending') row.place = selectPlace.get(r.place_id) || null;
+            return row;
+        });
         res.json(parsed);
     });
 });
@@ -152,6 +163,7 @@ router.post("/:id/review", requireAuth, requireAdmin("manage_places"), (req, res
 
     res.json({ success: true });
     if (result.semanticChanged) setImmediate(() => queuePlaceVectorSync(result.placeId));
+    if (result.notify) wakeNotificationWorker();
 });
 
 function tryParseJSON(v) {

@@ -2,6 +2,7 @@ const { db } = require('../../../infrastructure/database');
 const { insertAdminAction } = require('../../admin/services/adminAudit');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
 const { normalizePlaceCoordinates, normalizePlaceDescription } = require('./placeService');
+const { isPublicPlace } = require('./placeVisibility');
 
 function placeRequestFailure(status, code, message) {
     const error = new Error(message);
@@ -11,8 +12,10 @@ function placeRequestFailure(status, code, message) {
     return error;
 }
 
-const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed, note }) => {
-    if (!db._raw.prepare('SELECT id FROM Place WHERE id = ?').get(placeId)) {
+const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed, note, moderation }) => {
+    const place = db._raw.prepare('SELECT id, creator_id, moderation_status FROM Place WHERE id = ?').get(placeId);
+    // 初筛中 / 待复核的地点对其他住民不存在（创建者本人直接编辑，不走申请）
+    if (!place || (!isPublicPlace(place) && String(place.creator_id) !== String(requesterId))) {
         throw placeRequestFailure(404, 'PLACE_NOT_FOUND', '地点不存在');
     }
     const coordinates = normalizePlaceCoordinates(proposed);
@@ -35,9 +38,10 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
             ? { menu_images: normalizeImageUrls(proposed.menu_images) }
             : {})
     };
+    // moderation：创建者的修改被 AI 初筛拦下时附上的报告（placeModeration.checkOwnerEdit），管理页显示拦截原因
     const info = db._raw.prepare(
-        'INSERT INTO PlaceRequest (place_id, requester_id, proposed, note) VALUES (?, ?, ?, ?)'
-    ).run(placeId, requesterId, JSON.stringify(normalizedProposed), note || '');
+        'INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, moderation) VALUES (?, ?, ?, ?, ?)'
+    ).run(placeId, requesterId, JSON.stringify(normalizedProposed), note || '', moderation ? JSON.stringify(moderation) : null);
     const row = db._raw.prepare('SELECT * FROM PlaceRequest WHERE id = ?').get(info.lastInsertRowid);
     insertAdminAction(
         requesterId,
@@ -46,17 +50,18 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
         JSON.stringify({
             place_id: Number(placeId),
             request_id: row.id,
-            proposed_fields: Object.keys(normalizedProposed).sort()
+            proposed_fields: Object.keys(normalizedProposed).sort(),
+            ...(moderation ? { held_by_moderation: moderation.decision.reasons } : {})
         })
     );
     return row;
 });
 
-function createPlaceRequest({ placeId, requesterId, proposed, note }) {
+function createPlaceRequest({ placeId, requesterId, proposed, note, moderation = null }) {
     if (!proposed || typeof proposed !== 'object' || Array.isArray(proposed)) {
         throw placeRequestFailure(400, 'INVALID_PLACE_REQUEST', '缺少参数或 proposed 格式错误');
     }
-    return createTransaction.immediate({ placeId, requesterId, proposed, note });
+    return createTransaction.immediate({ placeId, requesterId, proposed, note, moderation });
 }
 
 module.exports = { createPlaceRequest, placeRequestFailure };

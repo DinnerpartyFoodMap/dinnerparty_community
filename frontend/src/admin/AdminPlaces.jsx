@@ -10,7 +10,7 @@ import ActionMenu from "../components/overlay/ActionMenu";
 import useMediaQuery from "../hooks/useMediaQuery";
 import useDarkMode from "../theme/useDarkMode";
 import { getThemeColor } from "../theme/theme";
-import { getApiBaseUrl } from '../platform/runtimeConfig';
+import { getApiBaseUrl, imageThumbnailUrl, resolveResourceUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
 
@@ -22,7 +22,20 @@ function getLatestStoredToken() {
     return peekToken();
 }
 
-export default function AdminPlaces({ backendUrl = null }) {
+// AI 初筛拦下的新地点（request_type = 'create'）和修改申请在同一个列表里复核，
+// 见 backend/modules/places/doc/placeModeration.md
+const isCreateRequest = (request) => !!request && request.request_type === 'create';
+
+function storedImages(value) {
+    try {
+        const list = Array.isArray(value) ? value : JSON.parse(value || '[]');
+        return Array.isArray(list) ? list.filter((item) => typeof item === 'string' && item.trim()) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
     const base = backendUrl || resolveBackendUrl();
     const { token, user, onRequireAuth } = useAuth();
     const [requests, setRequests] = useState([]);
@@ -112,7 +125,9 @@ export default function AdminPlaces({ backendUrl = null }) {
     const review = async (target, action) => {
         const id = target.id;
         const approve = action === 'approve';
-        const impact = approve ? t('admin:places.approveImpact') : t('admin:places.rejectImpact');
+        const impact = isCreateRequest(target)
+            ? (approve ? t('admin:places.createApproveImpact') : t('admin:places.createRejectImpact'))
+            : (approve ? t('admin:places.approveImpact') : t('admin:places.rejectImpact'));
         if (!(await confirm(t('admin:places.confirmReview', { action: approve ? t('admin:places.approve') : t('admin:places.reject'), id, place_id: target.place_id || '-', requester_id: target.requester_id || '-', impact })))) return;
         setProcessing(p => ({ ...p, [id]: true }));
         const thisFetchId = ++fetchIdRef.current; // bump to mark new action
@@ -194,11 +209,68 @@ export default function AdminPlaces({ backendUrl = null }) {
         <ActionMenu
             disabled={processing[request.id]}
             items={[
-                { key: 'approve', label: t('admin:places.approveAction'), onClick: () => review(request, 'approve') },
-                { key: 'reject', label: t('admin:places.rejectAction'), tone: 'danger', onClick: () => review(request, 'reject') }
+                { key: 'approve', label: isCreateRequest(request) ? t('admin:places.createApproveAction') : t('admin:places.approveAction'), onClick: () => review(request, 'approve') },
+                { key: 'reject', label: isCreateRequest(request) ? t('admin:places.createRejectAction') : t('admin:places.rejectAction'), tone: 'danger', onClick: () => review(request, 'reject') }
             ]}
         />
     );
+
+    const reasonLabels = {
+        brief: t('admin:places.moderation.reason.brief'),
+        unrelated: t('admin:places.moderation.reason.unrelated'),
+        harmful: t('admin:places.moderation.reason.harmful'),
+        image: t('admin:places.moderation.reason.image')
+    };
+
+    // AI 初筛的拦截原因（新增复核，和被拦下的创建者修改）
+    const renderModerationReasons = (request) => (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('admin:places.moderation.label')}</span>
+            {(request.moderation?.decision?.reasons || []).map((reason) => (
+                <span key={reason} style={{ padding: '1px 8px', borderRadius: 999, fontSize: 12, border: '1px solid color-mix(in srgb, var(--color-warning) 55%, var(--color-border))', background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)' }}>
+                    {reasonLabels[reason] || reason}
+                </span>
+            ))}
+        </div>
+    );
+
+    // 新增复核：拦截原因、AI 说明、地点当前内容和图片（被标出的图片加红框），可跳到地图查看
+    const renderCreateReview = (request) => {
+        const place = request.place;
+        if (!place) return <div style={{ color: 'var(--color-text-secondary)' }}>{t('admin:places.placeMissing')}</div>;
+        const flagged = new Set(request.moderation?.vision?.flagged_urls || []);
+        const images = [
+            ...storedImages(place.exterior_images).map((url) => ({ url, label: t('admin:places.moderation.field.exterior') })),
+            ...storedImages(place.menu_images).map((url) => ({ url, label: t('admin:places.moderation.field.menu') }))
+        ];
+        return (
+            <div style={{ display: 'grid', gap: 8 }}>
+                {renderModerationReasons(request)}
+                {request.note && <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{request.note}</div>}
+                <JsonTable value={{
+                    [t('admin:places.moderation.field.name')]: place.name,
+                    [t('admin:places.moderation.field.category')]: place.category || null,
+                    [t('admin:places.moderation.field.description')]: place.description || null,
+                    [t('admin:places.moderation.field.address')]: place.address || null,
+                    [t('admin:places.moderation.field.cost')]: place.per_person_cost ?? null
+                }} />
+                {images.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {images.map(({ url, label }, index) => (
+                            <a key={index + url} href={resolveResourceUrl(url)} target="_blank" rel="noopener noreferrer"
+                                title={flagged.has(url) ? label + ' · ' + t('admin:places.moderation.flaggedImage') : label}>
+                                <img src={imageThumbnailUrl(url, 160)} alt={label} loading="lazy"
+                                    style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, display: 'block', border: flagged.has(url) ? '3px solid var(--color-danger)' : '1px solid var(--color-border)' }} />
+                            </a>
+                        ))}
+                    </div>
+                )}
+                {onOpenPlace && (
+                    <div><Button themeAware onClick={() => onOpenPlace(request.place_id)}>{t('admin:places.openOnMap')}</Button></div>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div style={{ marginTop: 12 }}>
@@ -228,14 +300,23 @@ export default function AdminPlaces({ backendUrl = null }) {
                                             <article key={request.id} style={{ padding: 12, border: '1px solid var(--color-border)', borderRadius: 12, background: 'var(--color-bg-surface)' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                                                     <div style={{ minWidth: 0 }}>
-                                                        <div style={{ fontWeight: 700 }}>{tx('admin:places.requestTitle', { id: request.id })}</div>
-                                                        <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{tx('admin:places.requestMeta', { place_id: request.place_id || '-', requester_id: request.requester_id || '-' })}</div>
+                                                        <div style={{ fontWeight: 700 }}>{isCreateRequest(request) ? tx('admin:places.createTitle', { id: request.id }) : tx('admin:places.requestTitle', { id: request.id })}</div>
+                                                        <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>
+                                                            {isCreateRequest(request)
+                                                                ? tx('admin:places.createMeta', { place_id: request.place_id || '-', creator: request.place?.creator_name || request.requester_id || '-' })
+                                                                : tx('admin:places.requestMeta', { place_id: request.place_id || '-', requester_id: request.requester_id || '-' })}
+                                                        </div>
                                                     </div>
                                                     {renderReviewActions(request)}
                                                 </div>
                                                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--color-border)' }}>
-                                                    <JsonTable value={request.proposed} />
-                                                    {request.note && <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{tx('admin:places.requestNote', { note: request.note })}</div>}
+                                                    {isCreateRequest(request) ? renderCreateReview(request) : (
+                                                        <>
+                                                            {request.moderation && <div style={{ marginBottom: 8 }}>{renderModerationReasons(request)}</div>}
+                                                            <JsonTable value={request.proposed} />
+                                                            {request.note && <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{tx('admin:places.requestNote', { note: request.note })}</div>}
+                                                        </>
+                                                    )}
                                                 </div>
                                                 <div style={{ marginTop: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>{request.created_time}</div>
                                             </article>
@@ -268,12 +349,17 @@ export default function AdminPlaces({ backendUrl = null }) {
                                                 <tr key={r.id} style={{ background: idx % 2 === 0 ? 'var(--color-bg-overlay)' : undefined }}>
                                                     <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.id}>{r.id}</td>
                                                     <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.place_id}>{r.place_id}</td>
-                                                    <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.requester_id}>{r.requester_id}</td>
+                                                    <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.requester_id}>{(isCreateRequest(r) && r.place?.creator_name) || r.requester_id}</td>
                                                     <td style={{ minWidth: 100 }}>{r.created_time}</td>
-                                                    <td>{r.status}</td>
+                                                    <td>{isCreateRequest(r) ? <>{r.status}<div style={{ fontSize: 12, color: 'var(--color-warning)' }}>{t('admin:places.typeCreate')}</div></> : r.status}</td>
                                                     <td style={{ maxWidth: 420, verticalAlign: 'top' }}>
-                                                        <JsonTable value={r.proposed} />
-                                                        {r.note ? <div style={{ color: 'var(--color-text-secondary)', marginTop: 6 }}>{tx('admin:places.note', { note: r.note })}</div> : null}
+                                                        {isCreateRequest(r) ? renderCreateReview(r) : (
+                                                            <>
+                                                                {r.moderation && <div style={{ marginBottom: 6 }}>{renderModerationReasons(r)}</div>}
+                                                                <JsonTable value={r.proposed} />
+                                                                {r.note ? <div style={{ color: 'var(--color-text-secondary)', marginTop: 6 }}>{tx('admin:places.note', { note: r.note })}</div> : null}
+                                                            </>
+                                                        )}
                                                     </td>
                                                     <td style={{ minWidth: 140 }}>
                                                         {renderReviewActions(r)}

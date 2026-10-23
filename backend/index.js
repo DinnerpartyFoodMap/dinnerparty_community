@@ -282,6 +282,8 @@ const stopRatingReputationWorker = require('./modules/ratings/services/ratingRep
 // 启动时即建立 Redis 连接（会话存储惰性加载 redis 客户端，这里提前初始化，避免首批请求走 JWT 降级）
 require('./modules/accounts/services/sessions').getDefaultSessionStore();
 startVectorRetryWorker();
+// 新增地点初筛：上次进程退出时还没查完的地点重新排队（modules/places/doc/placeModeration.md）
+require('./modules/places/services/placeModeration').resumeModeration();
 const stopUserVectorWorker = startUserVectorWorker();
 const stopJourneyWorker = require('./modules/journeys/services/journeyAI').startJourneyWorker();
 // QQ Bot (NapCat/OneBot). Disabled unless QQ_BOT_ENABLED=true; connection problems never block the website.

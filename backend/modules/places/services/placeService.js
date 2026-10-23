@@ -2,6 +2,7 @@ const { db } = require('../../../infrastructure/database');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
 const { enqueuePlaceCreatedNotifications, wakeNotificationWorker } = require('./placeNotifications');
 const { RATING_COLUMNS_SQL, isValidScore, defaultCreationScore, insertCreationRating } = require('../../ratings/services/placeRatings');
+const { registerNewPlaceSync, scheduleModeration } = require('./placeModeration');
 
 // Shared validation and creation for every path that adds a marker (web/App,
 // QQ Bot, public diaries). Insertion is synchronous so callers can run it
@@ -206,12 +207,14 @@ function insertPlaceSync(place, creatorId, { source }) {
         creatorId
     );
     const placeId = Number(info.lastInsertRowid);
+    // Non-admin places start hidden from others until the moderation check passes.
+    registerNewPlaceSync(placeId, creatorId, source);
     insertCreationRating(placeId, creatorId, place.rating ?? defaultCreationScore(place.categoryNames));
     enqueuePlaceCreatedNotifications([placeId], { source });
     return placeId;
 }
 
-// Follow-up work for committed new places: vector refresh and notification delivery.
+// Follow-up work for committed new places: vector refresh, the moderation check and notification delivery.
 function afterPlacesCreated(placeIds) {
     const ids = (placeIds || []).filter((id) => Number.isSafeInteger(Number(id)));
     if (!ids.length) return;
@@ -222,6 +225,7 @@ function afterPlacesCreated(placeIds) {
         } catch (_) { /* the vector retry worker picks it up later */ }
         wakeNotificationWorker();
     });
+    scheduleModeration(ids);
 }
 
 function getPlaceWithNames(placeId) {

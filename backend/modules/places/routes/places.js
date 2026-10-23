@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { db, isVectorSearchAvailable } = require("../../../infrastructure/database");
-const { requireAuth } = require("../../accounts/middleware/auth");
+const { requireAuth, attachViewer } = require("../../accounts/middleware/auth");
 const { hasPermission } = require("../../admin/services/adminPermissions");
 const { queuePlaceVectorSync, deletePlaceVector } = require('../../preferences/services/placeVectorService');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
@@ -19,30 +19,34 @@ const { createPlaceRequest } = require('../services/placeRequestService');
 const { nearbyCandidates, drawRecommendation, personalizeCandidates } = require('../../discovery/services/randomRecommendation');
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
 const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
+const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
+const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 
-// 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）
-router.get("/", (req, res) => {
+// 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
+// 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者
+router.get("/", attachViewer, (req, res) => {
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
+                 WHERE ${viewerPlaceSql('p')}
                  ORDER BY p.created_time DESC`;
-    db.all(sql, [], (err, rows) => {
+    db.all(sql, [req.viewer?.id ?? null], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
 });
 
 // 按 bounds 查询范围内地点（附带创建者和最后修改者姓名、评价人数与平均分）
-router.get("/nearby", (req, res) => {
+router.get("/nearby", attachViewer, (req, res) => {
     const { minLng, minLat, maxLng, maxLat } = req.query;
     if (![minLng, minLat, maxLng, maxLat].every(Boolean)) return res.status(400).json({ error: "缺少范围参数" });
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
-                 WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ?`;
-    db.all(sql, [minLng, maxLng, minLat, maxLat], (err, rows) => {
+                 WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND ${viewerPlaceSql('p')}`;
+    db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
@@ -90,8 +94,10 @@ router.get("/random", (req, res, next) => {
 });
 
 // 地点相关的公开日记片段（按日记去重计数、游标分页；只读取仍处于公开状态的快照）
-router.get("/:id/diaries", (req, res) => {
+router.get("/:id/diaries", attachViewer, (req, res) => {
     res.set('Cache-Control', 'no-store');
+    const place = db._raw.prepare('SELECT id, creator_id, moderation_status FROM Place WHERE id = ?').get(req.params.id);
+    if (place && !canViewPlace(place, req.viewer)) return res.status(404).json({ error: '地点不存在' });
     try {
         res.json(require('../../journeys/services/journeyPublication').placeDiaries(req.params.id, { cursor: req.query.cursor, limit: req.query.limit }));
     } catch (error) {
@@ -101,8 +107,8 @@ router.get("/:id/diaries", (req, res) => {
     }
 });
 
-// 获取单个地点
-router.get("/:id", (req, res) => {
+// 获取单个地点（隐藏中的地点只给创建者和管理员）
+router.get("/:id", attachViewer, (req, res) => {
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
@@ -110,7 +116,7 @@ router.get("/:id", (req, res) => {
                  WHERE p.id = ?`;
     db.get(sql, [req.params.id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (!row) return res.status(404).json({ error: "地点不存在" });
+        if (!row || !canViewPlace(row, req.viewer)) return res.status(404).json({ error: "地点不存在" });
         res.json(row);
     });
 });
@@ -158,22 +164,21 @@ router.put("/:id", requireAuth, (req, res) => {
                         LEFT JOIN User u ON p.creator_id = u.id
                         LEFT JOIN User uu ON p.updated_by = uu.id
                         WHERE p.id = ?`;
-    db.get(selPlaceSql, [id], (err, place) => {
+    db.get(selPlaceSql, [id], async (err, place) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (!place) return res.status(404).json({ error: "地点不存在" });
+        if (!place || !canViewPlace(place, req.user)) return res.status(404).json({ error: "地点不存在" });
         const isCreator = String(place.creator_id) === String(req.user.id);
         const canManagePlaces = hasPermission(req.user, "manage_places");
         if (!isCreator && !canManagePlaces) return res.status(403).json({ error: "没有权限编辑" });
 
-        const fields = [];
-        const values = [];
-        if (name != null) { fields.push("name = ?"); values.push(name); }
+        // 要写入 Place 的列值（图片为 JSON 字符串）
+        const updates = {};
+        if (name != null) updates.name = name;
         if (description != null) {
             // 与新增相同：最多 1000 字，接受 HTML
             const normalizedDescription = normalizePlaceDescription(description);
             if (normalizedDescription.error) return res.status(400).json({ error: normalizedDescription.error });
-            fields.push("description = ?");
-            values.push(normalizedDescription.value);
+            updates.description = normalizedDescription.value;
         }
         let normalizedCategoryNames = null;
         if (category != null) {
@@ -185,30 +190,62 @@ router.put("/:id", requireAuth, (req, res) => {
             const normalizedCategoryList = normalizeCategoryList(normalizedCategory.value);
             if (normalizedCategoryList.error) return res.status(400).json({ error: normalizedCategoryList.error });
             normalizedCategoryNames = normalizedCategoryList.names;
-            fields.push("category = ?");
-            values.push(normalizedCategoryList.value);
+            updates.category = normalizedCategoryList.value;
         }
         const coordinates = normalizePlaceCoordinates({
             latitude: latitude ?? undefined,
             longitude: longitude ?? undefined
         });
         if (coordinates.error) return res.status(400).json({ error: coordinates.error });
-        for (const [key, value] of Object.entries(coordinates.value)) { fields.push(`${key} = ?`); values.push(value); }
-        if (exterior_images !== undefined) { fields.push("exterior_images = ?"); values.push(exterior_images ? JSON.stringify(normalizeImageUrls(exterior_images)) : null); }
-        if (menu_images !== undefined) { fields.push("menu_images = ?"); values.push(menu_images ? JSON.stringify(normalizeImageUrls(menu_images)) : null); }
+        Object.assign(updates, coordinates.value);
+        if (exterior_images !== undefined) updates.exterior_images = exterior_images ? JSON.stringify(normalizeImageUrls(exterior_images)) : null;
+        if (menu_images !== undefined) updates.menu_images = menu_images ? JSON.stringify(normalizeImageUrls(menu_images)) : null;
         if (per_person_cost !== undefined) {
             if (per_person_cost === null || per_person_cost === '') {
-                fields.push("per_person_cost = ?"); values.push(null);
+                updates.per_person_cost = null;
             } else {
                 const cost = normalizePerPersonCost(per_person_cost);
                 if (cost.error) return res.status(400).json({ error: cost.error });
-                fields.push("per_person_cost = ?"); values.push(cost.value);
+                updates.per_person_cost = cost.value;
             }
         }
+        if (Object.keys(updates).length === 0) return res.status(400).json({ error: "没有提供要更新的字段" });
+
+        // 创建者（非管理员）改自己已公开的地点：先过 AI 初筛（doc/placeModeration.md）。改出明显不合规的内容时
+        // 这次修改不生效，转成修改申请交管理员审核，地点对所有人保持原样
+        if (isCreator && !canManagePlaces && place.moderation_status === 'visible') {
+            let verdict = { flagged: false };
+            try {
+                verdict = await checkOwnerEdit(place, updates);
+            } catch (moderationError) {
+                res.locals.unhandledError = moderationError;
+            }
+            if (verdict.flagged) {
+                const proposed = Object.fromEntries(Object.entries(updates).map(([key, value]) => (
+                    ['exterior_images', 'menu_images'].includes(key) ? [key, value ? JSON.parse(value) : []] : [key, value]
+                )));
+                try {
+                    const request = createPlaceRequest({
+                        placeId: place.id, requesterId: req.user.id, proposed,
+                        note: `创建者的修改未通过 AI 初筛：${reviewNote(verdict.report)}`, moderation: verdict.report
+                    });
+                    return res.status(202).json({
+                        pending_review: true, request_id: request.id, reasons: verdict.report.decision.reasons,
+                        message: '修改含有需要管理员审核的内容，已提交审核，通过后生效'
+                    });
+                } catch (requestError) {
+                    if (requestError && requestError.publicMessage) return res.status(requestError.status || 400).json({ error: requestError.publicMessage });
+                    res.locals.unhandledError = requestError;
+                    return res.status(500).json({ error: '更新失败，请稍后重试' });
+                }
+            }
+        }
+
+        const fields = Object.keys(updates).map((key) => `${key} = ?`);
+        const values = Object.values(updates);
         const semanticChanged = [name, description, category, per_person_cost]
             .some((value) => value !== undefined);
         if (semanticChanged) fields.push('has_vector = 0');
-        if (fields.length === 0) return res.status(400).json({ error: "没有提供要更新的字段" });
 
         // 更新 updated_time 和 updated_by
         const sql = `UPDATE Place SET ${fields.join(', ')}, updated_time = CURRENT_TIMESTAMP, updated_by = ? WHERE id = ?`;
@@ -221,6 +258,10 @@ router.put("/:id", requireAuth, (req, res) => {
         }
         db.run(sql, values, function (e) {
             if (e) return res.status(500).json({ error: e.message });
+            // 创建者改了复核中的地点：重新初筛；改了被驳回的地点：重新提交人工复核
+            if (isCreator && place.moderation_status !== 'visible') {
+                try { afterOwnerEdit(id); } catch (moderationError) { res.locals.unhandledError = moderationError; }
+            }
             const sel = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                          FROM Place p
                          LEFT JOIN User u ON p.creator_id = u.id
@@ -245,7 +286,7 @@ router.delete("/:id", requireAuth, (req, res) => {
                         WHERE p.id = ?`;
     db.get(selPlaceSql, [id], (err, place) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (!place) return res.status(404).json({ error: "地点不存在" });
+        if (!place || !canViewPlace(place, req.user)) return res.status(404).json({ error: "地点不存在" });
         const isCreator = String(place.creator_id) === String(req.user.id);
         const canManagePlaces = hasPermission(req.user, "manage_places");
         if (!isCreator && !canManagePlaces) {
@@ -253,6 +294,7 @@ router.delete("/:id", requireAuth, (req, res) => {
         }
         db.run("DELETE FROM Place WHERE id = ?", [id], function (e) {
             if (e) return res.status(500).json({ error: e.message });
+            if (place.moderation_status !== 'visible') withdrawCreationRequests(id);
             try { deletePlaceVector(id); } catch (vectorError) {
                 console.warn(`Failed to delete vector for place ${id}:`, vectorError.message);
             }

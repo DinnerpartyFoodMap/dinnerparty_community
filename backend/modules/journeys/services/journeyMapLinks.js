@@ -1,5 +1,6 @@
 const {sql,now,string}=require('./journeyStore');
 const {defaultCreationScore,insertCreationRating}=require('../../ratings/services/placeRatings');
+const {registerNewPlaceSync}=require('../../places/services/placeModeration');
 
 // Decides, per diary stop, whether saving links an existing marker, creates a missing one, or neither.
 // Only confirmed, visited, located stops reach the map; a search center or a guess never becomes a marker.
@@ -15,9 +16,10 @@ function similarName(a,b) {
     return !!x&&!!y&&(x===y||(Math.min(x.length,y.length)>=2&&(x.includes(y)||y.includes(x))));
 }
 // A same or similar name nearby is a possible duplicate for the author to decide; it is never merged automatically.
+// Only public markers count: a place still under moderation is not shown to other users (also used by the QQ bot).
 function findDuplicates(stop,radius=500) {
     const dLat=radius/111000,dLng=radius/(111000*Math.max(0.2,Math.cos(stop.lat*Math.PI/180)));
-    return sql.prepare('SELECT id,name,longitude,latitude,address FROM Place WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? LIMIT 400')
+    return sql.prepare("SELECT id,name,longitude,latitude,address FROM Place WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? AND moderation_status='visible' LIMIT 400")
         .all(stop.lat-dLat,stop.lat+dLat,stop.lng-dLng,stop.lng+dLng)
         .filter(p=>similarName(p.name,stop.name))
         .map(p=>({id:p.id,name:p.name,address:p.address||'',lng:p.longitude,lat:p.latitude,distance_m:Math.round(meters(stop,{lng:p.longitude,lat:p.latitude}))}))
@@ -77,6 +79,8 @@ function createPlace(userId,stop,link) {
     const category=string(stop.category,16).replace(/[<>,，]/g,'');
     const id=Number(sql.prepare(`INSERT INTO Place(name,description,latitude,longitude,category,creator_id,updated_time,updated_by,address)
         VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP,?,?)`).run(name,'',stop.lat,stop.lng,category,userId,userId,string(stop.address,250)||null).lastInsertRowid);
+    // The diary holds the description, so the moderation check skips the brief-description rule for these markers.
+    registerNewPlaceSync(id,userId,'diary');
     if(category)sql.prepare('INSERT OR IGNORE INTO Category(name,is_common,sort_order,created_by) VALUES(?,0,1000,?)').run(category,userId);
     // Same creator rating as other creation paths; a duplicate below deletes the place and cascades it away.
     insertCreationRating(id,userId,defaultCreationScore(category));

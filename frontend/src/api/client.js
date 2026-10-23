@@ -19,14 +19,17 @@ export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { s
     return data;
 }
 
-export async function fetchPlacesNearby(backendUrl, { minLng, minLat, maxLng, maxLat }, { signal } = {}) {
+// 带 token 时结果包含自己新增、还在审核中的地点（其他人看不到）；token 无效时后端按游客返回
+const authHeaders = (token) => (token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+
+export async function fetchPlacesNearby(backendUrl, { minLng, minLat, maxLng, maxLat }, { signal, token } = {}) {
     const params = new URLSearchParams({
         minLng: String(minLng),
         minLat: String(minLat),
         maxLng: String(maxLng),
         maxLat: String(maxLat)
     });
-    const res = await fetch(`${backendUrl}/places/nearby?${params.toString()}`, { signal });
+    const res = await fetch(`${backendUrl}/places/nearby?${params.toString()}`, { signal, ...authHeaders(token) });
     if (!res.ok) throw new Error(`Failed to fetch nearby places: ${res.status}`);
     return res.json();
 }
@@ -95,7 +98,7 @@ export async function searchPlacesFast(backendUrl, opts = {}) {
         params.set('lng', String(opts.center.lng));
     }
     const url = `${backendUrl}/api/places/search/fast?${params.toString()}`;
-    const res = await fetch(url, { signal: opts.signal });
+    const res = await fetch(url, { signal: opts.signal, ...authHeaders(opts.token) });
     if (!res.ok) throw new Error(`search failed: ${res.status}`);
     return res.json();
 }
@@ -123,6 +126,11 @@ export async function searchPlacesAi(backendUrl, opts = {}) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `AI search failed: ${res.status}`);
     return data;
+}
+
+// 单个地点：自己审核中的地点要带 token 才能读到（管理员同样）
+export async function fetchPlace(backendUrl, id, { token, signal } = {}) {
+    return fetch(`${backendUrl}/places/${encodeURIComponent(id)}`, { signal, ...authHeaders(token) });
 }
 
 export async function putPlace(backendUrl, token, id, payload) {

@@ -3,7 +3,7 @@ import { searchPlacesFast } from '../../api/client';
 import { currentMapCenter, distanceMeters } from '../externalSearch.js';
 
 // Input previews use our SQLite markers only. External POIs require an explicit action.
-export function useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places) {
+export function useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places, token = null) {
     const [results, setResults] = useState(null);
     const [loading, setLoading] = useState(false);
     useEffect(() => {
@@ -15,7 +15,7 @@ export function useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places)
         const timer = window.setTimeout(async () => {
             try {
                 const center = currentMapCenter(mapRef);
-                const data = await searchPlacesFast(backendUrl, { q: query, center, limit: 30, signal: controller.signal });
+                const data = await searchPlacesFast(backendUrl, { q: query, center, limit: 30, signal: controller.signal, token });
                 if (cancelled) return;
                 setResults((Array.isArray(data) ? data : []).map(place => {
                     const distanceKm = place.distance_km == null ? NaN : Number(place.distance_km);
@@ -27,6 +27,6 @@ export function useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places)
             } finally { if (!cancelled) setLoading(false); }
         }, 300);
         return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
-    }, [searchTerm, mapRef, backendUrl, mapReady, places]);
+    }, [searchTerm, mapRef, backendUrl, mapReady, places, token]);
     return { results, loading };
 }

@@ -269,6 +269,7 @@ async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = 
         JOIN Place p ON p.id = nearest.place_id
         LEFT JOIN User u ON p.creator_id = u.id
         LEFT JOIN User uu ON p.updated_by = uu.id
+        WHERE p.moderation_status = 'visible'
         ORDER BY nearest.distance`).all(vectorBuffer(embedding), candidateLimit);
 
     const matches = rankSemanticRows(rows, {

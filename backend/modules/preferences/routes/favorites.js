@@ -15,9 +15,9 @@ router.get('/', (req, res) => {
                 p.name, p.longitude, p.latitude, p.category, p.description
          FROM Favorite f
          LEFT JOIN Place p ON f.place_id = p.id
-         WHERE f.user_id = ?
+         WHERE f.user_id = ? AND (p.id IS NULL OR p.moderation_status = 'visible' OR p.creator_id = ?)
          ORDER BY f.created_time DESC`,
-        [userId],
+        [userId, userId],
         (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json(rows || []);

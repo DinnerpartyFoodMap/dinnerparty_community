@@ -1,6 +1,7 @@
 const express = require('express');
 const { performance } = require('perf_hooks');
 const { fastSearch } = require('../services/placeSearch');
+const { attachViewer } = require('../../accounts/middleware/auth');
 const {
     searchSemanticPlaces,
     normalizeCenter,
@@ -24,7 +25,7 @@ function sendFastSearch(req, res) {
     if (!query) return res.json([]);
     const startedAt = performance.now();
     const center = { lat: req.query.lat, lng: req.query.lng };
-    const rows = fastSearch(query, parseLimit(req.query.limit), { center });
+    const rows = fastSearch(query, parseLimit(req.query.limit), { center, viewerId: req.viewer?.id ?? null });
     const duration = performance.now() - startedAt;
     res.set('Server-Timing', `sqlite;dur=${duration.toFixed(1)}`);
     res.set('Cache-Control', 'no-store');
@@ -49,10 +50,10 @@ function consumeAiRateLimit(req) {
 }
 
 // Request A: local keyword relevance + proximity ranking; no AI calls.
-router.get('/places/search/fast', sendFastSearch);
+router.get('/places/search/fast', attachViewer, sendFastSearch);
 
 // Backward-compatible alias used by older clients and live suggestions.
-router.get('/places/search', sendFastSearch);
+router.get('/places/search', attachViewer, sendFastSearch);
 
 // Request B: embedding -> sqlite-vec KNN -> DeepSeek Yuyuko recommendation.
 router.post('/places/search/ai', async (req, res) => {

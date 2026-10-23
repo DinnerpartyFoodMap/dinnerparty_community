@@ -295,7 +295,8 @@ const USER_REFERENCE_TABLES = [
             menu_images TEXT,
             has_vector INTEGER NOT NULL DEFAULT 0,
             vector_updated_at DATETIME,
-            address TEXT
+            address TEXT,
+            moderation_status TEXT NOT NULL DEFAULT 'visible'
         )`
     },
     {
@@ -350,7 +351,9 @@ const USER_REFERENCE_TABLES = [
             status TEXT DEFAULT 'pending',
             reviewed_by TEXT,
             reviewed_time DATETIME,
-            created_time DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            request_type TEXT NOT NULL DEFAULT 'modify',
+            moderation TEXT
         )`
     },
     {
@@ -517,6 +520,8 @@ function init() {
         addPlaceIfMissing('has_vector INTEGER NOT NULL DEFAULT 0');
         addPlaceIfMissing('vector_updated_at DATETIME');
         addPlaceIfMissing('address TEXT');
+        // 新增地点初筛：visible 所有人可见，checking / pending / rejected 只有创建者和管理员可见
+        addPlaceIfMissing("moderation_status TEXT NOT NULL DEFAULT 'visible'");
 
         // Repair image URLs saved by older frontend builds that replaced the
         // configured cn.dinnerparty.cc backend with the apex domain.
@@ -730,6 +735,7 @@ function init() {
         require('../modules/accounts/services/userLocation').initUserLocationSchema(rawDb);
         require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
+        require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_sitenotice_active_created_time ON SiteNotice(is_active, created_time DESC);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_request_id ON AdminAudit(request_id);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_admin_time ON AdminAudit(admin_id, time DESC);`);

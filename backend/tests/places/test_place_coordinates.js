@@ -12,7 +12,9 @@ const { spawnSync } = require('child_process');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'yuyuko-place-coordinates-'));
 Object.assign(process.env, {
     LOG_TO_FILE: 'false', LOG_TO_CONSOLE: 'false', SILICONFLOW_API_KEY: '', DEEPSEEK_API_KEY: '',
-    DB_FILE: path.join(temp, 'test.sqlite')
+    DB_FILE: path.join(temp, 'test.sqlite'),
+    // New places are public at once here; the moderation flow has its own test (test_place_moderation.js).
+    PLACE_MODERATION_ENABLED: 'false'
 });
 require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
 

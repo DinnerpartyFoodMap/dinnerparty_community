@@ -19,7 +19,7 @@ const PERMISSIONS = {
     KOMACHI: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "住民反馈"]
 };
 
-export default function AdminDashboard({ user, token, backendUrl, onBackHome, onLogout, onRequireAuth }) {
+export default function AdminDashboard({ user, token, backendUrl, onBackHome, onOpenPlace, onLogout, onRequireAuth }) {
     const level = user && user.admin_level ? user.admin_level : null;
     const perms = level ? (PERMISSIONS[level] || []) : [];
     const [auditOpen, setAuditOpen] = useState(false);
@@ -83,7 +83,7 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
                 {/* 标记点管理面板 */}
                 {canManagePlaces && (
                     <div style={panelStyle}>
-                        <AdminPlaces backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} />
+                        <AdminPlaces backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} onOpenPlace={onOpenPlace} />
                     </div>
                 )}
 

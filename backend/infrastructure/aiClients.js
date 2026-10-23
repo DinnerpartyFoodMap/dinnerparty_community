@@ -205,17 +205,23 @@ function parseJsonObjectContent(content) {
  * One DeepSeek chat call that must answer with a single JSON object. Returns the
  * parsed object, null when the answer is not JSON, and throws on network/API
  * errors or when no key is configured. Callers validate every field themselves.
+ * `images` (data or https URLs) are sent after the user text; only models that
+ * read images can judge them (deepseek-flash does, deepseek-v4-pro answers
+ * without seeing them). `model` overrides DEEPSEEK_MODEL for this call.
  */
-async function completeDeepseekJson({ system, user, maxTokens = 400, temperature = 0.1, timeoutMs = DEEPSEEK_EXPANSION_TIMEOUT_MS }) {
+async function completeDeepseekJson({ system, user, images = [], model = '', maxTokens = 400, temperature = 0.1, timeoutMs = DEEPSEEK_EXPANSION_TIMEOUT_MS }) {
     if (!DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY is not configured');
+    const content = images.length
+        ? [{ type: 'text', text: user }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))]
+        : user;
     const body = await postJson(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
-        model: DEEPSEEK_MODEL,
+        model: model || DEEPSEEK_MODEL,
         thinking: { type: 'disabled' },
         temperature,
         max_tokens: maxTokens,
         messages: [
             { role: 'system', content: system },
-            { role: 'user', content: user }
+            { role: 'user', content }
         ]
     }, DEEPSEEK_API_KEY, timeoutMs);
     return parseJsonObjectContent(body?.choices?.[0]?.message?.content);

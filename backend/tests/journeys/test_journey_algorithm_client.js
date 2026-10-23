@@ -172,10 +172,12 @@ async function main() {
     assert.equal(received.length,beforePreAbort,'already canceled work must not reach the service');
 
     const {db}=require('../../infrastructure/database');sql=db._raw;
-    sql.exec('CREATE TABLE Place (id INTEGER PRIMARY KEY,name TEXT,longitude REAL,latitude REAL,address TEXT,private_note TEXT)');
+    sql.exec("CREATE TABLE Place (id INTEGER PRIMARY KEY,name TEXT,longitude REAL,latitude REAL,address TEXT,private_note TEXT,moderation_status TEXT NOT NULL DEFAULT 'visible')");
     const insert=sql.prepare('INSERT INTO Place(name,longitude,latitude,address,private_note) VALUES(?,120,30,?,?)');
     insert.run('杭州面馆','地址','PRIVATE_SENTINEL');insert.run('另一家面馆','地址2','PRIVATE_SENTINEL');insert.run('西湖饭店','地址3','PRIVATE_SENTINEL');
     for(let i=0;i<402;i++)insert.run(`批量面馆${i}`,'批量地址','PRIVATE_SENTINEL');
+    // A marker still under moderation is never offered to the algorithm service.
+    sql.prepare("INSERT INTO Place(name,longitude,latitude,address,moderation_status) VALUES('杭州面馆分店',120,30,'隐藏','pending')").run();
     const app=express();app.use(express.json({limit:'2kb'}));
     app.use('/internal/journey-algorithms/places',require('../../modules/journeys/routes/algorithmPlaces'));
     callbackServer=http.createServer(app);

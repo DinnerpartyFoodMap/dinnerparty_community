@@ -723,6 +723,7 @@ export default function App() {
                     token={token}
                     backendUrl={BACKEND_URL}
                     onBackHome={() => goPath("/")}
+                    onOpenPlace={(placeId) => goPath(`/?place=${encodeURIComponent(placeId)}`)}
                     onLogout={handleLogout}
                     onRequireAuth={handleRequireAuth}
                 />

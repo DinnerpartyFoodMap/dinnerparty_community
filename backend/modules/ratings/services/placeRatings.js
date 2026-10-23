@@ -164,16 +164,17 @@ function ownRating(placeId, userId) {
     return row ? { score: row.score, source: row.source, updated_at: row.updated_at } : null;
 }
 
-function requirePlace(placeId) {
+// A place still under moderation (doc/placeModeration.md) exists only for its creator.
+function requirePlace(placeId, viewerId = null) {
     if (!validPlaceId(placeId)) fail(400, '无效的地点');
     const id = Number(placeId);
-    if (!db._raw.prepare('SELECT id FROM Place WHERE id = ?').get(id)) fail(404, '地点不存在');
+    if (!db._raw.prepare("SELECT id FROM Place WHERE id = ? AND (moderation_status = 'visible' OR creator_id = ?)").get(id, viewerId)) fail(404, '地点不存在');
     return id;
 }
 
 /** Everything the rating panel shows. `viewer` is the authenticated user or null for guests. */
 function ratingState(placeId, viewer = null) {
-    const id = requirePlace(placeId);
+    const id = requirePlace(placeId, viewer ? viewer.id : null);
     const state = { place_id: id, summary: ratingSummary(id), mine: null, personalized: null, quota: null };
     if (!viewer) return state;
     state.mine = ownRating(id, viewer.id);
@@ -188,7 +189,7 @@ function ratingState(placeId, viewer = null) {
 }
 
 const rateTransaction = db._raw.transaction((userId, placeId, score, now) => {
-    if (!db._raw.prepare('SELECT id FROM Place WHERE id = ?').get(placeId)) fail(404, '地点不存在');
+    if (!db._raw.prepare("SELECT id FROM Place WHERE id = ? AND (moderation_status = 'visible' OR creator_id = ?)").get(placeId, userId)) fail(404, '地点不存在');
     const current = db._raw.prepare('SELECT score FROM PlaceRating WHERE place_id = ? AND user_id = ?').get(placeId, userId);
     if (current && current.score === score) return false;
     const quota = ratingQuota(userId, placeId, now);
@@ -206,7 +207,7 @@ const rateTransaction = db._raw.transaction((userId, placeId, score, now) => {
 });
 
 function ratePlace(user, placeId, score) {
-    const id = requirePlace(placeId);
+    const id = requirePlace(placeId, user.id);
     if (!isValidScore(score)) fail(400, '请选择一个评价');
     // The acting user always comes from authentication, never from the request body.
     const changed = rateTransaction.immediate(user.id, id, score, Date.now());
@@ -223,7 +224,7 @@ const withdrawTransaction = db._raw.transaction((userId, placeId, now) => {
 });
 
 function withdrawRating(user, placeId) {
-    const id = requirePlace(placeId);
+    const id = requirePlace(placeId, user.id);
     if (withdrawTransaction.immediate(user.id, id, Date.now())) queueUserVectorRefresh(user.id);
     return ratingState(id, user);
 }

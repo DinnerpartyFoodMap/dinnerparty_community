@@ -46,7 +46,7 @@ function buildMessage(places) {
 
 function loadPlaces(ids) {
     const select = sql.prepare(`SELECT p.id, p.name, p.address, p.category, p.per_person_cost, p.description, u.username AS creator_name
-        FROM Place p LEFT JOIN User u ON u.id = p.creator_id WHERE p.id = ?`);
+        FROM Place p LEFT JOIN User u ON u.id = p.creator_id WHERE p.id = ? AND p.moderation_status = 'visible'`);
     return new Map(ids.map((id) => [id, select.get(id)]).filter(([, row]) => row));
 }
 

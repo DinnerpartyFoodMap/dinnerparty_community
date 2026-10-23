@@ -361,6 +361,16 @@ export default function MapUI(props) {
     const openRating = () => setRatingOpen(true);
     // 举报：打开预填好的意见反馈表（类型“不良信息举报”、地点名、编号与链接），住民接着写原因；高德临时地点没有收录，不能举报
     const canReportPlace = !!(onOpenFeedback && ratingPlaceId != null);
+    // 新增地点审核中 / 未通过：其他住民看不到这类地点，能打开它的只有创建者和管理员，卡片上提示一句
+    // （初筛进行中的 checking 只有几秒，不提示）。见 backend/modules/places/doc/placeModeration.md
+    const moderationStatus = selectedPlace?.moderation_status === 'pending' || selectedPlace?.moderation_status === 'rejected'
+        ? selectedPlace.moderation_status : null;
+    const moderationOwn = !!currentUser && !!moderationStatus && String(selectedPlace.creator_id) === String(currentUser.id);
+    const moderationShort = moderationStatus === 'rejected' ? t('map:ui.moderation.rejectedShort')
+        : (moderationStatus === 'pending' ? t('map:ui.moderation.pendingShort') : null);
+    const moderationNote = moderationStatus === 'rejected'
+        ? (moderationOwn ? t('map:ui.moderation.rejectedOwn') : t('map:ui.moderation.rejected'))
+        : (moderationStatus === 'pending' ? (moderationOwn ? t('map:ui.moderation.pendingOwn') : t('map:ui.moderation.pending')) : null);
     const reportPlace = () => { if (canReportPlace) onOpenFeedback(placeReportPrefill(selectedPlace)); };
     const ratingSummary = placeRating.data ? placeRating.data.summary : summaryFromPlace(selectedPlace);
     const myRatingTier = placeRating.data && placeRating.data.mine ? ratingTierFor(placeRating.data.mine.score) : null;
@@ -864,7 +874,7 @@ export default function MapUI(props) {
         chromeSheet = {
             id: 'place',
             title: selectedPlace.name || t('common:label.unnamedPlace'),
-            subtitle: [ratingCompact, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
+            subtitle: [moderationShort, ratingCompact, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
             size: 'card',
             leading: { id: 'share', title: t('map:ui.share.title'), symbol: 'square.and.arrow.up', ...nativeIcon('cardActions.share'), keepsOpen: true },
             // 简介支持基础 Markdown：detail 是去掉标记的纯文本（旧版 App 只认它），detailMarkdown 是原生可显示的行内格式
@@ -898,7 +908,14 @@ export default function MapUI(props) {
             ].filter(Boolean),
             sections: [
                 ratingRow && { id: 'rating', title: t('map:rating.panel.title'), rows: [ratingRow] },
-                { id: 'meta', footer: t('map:ui.lastModified', { modifier: getLastModifierText(selectedPlace) }), rows: diaryCount > 0 ? [{ id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: 'book.pages', keepsOpen: true }] : [] }
+                {
+                    id: 'meta',
+                    footer: t('map:ui.lastModified', { modifier: getLastModifierText(selectedPlace) }),
+                    rows: [
+                        moderationStatus && { id: 'moderation', title: moderationShort, subtitle: moderationNote, symbol: 'eye.slash', tone: 'warning', disabled: true },
+                        diaryCount > 0 && { id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: 'book.pages', keepsOpen: true }
+                    ].filter(Boolean)
+                }
             ].filter(Boolean),
             gallery: unmarked ? [] : [
                 nativeGalleryGroup('exterior', t('map:ui.exteriorImages'), selectedPlace.exterior_images),
@@ -1147,7 +1164,7 @@ export default function MapUI(props) {
         }
     };
 
-    const { results: spResults, loading: spLoading } = useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places);
+    const { results: spResults, loading: spLoading } = useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places, token);
 
     // Close detail and rating panels if popup closes
     useEffect(() => {
@@ -1491,6 +1508,12 @@ export default function MapUI(props) {
             {!pickerMode && (
                 <div style={{ marginTop: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
                     {tx('map:ui.lastModified', { modifier: getLastModifierText(selectedPlace) })}
+                </div>
+            )}
+            {moderationNote && (
+                <div role="note" style={{ marginTop: 6, display: 'flex', alignItems: 'flex-start', gap: 4, fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-secondary)' }}>
+                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16, color: 'var(--color-warning)' }}>visibility_off</span>
+                    <span>{moderationNote}</span>
                 </div>
             )}
             {!pickerMode && diaryCount > 0 && (

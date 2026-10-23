@@ -23,7 +23,7 @@ router.post('/', (req, res) => {
     const name = body.name.trim().replace(/[%_]/g, '').trim();
     if (!name) return res.status(400).json({error:'请提供有效地点名称'});
     try {
-        const places = db._raw.prepare('SELECT id,name,longitude,latitude,address FROM Place WHERE name LIKE ? LIMIT 400').all(`%${name}%`);
+        const places = db._raw.prepare("SELECT id,name,longitude,latitude,address FROM Place WHERE name LIKE ? AND moderation_status='visible' LIMIT 400").all(`%${name}%`);
         return res.json({places});
     } catch {
         return res.status(503).json({error:'地点检索暂不可用'});

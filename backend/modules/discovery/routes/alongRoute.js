@@ -172,7 +172,7 @@ router.post('/search', (req, res) => {
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
-                 WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ?`;
+                 WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND p.moderation_status = 'visible'`;
     db.all(sql, [bounds.minLng, bounds.maxLng, bounds.minLat, bounds.maxLat], (error, rows) => {
         if (error) return res.status(500).json({ error: error.message });
 

@@ -43,7 +43,8 @@ function searchCenter(point) {
 // Keyword search shared by both HTTP aliases and the QQ bot. The optional center
 // biases broad discovery; a complete restaurant name still wins across cities.
 // See services/placeSearch.md for sources, weights and warning-query rules.
-function fastSearch(query, limit = 50, { center } = {}) {
+// viewerId：网页 / App 带登录态时传入，结果包含自己还在复核中的地点；QQ 机器人等不传，只搜公开地点。
+function fastSearch(query, limit = 50, { center, viewerId = null } = {}) {
     const rawQuery = String(query ?? '').trim().slice(0, QUERY_MAX_LENGTH);
     const queryTerms = splitTerms(rawQuery);
     if (!queryTerms.length) return [];
@@ -52,7 +53,7 @@ function fastSearch(query, limit = 50, { center } = {}) {
     const exactName = normalizeText(rawQuery);
     const safeCenter = searchCenter(center);
     const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 50));
-    const parameters = {};
+    const parameters = { viewer: viewerId == null ? null : String(viewerId) };
     const predicates = terms.map((term, index) => {
         parameters[`term${index}`] = term;
         return `(instr(place_search_text(p.name), @term${index}) > 0
@@ -63,7 +64,8 @@ function fastSearch(query, limit = 50, { center } = {}) {
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
-                 WHERE ${predicates.length ? predicates.join(' AND ') : '1 = 1'}`;
+                 WHERE (p.moderation_status = 'visible' OR p.creator_id = @viewer)
+                   AND ${predicates.length ? predicates.join(' AND ') : '1 = 1'}`;
     // Never truncate candidates here: a nearby category match can otherwise be
     // lost behind an entire page of remote name matches before ranking starts.
     const rows = db._raw.prepare(sql).all(parameters);

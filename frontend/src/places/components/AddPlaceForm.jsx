@@ -57,6 +57,8 @@ export default function AddForm({ backendUrl, token, defaultPos, defaultName = "
             <div style={{ marginTop: 8 }}>
                 {/* 描述可以写多行，支持基础 Markdown（与后端一致最多 1000 字） */}
                 <TextArea markdown rows={3} maxLength={1000} placeholder={t('map:common.label.description')} value={description} onChange={(e) => setDescription(e.target.value)} style={{ width: "100%", borderRadius: 16, minHeight: 72 }} />
+                {/* 新增地点会先经过初筛（backend/modules/places/doc/placeModeration.md），规则在用户协议里 */}
+                <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-muted)' }}>{t('map:addForm.reviewHint')}</div>
             </div>
             <div style={{ marginTop: 8 }}>
                 <TextInput

@@ -23,15 +23,16 @@ router.put('/consent',run((req,res)=>{
     })();
     res.json(consent(req.user.id));
 }));
-function collection(row) {
-    return {...row,is_public:!!row.is_public,places:sql.prepare(`SELECT p.id,p.name,p.category,p.per_person_cost FROM PublicCollectionItem i JOIN Place p ON p.id=i.place_id WHERE i.collection_id=?`).all(row.id)};
+// Places still under moderation appear only to their creator (doc/placeModeration.md in places).
+function collection(row,viewerId=null) {
+    return {...row,is_public:!!row.is_public,places:sql.prepare(`SELECT p.id,p.name,p.category,p.per_person_cost FROM PublicCollectionItem i JOIN Place p ON p.id=i.place_id WHERE i.collection_id=? AND (p.moderation_status='visible' OR p.creator_id=?)`).all(row.id,viewerId)};
 }
-router.get('/collections',run((req,res)=>res.json(sql.prepare('SELECT * FROM PublicCollection WHERE user_id=? ORDER BY updated_at DESC').all(req.user.id).map(collection))));
+router.get('/collections',run((req,res)=>res.json(sql.prepare('SELECT * FROM PublicCollection WHERE user_id=? ORDER BY updated_at DESC').all(req.user.id).map(row=>collection(row,req.user.id)))));
 router.post('/collections',run((req,res)=>{
     if(sql.prepare('SELECT COUNT(*) AS n FROM PublicCollection WHERE user_id=?').get(req.user.id).n>=30) fail('最多创建 30 个收藏夹');
     const id=randomUUID();
     sql.prepare('INSERT INTO PublicCollection VALUES(?,?,?,?,?)').run(id,req.user.id,string(req.body.title,80)||'我的收藏夹',0,now());
-    res.status(201).json(collection(sql.prepare('SELECT * FROM PublicCollection WHERE id=?').get(id)));
+    res.status(201).json(collection(sql.prepare('SELECT * FROM PublicCollection WHERE id=?').get(id),req.user.id));
 }));
 router.put('/collections/:id',run((req,res)=>{
     if(!sql.prepare('SELECT id FROM PublicCollection WHERE id=? AND user_id=?').get(req.params.id,req.user.id)) fail('收藏夹不存在',404);
@@ -43,7 +44,7 @@ router.put('/collections/:id',run((req,res)=>{
         sql.prepare('DELETE FROM PublicCollectionItem WHERE collection_id=?').run(req.params.id);
         for(const id of ids) sql.prepare('INSERT INTO PublicCollectionItem VALUES(?,?)').run(req.params.id,id);
     })();
-    res.json(collection(sql.prepare('SELECT * FROM PublicCollection WHERE id=?').get(req.params.id)));
+    res.json(collection(sql.prepare('SELECT * FROM PublicCollection WHERE id=?').get(req.params.id),req.user.id));
 }));
 router.delete('/collections/:id',run((req,res)=>{sql.prepare('DELETE FROM PublicCollection WHERE id=? AND user_id=?').run(req.params.id,req.user.id);res.status(204).end();}));
 router.get('/neighbors',run((req,res)=>res.json(neighbors(req.user.id))));
@@ -51,7 +52,7 @@ router.get('/users/:id/collections',run((req,res)=>{
     if(!consent(req.params.id).discovery) fail('用户未开启同好发现',404);
     const user=sql.prepare('SELECT id,username FROM User WHERE id=? AND COALESCE(is_banned,0)=0').get(req.params.id);
     if(!user) fail('用户不存在',404);
-    res.json({user,collections:sql.prepare('SELECT id,title,is_public,updated_at FROM PublicCollection WHERE user_id=? AND is_public=1').all(user.id).map(collection)});
+    res.json({user,collections:sql.prepare('SELECT id,title,is_public,updated_at FROM PublicCollection WHERE user_id=? AND is_public=1').all(user.id).map(row=>collection(row,req.user?.id??null))});
 }));
 const kinds=new Set(['search','exposure','click','correction','next']);
 const surfaces=new Set(['search','map','random','favorites','journey']);

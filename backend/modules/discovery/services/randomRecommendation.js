@@ -91,7 +91,7 @@ function nearbyCandidates(database, center) {
         FROM Place p
         LEFT JOIN User u ON p.creator_id = u.id
         LEFT JOIN User uu ON p.updated_by = uu.id
-        WHERE p.latitude BETWEEN ? AND ?${longitudeFilter}`).all(...params);
+        WHERE p.moderation_status = 'visible' AND p.latitude BETWEEN ? AND ?${longitudeFilter}`).all(...params);
     return rows.flatMap((place) => {
         // 避雷地点（综合评价在“均线之下”及以下；无人评价时看“避雷”标签）不参与随机推荐
         if (isAvoidedPlace(place)) return [];

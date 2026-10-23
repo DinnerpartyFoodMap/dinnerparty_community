@@ -112,6 +112,37 @@ async function main() {
         assert.equal(db._raw.prepare('SELECT is_banned FROM User WHERE id = ?').get(users.regular.user.id).is_banned, 0);
         await page.setViewportSize({ width: 1100, height: 900 });
     }
+    // 新增地点复核（AI 初筛拦下的地点，见 places/doc/placeModeration.md）：原因、地点内容、被标出的图片，通过后公开
+    const hidden = Number(db._raw.prepare(`INSERT INTO Place (name, description, category, latitude, longitude, creator_id, moderation_status, menu_images)
+        VALUES ('复核测试影城', '看电影的地方', '其他', 23.1, 113.3, ?, 'pending', '["/uploads/qr.jpg"]')`).run(users.regular.user.id).lastInsertRowid);
+    const report = { decision: { flagged: true, reasons: ['unrelated', 'image'] }, vision: { status: 'ok', flagged_urls: ['/uploads/qr.jpg'] } };
+    db._raw.prepare(`INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, status, request_type, moderation)
+        VALUES (?, ?, '{}', '电影院与美食和东方无关；图片：第 1 张有个人二维码', 'pending', 'create', ?)`).run(hidden, users.regular.user.id, JSON.stringify(report));
+    // 创建者改出不合规内容时，修改被转成带 AI 原因的修改申请
+    const editedPlace = Number(db._raw.prepare(`INSERT INTO Place (name, description, latitude, longitude, creator_id)
+        VALUES ('原来的面馆', '牛肉面', 23.2, 113.2, ?)`).run(users.regular.user.id).lastInsertRowid);
+    db._raw.prepare(`INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, status, request_type, moderation)
+        VALUES (?, ?, '{"description":"加微信领券"}', '创建者的修改未通过 AI 初筛：描述含广告引流', 'pending', 'modify', ?)`)
+        .run(editedPlace, users.regular.user.id, JSON.stringify({ decision: { flagged: true, reasons: ['harmful'] } }));
+    await page.goto(`http://127.0.0.1:${server.address().port}/__admin_ui?level=YOUMU`);
+    const heldEdit = page.locator('tr').filter({ hasText: '加微信领券' }).first();
+    await heldEdit.getByText('文字含不良信息', { exact: true }).waitFor();
+    await heldEdit.locator('button[aria-haspopup="menu"]').click();
+    await page.getByRole('menuitem', { name: '驳回申请…', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
+    await heldEdit.waitFor({ state: 'detached' });
+    assert.equal(db._raw.prepare('SELECT description FROM Place WHERE id = ?').get(editedPlace).description, '牛肉面');
+    const review = page.locator('tr').filter({ hasText: '复核测试影城' }).first();
+    for (const text of ['新增复核', '与美食和东方无关', '图片含不良信息', '电影院与美食和东方无关；图片：第 1 张有个人二维码']) {
+        await review.getByText(text, { exact: true }).waitFor();
+    }
+    assert.equal(await review.locator('img[alt="菜单图"]').count(), 1);
+    if (process.env.ADMIN_UI_SCREENSHOT) await review.screenshot({ path: process.env.ADMIN_UI_SCREENSHOT });
+    await review.locator('button[aria-haspopup="menu"]').click();
+    await page.getByRole('menuitem', { name: '通过，公开地点…', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
+    await page.getByText('当前没有匹配的待处理申请。', { exact: true }).waitFor();
+    assert.equal(db._raw.prepare('SELECT moderation_status FROM Place WHERE id = ?').get(hidden).moderation_status, 'visible');
     assert.deepEqual(errors, []);
     console.log('Admin browser permissions passed: role panels, audit, skin restrictions, YOUMU ban/unban on desktop/mobile, cancel, server rejection/retry and KOMACHI without ban controls.');
 }

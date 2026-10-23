@@ -13,6 +13,8 @@ process.env.LOG_TO_FILE = 'false';
 process.env.LOG_TO_CONSOLE = 'false';
 process.env.SILICONFLOW_API_KEY = '';
 process.env.DEEPSEEK_API_KEY = '';
+// New places are public at once here; the moderation flow has its own test (test_place_moderation.js).
+process.env.PLACE_MODERATION_ENABLED = 'false';
 require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
 
 const { db, init } = require('../../infrastructure/database');

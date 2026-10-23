@@ -164,7 +164,7 @@ router.get("/:id/:file", async (req, res) => {
         return res.redirect(302, FAVICON_PATH);
     };
     try {
-        const place = db._raw.prepare("SELECT exterior_images, menu_images FROM Place WHERE id = ?").get(idMatch[0]);
+        const place = db._raw.prepare("SELECT exterior_images, menu_images FROM Place WHERE id = ? AND moderation_status = 'visible'").get(idMatch[0]);
         const image = place && firstPlaceImage(place);
         if (!image) return fallback();
         const buffer = await loadCardImage(image);
@@ -182,10 +182,11 @@ router.get("/:id", (req, res) => {
     const placeId = idMatch[1];
     const isNavShare = isAmapNav(req.query.nav);
 
+    // 抓取器不认人：还在初筛或复核中的地点按不存在处理
     const sql = `SELECT p.*, u.username AS creator_name
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
-                 WHERE p.id = ?`;
+                 WHERE p.id = ? AND p.moderation_status = 'visible'`;
 
     db.get(sql, [placeId], (err, place) => {
         if (err) return res.status(500).send("Server Error");

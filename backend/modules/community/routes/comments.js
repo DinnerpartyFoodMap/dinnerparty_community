@@ -16,7 +16,7 @@ router.get("/place/:placeId", (req, res) => {
 router.post("/", requireAuth, (req, res) => {
     const { place_id, content, rating } = req.body;
     if (!place_id || !content) return res.status(400).json({ error: "缺少必填字段" });
-    db.get("SELECT id FROM Place WHERE id = ?", [place_id], (placeErr, place) => {
+    db.get("SELECT id FROM Place WHERE id = ? AND (moderation_status = 'visible' OR creator_id = ?)", [place_id, req.user.id], (placeErr, place) => {
         if (placeErr) return res.status(500).json({ error: placeErr.message });
         if (!place) return res.status(404).json({ error: "地点不存在" });
 

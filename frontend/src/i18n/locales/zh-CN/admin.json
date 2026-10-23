@@ -100,6 +100,34 @@
     "serverError": "服务器错误 {{status}} {{preview}}",
     "approveImpact": "通过后修改立即生效。",
     "rejectImpact": "驳回后地点保持不变。",
+    "createApproveImpact": "通过后地点对所有住民显示，并按设置推送到 QQ 群。",
+    "createRejectImpact": "驳回后地点继续对其他住民隐藏，只有创建者能看到；创建者修改后会重新提交审核。",
+    "createApproveAction": "通过，公开地点…",
+    "createRejectAction": "驳回，继续隐藏…",
+    "createTitle": "新增地点复核 #{{id}}",
+    "createMeta": "地点：{{place_id}} · 创建者：{{creator}}",
+    "openOnMap": "在地图中查看",
+    "typeCreate": "新增复核",
+    "placeMissing": "地点已不存在",
+    "moderation": {
+      "label": "AI 初筛",
+      "reason": {
+        "brief": "描述过于简略",
+        "unrelated": "与美食和东方无关",
+        "harmful": "文字含不良信息",
+        "image": "图片含不良信息"
+      },
+      "flaggedImage": "被标出的图片",
+      "field": {
+        "name": "名称",
+        "category": "分类",
+        "description": "描述",
+        "address": "地址",
+        "cost": "人均",
+        "exterior": "门面图",
+        "menu": "菜单图"
+      }
+    },
     "confirmReview": "确认{{action}}申请 #{{id}}？\n对象：地点 {{place_id}}，申请人 {{requester_id}}。\n{{impact}}",
     "approve": "通过",
     "reject": "驳回",

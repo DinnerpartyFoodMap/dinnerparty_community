@@ -117,31 +117,38 @@ async function fetchImageBytes(url, fetchImpl) {
 }
 
 /**
+ * 本站保存的一张地点图片的原始字节。只读两种来源，不按数据库里的任意地址发请求：
+ * 本地 uploads 下的文件，或本站 OSS 目录（OSS_PUBLIC_BASE_URL/OSS_PREFIX）里的图片；其他地址抛错。
+ * ossProcess：先按 OSS 图片处理参数取缩小图，失败时再取原图。分享卡片与新增地点的图片初筛共用。
+ */
+async function loadStoredImage(imageUrl, { fetchImpl = fetch, ossImageDir = ossImageDirectory(), ossProcess = "" } = {}) {
+    const key = String(imageUrl || "").trim();
+    const localName = imageStorage.localUploadName(key);
+    if (localName && imageStorage.isSafeName(localName)) {
+        const file = path.join(imageStorage.LOCAL_UPLOAD_DIR, localName);
+        if (fs.existsSync(file)) return fs.promises.readFile(file);
+    }
+    let ossUrl = null;
+    if (ossImageDir && key.startsWith(ossImageDir) && !key.includes("?")) ossUrl = key;
+    else if (localName) ossUrl = imageStorage.legacyRedirectUrl(localName);
+    if (!ossUrl) throw new Error("image is not stored by this site");
+    if (!ossProcess) return fetchImageBytes(ossUrl, fetchImpl);
+    return fetchImageBytes(`${ossUrl}?${ossProcess}`, fetchImpl)
+        .catch(() => fetchImageBytes(ossUrl, fetchImpl));
+}
+
+/**
  * 卡片缩略图：300×300 JPG 的字节。QQ 图文卡片取不到 OSS 处理地址（带 ?x-oss-process 参数、
  * 在 CDN 域名下）的图，网站自己的无参数地址可以，所以由站内 /p/<id>/card-<key>.jpg 提供。
- * 只读两种来源，不按数据库里的任意地址发请求：本地 uploads 下的文件，或本站 OSS 目录
- * （OSS_PUBLIC_BASE_URL/OSS_PREFIX）里的图片；其他地址抛错，由路由回退到网站图标。
+ * 来源规则见 loadStoredImage；其他地址抛错，由路由回退到网站图标。
  */
 async function loadCardImage(imageUrl, { fetchImpl = fetch, ossImageDir = ossImageDirectory() } = {}) {
     const key = String(imageUrl || "").trim();
     const cached = cardImageCache.get(key);
     if (cached && Date.now() - cached.at < CARD_IMAGE_CACHE_TTL_MS) return cached.buffer;
 
-    let source = null;
-    const localName = imageStorage.localUploadName(key);
-    if (localName && imageStorage.isSafeName(localName)) {
-        const file = path.join(imageStorage.LOCAL_UPLOAD_DIR, localName);
-        if (fs.existsSync(file)) source = await fs.promises.readFile(file);
-    }
-    if (!source) {
-        let ossUrl = null;
-        if (ossImageDir && key.startsWith(ossImageDir) && !key.includes("?")) ossUrl = key;
-        else if (localName) ossUrl = imageStorage.legacyRedirectUrl(localName);
-        if (!ossUrl) throw new Error("card image is not stored by this site");
-        // OSS 先裁成 300×300（几十 KB），失败时再取原图本地缩放
-        source = await fetchImageBytes(`${ossUrl}?${OSS_CARD_IMAGE_PROCESS}`, fetchImpl)
-            .catch(() => fetchImageBytes(ossUrl, fetchImpl));
-    }
+    // OSS 先裁成 300×300（几十 KB），失败时再取原图本地缩放
+    const source = await loadStoredImage(key, { fetchImpl, ossImageDir, ossProcess: OSS_CARD_IMAGE_PROCESS });
     const buffer = await sharp(source, { limitInputPixels: 40000000 })
         .rotate()
         .resize(OSS_CARD_IMAGE_SIZE, OSS_CARD_IMAGE_SIZE, { fit: "cover" })
@@ -176,6 +183,8 @@ module.exports = {
     ossImageDirectory,
     firstPlaceImage,
     cardImageFile,
+    parseImageList,
+    loadStoredImage,
     loadCardImage,
     CARD_IMAGE_FILE,
     _clearCardImageCacheForTesting: () => cardImageCache.clear()

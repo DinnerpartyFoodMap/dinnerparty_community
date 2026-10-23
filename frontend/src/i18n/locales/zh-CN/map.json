@@ -74,7 +74,8 @@
     "exteriorImages": "外观/招牌图片（可选）",
     "menuImages": "菜单图片（可选）",
     "submit": "提交",
-    "ratingLabel": "你的评价"
+    "ratingLabel": "你的评价",
+    "reviewHint": "写清楚吃什么、有什么特色。描述过于简略、与美食和东方都无关，或含不良信息的地点，要等管理员审核后才对其他住民显示。"
   },
   "alongRoute": {
     "mapNotReady": "地图尚未就绪",
@@ -254,6 +255,14 @@
     "details": "详情",
     "report": "举报",
     "lastModified": "最近修改：{{modifier}}",
+    "moderation": {
+      "pendingShort": "审核中",
+      "rejectedShort": "未通过审核",
+      "pendingOwn": "审核中，暂时只有你能看到。修改后会重新检查",
+      "pending": "审核中，其他住民暂时看不到",
+      "rejectedOwn": "未通过审核，只有你能看到。修改后会重新提交审核",
+      "rejected": "未通过审核，其他住民看不到"
+    },
     "diaryCount": "相关日记 {{diaryCount}} 篇",
     "exteriorImages": "外观 / 招牌",
     "moreFeatures": "更多功能",
@@ -456,6 +465,7 @@
     "requestBanned": "通行凭证已受限，无法提交修改申请",
     "requestNote": "用户提交地点信息修改申请",
     "requestSubmitted": "申请已提交，等待管理员审核",
+    "editPendingReview": "这次修改里有需要管理员审核的内容，已提交审核，通过后才会生效",
     "requestFailed": "提交申请失败：{{message}}",
     "commentBanned": "通行凭证已受限，无法发表评论",
     "commentsLoadFailed": "加载评论失败",

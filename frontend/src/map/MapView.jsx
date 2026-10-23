@@ -786,7 +786,7 @@ export default function MapView({
         const gate = nearbyGateRef.current;
         const ticket = gate.begin();
         try {
-            const data = await Api.fetchPlacesNearby(backendUrl, target, { signal: ticket.signal });
+            const data = await Api.fetchPlacesNearby(backendUrl, target, { signal: ticket.signal, token });
             if (!gate.isCurrent(ticket)) return;
             nearbyFailureRef.current = 0;
             const changed = cache.apply(target, data);
@@ -806,6 +806,15 @@ export default function MapView({
         return loadPlaces(true);
     };
     refreshNearbyRef.current = refreshNearby;
+
+    // 登录 / 退出后：附近地点里“自己新增、还在审核中的地点”随身份变化，缓存作废后重新加载
+    const nearbyTokenRef = useRef(token);
+    useEffect(() => {
+        if (nearbyTokenRef.current === token) return;
+        nearbyTokenRef.current = token;
+        placeCacheRef.current.invalidate();
+        loadPlacesRef.current?.(false);
+    }, [token]);
 
     // Toggle favorite for a place
     const handleToggleFavorite = async (place) => {
@@ -1096,7 +1105,8 @@ export default function MapView({
             q: query,
             center: effectiveCenter,
             limit,
-            signal: fastController.signal
+            signal: fastController.signal,
+            token
         });
         const aiPromise = Api.searchPlacesAi(backendUrl, {
             q: query,
@@ -1208,7 +1218,7 @@ export default function MapView({
     // 日记中的「查看地图标记」：读取地点后居中并打开地点卡片
     const focusPlaceById = async (placeId) => {
         try {
-            const res = await fetch(`${backendUrl}/places/${encodeURIComponent(placeId)}`);
+            const res = await Api.fetchPlace(backendUrl, placeId, { token });
             if (!res.ok) { showTip(t('map:main.markerMissing')); return; }
             const place = await res.json();
             if (mapRef.current && place.longitude != null && place.latitude != null) {
@@ -1240,7 +1250,7 @@ export default function MapView({
         let cancelled = false;
         (async () => {
             try {
-                const res = await fetch(`${backendUrl}/places/${placeId}`);
+                const res = await Api.fetchPlace(backendUrl, placeId, { token });
                 if (!res.ok || cancelled) return;
                 const place = await res.json();
                 if (!place || !place.longitude || !place.latitude || cancelled) return;
@@ -1538,7 +1548,13 @@ export default function MapView({
         setManageSubmitting(true);
         try {
             const payload = buildManagePayload();
-            await Api.putPlace(backendUrl, token, selectedPlace.id, payload);
+            const result = await Api.putPlace(backendUrl, token, selectedPlace.id, payload);
+            // 改出了明显不合规的内容：这次修改转成修改申请等管理员审核，地点保持原样（backend placeModeration.md）
+            if (result && result.pending_review) {
+                setManageOpen(false);
+                showTip(t('map:main.editPendingReview'));
+                return;
+            }
             setManageMessage(t('map:main.updated'));
             setManageOpen(false);
             closePopup();
