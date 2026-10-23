@@ -1,6 +1,6 @@
-// 网页渐进定位与 App 权限、超时、取消；npm run test:platform
+// 网页与 iOS 渐进定位、App 权限、超时、取消；npm run test:platform
 import assert from 'node:assert/strict';
-import { getCurrentLocation, locateWithBrowser, LOCATION_ERROR } from '../../../src/platform/geolocation.js';
+import { getCurrentLocation, locateWithBrowser, locateWithWatch, LOCATION_ERROR } from '../../../src/platform/geolocation.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const permitted = () => Promise.resolve();
@@ -170,7 +170,142 @@ function fakeGeolocation() {
     await assert.rejects(locateWithBrowser({ geolocation: fakeGeolocation(), whenPermitted: permitted, signal: aborted.signal }), { code: LOCATION_ERROR.ABORTED });
 }
 
-// 使用真实 Capacitor JS 代理，仅替换跨设备的 nativePromise 边界。
+// iOS 持续定位（locateWithWatch）：插件回调 (position, error)，watch 返回的 id 用于 clearWatch
+const freshFix = (accuracy, lng = -0.12, lat = 51.5) => ({ coords: { longitude: lng, latitude: lat, accuracy }, timestamp: Date.now() });
+const pluginError = (code) => ({ code: `OS-PLUG-GLOC-${code}`, message: `native ${code}` });
+
+function fakeWatchPlugin() {
+    let nextId = 1;
+    const fake = {
+        callbacks: new Map(),
+        cleared: [],
+        watch: async (callback) => {
+            const id = `watch-${nextId++}`;
+            fake.callbacks.set(id, callback);
+            return id;
+        },
+        clearWatch: async (id) => {
+            fake.cleared.push(id);
+            fake.callbacks.delete(id);
+        },
+        emit(raw, error) { for (const callback of fake.callbacks.values()) callback(raw, error); }
+    };
+    return fake;
+}
+
+// 首个位置立即返回，之后明显更准的结果才回调；达到 20 米时停止持续定位
+{
+    const plugin = fakeWatchPlugin();
+    const updates = [];
+    const pending = locateWithWatch({ watch: plugin.watch, clearWatch: plugin.clearWatch, onUpdate: (p) => updates.push(p.accuracy) });
+    await sleep(0);
+    const [callback] = plugin.callbacks.values();
+    plugin.emit(freshFix(65));
+    const first = await pending;
+    assert.equal(first.accuracy, 65);
+    assert.equal(first.source, 'native');
+    assert.deepEqual(first.raw, { lng: -0.12, lat: 51.5, coordSystem: 'WGS-84' });
+    plugin.emit(freshFix(60));   // 不到 20% 的改进不回调
+    plugin.emit(freshFix(30));
+    plugin.emit(freshFix(12));
+    assert.deepEqual(updates, [30, 12]);
+    await sleep(0);
+    assert.deepEqual(plugin.cleared, ['watch-1'], 'watch stops once accuracy reaches 20 m');
+    callback(freshFix(5));
+    assert.deepEqual(updates, [30, 12], 'nothing is reported after stopping');
+}
+
+// 不传 onUpdate：返回第一个结果后立即停止；插件在返回 id 之前回调也能停掉
+{
+    const plugin = fakeWatchPlugin();
+    const pending = locateWithWatch({
+        watch: async (callback) => { callback(freshFix(80)); return plugin.watch(callback); },
+        clearWatch: plugin.clearWatch
+    });
+    assert.equal((await pending).accuracy, 80);
+    await sleep(0);
+    assert.deepEqual(plugin.cleared, ['watch-1']);
+}
+
+// 系统缓存的旧位置不用，等新位置
+{
+    const plugin = fakeWatchPlugin();
+    const pending = locateWithWatch({ watch: plugin.watch, clearWatch: plugin.clearWatch, onUpdate: () => {} });
+    await sleep(0);
+    plugin.emit({ ...freshFix(5, 2.35, 48.85), timestamp: Date.now() - 5 * 60 * 1000 });
+    plugin.emit(freshFix(65));
+    const position = await pending;
+    assert.equal(position.accuracy, 65);
+    assert.equal(position.lng, -0.12);
+}
+
+// 一时取不到位置：继续等；之后有位置仍然返回，一直没有则到期报无法定位
+{
+    const plugin = fakeWatchPlugin();
+    const pending = locateWithWatch({ watch: plugin.watch, clearWatch: plugin.clearWatch });
+    await sleep(0);
+    plugin.emit(null, pluginError('0002'));
+    plugin.emit(freshFix(40));
+    assert.equal((await pending).accuracy, 40);
+
+    const stuck = fakeWatchPlugin();
+    const failing = locateWithWatch({ watch: stuck.watch, clearWatch: stuck.clearWatch, timeout: 30 });
+    await sleep(0);
+    stuck.emit(null, pluginError('0002'));
+    await assert.rejects(failing, { code: LOCATION_ERROR.POSITION_UNAVAILABLE });
+    assert.deepEqual(stuck.cleared, ['watch-1']);
+
+    const silent = fakeWatchPlugin();
+    await assert.rejects(locateWithWatch({ watch: silent.watch, clearWatch: silent.clearWatch, timeout: 30 }), { code: LOCATION_ERROR.TIMEOUT });
+    assert.deepEqual(silent.cleared, ['watch-1']);
+}
+
+// 无权限、定位关闭、插件首个位置超时：立即失败并停止
+for (const [code, expected] of [
+    ['0003', LOCATION_ERROR.PERMISSION_DENIED],
+    ['0007', LOCATION_ERROR.SERVICES_DISABLED],
+    ['0008', LOCATION_ERROR.PERMISSION_DENIED],
+    ['0010', LOCATION_ERROR.TIMEOUT]
+]) {
+    const plugin = fakeWatchPlugin();
+    const pending = locateWithWatch({ watch: plugin.watch, clearWatch: plugin.clearWatch, timeout: 5000 });
+    await sleep(0);
+    plugin.emit(null, pluginError(code));
+    await assert.rejects(pending, (error) => {
+        assert.equal(error.code, expected, code);
+        assert.equal(error.cause.code, `OS-PLUG-GLOC-${code}`, 'keeps the native error for diagnosis');
+        return true;
+    });
+    await sleep(0);
+    assert.deepEqual(plugin.cleared, ['watch-1']);
+}
+
+// 取消：调用后马上取消不再开始定位；之后取消则停止更新
+{
+    const plugin = fakeWatchPlugin();
+    const controller = new AbortController();
+    const pending = locateWithWatch({ watch: plugin.watch, clearWatch: plugin.clearWatch, signal: controller.signal, onUpdate: () => {} });
+    controller.abort();
+    await assert.rejects(pending, { code: LOCATION_ERROR.ABORTED });
+    await sleep(0);
+    assert.equal(plugin.callbacks.size, 0, 'no watch is started');
+
+    const again = fakeWatchPlugin();
+    const later = new AbortController();
+    const updates = [];
+    const first = locateWithWatch({ watch: again.watch, clearWatch: again.clearWatch, signal: later.signal, onUpdate: (p) => updates.push(p) });
+    await sleep(0);
+    const [callback] = again.callbacks.values();
+    again.emit(freshFix(200));
+    await first;
+    later.abort();
+    callback(freshFix(10));
+    assert.deepEqual(updates, []);
+    await sleep(0);
+    assert.deepEqual(again.cleared, ['watch-1']);
+}
+
+// 使用真实 Capacitor JS 代理，仅替换跨设备的 nativePromise / nativeCallback 边界。
 // @capacitor/core 只在首次导入时绑定 window.Capacitor，所以 Android / iOS 共用一个替身，平台由 androidBridge / webkit 决定。
 {
     const originalWindow = globalThis.window;
@@ -179,11 +314,15 @@ function fakeGeolocation() {
     const originalWebkit = globalThis.webkit;
     const nativeError = (code, data) => Object.assign(new Error(`native ${code}`), { code, data });
     const amapFix = (accuracy, lng = 116.397, lat = 39.908, coordType = 'GCJ02') => ({ longitude: lng, latitude: lat, accuracy, coordType, locationType: 5, timestamp: 1 });
-    const methods = ['checkPermissions', 'requestPermissions', 'getCurrentPosition'].map(name => ({ name, rtype: 'promise' }));
+    const methods = ['checkPermissions', 'requestPermissions', 'getCurrentPosition', 'clearWatch'].map(name => ({ name, rtype: 'promise' }))
+        .concat({ name: 'watchPosition', rtype: 'callback' });
     let permission = { location: 'denied', coarseLocation: 'granted' };
     let checkPermission = async () => permission;
     let requestPermission = async () => permission;
     let request = async () => assert.fail('getCurrentPosition not expected');
+    let startWatch = () => assert.fail('watchPosition not expected');
+    let nextWatch = 1;
+    const cleared = [];
     const calls = [];
     globalThis.window = globalThis;
     globalThis.androidBridge = {};
@@ -197,7 +336,19 @@ function fakeGeolocation() {
             if (method === 'checkPermissions') return checkPermission();
             if (method === 'requestPermissions') return requestPermission(options);
             if (method === 'getCurrentPosition') return request(options);
+            if (method === 'clearWatch') {
+                cleared.push(options.id);
+                return undefined;
+            }
             assert.fail(`Unexpected native method: ${method}`);
+        },
+        nativeCallback: (plugin, method, options, callback) => {
+            calls.push(`${plugin}.${method}`);
+            assert.equal(plugin, 'Geolocation', 'only the iOS plugin watches');
+            assert.equal(method, 'watchPosition');
+            const id = `watch-${nextWatch++}`;
+            startWatch(options, callback);
+            return id;
         }
     };
     try {
@@ -266,10 +417,11 @@ function fakeGeolocation() {
         // 原生无回调：JS 截止时间必须释放调用，不能永远锁住定位按钮。
         request = () => new Promise(() => {});
         const outcome = await Promise.race([
-            getCurrentLocation({ timeout: 15 }).then(() => 'resolved', error => error.code),
+            getCurrentLocation({ timeout: 15 }).then(() => 'resolved', error => error),
             sleep(100).then(() => 'still pending')
         ]);
-        assert.equal(outcome, LOCATION_ERROR.TIMEOUT);
+        assert.equal(outcome.code, LOCATION_ERROR.TIMEOUT);
+        assert.ok(outcome.message.includes('网络'), 'Android timeouts (AMap requests) still mention the network');
 
         // 权限检查自身无回调也必须超时，启动自动定位才不会一直占用按钮。
         checkPermission = () => new Promise(() => {});
@@ -324,29 +476,64 @@ function fakeGeolocation() {
         answer({ location: 'granted', coarseLocation: 'granted' });
         await sleep(0);
 
-        // iOS 仍用 @capacitor/geolocation：WGS-84 本地转换；只有精确权限时才请求高精度
+        // iOS 用 @capacitor/geolocation 的持续定位（不用单次定位）：WGS-84 本地转换；只有精确权限时才请求高精度；
+        // 插件的 timeout 要显式传，不传时插件只等 5 秒
         delete globalThis.androidBridge;
         globalThis.webkit = { messageHandlers: { bridge: {} } };
+        calls.length = 0;
         permission = { location: 'denied', coarseLocation: 'granted' };
-        request = async (options) => {
-            assert.equal(options.enableHighAccuracy, false, 'approximate permission must not trigger a precise-location upgrade');
-            return fix(2000);
+        request = () => assert.fail('iOS must not use the one-shot getCurrentPosition');
+        startWatch = (options, callback) => {
+            assert.deepEqual(options, { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 }, 'approximate permission must not trigger a precise-location upgrade');
+            callback(freshFix(2000));
         };
         const iosApproximate = await getCurrentLocation();
         assert.equal(iosApproximate.accuracy, 2000);
         assert.deepEqual(iosApproximate.raw, { lng: -0.12, lat: 51.5, coordSystem: 'WGS-84' });
+        await sleep(0);
+        assert.deepEqual(calls, ['Geolocation.checkPermissions', 'Geolocation.watchPosition', 'Geolocation.clearWatch']);
+        assert.deepEqual(cleared, ['watch-1'], 'without onUpdate the watch stops after the first fix');
 
+        // 精确权限：首个位置立即返回，更准的位置交给 onUpdate，达到 20 米停止
         permission = { location: 'granted', coarseLocation: 'granted' };
-        request = async (options) => {
-            assert.equal(options.enableHighAccuracy, true);
-            return fix(5, 116.397, 39.908);
-        };
-        const iosPrecise = await getCurrentLocation();
-        assert.equal(iosPrecise.coordSystem, 'GCJ-02');
-        assert.ok(Math.abs(iosPrecise.lng - 116.397) > 1e-4);
+        const watching = new Promise((resolve) => {
+            startWatch = (options, callback) => {
+                assert.equal(options.enableHighAccuracy, true);
+                resolve(callback);
+            };
+        });
+        const iosUpdates = [];
+        const iosPending = getCurrentLocation({ onUpdate: (p) => iosUpdates.push(p.accuracy) });
+        const emit = await watching;
+        emit(freshFix(65, 116.397, 39.908));
+        const iosFirst = await iosPending;
+        assert.equal(iosFirst.accuracy, 65);
+        assert.equal(iosFirst.coordSystem, 'GCJ-02');
+        assert.ok(Math.abs(iosFirst.lng - 116.397) > 1e-4, 'Beijing is shifted to GCJ-02');
+        emit(freshFix(8, 116.397, 39.908));
+        assert.deepEqual(iosUpdates, [8]);
+        await sleep(0);
+        assert.deepEqual(cleared, ['watch-1', 'watch-2']);
 
-        request = async () => { throw nativeError('OS-PLUG-GLOC-0017'); };
+        // 插件错误码；检查权限时系统定位总开关关闭
+        for (const [code, expected] of [
+            ['OS-PLUG-GLOC-0003', LOCATION_ERROR.PERMISSION_DENIED],
+            ['OS-PLUG-GLOC-0010', LOCATION_ERROR.TIMEOUT]
+        ]) {
+            startWatch = (options, callback) => callback(null, { code, message: `native ${code}` });
+            await assert.rejects(getCurrentLocation(), { code: expected });
+        }
+        checkPermission = async () => { throw nativeError('OS-PLUG-GLOC-0007'); };
         await assert.rejects(getCurrentLocation(), { code: LOCATION_ERROR.SERVICES_DISABLED });
+        checkPermission = async () => permission;
+
+        // 一直没有位置：报超时，iOS 的提示不提网络
+        startWatch = () => {};
+        await assert.rejects(getCurrentLocation({ timeout: 15 }), (error) => {
+            assert.equal(error.code, LOCATION_ERROR.TIMEOUT);
+            assert.ok(!error.message.includes('网络'), error.message);
+            return true;
+        });
     } finally {
         globalThis.window = originalWindow;
         globalThis.Capacitor = originalCapacitor;

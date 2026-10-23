@@ -1,7 +1,7 @@
 // 定位接口：返回统一的 GCJ-02 坐标与来源信息，交给高德前只按需转换一次。
 //   网页：浏览器定位（WGS-84，本地转换为 GCJ-02），拿不到时用高德 IP 定位（已是 GCJ-02）补一个粗略位置
 //   Android：应用内高德定位 SDK 插件 AMapLocation（国内已是 GCJ-02；境外结果及高德失败时的系统定位兜底为 WGS-84，本地转换）
-//   iOS：系统定位插件（结果为 WGS-84，本地转换为 GCJ-02）
+//   iOS：系统定位插件的持续定位，先返回首个位置再逐步变准（结果为 WGS-84，本地转换为 GCJ-02）
 
 import { getPlatform, isNativePlatform } from './env.js';
 import { wgs84ToGcj02 } from './coordTransform.js';
@@ -27,6 +27,8 @@ const MESSAGES = {
     NOT_READY: t('platform:geolocation.notReady'),
     UNKNOWN: t('platform:geolocation.unknown')
 };
+// iOS 超时是系统定位迟迟给不出位置，与网络无关，提示里不提网络
+const IOS_TIMEOUT_MESSAGE = t('platform:geolocation.timeoutIos');
 
 // 网页端流程（locateWithBrowser）：
 //   1. 同时发起低精度单次定位（可用 1 分钟内的缓存，通常最快）和高精度持续定位，先到的结果立即返回；
@@ -34,6 +36,8 @@ const MESSAGES = {
 //   3. 之后明显更准的结果交给 onUpdate，精度达到 20 米、授权后 30 秒到期或 signal 取消时全部停止。
 const WEB_LOCATE_TIMEOUT_MS = 30000;
 const NATIVE_LOCATE_TIMEOUT_MS = 10000;
+// iOS 持续定位（locateWithWatch）：等首个位置、之后继续变准的总时长
+const IOS_LOCATE_TIMEOUT_MS = 20000;
 const COARSE_MAX_AGE_MS = 60000;
 const IP_FALLBACK_DELAY_MS = 6000;
 const TARGET_ACCURACY_M = 20;
@@ -42,7 +46,7 @@ const MIN_IMPROVEMENT_RATIO = 0.8;
 
 export class LocationError extends Error {
     constructor(code, cause) {
-        super(MESSAGES[code] || MESSAGES.UNKNOWN);
+        super(code === LOCATION_ERROR.TIMEOUT && getPlatform() === 'ios' ? IOS_TIMEOUT_MESSAGE : (MESSAGES[code] || MESSAGES.UNKNOWN));
         this.code = code;
         this.cause = cause;
     }
@@ -128,6 +132,21 @@ function classifyAmap(errorLike) {
     return classify(errorLike);
 }
 
+// iOS 定位插件（@capacitor/geolocation）的错误码；未列出的按文字归类
+const IOS_PLUGIN_ERRORS = {
+    'OS-PLUG-GLOC-0002': LOCATION_ERROR.POSITION_UNAVAILABLE, // 一时取不到位置，持续定位仍在进行
+    'OS-PLUG-GLOC-0003': LOCATION_ERROR.PERMISSION_DENIED,
+    'OS-PLUG-GLOC-0007': LOCATION_ERROR.SERVICES_DISABLED,
+    'OS-PLUG-GLOC-0008': LOCATION_ERROR.PERMISSION_DENIED, // 定位访问受限（屏幕使用时间等）
+    'OS-PLUG-GLOC-0010': LOCATION_ERROR.TIMEOUT // 首个位置超时，插件已停止持续定位
+};
+
+function classifyIosPlugin(errorLike) {
+    if (errorLike instanceof LocationError) return errorLike;
+    const code = IOS_PLUGIN_ERRORS[String(errorLike?.code || '')];
+    return code ? new LocationError(code, errorLike) : classify(errorLike);
+}
+
 // 插件代理对任意属性（包括 then）都返回方法，不能直接作为 Promise 结果，包一层普通对象。
 let amapLocationPromise = null;
 function loadAmapLocation() {
@@ -172,6 +191,108 @@ function fromSystemPosition(position) {
     };
 }
 
+// 没有精度的结果（IP 定位）排在任何浏览器结果之后
+function accuracyRank(position) {
+    return Number.isFinite(position?.accuracy) ? position.accuracy : Infinity;
+}
+
+function isBetterFix(next, best) {
+    if (!best) return true;
+    const current = accuracyRank(best);
+    const candidate = accuracyRank(next);
+    if (current === Infinity) return candidate < Infinity;
+    return candidate <= current * MIN_IMPROVEMENT_RATIO;
+}
+
+/**
+ * iOS 定位：插件的持续定位（watchPosition，即系统 startUpdatingLocation）通常不到一秒就给出系统缓存或 Wi-Fi 的位置，
+ * 先返回它；传了 onUpdate 时之后明显更准的位置继续回调，精度达到 20 米、到期或 signal 取消时停止。
+ * 不用插件的单次定位：它是 requestLocation + 最高精度，要等 GPS 收敛才回调，常常接近 10 秒。
+ * 导出供测试注入假的插件。
+ * @param {{ watch: (callback: (raw: any, error?: any) => void) => Promise<string>, clearWatch: (id: string) => Promise<void>,
+ *           toPosition?: (raw: any) => object, timeout?: number, maxAge?: number, now?: () => number,
+ *           onUpdate?: (position: object) => void, signal?: AbortSignal }} options
+ */
+export function locateWithWatch({
+    watch,
+    clearWatch,
+    toPosition = fromSystemPosition,
+    timeout = IOS_LOCATE_TIMEOUT_MS,
+    maxAge = COARSE_MAX_AGE_MS,
+    now = Date.now,
+    onUpdate,
+    signal
+}) {
+    return new Promise((resolve, reject) => {
+        let best = null;
+        let settled = false;
+        let stopped = false;
+        let watchId = null;
+        let lastError = null;
+        let budgetTimer = null;
+
+        const release = (id) => { Promise.resolve().then(() => clearWatch(id)).catch(() => undefined); };
+        const stop = () => {
+            if (stopped) return;
+            stopped = true;
+            clearTimeout(budgetTimer);
+            if (watchId != null) release(watchId);
+            signal?.removeEventListener('abort', onAbort);
+        };
+        const fail = (error) => {
+            stop();
+            if (!settled) {
+                settled = true;
+                reject(error);
+            }
+        };
+        const onFix = (raw, error) => {
+            if (stopped) return;
+            if (!raw) {
+                const reason = classifyIosPlugin(error);
+                // 一时取不到位置时插件仍在持续定位，继续等到期；无权限、定位关闭、插件超时立即失败
+                if (reason.code === LOCATION_ERROR.POSITION_UNAVAILABLE) lastError = reason;
+                else fail(reason);
+                return;
+            }
+            // 第一个回调常是系统缓存的位置；太旧的不用，否则会停在之前去过的地方（旧位置精度可能比之后的新位置还好，不会被替换）
+            if (Number.isFinite(raw.timestamp) && now() - raw.timestamp > maxAge) return;
+            let position;
+            try {
+                position = toPosition(raw);
+            } catch (e) {
+                lastError = classify(e);
+                return;
+            }
+            if (!isBetterFix(position, best)) return;
+            best = position;
+            if (!settled) {
+                settled = true;
+                resolve(position);
+            } else {
+                onUpdate?.(position);
+            }
+            if (!onUpdate || accuracyRank(position) <= TARGET_ACCURACY_M) stop();
+        };
+        const onAbort = () => fail(new LocationError(LOCATION_ERROR.ABORTED));
+
+        if (signal?.aborted) {
+            onAbort();
+            return;
+        }
+        signal?.addEventListener('abort', onAbort, { once: true });
+        budgetTimer = setTimeout(() => fail(lastError || new LocationError(LOCATION_ERROR.TIMEOUT)), timeout);
+        Promise.resolve().then(() => {
+            if (stopped) return undefined;
+            // 插件可能在返回 id 之前就回调了首个位置并已停止
+            return Promise.resolve(watch(onFix)).then((id) => {
+                if (stopped) release(id);
+                else watchId = id;
+            });
+        }).catch((error) => fail(classifyIosPlugin(error)));
+    });
+}
+
 // 两个插件的权限别名相同（location 精确 / coarseLocation 模糊），授权流程共用
 async function nativeLocator() {
     if (getPlatform() === 'android') {
@@ -179,22 +300,33 @@ async function nativeLocator() {
         return {
             plugin,
             classify: classifyAmap,
+            timeout: NATIVE_LOCATE_TIMEOUT_MS,
             // 精度由高德 SDK 按已授予的权限决定（仅模糊权限时返回模糊位置），不会再请求升级为精确位置
-            locate: (permission, timeout) => plugin.getCurrentPosition({ timeout }).then(fromAmapPosition)
+            locate: (permission, { timeout, signal }) => nativeCall(
+                () => plugin.getCurrentPosition({ timeout }).then(fromAmapPosition), { timeout, signal })
         };
     }
     const { Geolocation } = await import('@capacitor/geolocation');
     return {
         plugin: Geolocation,
-        classify,
-        locate: (permission, timeout) => Geolocation.getCurrentPosition({
-            enableHighAccuracy: permission.location === 'granted', timeout, maximumAge: 0
-        }).then(fromSystemPosition)
+        classify: classifyIosPlugin,
+        timeout: IOS_LOCATE_TIMEOUT_MS,
+        // 插件的 timeout 只限制首个位置（不传时只有 5 秒），之后由 locateWithWatch 计时
+        locate: (permission, { timeout, onUpdate, signal }) => locateWithWatch({
+            watch: (callback) => Geolocation.watchPosition({
+                enableHighAccuracy: permission.location === 'granted', timeout, maximumAge: 0
+            }, callback),
+            clearWatch: (id) => Geolocation.clearWatch({ id }),
+            timeout,
+            onUpdate,
+            signal
+        })
     };
 }
 
-async function locateNative({ timeout, signal }) {
-    const { plugin, classify: toLocationError, locate } = await nativeLocator();
+async function locateNative({ timeout: requested, onUpdate, signal }) {
+    const { plugin, classify: toLocationError, timeout: platformTimeout, locate } = await nativeLocator();
+    const timeout = requested ?? platformTimeout;
     let permission;
     try {
         permission = await nativeCall(() => plugin.checkPermissions(), { timeout, signal });
@@ -209,7 +341,7 @@ async function locateNative({ timeout, signal }) {
         throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
     }
     try {
-        return await nativeCall(() => locate(permission, timeout), { timeout, signal });
+        return await locate(permission, { timeout, onUpdate, signal });
     } catch (error) {
         throw toLocationError(error);
     }
@@ -236,19 +368,6 @@ function fromBrowserPosition(raw) {
         raw: { lng: longitude, lat: latitude, coordSystem: alreadyGcj02 ? 'GCJ-02' : 'WGS-84' },
         timestamp: raw.timestamp || Date.now()
     };
-}
-
-// 没有精度的结果（IP 定位）排在任何浏览器结果之后
-function accuracyRank(position) {
-    return Number.isFinite(position?.accuracy) ? position.accuracy : Infinity;
-}
-
-function isBetterFix(next, best) {
-    if (!best) return true;
-    const current = accuracyRank(best);
-    const candidate = accuracyRank(next);
-    if (current === Infinity) return candidate < Infinity;
-    return candidate <= current * MIN_IMPROVEMENT_RATIO;
 }
 
 // 授权弹窗还没答复时先不计时，也不拿 IP 位置顶替（浏览器自己的 timeout 同样从授权之后算起）。
@@ -469,11 +588,12 @@ function locateWeb({ map, timeout, onUpdate, signal }) {
 
 /**
  * 获取当前位置（GCJ-02）。
- * 网页端先返回最先拿到的位置（可能只是粗略位置）；传了 onUpdate 时，之后明显更准的位置继续回调，
- * 直到精度达到 20 米、超时（默认 30 秒）或 signal 取消。App 端只返回一次定位结果（Android 高德定位 SDK，iOS 系统定位），不会回调 onUpdate。
+ * 网页端和 iOS 先返回最先拿到的位置（可能只是粗略位置）；传了 onUpdate 时，之后明显更准的位置继续回调，
+ * 直到精度达到 20 米、超时（网页默认 30 秒，iOS 20 秒）或 signal 取消。
+ * Android 只返回一次定位结果（高德定位 SDK，默认 10 秒超时），不会回调 onUpdate。
  * @param {{ map?: any, timeout?: number, onUpdate?: (position: object) => void, signal?: AbortSignal }} options
  */
 export async function getCurrentLocation({ map, timeout, onUpdate, signal } = {}) {
-    if (isNativePlatform()) return locateNative({ timeout: timeout ?? NATIVE_LOCATE_TIMEOUT_MS, signal });
+    if (isNativePlatform()) return locateNative({ timeout, onUpdate, signal });
     return locateWeb({ map, timeout: timeout ?? WEB_LOCATE_TIMEOUT_MS, onUpdate, signal });
 }

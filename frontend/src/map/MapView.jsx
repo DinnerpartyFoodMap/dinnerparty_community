@@ -1332,7 +1332,7 @@ export default function MapView({
         setLocationError("");
         const startCenter = auto ? map.getCenter?.() : null;
 
-        // 网页端之后更准的位置：移动蓝点并补报；地图已移到首个位置、之后用户没拖动也没打开地点卡片时跟着平移（不改缩放）
+        // 网页端和 iOS 之后更准的位置：移动蓝点并补报；地图已移到首个位置、之后用户没拖动也没打开地点卡片时跟着平移（不改缩放）
         let follow = false;
         const stopFollowing = () => { follow = false; };
         map.on?.("dragstart", stopFollowing);

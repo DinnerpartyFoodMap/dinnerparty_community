@@ -18,6 +18,7 @@
     "servicesDisabled": "设备定位服务未开启，请在系统设置中打开定位后重试。",
     "positionUnavailable": "暂时无法获取当前位置，请确认设备定位服务已开启。",
     "timeout": "定位超时，请检查网络或稍后重试。",
+    "timeoutIos": "定位超时，请稍后重试。",
     "notReady": "地图尚未就绪，稍候再试。",
     "unknown": "定位失败，请稍后重试。",
     "failed": "定位失败"
