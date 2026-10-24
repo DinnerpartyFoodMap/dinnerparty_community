@@ -25,6 +25,7 @@ import { t } from '../i18n/index.js';
 // 目标位置随布局回传（"tour" slot 与 tour.step）；“更多功能”一步播放上滑示意并允许拖动工具栏练习（tour.drawerOpen）。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
+// 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
 export const NATIVE_CHROME_PROTOCOL = 10;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
@@ -192,7 +193,8 @@ export function sanitizeSheet(sheet) {
     return {
         id: sheet.id,
         token: toCounter(sheet.token),
-        title: clipText(sheet.title, 60) || '',
+        // 展会名最多 80 字（地点名更短）
+        title: clipText(sheet.title, 80) || '',
         subtitle: clipText(sheet.subtitle, 80),
         message: clipText(sheet.message, 120),
         messageTone: sheet.messageTone === 'loading' || sheet.messageTone === 'danger' ? sheet.messageTone : undefined,
@@ -205,7 +207,7 @@ export function sanitizeSheet(sheet) {
         caption: clipText(sheet.caption, 200),
         // 标题左侧的图标（展会图标；有 leading 圆钮时不显示）
         image: sanitizeImageURL(sheet.image),
-        // 分段正文（展会简介、展会信息）：有内容时代替 detail 的“简介”一段
+        // 分段正文（展会简介、展会信息）：有内容时代替 detail 的“简介”一段；每段可带行内 Markdown（markdown）
         paragraphs: sanitizeParagraphs(sheet.paragraphs),
         actions: sanitizeSheetRows(sheet.actions, { rows: SHEET_ACTION_LIMIT }),
         sections: sanitizeSections(sheet.sections, { rows: SHEET_ROW_LIMIT }),
@@ -286,7 +288,9 @@ function sanitizeParagraphs(list) {
         if (paragraphs.length >= PARAGRAPH_LIMIT) break;
         const text = item && typeof item === 'object' ? clipText(String(item.text ?? '').trim(), 2000) : undefined;
         if (!text) continue;
-        paragraphs.push({ id: clipText(item.id, 32) || `paragraph-${index}`, title: clipText(item.title, 40), text });
+        paragraphs.push({ id: clipText(item.id, 32) || `paragraph-${index}`, title: clipText(item.title, 40), text,
+            // 行内 Markdown（markdownToNativeInline 生成）；旧版原生不认它，仍显示 text
+            markdown: clipText(item.markdown, 4000) });
     }
     return paragraphs;
 }

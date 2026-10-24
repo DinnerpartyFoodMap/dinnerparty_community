@@ -157,9 +157,9 @@ export default function AdminExhibitions({ backendUrl }) {
             <label htmlFor="exhibition-name">{t('admin:exhibitions.name')}</label>
             <TextInput id="exhibition-name" value={form.name} onChange={change('name')} maxLength={80} required disabled={disabled} style={{ width: '100%' }} />
             <label htmlFor="exhibition-description">{t('admin:exhibitions.description')}</label>
-            <TextArea id="exhibition-description" value={form.description} onChange={change('description')} maxLength={2000} required disabled={disabled} rows={4} style={{ width: '100%' }} />
+            <TextArea id="exhibition-description" value={form.description} onChange={change('description')} maxLength={2000} required disabled={disabled} rows={6} markdown style={{ width: '100%' }} />
             <label htmlFor="exhibition-information">{t('admin:exhibitions.information')}</label>
-            <TextInput id="exhibition-information" value={form.information} onChange={change('information')} maxLength={1000} required disabled={disabled} style={{ width: '100%' }} />
+            <TextArea id="exhibition-information" value={form.information} onChange={change('information')} maxLength={1000} required disabled={disabled} rows={4} markdown style={{ width: '100%' }} />
             <label htmlFor="exhibition-location">{t('admin:exhibitions.location')}</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <TextInput id="exhibition-location" value={form.location_name} onChange={change('location_name')} maxLength={80} disabled={disabled}

@@ -80,7 +80,10 @@ struct MapChromeSheetGallery: Identifiable, Equatable {
 struct MapChromeSheetParagraph: Identifiable, Equatable {
     let id: String
     var title: String?
+    /// 纯文本（去掉 Markdown 标记）；markdown 解析失败或旧网页没有下发时显示
     var text: String
+    /// 行内 Markdown（网页 markdownToNativeInline 生成，块级结构已展开、HTML 已转义）
+    var markdown: String? = nil
 }
 
 /// 网页下发的面板快照。token 每次打开递增：用户关闭后，同一 token 的旧快照不会再弹出。
@@ -121,6 +124,8 @@ struct MapChromeSheet: Identifiable, Equatable {
 
     var id: String { "\(sheetId)#\(token)" }
     var isCard: Bool { style == "card" }
+    /// 展会名可能很长（最多 80 字）：卡片标题放不下时来回滚动；地点卡片仍是缩小后截断
+    var scrollsTitle: Bool { sheetId == "exhibition" }
 }
 
 /// 底部工具栏上滑展开的“更多功能”（网页下发；点按回传行 id）

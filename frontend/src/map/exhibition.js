@@ -1,5 +1,6 @@
 // 展会地点与 iOS 原生展会面板快照（纯函数，纳入 test:map）。
 import { t } from '../i18n/index.js';
+import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText.js';
 
 /** 展会地点（GCJ-02，与地点相同）；未设置或无效时为 null */
 export function exhibitionCenter(exhibition) {
@@ -29,6 +30,7 @@ export function exhibitionVenue(exhibition) {
  * iOS 原生面板快照（card：两段停靠）。摘要是图标、展会名、地点与“附近随机美食”，上滑全屏看简介与信息。
  * 有坐标时副标题与地址行可点（回传 venue：收起面板、地图移到展会地点），没填地点名时副标题显示“查看位置”；
  * 没有坐标的展会地点只是文字，也不显示随机按钮。iconUrl 由调用方解析为绝对地址（原生只收 https）。
+ * 简介与信息支持基础 Markdown：text 是去掉标记的纯文本（旧版 App 只认它），markdown 是原生可显示的行内格式。
  */
 export function exhibitionChromeSheet(exhibition, { iconUrl } = {}) {
     if (!exhibition) return null;
@@ -54,9 +56,13 @@ export function exhibitionChromeSheet(exhibition, { iconUrl } = {}) {
             { id: 'details', title: t('map:ui.details'), symbol: 'info.circle', keepsOpen: true, expands: true }
         ].filter(Boolean),
         paragraphs: [
-            { id: 'description', title: t('map:exhibition.description'), text: exhibition.description },
-            { id: 'information', title: t('map:exhibition.information'), text: exhibition.information }
+            { id: 'description', title: t('map:exhibition.description'), ...nativeParagraph(exhibition.description) },
+            { id: 'information', title: t('map:exhibition.information'), ...nativeParagraph(exhibition.information) }
         ],
         sections: []
     };
+}
+
+function nativeParagraph(text) {
+    return { text: markdownToPlainText(text), markdown: markdownToNativeInline(text) || undefined };
 }

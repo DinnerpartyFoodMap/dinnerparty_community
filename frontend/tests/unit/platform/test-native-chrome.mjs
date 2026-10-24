@@ -220,7 +220,7 @@ function makeSession(plugin, extra = {}) {
         sections: [{ id: 'places', style: 'weird', rows: [...many, { id: 'place-1', title: 'dup' }, { title: 'no id' }] }]
     });
     assert.equal(clean.token, 7);
-    assert.equal(clean.title.length, 60);
+    assert.equal(clean.title.length, 80, '标题最多 80 字（展会名）');
     assert.equal(clean.size, 'list');
     assert.equal(clean.messageTone, undefined);
     assert.equal(clean.sections[0].style, 'list');
@@ -322,7 +322,7 @@ function makeSession(plugin, extra = {}) {
     const exhibition = sanitizeSheet({
         id: 'exhibition', token: 2, title: '秋日展会', size: 'card', image: 'https://cdn.example.com/icon.png',
         paragraphs: [
-            { id: 'description', title: '展会简介', text: 's'.repeat(2600) },
+            { id: 'description', title: '展会简介', text: 's'.repeat(2600), markdown: 'm'.repeat(4500) },
             { id: 'empty', title: '空', text: '   ' },
             false,
             { title: 't'.repeat(60), text: '上海 · 周六' },
@@ -334,6 +334,8 @@ function makeSession(plugin, extra = {}) {
     assert.deepEqual(exhibition.paragraphs.map((p) => p.id), ['description', 'paragraph-3', 'p3', 'p4']);
     assert.equal(exhibition.paragraphs[0].text.length, 2000);
     assert.equal(exhibition.paragraphs[1].title.length, 40);
+    assert.equal(exhibition.paragraphs[0].markdown.length, 4000, '行内 Markdown 截断');
+    assert.equal(exhibition.paragraphs[1].markdown, undefined, '没有 markdown 时只有纯文本');
     for (const image of ['http://cdn.example.com/icon.png', 'capacitor://localhost/favicon.png', '/uploads/a.png', 'https://u:p@cdn.example.com/a.png']) {
         assert.equal(sanitizeSheet({ id: 'exhibition', image }).image, undefined, `不下发 ${image}`);
     }

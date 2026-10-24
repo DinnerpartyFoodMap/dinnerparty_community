@@ -1014,7 +1014,8 @@ export default function MapView({
         loadPlacesRef.current?.(true);
     };
 
-    const submitPlace = async (payload) => {
+    // onCreated：地点已建好（表单用它删除本机草稿），之后刷新地图失败也不影响
+    const submitPlace = async (payload, { onCreated } = {}) => {
         if (!token) {
             onRequireAuth && onRequireAuth();
             return;
@@ -1026,6 +1027,7 @@ export default function MapView({
 
         try {
             await Api.postPlace(backendUrl, token, payload);
+            onCreated && onCreated();
             setAddingPos(null);
             setAddingPrefill(null);
             // 重新加载数据并清除搜索结果（若正在搜索）

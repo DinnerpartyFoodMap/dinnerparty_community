@@ -222,6 +222,36 @@ export function deleteLocalCompose(userId, draftId) {
     return deleteLocalDraft(userId, COMPOSE_PREFIX + draftId);
 }
 
+// ---- 添加地点表单的草稿：只有文字与已上传图片的 URL，体积很小，同步存在 localStorage，表单打开时就能恢复 ----
+// 每个账号一份；键沿用 LS_PREFIX + 账号，账号注销时随 clearLocalDraftsForUser 一并清除。
+
+const placeDraftKey = (userId) => LS_PREFIX + recordKey(userId, 'place:new');
+
+export function saveLocalPlaceDraft(userId, draft) {
+    if (!userId) return false;
+    try {
+        localStorage.setItem(placeDraftKey(userId), JSON.stringify({ ...draft, updatedAt: Date.now() }));
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+export function loadLocalPlaceDraft(userId) {
+    if (!userId) return null;
+    try {
+        const record = JSON.parse(localStorage.getItem(placeDraftKey(userId)));
+        return record && typeof record === 'object' ? record : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+export function deleteLocalPlaceDraft(userId) {
+    if (!userId) return;
+    try { localStorage.removeItem(placeDraftKey(userId)); } catch (e) { /* ignore */ }
+}
+
 /** 请求持久化存储，降低浏览器在空间紧张时清理草稿的概率（尽力而为）。 */
 export async function requestPersistentStorage() {
     try {

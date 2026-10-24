@@ -2,6 +2,8 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ExhibitionIcon from '../components/primitives/ExhibitionIcon';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import Button from '../components/primitives/Button';
+import MarqueeText from '../components/primitives/MarqueeText';
+import Markdown from '../components/markdown/Markdown';
 import { onAppStateChange } from '../platform/lifecycle';
 import { getExhibitionTop } from './exhibitionLayout';
 import { exhibitionRandomOrigin } from './exhibition';
@@ -96,20 +98,20 @@ export default function MapExhibition({ exhibition, open = false, onOpen, notice
                 display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, fontFamily: 'inherit' }}>
             <ExhibitionIcon url={exhibition.icon_url} backendUrl={backendUrl} style={{ background: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-surface)' }} />
             <span style={{ boxSizing: 'border-box', maxWidth: '100%', padding: '2px 5px', fontSize: 11, lineHeight: '16px',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderRadius: 6, background: 'var(--color-bg-surface)' }}>
-                {exhibition.name}
+                borderRadius: 6, background: 'var(--color-bg-surface)' }}>
+                <MarqueeText text={exhibition.name} />
             </span>
         </button>
     );
 }
 
-const paragraphStyle = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.7 };
+const paragraphStyle = { lineHeight: 1.7 };
 
 const locationRowStyle = { margin: '12px 0 0', display: 'flex', gap: 6, alignItems: 'flex-start', color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' };
 
 /**
  * 网页展会面板：宽屏右侧板、窄屏全屏。有展会地点时地址可点（onShowVenue：收起面板、地图移到展会地点），
- * 并提供“展会附近随机美食”（以展会地点为中心的随机美食）。
+ * 并提供“展会附近随机美食”（以展会地点为中心的随机美食）。长展会名单行来回滚动，简介与信息按 Markdown 显示。
  */
 export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRandomNearby, onShowVenue }) {
     const locationName = String(exhibition?.location_name || '').trim();
@@ -117,7 +119,8 @@ export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRando
     const canRandom = located && typeof onRandomNearby === 'function';
     const canShowVenue = located && typeof onShowVenue === 'function';
     return (
-        <ResponsivePanel open={open && !!exhibition} onClose={onClose} title={exhibition?.name || ''}
+        <ResponsivePanel open={open && !!exhibition} onClose={onClose}
+            title={exhibition ? <MarqueeText text={exhibition.name} /> : ''} label={exhibition?.name || ''}
             desktop="side-right" mobile="full" sideInset={12} sideTop={68} sideBottom={42} width="370px"
             backdrop draggable={false} bodyStyle={{ padding: 20 }}>
             {exhibition && <>
@@ -145,9 +148,9 @@ export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRando
                     <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:exhibition.randomHint')}</p>
                 </div>}
                 <h3>{t('map:exhibition.description')}</h3>
-                <p style={paragraphStyle}>{exhibition.description}</p>
+                <Markdown text={exhibition.description} style={paragraphStyle} />
                 <h3>{t('map:exhibition.information')}</h3>
-                <p style={paragraphStyle}>{exhibition.information}</p>
+                <Markdown text={exhibition.information} style={paragraphStyle} />
             </>}
         </ResponsivePanel>
     );

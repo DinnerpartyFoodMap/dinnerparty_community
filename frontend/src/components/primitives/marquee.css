@@ -1,0 +1,38 @@
+/* MarqueeText：放不下的单行文字来回滚动 */
+.fm-marquee {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.fm-marquee__track {
+    display: inline-block;
+}
+
+.fm-marquee[data-overflow] .fm-marquee__track {
+    animation: fm-marquee var(--fm-marquee-duration, 6s) ease-in-out infinite alternate;
+}
+
+@keyframes fm-marquee {
+    0%, 15% { transform: translateX(0); }
+    85%, 100% { transform: translateX(var(--fm-marquee-distance, 0)); }
+}
+
+@media (hover: hover) {
+    .fm-marquee[data-overflow]:hover .fm-marquee__track {
+        animation-play-state: paused;
+    }
+}
+
+/* 不自动滚动时可手动横向滑动（不显示滚动条） */
+:root:is([data-motion='reduced'], [data-motion='off']) .fm-marquee[data-overflow] {
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+:root:is([data-motion='reduced'], [data-motion='off']) .fm-marquee[data-overflow]::-webkit-scrollbar {
+    display: none;
+}
+:root:is([data-motion='reduced'], [data-motion='off']) .fm-marquee[data-overflow] .fm-marquee__track {
+    animation: none;
+}

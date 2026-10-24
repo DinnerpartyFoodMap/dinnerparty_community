@@ -431,7 +431,8 @@ private struct MapChromeRowButtonStyle: ButtonStyle {
 
 /// 地点卡片：两段停靠。第一段约占屏幕三分之一：摘要——左上角分享、居中标题、右上角关闭，下面一排等宽操作按钮（导航、收藏……），
 /// 再露出简介的开头；上滑（或点“详情”）到全屏后继续显示完整简介、地址、相关日记与图片。
-/// 展会面板用同一张卡片：左上角是展会图标（image），正文按 paragraphs 分段（展会简介、展会信息），地址行显示展会地点。
+/// 展会面板用同一张卡片：左上角是展会图标（image），正文按 paragraphs 分段（展会简介、展会信息，行内 Markdown），
+/// 地址行显示展会地点；展会名放不下时来回滚动。
 @available(iOS 26.0, *)
 struct MapChromePlaceCard: View {
     @ObservedObject var model: MapChromeModel
@@ -514,11 +515,16 @@ struct MapChromePlaceCard: View {
         }
     }
 
+    @ViewBuilder
     private var titleText: some View {
-        Text(sheet.title)
-            .font(.title2.weight(.bold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
+        if sheet.scrollsTitle {
+            MapChromeMarqueeText(text: sheet.title, font: .title2.weight(.bold))
+        } else {
+            Text(sheet.title)
+                .font(.title2.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
     }
 
     /// 标题与副标题。副标题可点（v9 subtitleAction，展会地点）时是主题色按钮，标题与按钮分开朗读；否则合并为一个标题
@@ -638,13 +644,17 @@ struct MapChromePlaceCard: View {
 
     // MARK: 详情（全屏）
 
-    /// 简介：优先按行内 Markdown 显示（粗体、斜体、删除线、代码、链接），解析失败或旧网页没有下发时显示纯文本
-    private var detailText: AttributedString {
-        if let markdown = sheet.detailMarkdown,
+    /// 按行内 Markdown 显示（粗体、斜体、删除线、代码、链接），解析失败或旧网页没有下发时显示纯文本
+    private static func inlineMarkdown(_ markdown: String?, fallback: String) -> AttributedString {
+        if let markdown,
            let parsed = try? AttributedString(markdown: markdown, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
             return parsed
         }
-        return AttributedString(sheet.detail ?? model.text("noDescription", "暂无描述"))
+        return AttributedString(fallback)
+    }
+
+    private var detailText: AttributedString {
+        Self.inlineMarkdown(sheet.detailMarkdown, fallback: sheet.detail ?? model.text("noDescription", "暂无描述"))
     }
 
     private var details: some View {
@@ -678,7 +688,7 @@ struct MapChromePlaceCard: View {
                                 .font(.headline)
                                 .accessibilityAddTraits(.isHeader)
                         }
-                        Text(paragraph.text)
+                        Text(Self.inlineMarkdown(paragraph.markdown, fallback: paragraph.text))
                             .font(.body)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
@@ -810,6 +820,85 @@ struct MapChromePlaceCard: View {
                 }
             }
             .scrollIndicators(.hidden)
+        }
+    }
+}
+
+/// 单行标题（展会名）：放得下时与普通标题一样居中；放不下时来回滚动，两端各停一会儿（速度与网页 MarqueeText 相同）。
+/// 减弱动态效果时不自动滚动，改为可以手动横向滑动。读屏朗读完整标题。
+@available(iOS 26.0, *)
+struct MapChromeMarqueeText: View {
+    let text: String
+    let font: Font
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var boxWidth: CGFloat = 0
+    @State private var textWidth: CGFloat = 0
+
+    /// 滚动速度（pt/s）、单程最短时间与两端停留时间（秒）
+    private static let speed: CGFloat = 32
+    private static let minTravel: Double = 2
+    private static let pause: Double = 1.2
+
+    var body: some View {
+        let overflow = max(0, (textWidth - boxWidth).rounded(.up))
+        // 隐藏的占位文字提供一行的高度与可用宽度；真正的文字画在覆盖层里，按占位的框裁切
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .hidden()
+            .onGeometryChange(for: CGFloat.self, of: { proxy in
+                proxy.size.width
+            }, action: { width in
+                boxWidth = width
+            })
+            .overlay(alignment: overflow > 1 ? .leading : .center) {
+                content(overflow: overflow)
+            }
+            .clipped()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(text))
+    }
+
+    /// 完整宽度的文字（量出宽度；滚动的 offset 在外层，不影响测量）
+    private var label: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .fixedSize()
+            .onGeometryChange(for: CGFloat.self, of: { proxy in
+                proxy.size.width
+            }, action: { width in
+                textWidth = width
+            })
+    }
+
+    @ViewBuilder
+    private func content(overflow: CGFloat) -> some View {
+        if overflow <= 1 {
+            label
+        } else if reduceMotion {
+            ScrollView(.horizontal) {
+                label
+            }
+            .scrollIndicators(.hidden)
+        } else {
+            let travel = max(Self.minTravel, Double(overflow / Self.speed))
+            let pause = Self.pause
+            label
+                .keyframeAnimator(initialValue: CGFloat(0), repeating: true) { content, x in
+                    content.offset(x: x)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0, duration: pause)
+                        // 起止速度为 0：缓入缓出，不越过两端
+                        CubicKeyframe(-overflow, duration: travel, startVelocity: 0, endVelocity: 0)
+                        LinearKeyframe(-overflow, duration: pause)
+                        CubicKeyframe(0, duration: travel, startVelocity: 0, endVelocity: 0)
+                    }
+                }
+                // 可用宽度变了（字号、横竖屏）时从头开始
+                .id(overflow)
         }
     }
 }

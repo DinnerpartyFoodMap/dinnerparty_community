@@ -1,6 +1,6 @@
 # 公共界面组件
 
-primitives：Button/Tooltip；forms：输入控件；feedback：Notice/Tips/Confirm 与公告颜色；layout：页头、滚动、路由壳和全屏地图容器；data：表格；overlay：弹层、菜单、栈、背景手势、拖动。业务组件归 auth/places/app；公共目录不依赖具体地点或账号业务。
+primitives：Button/Tooltip/MarqueeText（放不下的单行长标题来回滚动，减少动态效果时改为手动横滑）；forms：输入控件；feedback：Notice/Tips/Confirm 与公告颜色；layout：页头、滚动、路由壳和全屏地图容器；data：表格；overlay：弹层、菜单、栈、背景手势、拖动。业务组件归 auth/places/app；公共目录不依赖具体地点或账号业务。
 
 ```mermaid
 flowchart TD
@@ -25,7 +25,7 @@ flowchart TD
 
 ## Markdown（markdown/）
 
-地点描述与反馈内容支持 Markdown（GFM：标题、列表、引用、代码、表格、删除线等，单个换行即换行）与 HTML。解析用 marked，安全靠清理：
+地点描述、反馈内容与展会简介 / 信息支持 Markdown（GFM：标题、列表、引用、代码、表格、删除线等，单个换行即换行）与 HTML。解析用 marked，安全靠清理：
 
 | 场景 | 用法 |
 | --- | --- |

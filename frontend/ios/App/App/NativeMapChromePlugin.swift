@@ -10,7 +10,7 @@ import Capacitor
 ///   items: [{ id, title, symbol, image?, imageTemplate?, selected, disabled, busy, badge?, avatarURL?, placement, tone?, opensOverlay }]
 ///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
 ///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
-///                   image?: https, paragraphs?: [{ id, title?, text }],
+///                   image?: https, paragraphs?: [{ id, title?, text, markdown? }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
 ///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row }
 ///   drawer: null | { sections: [section] }
@@ -369,7 +369,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         return MapChromeSheet(
             sheetId: sheetId,
             token: token,
-            title: clip(raw["title"], 60) ?? "",
+            title: clip(raw["title"], 80) ?? "",
             subtitle: clip(raw["subtitle"], 80),
             message: clip(raw["message"], 120),
             messageTone: raw["messageTone"] as? String,
@@ -452,7 +452,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         return rows
     }
 
-    /// 分段正文：最多 4 段，标题 40 字、正文 2000 字；空正文丢弃
+    /// 分段正文：最多 4 段，标题 40 字、正文 2000 字（行内 Markdown 4000 字）；空正文丢弃
     private static func parseParagraphs(_ raw: JSValue?) -> [MapChromeSheetParagraph] {
         var paragraphs: [MapChromeSheetParagraph] = []
         for (index, rawParagraph) in ((raw as? JSArray) ?? []).compactMap({ $0 as? JSObject }).enumerated() {
@@ -461,7 +461,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             paragraphs.append(MapChromeSheetParagraph(
                 id: clip(rawParagraph["id"], 32) ?? "paragraph-\(index)",
                 title: clip(rawParagraph["title"], 40),
-                text: text
+                text: text,
+                markdown: clip(rawParagraph["markdown"], 4000)
             ))
         }
         return paragraphs

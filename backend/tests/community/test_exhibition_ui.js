@@ -46,8 +46,13 @@ async function main() {
     await page.goto(`http://127.0.0.1:${server.address().port}/__exhibition_ui`);
     await page.getByLabel('展会名称', { exact: true }).fill('秋日展会');
     await page.getByLabel('展会简介', { exact: true }).fill('简介第一行\n简介第二行');
-    await page.getByLabel('展会信息', { exact: true }).fill('上海 · 周六 10:00');
-    await page.getByText(/^选填。选好地点后/).waitFor();
+    // 简介与信息都是支持 Markdown 的多行输入框
+    assert.equal(await page.getByLabel('展会信息', { exact: true }).evaluate(el => el.tagName), 'TEXTAREA');
+    await page.getByLabel('展会信息', { exact: true }).fill('**上海** · 周六 10:00\n- 现场购票');
+    await page.getByRole('button', { name: '预览' }).nth(1).click();
+    await page.getByRole('region', { name: 'Markdown 预览' }).locator('strong', { hasText: '上海' }).waitFor();
+    await page.getByRole('button', { name: '编辑' }).click();
+    await page.getByText(/^选填。设置后/).waitFor();
     await page.getByRole('button', { name: '发布展会', exact: true }).click();
     await page.getByText('当前展会：秋日展会', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Toggle admin' }).click();
@@ -102,7 +107,8 @@ async function main() {
         return rect && Math.abs(rect.top) < 1 && Math.abs(rect.left) < 1 && Math.abs(rect.width - innerWidth) < 1 && Math.abs(rect.height - innerHeight) < 1;
     });
     assert.match(await detail.innerText(), /简介第一行\s+简介第二行/);
-    await detail.getByText('上海 · 周六 10:00', { exact: true }).waitFor();
+    assert.equal(await detail.locator('.fm-markdown strong').innerText(), '上海');
+    assert.equal(await detail.locator('.fm-markdown li').innerText(), '现场购票');
     if (process.env.EXHIBITION_ARTIFACT_DIR) {
         fs.mkdirSync(process.env.EXHIBITION_ARTIFACT_DIR, { recursive: true });
         // Wait only for the optional visual artifact, after the interaction assertions above.
@@ -150,12 +156,34 @@ async function main() {
     await venuePanel.getByRole('button', { name: '展会附近随机美食' }).click();
     await venuePanel.waitFor({ state: 'hidden' });
     assert.equal(await page.getByLabel('随机中心').innerText(), '带地点的展会 23.0961,113.3653');
+    // 长展会名：入口与面板标题单行来回滚动，读屏名称仍是完整展会名
+    const longName = '第二十届东方Project同人展·秋季特别场（上海国际会议中心）';
+    await page.evaluate(async (name) => {
+        const res = await fetch('/admin/exhibitions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.__TEST_TOKEN}` },
+            body: JSON.stringify({ name, description: '简介', information: '信息', location_name: '保利世贸博览馆', latitude: 23.0961, longitude: 113.3653 }) });
+        if (!res.ok) throw new Error(`publish failed: ${res.status}`);
+        window.dispatchEvent(new Event('exhibition-updated'));
+    }, longName);
+    const longEntry = page.getByRole('button', { name: `查看展会：${longName}` });
+    await longEntry.waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-exhibition-entry] .fm-marquee[data-overflow]'));
+    await longEntry.click();
+    const longPanel = page.getByRole('dialog', { name: longName, exact: true });
+    await longPanel.waitFor();
+    await page.waitForFunction((name) => {
+        const title = document.querySelector(`[role="dialog"][aria-label="${name}"] h2 .fm-marquee`);
+        return title?.hasAttribute('data-overflow') && getComputedStyle(title.firstElementChild).animationName === 'fm-marquee'
+            && title.getBoundingClientRect().height < 40;
+    }, longName);
+    if (process.env.EXHIBITION_ARTIFACT_DIR) await page.screenshot({ path: path.join(process.env.EXHIBITION_ARTIFACT_DIR, 'exhibition-long-title.png') });
+    await page.keyboard.press('Escape');
+    await longPanel.waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: 'Toggle admin' }).click();
-    await page.getByText('当前展会：带地点的展会', { exact: true }).waitFor();
+    await page.getByText(`当前展会：${longName}`, { exact: true }).waitFor();
     assert.equal(await page.getByLabel('展会地点', { exact: true }).inputValue(), '保利世贸博览馆');
     await page.getByText('已选坐标：23.096100, 113.365300', { exact: true }).waitFor();
     await page.getByRole('button', { name: '清除地点' }).click();
-    await page.getByText(/^选填。选好地点后/).waitFor();
+    await page.getByText(/^选填。设置后/).waitFor();
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await page.getByRole('button', { name: '下架展会', exact: true }).click();
@@ -164,7 +192,7 @@ async function main() {
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await entry.waitFor({ state: 'hidden' });
     assert.deepEqual(errors, []);
-    console.log('Exhibition browser flow passed: publish, favicon, upload, details, responsive notice collision, resize, dismiss, venue link, venue random, unpublish.');
+    console.log('Exhibition browser flow passed: publish, favicon, upload, details, responsive notice collision, resize, dismiss, venue link, venue random, long title, markdown, unpublish.');
 }
 main().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {
     if (browser) await browser.close();

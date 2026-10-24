@@ -75,7 +75,16 @@
     "menuImages": "菜单图片（可选）",
     "submit": "提交",
     "ratingLabel": "你的评价",
-    "reviewHint": "写清楚吃什么、有什么特色。描述过于简略、与美食和东方都无关，或含不良信息的地点，要等管理员审核后才对其他住民显示。"
+    "reviewHint": "写清楚吃什么、有什么特色。描述过于简略、与美食和东方都无关，或含不良信息的地点，要等管理员审核后才对其他住民显示。",
+    "draft": {
+      "saved": "已自动保存草稿",
+      "restored": "已恢复上次没提交的内容",
+      "pending": "还有一份没提交的草稿",
+      "pendingNamed": "还有一份没提交的草稿：{{name}}",
+      "restore": "恢复",
+      "clear": "清空",
+      "clearConfirm": "清空已填写的内容，重新开始？"
+    }
   },
   "alongRoute": {
     "mapNotReady": "地图尚未就绪",

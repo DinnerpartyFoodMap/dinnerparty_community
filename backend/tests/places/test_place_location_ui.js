@@ -112,7 +112,7 @@ async function main() {
     // Add mode: the blank area above the world still yields 85°–90°, which the marker layer
     // cannot show, so the click only explains itself; a click on the map opens the form.
     await page.goto(`${base}/__place_location_ui?user=owner`);
-    await page.getByRole('button', { name: '点击后在地图上选择位置以添加地点' }).click();
+    await page.locator('[data-tour="add"]:visible').click();
     const clickMap = (lng, lat) => page.evaluate(([x, y]) => {
         const map = window.__TEST_MAPS.filter(m => !m.destroyed).at(-1);
         map.emit('click', { lnglat: { lng: x, lat: y }, target: map });
@@ -125,6 +125,80 @@ async function main() {
     await clickMap(120.01, 30.01);
     await addDialog.getByText('30.010000, 120.010000', { exact: true }).waitFor();
     await snap('add-outside-map');
+
+    // Add-place draft: however the form closes, what was typed comes back for the same account;
+    // clearing it or creating the place removes it. Points at 120.5/30.5 stay outside the loaded bounds.
+    const draftKey = `yuyuko.localDraft.v1:${owner}:place:new`;
+    const storedDraft = () => page.evaluate(key => localStorage.getItem(key), draftKey);
+    const nameInput = addDialog.getByPlaceholder('店名');
+    const startAdd = async (lng, lat) => {
+        await page.locator('[data-tour="add"]:visible').click();
+        await clickMap(lng, lat);
+        await addDialog.getByText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`, { exact: true }).waitFor();
+    };
+    const expectRestored = async () => {
+        await addDialog.getByText('已恢复上次没提交的内容').waitFor();
+        assert.equal(await nameInput.inputValue(), '草稿面馆');
+        assert.equal(await addDialog.locator('textarea').inputValue(), '点外面关掉前写的描述');
+        assert.equal(await addDialog.getByPlaceholder('人均价格（元，可选）').inputValue(), '25');
+        assert.equal(await addDialog.getByRole('radio', { name: /^均线之上/ }).getAttribute('aria-checked'), 'true');
+    };
+    await nameInput.fill('草稿面馆');
+    await addDialog.locator('textarea').fill('点外面关掉前写的描述');
+    await addDialog.getByPlaceholder('人均价格（元，可选）').fill('25');
+    await addDialog.getByRole('radio', { name: /^均线之上/ }).click();
+    await addDialog.getByText('已自动保存草稿').waitFor();
+    await page.mouse.click(8, 450); // the backdrop beside the centred dialog
+    await addDialog.waitFor({ state: 'hidden' });
+    assert.ok(await storedDraft(), 'closing by the backdrop keeps the draft');
+    await startAdd(120.02, 30.02);
+    await expectRestored();
+    await snap('add-draft-restored');
+    // A reload (the App WebView can be discarded in the background) and Escape keep it as well.
+    await page.reload();
+    await startAdd(120.02, 30.02);
+    await expectRestored();
+    await page.keyboard.press('Escape');
+    await addDialog.waitFor({ state: 'hidden' });
+    await page.goto(`${base}/__place_location_ui?user=visitor`);
+    await startAdd(120.02, 30.02);
+    assert.equal(await nameInput.inputValue(), '', 'drafts are per account');
+    assert.equal(await addDialog.getByText('已恢复上次没提交的内容').count(), 0);
+    await page.keyboard.press('Escape');
+    await page.goto(`${base}/__place_location_ui?user=owner`);
+    await startAdd(120.5, 30.5);
+    await expectRestored();
+    await addDialog.getByRole('button', { name: '清空', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
+    await addDialog.getByText('已恢复上次没提交的内容').waitFor({ state: 'hidden' });
+    assert.equal(await nameInput.inputValue(), '');
+    assert.equal(await storedDraft(), null, 'clearing removes the draft');
+    await nameInput.fill('草稿面馆');
+    await addDialog.getByText('已自动保存草稿').waitFor();
+    process.env.PLACE_MODERATION_ENABLED = 'false'; // no model call for this place
+    await addDialog.getByRole('button', { name: '提交', exact: true }).click();
+    await addDialog.waitFor({ state: 'hidden' });
+    delete process.env.PLACE_MODERATION_ENABLED;
+    assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM Place WHERE name = '草稿面馆'").get().n, 1);
+    assert.equal(await storedDraft(), null, 'a created place clears the draft');
+    await startAdd(120.5, 30.5);
+    assert.equal(await nameInput.inputValue(), '');
+    assert.equal(await addDialog.getByText('已自动保存草稿').count(), 0);
+    await page.keyboard.press('Escape');
+    // Narrow layout (the App bottom sheet, iOS included): tapping the map above the sheet keeps the text.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${base}/__place_location_ui?user=owner`);
+    await startAdd(120.5, 30.5);
+    await nameInput.fill('手机上写的店名');
+    await addDialog.getByText('已自动保存草稿').waitFor();
+    await page.mouse.click(195, 40);
+    await addDialog.waitFor({ state: 'hidden' });
+    await startAdd(120.5, 30.5);
+    await addDialog.getByText('已恢复上次没提交的内容').waitFor();
+    assert.equal(await nameInput.inputValue(), '手机上写的店名');
+    await page.waitForTimeout(500); // the sheet is still opening
+    await snap('add-draft-mobile');
+    await page.setViewportSize({ width: 1280, height: 900 });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await open('visitor');
