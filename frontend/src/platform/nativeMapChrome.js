@@ -23,14 +23,15 @@ import { t } from '../i18n/index.js';
 // v9 卡片的副标题与地址行可点（subtitleAction / captionAction，展会地点），点按回传行 id。
 // v10 操作指引（tour）：指引打开时原生控件不收起，按下发的目标画高亮圈、其余变暗、触摸交给网页，
 // 目标位置随布局回传（"tour" slot 与 tour.step）；“更多功能”一步播放上滑示意并允许拖动工具栏练习（tour.drawerOpen）。
+// v11 住民的地点列表面板（userPlaces，list 样式）：地点卡片点“最近修改”的住民后打开，关闭只收起列表、筛选保留。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
-export const NATIVE_CHROME_PROTOCOL = 10;
+export const NATIVE_CHROME_PROTOCOL = 11;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
-export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition']);
+export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces']);
 export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss']);
 export const NATIVE_DRAWER_EVENTS = Object.freeze(['select']);
 // 操作指引的目标：上滑展开更多功能（工具栏本身）

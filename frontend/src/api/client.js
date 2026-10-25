@@ -133,6 +133,15 @@ export async function fetchPlace(backendUrl, id, { token, signal } = {}) {
     return fetch(`${backendUrl}/places/${encodeURIComponent(id)}`, { signal, ...authHeaders(token) });
 }
 
+// 某位住民创建的地点（最近创建在前，最多 limit 个；带 token 时包含自己审核中的地点）。
+// relation 是观看者与这位住民的关系：self，以及为屏蔽功能预留的 blocked
+export async function fetchUserPlaces(backendUrl, userId, { token, signal } = {}) {
+    const res = await fetch(`${backendUrl}/users/${encodeURIComponent(userId)}/places`, { signal, cache: 'no-store', ...authHeaders(token) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.userPlaces.loadFailed', { status: res.status })), { status: res.status });
+    return data;
+}
+
 export async function putPlace(backendUrl, token, id, payload) {
     const res = await fetch(`${backendUrl}/places/${id}`, {
         method: 'PUT',

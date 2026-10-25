@@ -42,6 +42,10 @@ import { buildOnboardingSteps, readOnboardingSeen, rememberOnboardingSeen } from
 import { getOverlayEntries, subscribeOverlays } from '../components/overlay/overlayStack';
 import { ExhibitionPanel } from './MapExhibition';
 import { exhibitionChromeSheet, exhibitionRandomOrigin, exhibitionVenue } from './exhibition';
+import {
+    lastModifierOf, lastModifierText, userPlacesTitle, userPlacesSummary, userPlacesMessage, userPlacesChipText,
+    userPlaceDetail, isHiddenPlace, userPlaceRowId, userPlaceFromRowId, userPlacesActions, userPlacesChromeSheet
+} from './userPlaces';
 import useExhibitionVenuePin from './useExhibitionVenuePin';
 import { exhibitionIconSource } from '../components/primitives/ExhibitionIcon';
 import SkinIcon from '../skins/SkinIcon';
@@ -232,7 +236,11 @@ export default function MapUI(props) {
         handleToggleAddMode,
         addPlaceTipText,
         selectedPlace,
-        getLastModifierText,
+        userFilter = null,
+        onOpenUserPlaces,
+        onExitUserPlaces,
+        onRetryUserPlaces,
+        onSelectUserPlace,
         openManagePanel,
         openCreateFromPoi,
         openCommentPanel,
@@ -372,6 +380,29 @@ export default function MapUI(props) {
         ? (moderationOwn ? t('map:ui.moderation.rejectedOwn') : t('map:ui.moderation.rejected'))
         : (moderationStatus === 'pending' ? (moderationOwn ? t('map:ui.moderation.pendingOwn') : t('map:ui.moderation.pending')) : null);
     const reportPlace = () => { if (canReportPlace) onOpenFeedback(placeReportPrefill(selectedPlace)); };
+    // “最近修改”的住民：点名字后地图只显示这位住民创建的地点（筛选状态在 MapView，见 userPlaces.js）。
+    // 列表是临时面板，关闭后筛选仍在，由地图上的筛选条重新打开或退出
+    const lastModifier = !pickerMode ? lastModifierOf(selectedPlace) : null;
+    const [userPlacesOpen, setUserPlacesOpen] = useState(false);
+    const openUserPlacesFor = (user) => {
+        if (!user?.clickable || !onOpenUserPlaces) return;
+        setFavPageOpen(false);
+        setUserPlacesOpen(true);
+        onOpenUserPlaces({ id: user.id, name: user.name });
+    };
+    // 列表的一行（网页按钮与原生面板行共用 id）：地点（窄屏收起列表、让位给地点卡片）、重试，以及底部操作
+    // （userPlacesActions：目前是退出筛选，以后的屏蔽也从这里分发）
+    const runUserPlacesRow = (rowId) => {
+        if (rowId === 'retry') { onRetryUserPlaces?.(); return; }
+        if (rowId === 'exit') { setUserPlacesOpen(false); onExitUserPlaces?.(); return; }
+        const place = userPlaceFromRowId(userFilter, rowId);
+        if (!place) return;
+        if (layout.sheet) setUserPlacesOpen(false);
+        onSelectUserPlace?.(place);
+    };
+    useEffect(() => {
+        if (!userFilter) setUserPlacesOpen(false);
+    }, [userFilter]);
     const ratingSummary = placeRating.data ? placeRating.data.summary : summaryFromPlace(selectedPlace);
     const myRatingTier = placeRating.data && placeRating.data.mine ? ratingTierFor(placeRating.data.mine.score) : null;
     const personalizedRating = placeRating.data && placeRating.data.personalized;
@@ -502,6 +533,7 @@ export default function MapUI(props) {
             return;
         }
         setFavPageOpen((open) => !open);
+        setUserPlacesOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
         setMobileAccountOpen(false);
@@ -513,6 +545,7 @@ export default function MapUI(props) {
         setRandomFoodOpen(false);
         setAlongRouteOpen(true);
         setFavPageOpen(false);
+        setUserPlacesOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
         setMobileAccountOpen(false);
@@ -808,6 +841,8 @@ export default function MapUI(props) {
         // 展会面板盖在地点卡片之上：关闭后仍选中的地点卡片重新出现
         : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
         : (selectedPlace && !pickerMode) ? 'place'
+        // 住民的地点列表：选中其中一个地点后让位给地点卡片
+        : (userFilter && userPlacesOpen && !pickerMode) ? 'userPlaces'
         : null;
     // 每次打开面板分配新 token：用户在原生侧关闭后，同一 token 的旧快照不会再弹出，迟到的事件也不会作用到新面板
     const sheetTokenRef = useRef({ id: null, token: 0 });
@@ -910,10 +945,17 @@ export default function MapUI(props) {
                 ratingRow && { id: 'rating', title: t('map:rating.panel.title'), rows: [ratingRow] },
                 {
                     id: 'meta',
-                    footer: t('map:ui.lastModified', { modifier: getLastModifierText(selectedPlace) }),
+                    // 能打开住民的地点时“最近修改”是一行（点按后卡片收起、显示住民的地点列表），否则仍是脚注
+                    footer: lastModifier && !lastModifier.clickable ? t('map:ui.lastModified', { modifier: lastModifierText(lastModifier) }) : undefined,
                     rows: [
                         moderationStatus && { id: 'moderation', title: moderationShort, subtitle: moderationNote, symbol: 'eye.slash', tone: 'warning', disabled: true },
-                        diaryCount > 0 && { id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: 'book.pages', keepsOpen: true }
+                        diaryCount > 0 && { id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: 'book.pages', keepsOpen: true },
+                        lastModifier?.clickable && {
+                            id: 'modifier',
+                            title: t('map:ui.lastModified', { modifier: lastModifier.name }),
+                            subtitle: t('map:userPlaces.cardRow', { date: lastModifier.date || '-' }),
+                            symbol: 'person.crop.circle'
+                        }
                     ].filter(Boolean)
                 }
             ].filter(Boolean),
@@ -924,6 +966,8 @@ export default function MapUI(props) {
         };
         const closeIcon = nativeIcon('cardActions.close');
         if (closeIcon.image) Object.assign(chromeSheet, { closeImage: closeIcon.image, closeImageTemplate: closeIcon.imageTemplate });
+    } else if (openSheetId === 'userPlaces') {
+        chromeSheet = userPlacesChromeSheet(userFilter);
     }
     if (chromeSheet) chromeSheet.token = sheetTokenRef.current.token;
 
@@ -974,8 +1018,13 @@ export default function MapUI(props) {
                 case 'rate':
                 case 'rating': openRating(); break;
                 case 'report': reportPlace(); break;
+                case 'modifier': openUserPlacesFor(lastModifier); break;
                 default:
             }
+        } else if (sheetId === 'userPlaces') {
+            // 下滑、点地图或关闭钮只收起列表，筛选保留
+            if (type === 'dismiss') { setUserPlacesOpen(false); return; }
+            runUserPlacesRow(rowId);
         }
     };
 
@@ -1505,9 +1554,24 @@ export default function MapUI(props) {
 
             {ratingPlaceId != null && renderRatingRow()}
 
-            {!pickerMode && (
+            {lastModifier && (
                 <div style={{ marginTop: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
-                    {tx('map:ui.lastModified', { modifier: getLastModifierText(selectedPlace) })}
+                    {lastModifier.clickable ? tx('map:ui.lastModified', {
+                        modifier: (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => openUserPlacesFor(lastModifier)}
+                                    title={t('map:userPlaces.open', { name: lastModifier.name })}
+                                    aria-label={t('map:userPlaces.open', { name: lastModifier.name })}
+                                    style={{ padding: 0, border: 0, background: 'transparent', color: 'var(--theme-primary)', font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}
+                                >
+                                    {lastModifier.name}
+                                </button>
+                                {` · ${lastModifier.date || '-'}`}
+                            </>
+                        )
+                    }) : t('map:ui.lastModified', { modifier: lastModifierText(lastModifier) })}
                 </div>
             )}
             {moderationNote && (
@@ -2009,6 +2073,51 @@ export default function MapUI(props) {
                             </Button>
                         </div>
                     </Tooltip>
+                </div>
+            )}
+
+            {/* 按住民筛选的筛选条：窄屏在定位按钮左侧同一行（地点卡片、列表打开时让位），宽屏在底部居中。点按打开 / 收起列表，× 退出筛选 */}
+            {userFilter && !pickerMode && !addingPos && !(layout.sheet && (selectedPlace || userPlacesOpen)) && !(compactSearch && searchExpanded) && (
+                <div
+                    className="fm-glass"
+                    data-map-occluder=""
+                    style={{
+                        position: 'absolute', zIndex: 2000, height: 44, boxSizing: 'border-box',
+                        display: 'flex', alignItems: 'center', gap: 2, padding: '0 4px 0 6px',
+                        borderRadius: 22, background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)',
+                        border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-surface)',
+                        ...(nativeChrome
+                            ? { left: 12, right: 76, bottom: chrome.bottomOccupied + 17 }
+                            : isNarrow
+                                ? { left: 12, right: 68, bottom: aboveBottomInset(compactSearch ? 78 : 130) }
+                                : { left: '50%', bottom: 44, transform: 'translateX(-50%)', maxWidth: 'min(480px, calc(100% - 140px))' })
+                    }}
+                >
+                    <button
+                        type="button"
+                        className="fm-pressable"
+                        onClick={() => setUserPlacesOpen((open) => !open)}
+                        aria-haspopup="dialog"
+                        aria-expanded={userPlacesOpen}
+                        title={t('map:userPlaces.chipOpen')}
+                        style={{ flex: 1, minWidth: 0, height: 40, display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', border: 0, background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 14, cursor: 'pointer', textAlign: 'left' }}
+                    >
+                        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, color: 'var(--theme-primary)' }}>
+                            {userFilter.status === 'loading' ? 'progress_activity' : 'person_pin_circle'}
+                        </span>
+                        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{userPlacesChipText(userFilter)}</span>
+                        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, marginLeft: 'auto', color: 'var(--color-text-muted)' }}>list</span>
+                    </button>
+                    <button
+                        type="button"
+                        className="fm-pressable"
+                        onClick={() => runUserPlacesRow('exit')}
+                        aria-label={t('map:userPlaces.exit')}
+                        title={t('map:userPlaces.exit')}
+                        style={{ flexShrink: 0, width: 36, height: 36, padding: 0, border: 0, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-overlay)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+                    >
+                        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20 }}>close</span>
+                    </button>
                 </div>
             )}
 
@@ -2863,6 +2972,65 @@ export default function MapUI(props) {
                             )}
                         </div>
                     ))
+                )}
+            </MapPanel>
+
+            {/* 住民的地点列表（iOS 原生控件接管时为原生面板）：宽屏与收藏同一位置、地图可操作；窄屏为底部面板，选中地点后让位给卡片 */}
+            <MapPanel
+                open={!!userFilter && userPlacesOpen && !nativeChrome && !pickerMode && !(layout.sheet && selectedPlace)}
+                onClose={() => setUserPlacesOpen(false)}
+                title={userPlacesTitle(userFilter)}
+                kind="user-places"
+                desktopStyle={{ right: 60, top: 72, width: 300, maxHeight: '60vh' }}
+            >
+                {userFilter && (
+                    <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                            <span style={{ flex: 1, minWidth: 0 }}>{userPlacesSummary(userFilter)}</span>
+                            {userPlacesActions(userFilter).map((action) => (
+                                <Button key={action.id} type="button" onClick={() => runUserPlacesRow(action.id)}
+                                    style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--theme-primary)', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16 }}>{action.icon}</span>
+                                    {action.title}
+                                </Button>
+                            ))}
+                        </div>
+                        {userPlacesMessage(userFilter) ? (
+                            <div role={userFilter.status === 'error' ? 'alert' : 'status'} style={{ padding: 16, textAlign: 'center', fontSize: 13, color: userFilter.status === 'error' ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
+                                {userPlacesMessage(userFilter)}
+                                {userFilter.status === 'error' && (
+                                    <div style={{ marginTop: 10 }}>
+                                        <Button type="button" onClick={() => runUserPlacesRow('retry')} style={{ padding: '6px 16px' }}>{t('map:userPlaces.retry')}</Button>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div role="list">
+                                {userFilter.places.map((place) => {
+                                    const current = !!selectedPlace && String(selectedPlace.id) === String(place.id);
+                                    return (
+                                        <button
+                                            key={place.id}
+                                            type="button"
+                                            role="listitem"
+                                            className="fm-pressable"
+                                            onClick={() => runUserPlacesRow(userPlaceRowId(place))}
+                                            aria-current={current ? 'true' : undefined}
+                                            style={{
+                                                display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%',
+                                                padding: '10px 16px', minHeight: 48, border: 0, borderBottom: '1px solid var(--color-border)',
+                                                background: current ? 'var(--color-bg-overlay)' : 'transparent',
+                                                color: 'var(--color-text-primary)', textAlign: 'left', cursor: 'pointer'
+                                            }}
+                                        >
+                                            <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere', color: isAvoidedPlace(place) ? 'var(--color-danger)' : undefined }}>{place.name || t('common:label.unnamedPlace')}</span>
+                                            <span style={{ fontSize: 12, color: isHiddenPlace(place) ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>{userPlaceDetail(place)}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
                 )}
             </MapPanel>
 

@@ -36,6 +36,7 @@
         "test:images": "node tests/media/test_image_storage.js",
         "test:place-share": "node tests/places/test_place_share.js",
         "test:place-moderation": "node tests/places/test_place_moderation.js",
+        "test:creator-places": "node tests/places/test_creator_places.js",
         "test:skins": "node tests/skins/test_skins.js",
         "test:feedback": "node tests/feedback/test_feedback.js",
         "images:repair": "node scripts/images/repair_place_images.js",

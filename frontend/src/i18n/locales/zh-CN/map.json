@@ -180,6 +180,9 @@
       "fetchFailed": "获取分类失败 {{status}}",
       "createFailed": "创建分类失败 {{status}}"
     },
+    "userPlaces": {
+      "loadFailed": "住民的地点加载失败 {{status}}"
+    },
     "rating": {
       "loadFailed": "评价加载失败 {{status}}",
       "saveFailed": "评价失败 {{status}}",
@@ -611,5 +614,26 @@
         "alongRoute": "工具栏上滑 › 更多功能 › 顺路吃"
       }
     }
+  },
+  "userPlaces": {
+    "title": "{{name}} 创建的地点",
+    "titleSelf": "我创建的地点",
+    "summary": "共 {{total}} 个，最近创建的在前",
+    "summaryLimited": "共 {{total}} 个，显示最近的 {{limit}} 个",
+    "loading": "正在加载…",
+    "failed": "加载失败：{{message}}",
+    "retry": "重试",
+    "empty": "还没有公开的地点",
+    "emptySelf": "你还没有创建地点",
+    "chip": "{{name}} 的 {{count}} 个地点",
+    "chipSelf": "我的 {{count}} 个地点",
+    "chipLoading": "正在加载 {{name}} 的地点",
+    "chipOpen": "查看地点列表",
+    "exit": "显示全部地点",
+    "created": "创建于 {{date}}",
+    "reviewing": "审核中",
+    "open": "查看 {{name}} 创建的地点",
+    "cardRow": "{{date}} · 查看 TA 创建的地点",
+    "deletedUser": "已注销的住民"
   }
 }

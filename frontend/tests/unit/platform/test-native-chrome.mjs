@@ -1,11 +1,12 @@
 // 原生地图控件桥接（网页端会话）：npm run test:native-chrome
 // 用假插件模拟原生端，覆盖握手、浮层接管、动作回执、会话丢失与故障回退。
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
 
-const { NativeMapChromeSession, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, NATIVE_CHROME_PROTOCOL } = await import("../../../src/platform/nativeMapChrome.js");
+const { NativeMapChromeSession, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -276,7 +277,13 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 10);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 11);
+    // Swift 插件的协议版本与面板 / 动作白名单必须与网页一致：网页新增面板忘了改 Swift 时，原生会静默丢掉它
+    const swift = readFileSync(new URL('../../../ios/App/App/NativeMapChromePlugin.swift', import.meta.url), 'utf8');
+    const swiftSet = (name) => [...swift.split(`static let ${name}: Set<String> = [`)[1].split(']')[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+    assert.equal(Number(swift.match(/static let protocolVersion = (\d+)/)[1]), NATIVE_CHROME_PROTOCOL);
+    assert.deepEqual(swiftSet('allowedSheets'), [...NATIVE_SHEETS].sort());
+    assert.deepEqual(swiftSet('allowedActions'), [...NATIVE_CHROME_ACTIONS].sort());
     const linked = sanitizeSheet({ id: 'exhibition', size: 'card', subtitle: '场馆', caption: '场馆',
         subtitleAction: { id: 'venue', title: '查看', symbol: 'mappin.and.ellipse', coords: [1, 2] }, captionAction: 'venue' });
     assert.deepEqual(linked.subtitleAction, { id: 'venue', title: '查看', subtitle: undefined, symbol: 'mappin.and.ellipse', tone: undefined, disabled: false, keepsOpen: false, expands: false });
@@ -420,9 +427,14 @@ function makeSession(plugin, extra = {}) {
     emitSheet({ type: 'select', sheetId: 'admin', token: 2, rowId: 'x' });
     emitSheet({ type: 'select', sheetId: 'more', token: 2, rowId: 'random' });
     plugin.emit('sheet', { sessionId: 'old', ownerId: 'map-sheet', type: 'dismiss', sheetId: 'account', token: 2 });
+    // v11 住民的地点列表
+    emitSheet({ type: 'select', sheetId: 'userPlaces', token: 3, rowId: 'place-7' });
+    emitSheet({ type: 'dismiss', sheetId: 'userPlaces', token: 3 });
     assert.deepEqual(events, [
         { type: 'select', sheetId: 'account', token: 2, rowId: 'settings' },
-        { type: 'dismiss', sheetId: 'account', token: 2 }
+        { type: 'dismiss', sheetId: 'account', token: 2 },
+        { type: 'select', sheetId: 'userPlaces', token: 3, rowId: 'place-7' },
+        { type: 'dismiss', sheetId: 'userPlaces', token: 3 }
     ], '缺行 id、未知类型、非白名单面板、旧会话的事件被忽略');
 
     const emitDrawer = (extra) => plugin.emit('drawer', { sessionId: plugin.state.session, ownerId: 'map-sheet', ...extra });

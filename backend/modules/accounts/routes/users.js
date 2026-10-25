@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const sharp = require("sharp");
 const { db } = require("../../../infrastructure/database");
-const { requireAuth, sessionStore } = require("../middleware/auth");
+const { requireAuth, attachViewer, sessionStore } = require("../middleware/auth");
 const { newSessionId } = require('../services/sessions');
 const verification = require('../services/qqVerification');
 const { getQQBot } = require('../../qqbot/runtime/index');
@@ -13,6 +13,8 @@ const botConfig = require('../../qqbot/runtime/config');
 const { sendPrivateText } = require('../../qqbot/runtime/directMessage');
 const { normalizeQQ } = require('../../qqbot/runtime/qqIdentity');
 const { normalizeLocation, saveUserLocation } = require('../services/userLocation');
+const { viewerRelation } = require('../services/userRelations');
+const { CREATOR_PLACES_LIMIT, listCreatorPlaces } = require('../../places/services/creatorPlaces');
 const logger = require('../../../infrastructure/logger');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -543,6 +545,21 @@ router.get('/:id/avatar', (req, res) => {
         res.set('Cache-Control', 'public, max-age=86400'); // 缓存一天
         res.send(row.avatar_blob);
     });
+});
+
+// 某位住民创建的地点（地点卡片点“最近修改”的名字后筛选地图）：最近创建的在前，最多 limit 个，total 是全部可见数量。
+// relation 是观看者与这位住民的关系（self：就是自己；blocked：为屏蔽功能预留，见 services/userRelations.js）
+router.get('/:id/places', attachViewer, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+        const user = db._raw.prepare('SELECT id, username FROM User WHERE id = ?').get(req.params.id);
+        if (!user) return res.status(404).json({ error: '住民不存在' });
+        const { places, total } = listCreatorPlaces(user.id, req.viewer?.id ?? null);
+        res.json({ user, relation: viewerRelation(req.viewer, user.id), places, total, limit: CREATOR_PLACES_LIMIT });
+    } catch (error) {
+        res.locals.unhandledError = error;
+        res.status(500).json({ error: '住民的地点加载失败，请稍后重试' });
+    }
 });
 
 // 退出登录：只清理当前设备的会话，不影响其他设备

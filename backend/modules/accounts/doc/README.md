@@ -1,6 +1,6 @@
 # 账号与访问
 
-入口：`routes/users.js`（挂载 `/users`）、`middleware/auth.js`。服务包括 sessions、qqVerification、qqWhitelist、userAccess、userLocation。数据：User、QQWhitelist、QQVerificationCode、UserLastLocation；Redis 保存设备会话。依赖数据库、日志、Redis，以及 qqbot 的私信边界。
+入口：`routes/users.js`（挂载 `/users`）、`middleware/auth.js`。服务包括 sessions、qqVerification、qqWhitelist、userAccess、userLocation、userRelations。`GET /users/:id/places`（可选登录）返回住民名、观看者与这位住民的关系 `relation` 和这位住民创建的地点（places 模块的 `creatorPlaces.js`），供地图按住民筛选；`relation.blocked` 是为“屏蔽某人”预留的接缝，上线时在 `services/userRelations.js` 读屏蔽表，目前恒为 false。数据：User、QQWhitelist、QQVerificationCode、UserLastLocation；Redis 保存设备会话。依赖数据库、日志、Redis，以及 qqbot 的私信边界。
 
 ```mermaid
 flowchart TD

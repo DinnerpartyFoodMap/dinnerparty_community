@@ -156,6 +156,16 @@ export default function MapView({
     useEffect(() => { searchResultsRef.current = searchResults; }, [searchResults]);
     const alongRouteResultsRef = useRef(null);
     useEffect(() => { alongRouteResultsRef.current = alongRouteResults; }, [alongRouteResults]);
+    // 按住民筛选（地点卡片点“最近修改”的名字）：地图只显示这位住民创建的地点。状态的字段见 userPlaces.js；
+    // 与搜索、沿途互斥：任何一方接管标记时退出筛选。ref 同步更新，地图移动事件可能早于 effect
+    const [userFilter, setUserFilter] = useState(null);
+    const userFilterRef = useRef(null);
+    const userFilterRequestRef = useRef(0);
+    const refreshUserFilterRef = useRef(null);
+    const commitUserFilter = (next) => {
+        userFilterRef.current = next;
+        setUserFilter(next);
+    };
     const searchTermRef = useRef(searchTerm);
     useEffect(() => { searchTermRef.current = searchTerm; }, [searchTerm]);
     const searchingRef = useRef(searching);
@@ -774,7 +784,7 @@ export default function MapView({
 
     const loadPlaces = async (force = false) => {
         if (!mapRef.current) return;
-        if (!force && (searchResultsRef.current !== null || alongRouteResultsRef.current !== null)) return;
+        if (!force && (searchResultsRef.current !== null || alongRouteResultsRef.current !== null || userFilterRef.current !== null)) return;
         const view = readViewBounds(mapRef.current);
         if (!view || !(view.maxLng > view.minLng) || !(view.maxLat > view.minLat)) return;
         const cache = placeCacheRef.current;
@@ -814,6 +824,7 @@ export default function MapView({
         nearbyTokenRef.current = token;
         placeCacheRef.current.invalidate();
         loadPlacesRef.current?.(false);
+        refreshUserFilterRef.current?.();
     }, [token]);
 
     // Toggle favorite for a place
@@ -875,6 +886,10 @@ export default function MapView({
         }
         setSearchResults(patchList);
         setAlongRouteResults(patchList);
+        if (userFilterRef.current?.places) {
+            const patched = patchList(userFilterRef.current.places);
+            if (patched !== userFilterRef.current.places) commitUserFilter({ ...userFilterRef.current, places: patched });
+        }
         const selected = selectedPlaceRef.current;
         if (matches(selected) && differs(selected)) {
             const next = { ...selected, ...patch };
@@ -920,10 +935,11 @@ export default function MapView({
         return userLocationMarkerRef.current;
     };
 
-    // 唯一的标记数据入口：当前模式（沿途 > 搜索 > 附近）的完整列表交给标记层。
-    // 高德临时 POI 默认只存在于结果列表；用户单独选中后才显示在地图上。
-    const markerQueryMode = alongRouteResults != null ? 'along' : (searchResults != null ? 'search' : 'nearby');
-    const markerSource = alongRouteResults != null ? alongRouteResults : (searchResults != null ? searchResults : places);
+    // 唯一的标记数据入口：当前模式（沿途 > 搜索 > 住民筛选 > 附近）的完整列表交给标记层。
+    // 高德临时 POI 默认只存在于结果列表；用户单独选中后才显示在地图上。住民的地点加载完成前仍显示附近地点。
+    const userPlaces = userFilter?.status === 'ready' ? userFilter.places : null;
+    const markerQueryMode = alongRouteResults != null ? 'along' : (searchResults != null ? 'search' : (userPlaces ? 'user' : 'nearby'));
+    const markerSource = alongRouteResults != null ? alongRouteResults : (searchResults != null ? searchResults : (userPlaces || places));
     useEffect(() => {
         if (!mapReady || !markerLayerRef.current) return;
         const visibleMapPlaces = (markerSource || []).filter((place) => place.isMarked !== false || place.showOnMap === true);
@@ -980,6 +996,7 @@ export default function MapView({
     const handleAlongRouteResults = (results) => {
         if (Array.isArray(results)) {
             clearSearchState({ resetTerm: true, closeSearchUi: true, reloadPlaces: false });
+            exitUserFilter();
             alongRouteResultsRef.current = results;
             setAlongRouteResults(results);
             return;
@@ -1005,6 +1022,7 @@ export default function MapView({
         if (!place || !mapRef.current) return;
         clearSearchState({ reloadPlaces: false });
         setAlongRouteResults(null);
+        exitUserFilter();
         // Map move events can fire before React effects synchronize these refs.
         // Random discovery opens a detail popup without filtering nearby markers.
         searchResultsRef.current = null;
@@ -1030,7 +1048,8 @@ export default function MapView({
             onCreated && onCreated();
             setAddingPos(null);
             setAddingPrefill(null);
-            // 重新加载数据并清除搜索结果（若正在搜索）
+            // 重新加载数据并清除搜索结果与住民筛选（若有）
+            exitUserFilter();
             searchResultsRef.current = null;
             setSearchResults(null);
             setSearching(false);
@@ -1041,6 +1060,32 @@ export default function MapView({
         } catch (e) {
             console.error("提交地点失败", e);
             showTip(t('map:main.submitFailed', { message: e.message || e }));
+        }
+    };
+
+    // 视野调整到一组地点（搜索结果、住民的地点），避开界面遮挡；只有一个时放大到 16 级
+    const fitMapToPlaces = (list) => {
+        const fitBounds = boundsOfPlaces(list);
+        if (!fitBounds || !mapRef.current) return;
+        armSkipAutoSearch(800);
+        try {
+            const insets = getMapSafeInsets(containerRef.current);
+            const pad = 48;
+            if (fitBounds.count === 1) {
+                mapRef.current.setZoomAndCenter(16, [fitBounds.minLng, fitBounds.minLat]);
+            } else {
+                mapRef.current.setBounds(
+                    new window.AMap.Bounds([fitBounds.minLng, fitBounds.minLat], [fitBounds.maxLng, fitBounds.maxLat]),
+                    false,
+                    [insets.top + pad, pad, insets.bottom + pad, pad]
+                );
+            }
+        } catch (e) {
+            const first = list[0];
+            if (first) {
+                mapRef.current.setCenter([first.longitude, first.latitude]);
+                mapRef.current.setZoom(15);
+            }
         }
     };
 
@@ -1070,6 +1115,7 @@ export default function MapView({
         }
 
         searchAbortControllersRef.current.forEach((controller) => controller.abort());
+        exitUserFilter();
         const fastController = new AbortController();
         const aiController = new AbortController();
         searchAbortControllersRef.current = [fastController, aiController];
@@ -1149,38 +1195,7 @@ export default function MapView({
 
             publishResults(baseData, resolvedRecommendations);
             // 若匹配成功，调整视野到所有匹配 marker
-            if (autoFit) {
-                const fitBounds = boundsOfPlaces(baseData.filter((place) => place.isMarked !== false || place.showOnMap === true));
-                if (fitBounds) {
-                    skipNextSearchRef.current = true;
-                    if (skipSearchTimerRef.current) {
-                        window.clearTimeout(skipSearchTimerRef.current);
-                    }
-                    skipSearchTimerRef.current = window.setTimeout(() => {
-                        skipNextSearchRef.current = false;
-                        skipSearchTimerRef.current = null;
-                    }, 800);
-                    try {
-                        const insets = getMapSafeInsets(containerRef.current);
-                        const pad = 48;
-                        if (fitBounds.count === 1) {
-                            mapRef.current.setZoomAndCenter(16, [fitBounds.minLng, fitBounds.minLat]);
-                        } else {
-                            mapRef.current.setBounds(
-                                new window.AMap.Bounds([fitBounds.minLng, fitBounds.minLat], [fitBounds.maxLng, fitBounds.maxLat]),
-                                false,
-                                [insets.top + pad, pad, insets.bottom + pad, pad]
-                            );
-                        }
-                    } catch (e) {
-                        const first = baseData[0];
-                        if (first) {
-                            mapRef.current.setCenter([first.longitude, first.latitude]);
-                            mapRef.current.setZoom(15);
-                        }
-                    }
-                }
-            }
+            if (autoFit) fitMapToPlaces(baseData.filter((place) => place.isMarked !== false || place.showOnMap === true));
         } catch (e) {
             if (e?.name !== 'AbortError') console.error("searchServer error", e);
             if (requestId === searchRequestIdRef.current) {
@@ -1203,8 +1218,64 @@ export default function MapView({
     };
 
     const handleSelectSuggestion = (item) => {
+        exitUserFilter();
         setSearchResults([item?.isMarked === false ? { ...item, showOnMap: true } : item]);
     };
+
+    const readyUserFilter = (data, fallbackUser) => {
+        const list = Array.isArray(data?.places) ? data.places : [];
+        return {
+            user: { id: data?.user?.id ?? fallbackUser.id, name: data?.user?.username || fallbackUser.name },
+            status: 'ready',
+            places: list,
+            total: Number(data?.total) || list.length,
+            relation: data?.relation || null
+        };
+    };
+
+    // 按住民筛选：退出搜索与沿途、收起卡片，读取这位住民创建的地点后视野调整到全部地点
+    const openUserPlaces = async (user) => {
+        if (!user?.id) return;
+        const requestId = ++userFilterRequestRef.current;
+        clearSearchState({ reloadPlaces: false });
+        searchResultsRef.current = null;
+        alongRouteResultsRef.current = null;
+        setAlongRouteResults(null);
+        closePopup();
+        commitUserFilter({ user: { id: user.id, name: user.name }, status: 'loading', places: null, total: 0, relation: null });
+        try {
+            const data = await Api.fetchUserPlaces(backendUrl, user.id, { token });
+            if (requestId !== userFilterRequestRef.current) return;
+            const next = readyUserFilter(data, user);
+            commitUserFilter(next);
+            fitMapToPlaces(next.places);
+        } catch (e) {
+            if (requestId !== userFilterRequestRef.current) return;
+            commitUserFilter({ user: { id: user.id, name: user.name }, status: 'error', places: null, total: 0, relation: null, error: e.message || String(e) });
+        }
+    };
+
+    // 退出按住民筛选。reload：回到附近地点（搜索、沿途等接管标记时由它们自己加载）
+    const exitUserFilter = ({ reload = false } = {}) => {
+        userFilterRequestRef.current += 1;
+        if (!userFilterRef.current) return;
+        commitUserFilter(null);
+        if (reload) loadPlacesRef.current?.(true);
+    };
+
+    // 筛选中修改 / 删除了地点、登录身份变化：静默重新读取（不移动视野、不收起卡片），失败时保留原列表
+    const refreshUserFilter = async () => {
+        const current = userFilterRef.current;
+        if (!current || current.status !== 'ready') return;
+        const requestId = ++userFilterRequestRef.current;
+        try {
+            const data = await Api.fetchUserPlaces(backendUrl, current.user.id, { token });
+            if (requestId === userFilterRequestRef.current) commitUserFilter(readyUserFilter(data, current.user));
+        } catch (e) {
+            console.warn('刷新住民的地点失败', e);
+        }
+    };
+    refreshUserFilterRef.current = refreshUserFilter;
 
     // 公开日记链接 ?diary=<公开 ID>&stop=<站点>：未登录也可阅读；一次性参数，处理后从地址中移除
     const [initialDiary, setInitialDiary] = useState(null);
@@ -1266,6 +1337,7 @@ export default function MapView({
                     return;
                 }
 
+                exitUserFilter();
                 setSearchTerm(place.name || '');
                 setSearchResults([place]);
                 setSearchResetKey((v) => v + 1); // 通知 MapUI 关闭搜索建议面板，呈现"已提交"状态
@@ -1406,31 +1478,6 @@ export default function MapView({
         handleLocateMe({ auto: true });
     }, [mapReady]);
 
-    // 尝试从 selectedPlace 中读出最后修改人/时间，兼容多种字段名，优先使用名字字段并仅保留到日（YYYY-MM-DD）
-    const getLastModifierText = (place) => {
-        if (!place) return "-";
-        // 优先尝试带名字的字段，再回退到 id/其他字段
-        const nameFields = place.updated_by_name || place.updater_name || place.modified_by_name || place.last_modified_by_name || place.creator_name || place.created_by_name || null;
-        const idFields = place.updated_by || place.modified_by || place.last_modified_by || place.updater || place.creator_id || place.creator || place.created_by || null;
-        const by = nameFields || `uid${idFields}` || null;
-        const rawDate = place.updated_at || place.updated_time || place.modified_time || place.last_modified_at || place.modifiedAt || place.updatedAt || place.created_time || null;
-        let when = "-";
-        if (rawDate) {
-            try {
-                const d = (typeof rawDate === "number" || /^\d+$/.test(String(rawDate))) ? new Date(Number(rawDate)) : new Date(String(rawDate));
-                if (!isNaN(d.getTime())) {
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth() + 1).padStart(2, '0');
-                    const dd = String(d.getDate()).padStart(2, '0');
-                    when = `${y}-${m}-${dd}`;
-                }
-            } catch (e) { }
-        }
-        const result = `${by || "-"} · ${when}`;
-        try { console.debug && console.debug('[getLastModifierText]', { id: place.id, by, rawDate, formatted: result }); } catch (e) { }
-        return result;
-    };
-
     const openCreateFromPoi = () => {
         if (!selectedPlace) return;
         if (!token) {
@@ -1534,6 +1581,7 @@ export default function MapView({
             placeCacheRef.current.remove(selectedPlace);
             closePopup();
             await refreshNearby();
+            refreshUserFilter();
         } catch (e) {
             console.error("删除失败", e);
             setManageMessage(t('common:error.deleteFailedWithMessage', { message: e.message || e }));
@@ -1561,6 +1609,7 @@ export default function MapView({
             setManageOpen(false);
             closePopup();
             await refreshNearby();
+            refreshUserFilter();
         } catch (e) {
             console.error("更新失败", e);
             setManageMessage(t('map:main.updateFailed', { message: e.message || e }));
@@ -1720,7 +1769,11 @@ export default function MapView({
                 handleToggleAddMode={handleToggleAddMode}
                 addPlaceTipText={addPlaceTipText}
                 selectedPlace={selectedPlace}
-                getLastModifierText={getLastModifierText}
+                userFilter={userFilter}
+                onOpenUserPlaces={openUserPlaces}
+                onExitUserPlaces={() => exitUserFilter({ reload: true })}
+                onRetryUserPlaces={() => userFilterRef.current && openUserPlaces(userFilterRef.current.user)}
+                onSelectUserPlace={handleSelectAlongRoutePlace}
                 openManagePanel={openManagePanel}
                 openCreateFromPoi={openCreateFromPoi}
                 openCommentPanel={openCommentPanel}

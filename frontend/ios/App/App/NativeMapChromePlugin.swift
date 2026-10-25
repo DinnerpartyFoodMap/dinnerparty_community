@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 10）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 11）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
@@ -44,6 +44,8 @@ import Capacitor
 ///   触摸全部交给网页；目标位置作为 "tour" slot 随布局回传（带 step），网页据此挖空遮罩、摆放说明卡片。
 ///   target 为 "drawer" 时播放上滑示意，并允许拖动工具栏练习，展开后布局的 tour.drawerOpen 为真，网页进入下一步；
 ///   drawer 为真时展开更多功能，target 是其中一行。
+/// - v11：住民的地点列表（userPlaces，list 样式的玻璃面板）：地点卡片点“最近修改”的住民后打开；
+///   与收藏一样只展示网页下发的行，下滑、点地图或关闭只收起列表（网页保留筛选）。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -63,11 +65,11 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 10
+    static let protocolVersion = 11
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "add", "search", "alongRoute", "account", "locate"]
-    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition"]
+    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces"]
     /// 单个面板最多的行数（收藏列表）
     static let sheetRowLimit = 300
     /// 心跳超时（秒）；网页每 1.5 秒发一次
