@@ -26,7 +26,8 @@ import { loadAmap, retryAmap, subscribeAmap, getAmapState, describeAmapError } f
 import { getCurrentLocation, describeLocationError, isLocationAvailable, releaseLocationControl } from "../platform/geolocation";
 import { getQueryParams, removeQueryParams, openExternal, shareParamValue } from "../platform/navigation";
 import { onAppStateChange } from "../platform/lifecycle";
-import { isNativePlatform } from "../platform/env";
+import { isNativePlatform, getPlatform } from "../platform/env";
+import { amapNavigationLink } from "./amapNavigation";
 import { getRuntimeConfig } from "../platform/runtimeConfig";
 import { subscribeSkin } from "../skins/skinStore";
 import { t } from "../i18n/index.js";
@@ -1329,11 +1330,10 @@ export default function MapView({
                 if (!place || !place.longitude || !place.latitude || cancelled) return;
 
                 if (isNavShare) {
-                    // 高德导航分享：直接跳转到高德地图导航
-                    const label = encodeURIComponent((place.name || t('map:main.destination')).trim());
-                    const lng = place.longitude;
-                    const lat = place.latitude;
-                    openExternal(`https://uri.amap.com/navigation?to=${lng},${lat},${label}&mode=car&src=yUYUko_food_MAP`, { sameWindow: true });
+                    // 高德导航分享：App 内直接唤起高德地图（未安装时打开网页版），网页跳转到高德导航网页
+                    const name = (place.name || t('map:main.destination')).trim();
+                    const amap = amapNavigationLink({ longitude: place.longitude, latitude: place.latitude, name }, getPlatform());
+                    openExternal(amap.url, { sameWindow: true, fallbackUrl: amap.fallbackUrl });
                     return;
                 }
 

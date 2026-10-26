@@ -55,11 +55,12 @@ function buildFrontendPlaceUrl(req, id) {
     return `${protocol}://${host}${placeParam}`;
 }
 
+// callnative=1：高德网页自己尝试唤起已安装的高德地图 App（与前端 src/map/amapNavigation.js 的网页链接一致）
 function buildAmapNavUrl(place) {
     const lng = Number(place?.longitude);
     const lat = Number(place?.latitude);
     const label = encodeURIComponent((place?.name || "目的地").trim());
-    return `https://uri.amap.com/navigation?to=${lng},${lat},${label}&mode=car&src=yUYUko_food_MAP`;
+    return `https://uri.amap.com/navigation?to=${lng},${lat},${label}&mode=car&src=yUYUko_food_MAP&callnative=1`;
 }
 
 /** nav=amap 才是导航分享；客户端把参数直接拼在后面时（nav=amap?qq_aio_chat_type=2）也要认出来 */

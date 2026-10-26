@@ -17,6 +17,7 @@
 /frontend/.env.*.local
 /backend/.env
 /backend/data.sqlite*
+/backend/snapshot.sqlite*
 yUYUko_food_MAP.code-workspace
 /backend/uploads
 /backend/logs
@@ -27,7 +28,8 @@ AGENTS.md
 /.claude
 /.codex-ui-review
 /ppt
-/research
+# Local research plans, data profiles, and experiments
+/research/
 /docs
 /artifacts
 /copyright

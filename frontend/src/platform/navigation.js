@@ -116,9 +116,10 @@ export function onPopState(listener) {
 /**
  * 打开外部链接（地图导航、备案网站等）。
  * App 内交给系统处理（可唤起已安装的地图 App 或系统浏览器）；网页沿用原有行为。
+ * fallbackUrl：App 内自定义 scheme（如 iosamap://）没有应用能打开时改开的链接。
  * @returns {Promise<boolean>} 是否已交给系统/浏览器
  */
-export async function openExternal(url, { sameWindow = false } = {}) {
+export async function openExternal(url, { sameWindow = false, fallbackUrl = '' } = {}) {
     if (!url) return false;
     if (isNativePlatform()) {
         let completed = false;
@@ -135,7 +136,7 @@ export async function openExternal(url, { sameWindow = false } = {}) {
             window.open(url, '_blank');
             return true;
         }
-        return false;
+        return fallbackUrl ? openExternal(fallbackUrl) : false;
     }
     if (sameWindow) {
         window.location.href = url;

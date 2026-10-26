@@ -27,6 +27,7 @@ import { usePlaceDiaryCount } from '../journey/PlaceDiaryList';
 import { buildPublicUrl, getRuntimeConfig, imageThumbnailUrl } from '../platform/runtimeConfig';
 import { shareContent, copyText } from '../platform/share';
 import { openExternal } from '../platform/navigation';
+import { amapNavigationLink } from './amapNavigation';
 import { getPlatform, APP_VERSION } from '../platform/env';
 import { AnimatePresence, motion } from 'motion/react';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
@@ -80,7 +81,7 @@ function getPlaceKey(place) {
     return `name:${String(place?.name || place?.address || '').trim()}`;
 }
 
-function buildNavigationTargets(place) {
+function buildNavigationTargets(place, platform) {
     const latitude = Number(place?.latitude);
     const longitude = Number(place?.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
@@ -106,7 +107,7 @@ function buildNavigationTargets(place) {
         {
             id: 'amap',
             name: t('map:ui.nav.amap'),
-            url: `https://uri.amap.com/navigation?to=${longitude},${latitude},${label}&mode=car&src=yUYUko_food_MAP`
+            ...amapNavigationLink({ longitude, latitude, name: rawLabel }, platform)
         },
         {
             id: 'tencent',
@@ -299,7 +300,7 @@ export default function MapUI(props) {
     const isAndroid = platform === 'android' || /Android/i.test(ua);
     const isMobile = isIOS || isAndroid;
 
-    const navigationTargets = (selectedPlace ? buildNavigationTargets(selectedPlace) : []).filter((item) => {
+    const navigationTargets = (selectedPlace ? buildNavigationTargets(selectedPlace, platform) : []).filter((item) => {
         if (item.iosOnly && !isIOS) return false;
         if (item.mobileOnly && !isMobile) return false;
         return true;
@@ -342,8 +343,8 @@ export default function MapUI(props) {
         if (!target || !target.url) return;
         recordSelectedPlaceBehavior('navigation', target.id);
 
-        // 交给系统打开：App 内可唤起已安装的地图应用，未安装时回退到浏览器
-        openExternal(target.url, { sameWindow: isMobile && target.prefersLocationHref }).then((opened) => {
+        // 交给系统打开：App 内可唤起已安装的地图应用，未安装时回退到浏览器（高德为 fallbackUrl 的网页版）
+        openExternal(target.url, { sameWindow: isMobile && target.prefersLocationHref, fallbackUrl: target.fallbackUrl }).then((opened) => {
             if (!opened && showTip) showTip(t('map:ui.nav.openFailed'));
         });
     };
