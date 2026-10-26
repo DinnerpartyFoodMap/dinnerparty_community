@@ -5,7 +5,7 @@
     "typeLabel": "反馈类型",
     "typePlaceholder": "请选择反馈类型",
     "contentLabel": "反馈内容",
-    "contentPlaceholder": "请先选择反馈类型，再描述具体情况",
+    "contentPlaceholder": "请描述具体情况",
     "counter": "{{count}} / {{max}}",
     "imagesLabel": "图片（选填）",
     "imagesHint": "最多 {{max}} 张，仅管理员可见。",
@@ -18,11 +18,21 @@
     "submitting": "提交中...",
     "submitted": "反馈已提交，谢谢！",
     "types": {
-        "bug": { "label": "问题反馈", "hint": "哪个页面、做了什么操作、看到了什么结果？" },
-        "suggestion": { "label": "功能建议", "hint": "希望增加或改进什么功能？" },
-        "report": { "label": "不良信息举报", "hint": "在哪里看到的？写明地点、日记或住民名，可以附截图。" },
-        "account": { "label": "账号问题", "hint": "登录、注册或账号相关的问题" },
-        "other": { "label": "其他", "hint": "想说的其他事情" }
+        "bug": {
+            "label": "问题反馈"
+        },
+        "suggestion": {
+            "label": "功能建议"
+        },
+        "report": {
+            "label": "不良信息举报"
+        },
+        "account": {
+            "label": "账号问题"
+        },
+        "other": {
+            "label": "其他"
+        }
     },
     "placeReport": {
         "template": "举报地点：{{name}}（编号 {{id}}）\n{{link}}\n\n举报原因："

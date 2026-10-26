@@ -51,7 +51,6 @@ export default function JourneyCommunity({ctx,nav}) {
                         </div>
                     </div>
                     {view==='map'?<>
-                        <p className="jw-muted">{t('journey:community.mapHint')}</p>
                         <svg viewBox="-1.2 -1.2 2.4 2.4" className="jw-taste" role="img" aria-label={t('journey:community.mapLabel')}>
                             {[0.35,0.65,0.95].map(r=><circle key={r} r={r} fill="none" stroke="currentColor" strokeOpacity=".15" strokeWidth=".008"/>)}
                             <circle r=".07" fill="var(--theme-primary)"/><text y=".17" textAnchor="middle" fontSize=".09" fill="currentColor">{t('journey:community.me')}</text>
@@ -88,7 +87,6 @@ export default function JourneyCommunity({ctx,nav}) {
                 <label className="jw-field"><span className="jw-field__label">{t('journey:community.tagsLabel')}</span><input value={settings.tags.join(t('journey:community.tagSeparator'))} maxLength={500} onChange={e=>setSettings({...settings,tags:e.target.value.split(/[,，]/)})}/></label>
                 <label className="jw-check"><input type="checkbox" checked={settings.discovery} onChange={e=>setSettings({...settings,discovery:e.target.checked})}/><span>{t('journey:community.consent.discovery')}</span></label>
                 <label className="jw-check"><input type="checkbox" checked={settings.feedback} onChange={e=>setSettings({...settings,feedback:e.target.checked,research:e.target.checked?settings.research:false})}/><span>{t('journey:community.consent.feedback')}</span></label>
-                <p className="jw-muted">{t('journey:community.consent.feedbackHint')}</p>
                 <label className="jw-check"><input type="checkbox" disabled={!settings.feedback} checked={settings.research} onChange={e=>setSettings({...settings,research:e.target.checked})}/><span>{t('journey:community.consent.research')}</span></label>
                 <button type="button" className="jw-primary" disabled={busy} onClick={saveSettings}>{t('journey:community.saveSettings')}</button>
                 <p className="jw-muted">{stats?.counts.map(s=>`${KIND_LABEL[s.kind]||s.kind} ${s.count}`).join(' · ')||t('journey:community.noInteractions')}</p>

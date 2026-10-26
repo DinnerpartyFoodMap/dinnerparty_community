@@ -1,6 +1,6 @@
 # 管理与审计
 
-adminExhibitions 提供 `/admin/exhibitions` 发布及 `/current` 查询、下架，另有 `/api/admin/exhibitions` 别名，沿用 `manage_announcements` 权限。展会地点选填：`latitude`、`longitude` 要么都留空，要么都是有效坐标（0,0 视为未选），`location_name` 最多 80 字。事务同时更新 SiteExhibition 与审计日志；部分唯一索引约束最多一个当前展会。
+adminExhibitions 提供 `/admin/exhibitions` 的 GET 列表、POST 新增，`/:id` 的 PUT 编辑与 DELETE 下架，另有 `/api/admin/exhibitions` 别名，沿用 `manage_announcements` 权限。旧 `/current` 查询与 DELETE 仅作用于排序首项。展会地点选填：`latitude`、`longitude` 要么都留空，要么都是有效坐标（0,0 视为未选），`location_name` 最多 80 字。事务同时更新 SiteExhibition 与审计日志；迁移移除单活动唯一索引，保留原有记录。`event_time` 格式为 `YYYY-MM-DDTHH:mm`，按举办地本地时间保存，拒绝不存在的日期；兼容旧客户端缺省时间。
 
 入口 routes 下 adminUsers、adminGeneralUsers、adminComments、adminAudit、adminQQWhitelist、adminQQBot、adminNotices、adminSkinCodes、adminFeedback；index.js 统一在 `/admin/*` 前挂 requireAuth，部分公告保留 `/api/admin/notices` 别名。middleware/adminAuth 是按权限名检查的工厂，services/adminPermissions 是唯一角色映射，adminAudit 写审计。
 

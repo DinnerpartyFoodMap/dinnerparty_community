@@ -1,6 +1,6 @@
 {
   "auditModal": {
-    "title": "管理员操作日志（最近 200 条）",
+    "title": "最近200条管理员操作日志",
     "empty": "暂无操作记录",
     "col": {
       "operator": "操作者 UUID",
@@ -59,7 +59,7 @@
   },
   "generalUsers": {
     "forbidden": "权限不足，无法获取普通用户列表",
-    "confirmDelete": "永久删除普通用户“{{username}}”？删除后无法恢复。",
+    "confirmDelete": "永久删除普通用户“{{username}}”？",
     "deleted": "用户已删除",
     "title": "普通用户管理",
     "searchPlaceholder": "搜索用户名称、id、qq号",
@@ -133,8 +133,8 @@
     "reject": "驳回",
     "success": "操作成功",
     "failed": "操作失败: {{message}}",
-    "approveAction": "通过并应用修改…",
-    "rejectAction": "驳回申请…",
+    "approveAction": "通过并应用修改",
+    "rejectAction": "驳回申请",
     "title": "地点修改申请",
     "searchPlaceholder": "搜索 ID / 地点ID / 申请人 / 内容",
     "empty": "当前没有匹配的待处理申请。",
@@ -183,7 +183,7 @@
     "updateFailedStatus": "更新失败 {{status}}",
     "levelUpdated": "权限已更新",
     "failed": "失败：{{message}}",
-    "confirmDelete": "永久删除用户“{{username}}”？删除后无法恢复。",
+    "confirmDelete": "永久删除用户“{{username}}”？",
     "deleted": "用户已删除",
     "banFailedStatus": "封禁失败 {{status}}",
     "banned": "用户已封禁",
@@ -197,8 +197,8 @@
     "setKomachi": "设为 KOMACHI",
     "setRegular": "设为普通用户",
     "unban": "解除封禁",
-    "ban": "封禁账号…",
-    "delete": "永久删除用户…",
+    "ban": "封禁账号",
+    "delete": "永久删除用户",
     "title": "用户管理",
     "searchPlaceholder": "搜索用户名称、id、QQ号",
     "noMatch": "未找到匹配的用户。",
@@ -212,6 +212,12 @@
     }
   },
   "exhibitions": {
+    "select": "选择活动",
+    "newActivity": "新活动",
+    "add": "新增活动",
+    "save": "保存修改",
+    "eventTime": "活动时间",
+    "eventTimeHint": "填写活动举办地的日期和时间，首页按此时间从早到晚轮播。",
     "title": "展会联动设置",
     "loading": "正在加载展会…",
     "current": "当前展会：{{name}}",
@@ -223,7 +229,7 @@
     "description": "展会简介",
     "information": "展会信息",
     "location": "展会地点",
-    "locationPlaceholder": "场馆名称，例如 广州保利世贸博览馆",
+    "locationPlaceholder": "场馆名称",
     "pickLocation": "在地图上选择",
     "clearLocation": "清除地点",
     "coordinates": "已选坐标：{{lat}}, {{lng}}",
@@ -232,12 +238,12 @@
     "unpublish": "下架展会",
     "saving": "处理中…",
     "retry": "重新加载",
-    "fillRequired": "请填写展会名称、简介和信息",
+    "fillRequired": "请填写展会名称、活动时间、简介和信息",
     "invalidImage": "请选择不超过 20MB 的 JPG、PNG、WebP 或 GIF 图片",
     "requestFailed": "操作失败，请稍后重试",
     "published": "展会已发布",
     "unpublished": "展会已下架",
-    "confirmUnpublish": "确认下架当前展会？地图首页将不再显示此展会入口。"
+    "confirmUnpublish": "确认下架当前展会？"
   },
   "dashboard": {
     "title": "管理员后台",
@@ -256,8 +262,8 @@
   },
   "skinCodes": {
     "title": "皮肤兑换码",
-    "intro": "批量生成皮肤兑换码，住民在“住民设置 → 主题皮肤”中兑换。",
-    "emptyCatalog": "还没有可兑换的皮肤：先在 backend/modules/skins/catalog.json 登记，并在 frontend/src/skins/packs 放入素材。",
+    "intro": "批量生成皮肤兑换码",
+    "emptyCatalog": "还没有可兑换的皮肤",
     "skin": "皮肤",
     "notInBuild": "{{name}}（当前版本没有素材）",
     "count": "生成数量",
@@ -296,7 +302,7 @@
       "revoked": "已作废"
     },
     "revoke": "作废",
-    "confirmRevoke": "作废兑换码 {{code}}？作废后不能再兑换，已解锁的住民保留皮肤。",
+    "confirmRevoke": "作废兑换码 {{code}}？",
     "revokedTip": "已作废 {{code}}"
   },
   "feedback": {
@@ -330,7 +336,7 @@
     "resolve": "标记已处理",
     "reopen": "重新打开",
     "delete": "删除",
-    "confirmDelete": "删除这条反馈及其截图？删除后无法恢复。",
+    "confirmDelete": "删除这条反馈及其截图？",
     "resolvedTip": "已标记为已处理",
     "reopenedTip": "已重新打开",
     "deletedTip": "反馈已删除",

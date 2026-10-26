@@ -38,6 +38,7 @@ import { useLayoutPolicy, useMotionFlags } from '../motion/MotionProvider';
 import { getPreset } from '../motion/presets';
 import { placeKey } from './cluster/engine';
 import { useMapChrome } from './useMapChrome';
+import { nextNativeSheetIdentity } from '../platform/nativeMapChrome';
 import MapOnboarding from './MapOnboarding';
 import { buildOnboardingSteps, readOnboardingSeen, rememberOnboardingSeen } from './onboarding';
 import { getOverlayEntries, subscribeOverlays } from '../components/overlay/overlayStack';
@@ -847,9 +848,7 @@ export default function MapUI(props) {
         : null;
     // 每次打开面板分配新 token：用户在原生侧关闭后，同一 token 的旧快照不会再弹出，迟到的事件也不会作用到新面板
     const sheetTokenRef = useRef({ id: null, token: 0 });
-    if (sheetTokenRef.current.id !== openSheetId) {
-        sheetTokenRef.current = { id: openSheetId, token: sheetTokenRef.current.token + (openSheetId ? 1 : 0) };
-    }
+    sheetTokenRef.current = nextNativeSheetIdentity(sheetTokenRef.current, openSheetId, exhibition?.id);
     let chromeSheet = null;
     if (openSheetId === 'account') {
         chromeSheet = {

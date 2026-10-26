@@ -129,7 +129,6 @@ export function DinnerListPage({ backendUrl, onGoCreate, onOpenDetail, onGoHome 
                 </div>
 
                 <div className="fm-page-card" style={cardStyle(dark)}>
-                    <p style={{ marginTop: 0, color: 'var(--color-text-secondary)' }}>{t('dinner:list.intro')}</p>
                     <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                         <Button onClick={onGoCreate} style={{ border: 0 }}>{t('dinner:list.create')}</Button>
                     </div>
@@ -234,7 +233,6 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
                 </div>
 
                 <div className="fm-page-card" style={cardStyle(dark)}>
-                    <p style={{ marginTop: 0, color: 'var(--color-text-secondary)' }}>{t('dinner:create.intro')}</p>
                     <style>{`
                         .dinner-datetime-input::-webkit-calendar-picker-indicator {
                             opacity: 0;
@@ -430,7 +428,6 @@ export function DinnerDetailPage({ backendUrl, dinnerId, token, currentUserId, i
                             <div style={{ marginTop: 12, padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)' }}>
                                 <div style={{ fontWeight: 700, marginBottom: 6 }}>{t('dinner:detail.shareTitle')}</div>
                                 <div style={{ wordBreak: 'break-all', color: 'var(--color-text-primary)' }}>{shareUrl}</div>
-                                <div style={{ marginTop: 6, fontSize: 13, color: 'var(--color-text-secondary)' }}>{t('dinner:detail.shareHint')}</div>
                                 <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                                     <Button onClick={copyLink} style={{ border: 0 }}>{t('dinner:detail.copyLink')}</Button>
                                     <a href={shareUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>

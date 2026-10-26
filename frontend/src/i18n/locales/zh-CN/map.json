@@ -1,5 +1,8 @@
 {
   "exhibition": {
+    "count": "有 {{count}} 个活动",
+    "all": "全部活动",
+    "eventTime": "活动时间",
     "open": "查看展会：{{name}}",
     "description": "展会简介",
     "information": "展会信息",

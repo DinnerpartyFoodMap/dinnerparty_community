@@ -61,7 +61,7 @@ function resolveCenterArgument(value) {
         return { ...location, label: cleanLabel(coordinates[3]) || `${location.lat.toFixed(5)},${location.lng.toFixed(5)}`, source: 'coordinates' };
     }
     if (text === '展会' || text === '当前展会') {
-        const exhibition = db._raw.prepare('SELECT name, location_name, latitude, longitude FROM SiteExhibition WHERE is_active = 1').get();
+        const exhibition = db._raw.prepare('SELECT name, location_name, latitude, longitude FROM SiteExhibition WHERE is_active = 1 ORDER BY event_time IS NULL, event_time, id LIMIT 1').get();
         const location = exhibition && normalizeLocation(exhibition.latitude, exhibition.longitude);
         if (!location) return { error: exhibition ? `当前展会「${cleanLabel(exhibition.name)}」没有设置地点。` : '当前没有进行中的展会。' };
         return { ...location, label: cleanLabel(exhibition.location_name) || cleanLabel(exhibition.name), source: 'exhibition' };

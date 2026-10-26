@@ -1,72 +1,62 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ExhibitionIcon from '../components/primitives/ExhibitionIcon';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
+import ExhibitionDeck from './ExhibitionDeck';
+import ExhibitionSpread from './ExhibitionSpread';
 import Button from '../components/primitives/Button';
 import MarqueeText from '../components/primitives/MarqueeText';
 import Markdown from '../components/markdown/Markdown';
-import { onAppStateChange } from '../platform/lifecycle';
 import { getExhibitionTop } from './exhibitionLayout';
 import { exhibitionRandomOrigin } from './exhibition';
 import { useLayoutPolicy } from '../motion/MotionProvider';
 import { t } from '../i18n/index.js';
+import './exhibition-stack.css';
 
 // Keep the entry 30px below the map's top edge when no notice overlaps it.
 const HOME_TOP = 30;
 
-/**
- * 当前展会：进入时、每 30 秒、窗口回到前台和后台发布后（exhibition-updated）重新读取。
- * enabled 为假（不在地图页）时不轮询，保留最后一次结果。内容不变时沿用旧对象，避免整页重渲染。
- */
-export function useCurrentExhibition(backendUrl, enabled = true) {
-    const [exhibition, setExhibition] = useState(null);
-
-    useEffect(() => {
-        if (!enabled) return undefined;
-        let cancelled = false;
-        let controller;
-        const load = async () => {
-            controller?.abort();
-            const request = new AbortController();
-            controller = request;
-            try {
-                const res = await fetch(`${backendUrl}/exhibitions/current`, { signal: request.signal });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (cancelled || request.signal.aborted) return;
-                const next = data.exhibition || null;
-                setExhibition(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
-            } catch (error) {
-                if (!cancelled && !request.signal.aborted) console.warn('Failed to load exhibition', error);
-            }
-        };
-        load();
-        const timer = window.setInterval(load, 30000);
-        window.addEventListener('focus', load);
-        window.addEventListener('exhibition-updated', load);
-        const stopLifecycle = onAppStateChange(({ active }) => { if (active) load(); });
-        return () => {
-            cancelled = true;
-            controller?.abort();
-            window.clearInterval(timer);
-            window.removeEventListener('focus', load);
-            window.removeEventListener('exhibition-updated', load);
-            stopLifecycle();
-        };
-    }, [backendUrl, enabled]);
-
-    return exhibition;
-}
-
 /** 地图右上角（宽屏右下角）的展会入口；面板由地图（MapUI）渲染，iOS 原生控件接管时为原生面板。 */
-export default function MapExhibition({ exhibition, open = false, onOpen, noticeRef, noticeVisible, noticeTop, backendUrl }) {
+export default function MapExhibition({ exhibition, exhibitions = [], open = false, onOpen, noticeRef, noticeVisible, noticeTop, backendUrl }) {
     const { narrow } = useLayoutPolicy();
     const [top, setTop] = useState(HOME_TOP);
     const entryRef = useRef(null);
+    const stackRef = useRef(null);
+    const [expanded, setExpanded] = useState(false);
+    const [spreadOrigin, setSpreadOrigin] = useState(null);
+    const pendingSelection = useRef(null);
+    const multiple = exhibitions.length > 1;
+    useEffect(() => {
+        if (!multiple) setExpanded(false);
+    }, [multiple]);
+
+    function readDeckOrigin() {
+        const rect = entryRef.current?.querySelector('.fm-exhibition-deck')?.getBoundingClientRect();
+        return rect ? { left: rect.left, top: rect.top, width: rect.width } : null;
+    }
+
+    function expand() {
+        const origin = readDeckOrigin();
+        if (!origin) return;
+        pendingSelection.current = null;
+        setSpreadOrigin(origin);
+        setExpanded(true);
+    }
+
+    function finishGathering() {
+        setSpreadOrigin(null);
+        const selected = exhibitions.find(item => item.id === pendingSelection.current);
+        pendingSelection.current = null;
+        // Wait for the portal's inert boundary to clear before restoring the persistent trigger.
+        requestAnimationFrame(() => {
+            entryRef.current?.focus({ preventScroll: true });
+            if (selected) onOpen?.(selected);
+        });
+    }
 
     useLayoutEffect(() => {
         const entry = entryRef.current;
         if (!entry || !narrow) return;
-        const parent = entry.offsetParent;
+        const parent = stackRef.current?.offsetParent;
         const notice = noticeVisible ? noticeRef?.current : null;
         const update = () => {
             const rect = entry.getBoundingClientRect();
@@ -88,21 +78,23 @@ export default function MapExhibition({ exhibition, open = false, onOpen, notice
         };
     }, [exhibition, noticeVisible, noticeRef, noticeTop, narrow]);
 
-    if (!exhibition) return null;
-    return (
-        <button ref={entryRef} data-exhibition-entry type="button" onClick={() => onOpen?.()}
-            aria-label={t('map:exhibition.open', { name: exhibition.name })} aria-haspopup="dialog" aria-expanded={open}
-            title={exhibition.name}
-            style={{ position: 'absolute', ...(narrow ? { top } : { bottom: 42 }), right: 12, zIndex: 1650, width: 88, padding: 0,
-                border: 0, background: 'transparent', color: 'var(--color-text-primary)', cursor: 'pointer',
-                display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, fontFamily: 'inherit' }}>
-            <ExhibitionIcon url={exhibition.icon_url} backendUrl={backendUrl} style={{ background: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-surface)' }} />
-            <span style={{ boxSizing: 'border-box', maxWidth: '100%', padding: '2px 5px', fontSize: 11, lineHeight: '16px',
-                borderRadius: 6, background: 'var(--color-bg-surface)' }}>
-                <MarqueeText text={exhibition.name} />
-            </span>
-        </button>
-    );
+    return <>
+        {exhibition && <div ref={stackRef} className="fm-exhibition-stack" style={{ position: 'absolute', ...(narrow ? { top } : { bottom: 42 }),
+            right: 12, zIndex: 1650, width: 88, visibility: spreadOrigin ? 'hidden' : undefined }}>
+            <button ref={entryRef} data-exhibition-entry type="button" onClick={() => multiple ? expand() : onOpen?.(exhibition)}
+                aria-label={multiple ? t('map:exhibition.count', { count: exhibitions.length }) : t('map:exhibition.open', { name: exhibition.name })}
+                aria-haspopup={multiple ? undefined : 'dialog'} aria-expanded={multiple ? expanded : open}
+                title={exhibition.name} className="fm-exhibition-stack__entry">
+                {multiple ? <ExhibitionDeck items={exhibitions} activeId={exhibition.id} backendUrl={backendUrl} paused={!!spreadOrigin} />
+                    : <ExhibitionIcon url={exhibition.icon_url} backendUrl={backendUrl} style={{ background: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-surface)' }} />}
+                <span className="fm-exhibition-stack__label"><MarqueeText text={exhibition.name} /></span>
+                {multiple && <span className="fm-exhibition-stack__label">{t('map:exhibition.count', { count: exhibitions.length })}</span>}
+            </button>
+        </div>}
+        <ExhibitionSpread show={expanded && multiple} origin={spreadOrigin} getOrigin={readDeckOrigin} items={exhibitions} activeId={exhibition?.id}
+            backendUrl={backendUrl} onClose={() => setExpanded(false)} onExitComplete={finishGathering}
+            onSelect={item => { pendingSelection.current = item.id; setExpanded(false); }} />
+    </>;
 }
 
 const paragraphStyle = { lineHeight: 1.7 };
@@ -125,6 +117,7 @@ export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRando
             backdrop draggable={false} bodyStyle={{ padding: 20 }}>
             {exhibition && <>
                 <ExhibitionIcon url={exhibition.icon_url} backendUrl={backendUrl} />
+                {exhibition.event_time && <p style={locationRowStyle}><time dateTime={exhibition.event_time}>{t('map:exhibition.eventTime')}：{exhibition.event_time.replace('T', ' ')}</time></p>}
                 {canShowVenue
                     ? <p style={locationRowStyle}>
                         {/* 没填地点名时显示“查看位置” */}

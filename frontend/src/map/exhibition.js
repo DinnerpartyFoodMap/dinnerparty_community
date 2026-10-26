@@ -56,6 +56,7 @@ export function exhibitionChromeSheet(exhibition, { iconUrl } = {}) {
             { id: 'details', title: t('map:ui.details'), symbol: 'info.circle', keepsOpen: true, expands: true }
         ].filter(Boolean),
         paragraphs: [
+            ...(exhibition.event_time ? [{ id: 'event-time', title: t('map:exhibition.eventTime'), text: exhibition.event_time.replace('T', ' ') }] : []),
             { id: 'description', title: t('map:exhibition.description'), ...nativeParagraph(exhibition.description) },
             { id: 'information', title: t('map:exhibition.information'), ...nativeParagraph(exhibition.information) }
         ],

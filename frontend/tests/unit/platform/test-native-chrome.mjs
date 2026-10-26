@@ -6,10 +6,26 @@ import { readFileSync } from 'node:fs';
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
 
-const { NativeMapChromeSession, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
+const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Switching activities while a native card is visible must invalidate its old callbacks.
+{
+    assert.equal(typeof nextNativeSheetIdentity, 'function');
+    const first = nextNativeSheetIdentity(null, 'exhibition', 7);
+    assert.equal(first.token, 1);
+    assert.equal(nextNativeSheetIdentity(first, 'exhibition', 7), first, 'refreshing the same activity preserves its sheet');
+    const second = nextNativeSheetIdentity(first, 'exhibition', 8);
+    assert.equal(second.id, 'exhibition');
+    assert.equal(second.token, 2, 'a different activity gets a new token and resets native expansion');
+    const closed = nextNativeSheetIdentity(second, null);
+    assert.equal(closed.id, null);
+    assert.equal(nextNativeSheetIdentity(closed, 'exhibition', 8).token, 3, 'reopening a dismissed activity works');
+    const place = nextNativeSheetIdentity(second, 'place');
+    assert.equal(nextNativeSheetIdentity(place, 'place'), place, 'existing place cards retain their update behavior');
+}
 
 class FakePlugin {
     constructor(options = {}) {

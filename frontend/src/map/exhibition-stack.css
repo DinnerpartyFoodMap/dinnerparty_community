@@ -1,0 +1,42 @@
+.fm-exhibition-stack__entry {
+    width: 100%; padding: 0; border: 0; background: transparent;
+    color: var(--color-text-primary); cursor: pointer; font-family: inherit;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+.fm-exhibition-deck { position: relative; display: block; margin: 8px 4px 5px 0; isolation: isolate; }
+.fm-exhibition-deck__card {
+    position: absolute; inset: 0; display: block; overflow: hidden;
+    border: 1px solid var(--color-border); border-radius: 5px;
+    background: var(--color-bg-surface); box-shadow: 0 3px 10px rgb(0 0 0 / 20%);
+    backface-visibility: hidden; transform-origin: top right;
+}
+.fm-exhibition-deck[data-shuffling] .fm-exhibition-deck__card { will-change: transform, opacity; }
+.fm-exhibition-stack__label {
+    box-sizing: border-box; max-width: 100%; padding: 2px 5px;
+    font-size: 11px; line-height: 16px; border-radius: 6px; background: var(--color-bg-surface);
+}
+.fm-exhibition-spread {
+    position: absolute; inset: 0; overflow-x: hidden; overflow-y: auto;
+    overscroll-behavior: contain; touch-action: pan-y; padding-bottom: max(32px, env(safe-area-inset-bottom));
+    box-sizing: border-box; scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+    background: rgb(0 0 0 / 68%); outline: none;
+}
+.fm-exhibition-spread__column { display: flex; flex-direction: column; gap: 18px; pointer-events: none; }
+.fm-exhibition-spread__item {
+    position: relative; flex: none; display: flex; flex-direction: row-reverse; align-items: center; gap: 14px; width: 100%;
+    padding: 0; border: 0; background: transparent; color: #fff; text-align: left;
+    font: inherit; cursor: pointer; pointer-events: auto; backface-visibility: hidden;
+}
+.fm-exhibition-spread__art {
+    display: block; overflow: hidden; flex: none;
+    background: var(--color-bg-surface); border: 1px solid rgb(255 255 255 / 25%); border-radius: 5px;
+    box-sizing: border-box; box-shadow: 0 6px 20px rgb(0 0 0 / 22%);
+}
+.fm-exhibition-spread__caption { display: block; flex: 1; min-width: 0; text-align: right; }
+.fm-exhibition-spread__name {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    overflow-wrap: anywhere; font-size: 13px; font-weight: 600; line-height: 18px;
+}
+.fm-exhibition-spread__item time { display: block; margin-top: 3px; font-size: 11px; line-height: 16px; color: rgb(255 255 255 / 68%); }
+.fm-exhibition-stack button:focus-visible,
+.fm-exhibition-spread__item:focus-visible { outline: 2px solid var(--theme-primary); outline-offset: 5px; border-radius: 5px; }
