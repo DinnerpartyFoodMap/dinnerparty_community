@@ -477,6 +477,13 @@ struct MapChromePlaceCard: View {
     private var summary: some View {
         VStack(spacing: 16) {
             header
+            if let time = sheet.exhibitionTime {
+                Label(time.text, systemImage: "calendar")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityLabel(Text([time.title, time.text].compactMap { $0 }.joined(separator: "：")))
+            }
             if !sheet.actions.isEmpty {
                 HStack(spacing: 10) {
                     ForEach(sheet.actions) { action in
@@ -676,12 +683,12 @@ struct MapChromePlaceCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             } else {
-                // 展会：地点在最前，随后逐段显示简介与信息
+                // 展会时间已在摘要显示；详情从地点开始，随后逐段显示简介与信息。
                 if let caption = sheet.caption {
                     captionLabel(caption)
                         .padding(.horizontal, 4)
                 }
-                ForEach(sheet.paragraphs) { paragraph in
+                ForEach(sheet.paragraphs.filter { $0.id != sheet.exhibitionTime?.id }) { paragraph in
                     VStack(alignment: .leading, spacing: 8) {
                         if let title = paragraph.title {
                             Text(title)

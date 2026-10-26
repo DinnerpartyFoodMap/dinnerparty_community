@@ -3,7 +3,6 @@
   "loadFailed": "加载失败",
   "list": {
     "title": "聚餐活动",
-    "intro": "发起聚餐，分享链接约人。",
     "create": "发起聚餐",
     "loading": "正在加载活动...",
     "empty": "还没有聚餐活动，来发起第一场吧。",
@@ -14,8 +13,7 @@
   "anonymous": "匿名",
   "create": {
     "failed": "创建失败",
-    "intro": "创建后可以分享链接",
-    "titlePlaceholder": "活动标题（例如：周六晚东方同好局）",
+    "titlePlaceholder": "活动标题",
     "placePlaceholder": "聚餐地点",
     "pickPlaceTooltip": "从地图选择地点",
     "pickTimeTooltip": "选择日期时间",
@@ -28,7 +26,7 @@
   "detail": {
     "linkCopied": "分享链接已复制",
     "copyFailed": "复制失败，请手动复制",
-    "confirmDelete": "确认删除本次聚餐活动吗？删除后不可恢复。",
+    "confirmDelete": "确认删除本次聚餐活动吗？",
     "deleted": "聚餐活动已删除",
     "unknownError": "未知错误",
     "deleteFailed": "删除聚餐失败：{{msg}}",
@@ -41,7 +39,6 @@
     "statusOpen": "开放中",
     "times": "创建时间：{{createdAt}} · 更新时间：{{updatedAt}}",
     "shareTitle": "分享链接",
-    "shareHint": "在支持链接预览的平台会显示活动卡片。",
     "copyLink": "复制分享链接",
     "openSharePage": "打开分享页",
     "deleting": "删除中...",

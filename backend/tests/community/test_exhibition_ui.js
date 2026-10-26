@@ -40,11 +40,15 @@ async function main() {
     const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true });
     const page = await browser.newPage({ viewport: { width: 1000, height: 900 } });
+    // Keep motion on requestAnimationFrame so the interval clock also controls animation time.
+    await page.addInitScript(() => { Element.prototype.animate = undefined; });
+    await page.clock.install();
     page.setDefaultTimeout(8000);
     const errors = [];
-    page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`http://127.0.0.1:${server.address().port}/__exhibition_ui`);
+    page.on('pageerror', e => { errors.push(e.message); console.error('Browser error:', e.message); });
+    await page.goto(`http://127.0.0.1:${server.address().port}/__exhibition_ui`, { timeout: 60000, waitUntil: 'domcontentloaded' });
     await page.getByLabel('展会名称', { exact: true }).fill('秋日展会');
+    await page.getByLabel('活动时间', { exact: true }).fill('2026-11-01T10:00');
     await page.getByLabel('展会简介', { exact: true }).fill('简介第一行\n简介第二行');
     // 简介与信息都是支持 Markdown 的多行输入框
     assert.equal(await page.getByLabel('展会信息', { exact: true }).evaluate(el => el.tagName), 'TEXTAREA');
@@ -121,12 +125,13 @@ async function main() {
     await page.getByText('当前展会：秋日展会', { exact: true }).waitFor();
     await page.getByLabel('添加图标', { exact: true }).setInputFiles(path.join(frontend, 'public/favicon.png'));
     await page.getByRole('button', { name: '移除图标' }).waitFor();
-    const publicationResponse = page.waitForResponse(response => response.url().endsWith('/admin/exhibitions') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: '发布展会', exact: true }).click();
+    const publicationResponse = page.waitForResponse(response => response.url().includes('/admin/exhibitions/') && response.request().method() === 'PUT');
+    await page.getByRole('button', { name: '保存修改', exact: true }).click();
     assert.ok((await publicationResponse).ok());
     await page.waitForFunction(() => document.querySelector('button[type="submit"]')?.disabled === false);
     await page.getByRole('button', { name: 'Toggle admin' }).click();
     await entry.waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-exhibition-entry] img')?.getAttribute('src')?.includes('/uploads/'));
     const uploadedUrl = await entry.locator('img').getAttribute('src');
     assert.ok(uploadedUrl.includes('/uploads/'));
     await page.waitForFunction(() => document.querySelector('[data-exhibition-entry] img')?.naturalWidth > 0);
@@ -140,7 +145,8 @@ async function main() {
     // 展会地点：面板显示场馆，“展会附近随机美食”以展会地点为中心
     assert.equal(await page.getByRole('button', { name: '展会附近随机美食' }).count(), 0);
     await page.evaluate(async () => {
-        const res = await fetch('/admin/exhibitions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.__TEST_TOKEN}` },
+        const current = (await (await fetch('/exhibitions/current')).json()).exhibition;
+        const res = await fetch(`/admin/exhibitions/${current.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.__TEST_TOKEN}` },
             body: JSON.stringify({ name: '带地点的展会', description: '简介', information: '信息', location_name: '保利世贸博览馆', latitude: 23.0961, longitude: 113.3653 }) });
         if (!res.ok) throw new Error(`publish failed: ${res.status}`);
         window.dispatchEvent(new Event('exhibition-updated'));
@@ -159,7 +165,8 @@ async function main() {
     // 长展会名：入口与面板标题单行来回滚动，读屏名称仍是完整展会名
     const longName = '第二十届东方Project同人展·秋季特别场（上海国际会议中心）';
     await page.evaluate(async (name) => {
-        const res = await fetch('/admin/exhibitions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.__TEST_TOKEN}` },
+        const current = (await (await fetch('/exhibitions/current')).json()).exhibition;
+        const res = await fetch(`/admin/exhibitions/${current.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.__TEST_TOKEN}` },
             body: JSON.stringify({ name, description: '简介', information: '信息', location_name: '保利世贸博览馆', latitude: 23.0961, longitude: 113.3653 }) });
         if (!res.ok) throw new Error(`publish failed: ${res.status}`);
         window.dispatchEvent(new Event('exhibition-updated'));
@@ -190,9 +197,122 @@ async function main() {
     await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
     await page.getByText('当前没有已发布的展会', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Toggle admin' }).click();
-    await entry.waitFor({ state: 'hidden' });
+    await page.locator('[data-exhibition-entry]').waitFor({ state: 'hidden' });
+    // Create independent activities through the real editor, in deliberately unsorted order.
+    await page.getByRole('button', { name: 'Toggle admin' }).click();
+    async function addActivity(name, time) {
+        await page.getByRole('button', { name: '新增活动', exact: true }).click();
+        await page.getByLabel('展会名称', { exact: true }).fill(name);
+        await page.getByLabel('活动时间', { exact: true }).fill(time);
+        await page.getByLabel('展会简介', { exact: true }).fill(`${name}简介`);
+        await page.getByLabel('展会信息', { exact: true }).fill(`${name}信息`);
+        await page.getByRole('button', { name: '发布展会', exact: true }).click();
+        await page.getByText(`当前展会：${name}`, { exact: true }).waitFor();
+    }
+    await addActivity('晚场', '2026-12-01T10:00');
+    await addActivity('早场', '2026-10-01T10:00');
+    await addActivity('中场', '2026-11-01T10:00');
+    await page.getByLabel('选择活动', { exact: true }).selectOption({ label: '晚场' });
+    assert.equal(await page.getByLabel('活动时间', { exact: true }).inputValue(), '2026-12-01T10:00');
+    await page.getByLabel('展会名称', { exact: true }).fill('晚场修改');
+    await page.getByRole('button', { name: '保存修改', exact: true }).click();
+    await page.getByText('当前展会：晚场修改', { exact: true }).waitFor();
+    await page.evaluate(() => { Math.random = () => 0.5; });
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now()) + 1000));
+    await page.getByRole('button', { name: 'Toggle admin' }).click();
+    const stack = page.locator('[data-exhibition-entry]');
+    await page.getByRole('button', { name: '有 3 个活动' }).waitFor();
+    assert.match(await stack.innerText(), /中场/, 'random initial index starts in the middle');
+    const deckCards = stack.locator('[data-exhibition-card]');
+    assert.equal(await deckCards.count(), 3, 'each activity keeps its own card in the interleaved deck');
+    const compactDeck = await stack.locator('.fm-exhibition-deck').boundingBox();
+    assert.equal(compactDeck.width, 48);
+    assert.equal(compactDeck.height, 48);
+    const tilted = await deckCards.evaluateAll(cards => cards.filter(card => {
+        const matrix = new DOMMatrix(getComputedStyle(card).transform);
+        return Math.abs(matrix.b) > 0.02;
+    }).length);
+    assert.ok(tilted >= 2, 'back cards alternate their tilt instead of lining up');
+    const outgoing = stack.locator('[data-exhibition-card][data-depth="0"]');
+    const outgoingId = await outgoing.getAttribute('data-exhibition-card');
+    const beforeShuffle = await outgoing.boundingBox();
+    await page.evaluate(() => { Math.random = () => 0; }); // Refresh must not choose a new random start.
+    await page.clock.runFor(9999);
+    assert.match(await stack.innerText(), /中场/);
+    await page.clock.runFor(1);
+    assert.match(await stack.innerText(), /晚场修改/);
+    await page.clock.runFor(300);
+    const shuffling = stack.locator(`[data-exhibition-card="${outgoingId}"]`);
+    assert.ok((await shuffling.boundingBox()).x < beforeShuffle.x - 15, 'top card travels out before sliding behind the deck');
+    await page.clock.runFor(500);
+    assert.equal(await shuffling.getAttribute('data-depth'), '2', 'outgoing card becomes the last card');
+    await stack.click();
+    const choices = page.getByRole('region', { name: '全部活动' });
+    await choices.waitFor();
+    await page.clock.runFor(900);
+    const backdrop = page.locator('[data-exhibition-backdrop]');
+    await backdrop.waitFor();
+    assert.equal(await page.getByRole('dialog').count(), 0, 'expanded activities are not in a popup panel');
+    assert.equal(await choices.evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+    const spreadBounds = await choices.locator('button').evaluateAll(items => items.map(item => {
+        const rect = item.getBoundingClientRect(); return { x: rect.x, top: rect.top, bottom: rect.bottom };
+    }));
+    assert.ok(spreadBounds.every((rect, index) => index === 0 || (Math.abs(rect.x - spreadBounds[0].x) < 1 && rect.top > spreadBounds[index - 1].bottom)), 'activities fan down into a single column');
+    const compactSpread = await choices.locator('button').first().evaluate(item => {
+        const art = item.querySelector('.fm-exhibition-spread__art').getBoundingClientRect();
+        const caption = item.querySelector('.fm-exhibition-spread__caption').getBoundingClientRect();
+        return { width: art.width, height: art.height, artLeft: art.left, captionRight: caption.right };
+    });
+    assert.ok(Math.abs(compactSpread.width - compactDeck.width * 1.1) < 0.5, 'expanded icons grow by only ten percent');
+    assert.ok(Math.abs(compactSpread.width - compactSpread.height) < 0.1, 'expanded icons remain square');
+    assert.ok(compactSpread.captionRight < compactSpread.artLeft, 'title and time sit to the left of the icon');
+    assert.deepEqual(await choices.locator('button').allTextContents(), ['早场2026-10-01 10:00', '中场2026-11-01 10:00', '晚场修改2026-12-01 10:00']);
+    if (process.env.EXHIBITION_ARTIFACT_DIR) await page.screenshot({ path: path.join(process.env.EXHIBITION_ARTIFACT_DIR, 'exhibition-stack-mobile.png') });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    if (process.env.EXHIBITION_ARTIFACT_DIR) await page.screenshot({ path: path.join(process.env.EXHIBITION_ARTIFACT_DIR, 'exhibition-stack-desktop.png') });
+    const gatheringId = await stack.locator('[data-depth="0"]').getAttribute('data-exhibition-card');
+    await choices.getByRole('button', { name: '查看展会：中场', exact: true }).click();
+    await page.clock.runFor(450);
+    const gatheringTop = await page.locator(`[data-exhibition-choice="${gatheringId}"]`).evaluate(el => el.getBoundingClientRect().top);
+    const destinationTop = await stack.locator('.fm-exhibition-deck').evaluate(el => el.getBoundingClientRect().top);
+    assert.ok(Math.abs(gatheringTop - destinationTop) < 8, 'after resizing, cards gather into the current deck position');
+    await page.clock.runFor(550);
+    const middlePanel = page.getByRole('dialog', { name: '中场', exact: true });
+    await middlePanel.waitFor();
+    await page.clock.runFor(10000);
+    assert.match(await stack.innerText(), /早场/, 'wraps chronologically');
+    await middlePanel.waitFor(); // Rotating entry must not replace an open detail panel.
+    await page.clock.runFor(10000); // Includes the 30-second refresh.
+    assert.match(await stack.innerText(), /中场/);
+    await page.clock.resume();
+    await page.keyboard.press('Escape');
+    await middlePanel.waitFor({ state: 'hidden' });
+    assert.equal(await stack.evaluate(el => el === document.activeElement), true, 'details restore focus to the persistent stack');
+    await stack.click();
+    await choices.waitFor();
+    await backdrop.click({ position: { x: 10, y: 250 } });
+    assert.ok(await choices.count(), 'cards remain mounted during the gathering animation');
+    await choices.waitFor({ state: 'hidden' });
+    assert.equal(await stack.evaluate(el => el === document.activeElement), true);
+    await stack.click();
+    await choices.waitFor();
+    await page.keyboard.press('Escape');
+    await choices.waitFor({ state: 'hidden' });
+    await stack.click();
+    const consumed = await page.evaluate(async () => (await import('/src/platform/backButton.js')).dispatchBack());
+    assert.equal(consumed, true, 'the expanded list participates in app back handling');
+    await choices.waitFor({ state: 'hidden' });
+    await page.getByRole('button', { name: 'Toggle admin' }).click();
+    await page.getByLabel('选择活动', { exact: true }).selectOption({ label: '中场' });
+    await page.getByRole('button', { name: '下架展会', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('#exhibition-select')?.options.length === 3);
+    await page.getByRole('button', { name: 'Toggle admin' }).click();
+    await page.getByRole('button', { name: '有 2 个活动' }).waitFor();
+    await stack.click();
+    assert.equal(await choices.locator('button').count(), 2);
     assert.deepEqual(errors, []);
-    console.log('Exhibition browser flow passed: publish, favicon, upload, details, responsive notice collision, resize, dismiss, venue link, venue random, long title, markdown, unpublish.');
+    console.log('Exhibition browser flow passed: multi-activity create/edit/unpublish, datetime, stack expansion, random start, 10-second chronological rotation, polling continuity, stable details, focus/back handling, responsive layout, icons, markdown and venue actions.');
 }
 main().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {
     if (browser) await browser.close();

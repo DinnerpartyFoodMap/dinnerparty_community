@@ -121,7 +121,6 @@ export default function JourneyComposer({ctx,nav,params}) {
                 </SettingRow>
                 {!cap.text_ai&&<p className="jw-muted">{t('journey:composer.noAiNote')}</p>}
                 {textOnlyMode&&<p className="jw-muted">{t('journey:composer.textOnlyNote')}</p>}
-                <p className="jw-muted">{t('journey:composer.aiDataNote')}</p>
             </>}
         </div></div>
         {/* 输入时键盘盖住底部：操作区收起，不随 WebView 缩小被顶到键盘上方（index.html .keyboard-open） */}

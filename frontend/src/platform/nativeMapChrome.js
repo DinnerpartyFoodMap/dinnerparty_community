@@ -40,6 +40,14 @@ const SHEET_ROW_LIMIT = 300;
 const SHEET_TONES = ['danger', 'muted', 'warning', 'accent'];
 const SHEET_ACTION_LIMIT = 6;
 const SHEET_SIZES = ['fit', 'list', 'card'];
+
+/** A different activity is a new native card; refreshing the same activity preserves its expansion. */
+export function nextNativeSheetIdentity(previous, id, entityId = null) {
+    const current = previous || { id: null, token: 0, entityId: null };
+    const nextEntityId = id === 'exhibition' ? entityId : null;
+    if (current.id === id && (current.entityId ?? null) === nextEntityId) return current;
+    return { id, entityId: nextEntityId, token: current.token + (id ? 1 : 0) };
+}
 const DRAWER_ROW_LIMIT = 40;
 const GALLERY_GROUP_LIMIT = 4;
 const GALLERY_IMAGE_LIMIT = 12;

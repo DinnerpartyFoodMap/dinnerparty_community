@@ -72,4 +72,6 @@ assert.equal(unnamed.caption, undefined);
 assert.equal(unnamed.captionAction, undefined);
 assert.equal(located.image, 'https://cdn.example.com/food/icon.png');
 assert.equal(exhibitionChromeSheet(null), null);
+const timed = sanitizeSheet({ ...exhibitionChromeSheet({ ...base, event_time: '2026-11-01T10:00' }), token: 5 });
+assert.equal(timed.paragraphs.find(p => p.id === 'event-time').text, '2026-11-01 10:00');
 console.log('Exhibition origin and native sheet passed.');

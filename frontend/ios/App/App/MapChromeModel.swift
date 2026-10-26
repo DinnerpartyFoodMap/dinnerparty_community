@@ -126,6 +126,12 @@ struct MapChromeSheet: Identifiable, Equatable {
     var isCard: Bool { style == "card" }
     /// 展会名可能很长（最多 80 字）：卡片标题放不下时来回滚动；地点卡片仍是缩小后截断
     var scrollsTitle: Bool { sheetId == "exhibition" }
+    /// 多活动共用网页入口；原生卡片在摘要中直接显示所选活动的时间。
+    /// 沿用已有 paragraphs 字段，旧 App 仍可在展开详情后看到时间。
+    var exhibitionTime: MapChromeSheetParagraph? {
+        guard sheetId == "exhibition" else { return nil }
+        return paragraphs.first { $0.id == "event-time" && !$0.text.isEmpty }
+    }
 }
 
 /// 底部工具栏上滑展开的“更多功能”（网页下发；点按回传行 id）

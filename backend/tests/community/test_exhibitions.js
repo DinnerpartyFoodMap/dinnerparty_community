@@ -59,26 +59,55 @@ async function main() {
     assert.equal(first.latitude, null, '展会地点选填');
     assert.equal(first.longitude, null);
     assert.equal((await request('/admin/exhibitions/current', 'GET', null, 'YOUMU')).body.exhibition.id, first.id);
-    assert.equal((await request('/admin/exhibitions', 'POST', { ...publication, name: '新展会', icon_url: '/uploads/exhibition.png' }, 'YOUMU')).status, 200);
+    // Simulate the old single-active index on a database containing an existing publication.
+    db._raw.exec('CREATE UNIQUE INDEX idx_siteexhibition_active ON SiteExhibition(is_active) WHERE is_active = 1');
     init();
-    assert.equal((await request('/exhibitions/current')).body.exhibition.name, '新展会');
-    const located = { ...publication, name: '带地点的展会', location_name: '  保利世贸博览馆  ', latitude: '23.0961', longitude: 113.3653 };
-    assert.equal((await request('/admin/exhibitions', 'POST', located, 'YOUMU')).status, 200);
-    const venue = (await request('/exhibitions/current')).body.exhibition;
-    assert.deepEqual([venue.location_name, venue.latitude, venue.longitude], ['保利世贸博览馆', 23.0961, 113.3653]);
-    assert.equal((await request('/admin/exhibitions', 'POST', { ...publication, name: '新展会', icon_url: '/uploads/exhibition.png', latitude: '', longitude: null }, 'YOUMU')).status, 200);
-    assert.equal((await request('/exhibitions/current')).body.exhibition.latitude, null, '清空地点');
-    assert.equal(db._raw.prepare('SELECT COUNT(*) AS n FROM SiteExhibition WHERE is_active = 1').get().n, 1);
-    assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM AdminAudit WHERE action = 'publish-exhibition'").get().n, 4);
-    // An audit write failure must roll back replacement of the current publication.
+    assert.equal((await request('/exhibitions/current')).body.exhibition.id, first.id);
+    const create = async (name, event_time) => {
+        const result = await request('/admin/exhibitions', 'POST', { ...publication, name, event_time }, 'YOUMU');
+        assert.equal(result.status, 200);
+        return result.body.id;
+    };
+    const later = await create('晚场', '2026-12-12T18:00');
+    const earlier = await create('早场', '2026-11-01T10:00');
+    const tied = await create('同时间', '2026-11-01T10:00');
+    const list = async () => (await request('/exhibitions')).body.exhibitions;
+    assert.equal(db._raw.prepare('SELECT COUNT(*) AS n FROM SiteExhibition WHERE is_active = 1').get().n, 4, 'publishing must preserve other activities');
+    init();
+    assert.deepEqual((await list()).map(e => e.id), [earlier, tied, later, first.id]);
+    assert.equal((await list())[0].event_time, '2026-11-01T10:00');
+    assert.equal((await request('/exhibitions/current')).body.exhibition.id, earlier);
+    for (const event_time of ['bad', '2026-02-30T10:00', '2026-13-01T10:00', '2026-01-01T25:00', 123]) {
+        assert.equal((await request('/admin/exhibitions', 'POST', { ...publication, event_time }, 'YUYUKO')).status, 400);
+    }
+    const edit = { ...publication, name: '编辑晚场', event_time: '2026-10-01T09:00', location_name: '  场馆  ', latitude: 23.0961, longitude: 113.3653 };
+    for (const [level, status] of [[undefined, 401], ['regular', 403], ['KOMACHI', 403]]) {
+        assert.equal((await request(`/admin/exhibitions/${later}`, 'PUT', edit, level)).status, status);
+        assert.equal((await request(`/admin/exhibitions/${later}`, 'DELETE', null, level)).status, status);
+    }
+    assert.equal((await request(`/admin/exhibitions/${later}`, 'PUT', edit, 'YOUMU')).status, 200);
+    assert.deepEqual((await list()).map(e => e.id), [later, earlier, tied, first.id]);
+    assert.deepEqual([(await list())[0].name, (await list())[0].location_name, (await list())[0].latitude], ['编辑晚场', '场馆', 23.0961]);
+    assert.equal((await request('/admin/exhibitions/999999', 'PUT', edit, 'YOUMU')).status, 404);
+    assert.equal((await request('/admin/exhibitions/invalid', 'PUT', edit, 'YOUMU')).status, 400);
+    // Audit failures roll back inserts, edits and scoped unpublishing.
     db._raw.exec("CREATE TRIGGER fail_exhibition_audit BEFORE INSERT ON AdminAudit BEGIN SELECT RAISE(ABORT, 'test failure'); END");
     assert.equal((await request('/admin/exhibitions', 'POST', publication, 'YUYUKO')).status, 500);
-    assert.equal((await request('/exhibitions/current')).body.exhibition.name, '新展会');
+    assert.equal((await request(`/admin/exhibitions/${later}`, 'PUT', { ...edit, name: '丢失' }, 'YUYUKO')).status, 500);
+    assert.equal((await request(`/admin/exhibitions/${later}`, 'DELETE', null, 'YUYUKO')).status, 500);
+    assert.equal((await list()).length, 4);
+    assert.equal((await list())[0].name, '编辑晚场');
     db._raw.exec('DROP TRIGGER fail_exhibition_audit');
+    assert.equal((await request(`/admin/exhibitions/${earlier}`, 'DELETE', null, 'YOUMU')).body.cleared, true);
+    assert.deepEqual((await list()).map(e => e.id), [later, tied, first.id]);
+    assert.equal((await request(`/admin/exhibitions/${earlier}`, 'PUT', edit, 'YOUMU')).status, 404);
+    assert.equal((await request(`/admin/exhibitions/${earlier}`, 'DELETE', null, 'YOUMU')).body.cleared, false);
     assert.equal((await request('/admin/exhibitions/current', 'DELETE', null, 'YOUMU')).body.cleared, true);
+    assert.deepEqual((await list()).map(e => e.id), [tied, first.id], 'legacy deletion removes only its current item');
+    for (const id of [tied, first.id]) await request(`/admin/exhibitions/${id}`, 'DELETE', null, 'YOUMU');
+    assert.deepEqual(await list(), []);
     assert.deepEqual((await request('/exhibitions/current')).body, { exhibition: null });
-    assert.equal((await request('/admin/exhibitions/current', 'DELETE', null, 'YUYUKO')).body.cleared, false);
-    console.log('Exhibition API: permissions, validation, publication, persistence, atomic replacement and unpublish passed.');
+    console.log('Exhibition API: multiple activities, ordering, edits, validation, permissions, migration and atomic unpublishing passed.');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

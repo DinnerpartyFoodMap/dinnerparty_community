@@ -1,7 +1,6 @@
 {
   "cover": {
-    "mapNote": "连线表示先后顺序；第 10 站标为 A",
-    "mapNoteShort": "连线表示先后顺序",
+    "mapNote": "连线表示先后顺序",
     "renderFailed": "图片生成失败"
   },
   "feedback": {
@@ -37,9 +36,9 @@
     "emptyDayTitle": "记录这一天",
     "createManually": "手动新建",
     "emptyMonthTitle": "这个月还没有日记",
-    "emptyMonthHint": "从一张照片或一句话开始。",
+    "emptyMonthHint": "从一张照片或一句话开始",
     "previewMerge": "预览合并",
-    "merged": "已合并为新的私密日记，原日记保留。"
+    "merged": "已合并为新的私密日记"
   },
   "common": {
     "feature": {
@@ -78,10 +77,10 @@
     "collectionSaved": "收藏夹已保存",
     "empty": {
       "disabledTitle": "同好发现已关闭",
-      "disabledHint": "开启后为你匹配口味相近的人。",
+      "disabledHint": "开启后为你匹配口味相近的人",
       "goToSettings": "前往发现设置",
       "noMatchTitle": "暂时没有匹配的同好",
-      "noMatchHint": "可以稍后再来看看。",
+      "noMatchHint": "可以稍后再来看看",
       "notEnoughTitle": "偏好资料还不够",
       "notEnoughHint": "收藏或评价更多地点后再来看看。"
     },
@@ -96,7 +95,6 @@
       "list": "列表",
       "map": "星图"
     },
-    "mapHint": "中心是你，越近口味越相似。",
     "mapLabel": "以我为中心的偏好星图",
     "me": "我",
     "viewCollection": "查看 {{username}} 的公开收藏夹",
@@ -106,7 +104,7 @@
     "report": "举报",
     "reportLabel": "举报住民{{username}}",
     "noPublicCollections": "对方还没有公开收藏夹。",
-    "collectionsHint": "收藏夹默认私密，公开后同好可以看到。",
+    "collectionsHint": "收藏夹默认私密，公开后可以让他人看见。",
     "newCollectionName": "新收藏夹",
     "newCollection": "＋ 新建收藏夹",
     "noCollectionsTitle": "还没有收藏夹",
@@ -122,8 +120,7 @@
     "consent": {
       "discovery": "允许按我的口味匹配同好，并向其他用户展示我的用户名、兴趣标签和公开收藏夹",
       "feedback": "记录搜索操作、可见结果、点选、收藏和纠错，帮助改进地图",
-      "feedbackHint": "只记录站内地点 ID、操作类型、展示顺序和推荐结果，保留 30 天；关闭后会删除已有记录。",
-      "research": "允许将这些交互记录用于算法研究和离线评估"
+      "research": "允许将这些交互记录用于改进用户体验"
     },
     "saveSettings": "保存设置",
     "noInteractions": "暂无新增交互记录",
@@ -151,19 +148,19 @@
     "submitting": "正在提交…",
     "generateTextOnly": "仅根据描述生成",
     "manualRecord": "手动记录",
-    "manualNoAi": "不用 AI，手动整理并保存",
+    "manualNoAi": "手动整理并保存",
     "saveDraft": "存草稿",
-    "othersUnfinished": "你有 {{othersCount}} 份未完成的内容。",
+    "othersUnfinished": "你有 {{othersCount}} 份未完成的内容",
     "continueLatest": "继续最近的素材",
     "viewAll": "查看全部",
-    "generatingNotice": "这份素材正在生成行程草稿。",
+    "generatingNotice": "这份素材正在生成行程草稿",
     "viewProgress": "查看进度",
-    "draftReadyNotice": "这份素材已生成草稿，可以去核对；修改素材后也能重新生成。",
+    "draftReadyNotice": "这份素材已生成草稿；修改素材后也能重新生成。",
     "goReview": "去核对",
     "loading": "正在载入素材…",
     "textLabel": "说说这顿饭或这一天",
     "textPlaceholder": "例如：中午在大学城吃了牛肉面，之后去喝奶茶。\n面馆名字记不清了，大概在学校东门附近。",
-    "textHint": "写下吃了什么、店名或附近地标，以及先后顺序。{{counter}}",
+    "textHint": "{{counter}}",
     "textCounter": " 已输入 {{count}} / {{TEXT_LIMIT}} 字。",
     "address": {
       "label": "地址",
@@ -192,7 +189,6 @@
     "privacyNote": "草稿不会公开。点「保存并公开」后，才会公开你确认过的内容；私密日记只有自己能看到。",
     "noAiNote": "日记 AI 未开启，可以手动整理并保存。",
     "textOnlyNote": "当前模型不能识别图片，只会根据文字生成，照片仍会保存在日记中。",
-    "aiDataNote": "生成时，所选图文会发送给 AI 服务，店名等关键词会用于高德检索；照片会先去除 EXIF 信息。",
     "multiDay": "展开为多日范围"
   },
   "detail": {
@@ -205,7 +201,7 @@
     "copySaved": "已另存为一篇新的私密日记",
     "copyFailed": "复制失败，请稍后重试",
     "linkCopied": "公开链接已复制",
-    "confirmMakePrivate": "改为私密后，公开内容和链接会失效，由这篇日记创建的地图标记会保留。继续？",
+    "confirmMakePrivate": "改为私密后，公开内容和链接会失效，由这篇日记创建的地图标记会保留。要继续吗？",
     "madePrivate": "已改为私密",
     "confirmDelete": "删除这篇日记及其历史版本？删除后无法恢复，由它创建的地图标记会保留。",
     "deleted": "日记已删除",

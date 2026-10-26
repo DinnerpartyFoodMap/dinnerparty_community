@@ -10,8 +10,8 @@ import { FullScreenMapPicker } from '../map/MapView';
 import { exhibitionCenter } from '../map/exhibition';
 import { t } from '../i18n/index.js';
 
-const TEXT_FIELDS = ['name', 'description', 'information', 'icon_url', 'location_name'];
-const EMPTY = { name: '', description: '', information: '', icon_url: '', location_name: '', latitude: null, longitude: null };
+const TEXT_FIELDS = ['name', 'description', 'information', 'icon_url', 'location_name', 'event_time'];
+const EMPTY = { name: '', description: '', information: '', icon_url: '', location_name: '', event_time: '', latitude: null, longitude: null };
 const formFrom = (exhibition) => {
     const form = { ...EMPTY, ...exhibition };
     for (const key of TEXT_FIELDS) form[key] = form[key] || '';
@@ -25,6 +25,7 @@ export default function AdminExhibitions({ backendUrl }) {
     const fileRef = useRef(null);
     const [form, setForm] = useState(EMPTY);
     const [current, setCurrent] = useState(null);
+    const [exhibitions, setExhibitions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
@@ -51,10 +52,12 @@ export default function AdminExhibitions({ backendUrl }) {
         setLoading(true);
         setLoadFailed(false);
         setError('');
-        request('/admin/exhibitions/current', { signal: controller.signal }).then(data => {
+        request('/admin/exhibitions', { signal: controller.signal }).then(data => {
             if (controller.signal.aborted) return;
-            setCurrent(data.exhibition);
-            setForm(data.exhibition ? formFrom(data.exhibition) : EMPTY);
+            setExhibitions(data.exhibitions);
+            const first = data.exhibitions[0] || null;
+            setCurrent(first);
+            setForm(first ? formFrom(first) : EMPTY);
         }).catch(e => {
             if (controller.signal.aborted) return;
             setLoadFailed(true);
@@ -65,6 +68,13 @@ export default function AdminExhibitions({ backendUrl }) {
 
     const change = key => event => setForm(prev => ({ ...prev, [key]: event.target.value }));
     const disabled = loading || busy || loadFailed;
+
+    function selectExhibition(id) {
+        const selected = exhibitions.find(item => String(item.id) === String(id)) || null;
+        setCurrent(selected);
+        setForm(selected ? formFrom(selected) : EMPTY);
+        setError('');
+    }
 
     async function uploadIcon(event) {
         const file = event.target.files?.[0];
@@ -104,18 +114,21 @@ export default function AdminExhibitions({ backendUrl }) {
             latitude: center ? center.lat : null,
             longitude: center ? center.lng : null
         };
-        if (!fields.name || !fields.description || !fields.information) {
+        if (!fields.name || !fields.description || !fields.information || !fields.event_time) {
             setError(t('admin:exhibitions.fillRequired'));
             return;
         }
         setBusy(true);
         setError('');
         try {
-            const data = await request('/admin/exhibitions', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields)
+            const data = await request(current ? `/admin/exhibitions/${current.id}` : '/admin/exhibitions', {
+                method: current ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields)
             });
-            setCurrent({ ...fields, id: data.id });
-            setForm(fields);
+            const saved = { ...fields, id: data.id };
+            setCurrent(saved);
+            setForm(saved);
+            setExhibitions(previous => [...previous.filter(item => item.id !== saved.id), saved]
+                .sort((a, b) => (a.event_time || '9999').localeCompare(b.event_time || '9999') || a.id - b.id));
             window.dispatchEvent(new Event('exhibition-updated'));
             showTip(t('admin:exhibitions.published'));
         } catch (e) { setError(e.message); }
@@ -123,12 +136,14 @@ export default function AdminExhibitions({ backendUrl }) {
     }
 
     async function unpublish() {
-        if (disabled || !await confirm(t('admin:exhibitions.confirmUnpublish'))) return;
+        if (disabled || !current || !await confirm(t('admin:exhibitions.confirmUnpublish'))) return;
         setBusy(true);
         setError('');
         try {
-            await request('/admin/exhibitions/current', { method: 'DELETE' });
+            await request(`/admin/exhibitions/${current.id}`, { method: 'DELETE' });
+            setExhibitions(previous => previous.filter(item => item.id !== current.id));
             setCurrent(null);
+            setForm(EMPTY);
             window.dispatchEvent(new Event('exhibition-updated'));
             showTip(t('admin:exhibitions.unpublished'));
         } catch (e) { setError(e.message); }
@@ -139,8 +154,17 @@ export default function AdminExhibitions({ backendUrl }) {
         <h3 id="exhibition-settings-title" style={{ marginTop: 0 }}>{t('admin:exhibitions.title')}</h3>
         <p aria-live="polite" style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
             {loading ? t('admin:exhibitions.loading') : current
-                ? t('admin:exhibitions.current', { name: current.name }) : t('admin:exhibitions.empty')}
+                ? t('admin:exhibitions.current', { name: current.name }) : exhibitions.length ? t('admin:exhibitions.newActivity') : t('admin:exhibitions.empty')}
         </p>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
+            <label htmlFor="exhibition-select">{t('admin:exhibitions.select')}</label>
+            <select id="exhibition-select" value={current?.id || ''} disabled={disabled} onChange={event => selectExhibition(event.target.value)}
+                style={{ minHeight: 44, maxWidth: '100%', flex: '1 1 180px', background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                <option value="">{t('admin:exhibitions.newActivity')}</option>
+                {exhibitions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+            <Button themeAware disabled={disabled} onClick={() => selectExhibition('')}>{t('admin:exhibitions.add')}</Button>
+        </div>
         <form onSubmit={publish} style={{ display: 'grid', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <ExhibitionIcon url={form.icon_url} backendUrl={backendUrl} />
@@ -156,6 +180,9 @@ export default function AdminExhibitions({ backendUrl }) {
             </div>
             <label htmlFor="exhibition-name">{t('admin:exhibitions.name')}</label>
             <TextInput id="exhibition-name" value={form.name} onChange={change('name')} maxLength={80} required disabled={disabled} style={{ width: '100%' }} />
+            <label htmlFor="exhibition-time">{t('admin:exhibitions.eventTime')}</label>
+            <TextInput id="exhibition-time" type="datetime-local" value={form.event_time} onChange={change('event_time')} required disabled={disabled} style={{ width: '100%' }} />
+            <small style={{ color: 'var(--color-text-secondary)' }}>{t('admin:exhibitions.eventTimeHint')}</small>
             <label htmlFor="exhibition-description">{t('admin:exhibitions.description')}</label>
             <TextArea id="exhibition-description" value={form.description} onChange={change('description')} maxLength={2000} required disabled={disabled} rows={6} markdown style={{ width: '100%' }} />
             <label htmlFor="exhibition-information">{t('admin:exhibitions.information')}</label>
@@ -177,7 +204,7 @@ export default function AdminExhibitions({ backendUrl }) {
             </small>
             {error && <div role="alert" style={{ color: 'var(--color-danger)' }}>{error}</div>}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <Button type="submit" themeAware disabled={disabled}>{busy ? t('admin:exhibitions.saving') : t('admin:exhibitions.publish')}</Button>
+                <Button type="submit" themeAware disabled={disabled}>{busy ? t('admin:exhibitions.saving') : current ? t('admin:exhibitions.save') : t('admin:exhibitions.publish')}</Button>
                 {current && <Button themeAware disabled={disabled} onClick={unpublish}>{t('admin:exhibitions.unpublish')}</Button>}
                 {loadFailed && <Button themeAware onClick={() => setReload(value => value + 1)}>{t('admin:exhibitions.retry')}</Button>}
             </div>
