@@ -1,6 +1,6 @@
 # 公共界面组件
 
-primitives：Button/Tooltip/MarqueeText（放不下的单行长标题来回滚动，减少动态效果时改为手动横滑）；forms：输入控件；feedback：Notice/Tips/Confirm 与公告颜色；layout：页头、滚动、路由壳和全屏地图容器；data：表格；overlay：弹层、菜单、栈、背景手势、拖动。业务组件归 auth/places/app；公共目录不依赖具体地点或账号业务。
+primitives：Button/Tooltip/MarqueeText（放不下的单行长标题来回滚动，减少动态效果时改为手动横滑）/AiLabel（模型写的文字旁的“AI 生成”标签，以及导出文字时附加的标识；所用已备案模型公示在用户协议）；forms：输入控件；feedback：Notice/Tips/Confirm 与公告颜色；layout：页头、滚动、路由壳和全屏地图容器；data：表格；overlay：弹层、菜单、栈、背景手势、拖动。业务组件归 auth/places/app；公共目录不依赖具体地点或账号业务。
 
 ```mermaid
 flowchart TD

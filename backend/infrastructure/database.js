@@ -488,6 +488,14 @@ function init() {
             console.warn('Failed to create idx_user_qq:', e.message);
         }
 
+        // 住民屏蔽（accounts/services/userRelations.js）：user_id 屏蔽了 blocked_id，只影响 user_id 自己看到的内容
+        rawDb.exec(`CREATE TABLE IF NOT EXISTS UserBlock (
+            user_id TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+            blocked_id TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, blocked_id)
+        );`);
+
         rawDb.exec(`CREATE TABLE IF NOT EXISTS "Place" (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,

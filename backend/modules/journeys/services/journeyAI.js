@@ -24,6 +24,7 @@ async function reconstruct(userId, input, options = {}) {
     // Validate ownership and canonical fields without dropping review-only fields
     // such as suggested_id/needs_choice expected by the unchanged frontend.
     normalizeDocument(result.document, userId);
+    result.document.ai_assisted = true;
     return result;
 }
 function searchCandidates(name,city,center) { return algorithms.compute('search',{name,city,center,amap_storage_allowed:process.env.AMAP_JOURNAL_STORAGE_ALLOWED==='true'}); }

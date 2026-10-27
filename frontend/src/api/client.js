@@ -117,9 +117,10 @@ export async function searchPlacesAi(backendUrl, opts = {}) {
             ['minLng', 'minLat', 'maxLng', 'maxLat'].map((key) => [key, Number(bounds[key])])
         );
     }
+    // 需要登录（后端未登录返回 401）
     const res = await fetch(`${backendUrl}/api/places/search/ai`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
         body: JSON.stringify(payload),
         signal: opts.signal
     });
@@ -134,11 +135,22 @@ export async function fetchPlace(backendUrl, id, { token, signal } = {}) {
 }
 
 // 某位住民创建的地点（最近创建在前，最多 limit 个；带 token 时包含自己审核中的地点）。
-// relation 是观看者与这位住民的关系：self，以及为屏蔽功能预留的 blocked
+// relation 是观看者与这位住民的关系：self、blocked（已屏蔽时不列出地点）、can_block
 export async function fetchUserPlaces(backendUrl, userId, { token, signal } = {}) {
     const res = await fetch(`${backendUrl}/users/${encodeURIComponent(userId)}/places`, { signal, cache: 'no-store', ...authHeaders(token) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.userPlaces.loadFailed', { status: res.status })), { status: res.status });
+    return data;
+}
+
+// 屏蔽 / 解除屏蔽某位住民（只影响自己看到的内容），返回 { relation }
+export async function setUserBlocked(backendUrl, token, userId, blocked) {
+    const res = await fetch(`${backendUrl}/users/${encodeURIComponent(userId)}/block`, {
+        method: blocked ? 'POST' : 'DELETE',
+        ...authHeaders(token)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.userPlaces.blockFailed', { status: res.status })), { status: res.status });
     return data;
 }
 

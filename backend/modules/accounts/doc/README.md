@@ -1,6 +1,6 @@
 # 账号与访问
 
-入口：`routes/users.js`（挂载 `/users`）、`middleware/auth.js`。服务包括 sessions、qqVerification、qqWhitelist、userAccess、userLocation、userRelations。`GET /users/:id/places`（可选登录）返回住民名、观看者与这位住民的关系 `relation` 和这位住民创建的地点（places 模块的 `creatorPlaces.js`），供地图按住民筛选；`relation.blocked` 是为“屏蔽某人”预留的接缝，上线时在 `services/userRelations.js` 读屏蔽表，目前恒为 false。数据：User、QQWhitelist、QQVerificationCode、UserLastLocation；Redis 保存设备会话。依赖数据库、日志、Redis，以及 qqbot 的私信边界。
+入口：`routes/users.js`（挂载 `/users`）、`middleware/auth.js`。服务包括 sessions、qqVerification、qqWhitelist、userAccess、userLocation、userRelations。`GET /users/:id/places`（可选登录）返回住民名、观看者与这位住民的关系 `relation`（`self`、`blocked`、`can_block`）和这位住民创建的地点（places 模块的 `creatorPlaces.js`），供地图按住民筛选；已屏蔽时不列出地点。`POST` / `DELETE /users/:id/block`（需登录，不能屏蔽自己）屏蔽 / 解除屏蔽并返回新的 `relation`，数据在 `UserBlock`（任一方注销时级联删除）。屏蔽只影响屏蔽者自己看到的内容：`services/userRelations.js` 的 `notBlockedSql` 用在全部地点 / 附近地点（places）、快速搜索（discovery）、地点下的公开日记（journeys）和同好匹配（community）；AI 搜索、随机推荐、顺路和单个地点 / 分享链接不过滤。数据：User、QQWhitelist、QQVerificationCode、UserLastLocation；Redis 保存设备会话。依赖数据库、日志、Redis，以及 qqbot 的私信边界。
 
 ```mermaid
 flowchart TD

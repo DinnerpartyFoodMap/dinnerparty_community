@@ -51,13 +51,23 @@ assert.equal(userPlacesMessage({ ...ready, places: [], total: 0, relation: { sel
 assert.equal(userPlaceDetail(places[0]), `面馆 · 人均 ¥25 · 创建于 ${formatPlaceDay(places[0].created_time)}`);
 assert.equal(userPlaceDetail(places[1]), `审核中 · 未分类 · 创建于 ${formatPlaceDay(places[1].created_time)}`);
 
-// 行 id 往返；底部操作目前只有退出筛选（屏蔽以后加在 userPlacesActions）
+// 行 id 往返；操作：游客和自己只有退出筛选，已登录看别人时多一个屏蔽并举报（已屏蔽时为解除屏蔽）
 assert.equal(userPlaceRowId(places[0]), 'place-3');
 assert.equal(userPlaceFromRowId(ready, 'place-3'), places[0]);
-for (const bad of ['place-99', 'exit', 'place-', null]) assert.equal(userPlaceFromRowId(ready, bad), null, String(bad));
+for (const bad of ['place-99', 'exit', 'block', 'place-', null]) assert.equal(userPlaceFromRowId(ready, bad), null, String(bad));
 assert.equal(userPlaceFromRowId(loading, 'place-3'), null);
 assert.deepEqual(userPlacesActions(ready).map((action) => action.id), ['exit']);
+assert.deepEqual(userPlacesActions({ ...ready, relation: { self: true, blocked: false, can_block: false } }).map((action) => action.id), ['exit']);
 assert.deepEqual(userPlacesActions(null), []);
+const viewing = { ...ready, relation: { self: false, blocked: false, can_block: true } };
+assert.deepEqual(userPlacesActions(viewing).map((action) => [action.id, action.title, action.tone]),
+    [['block', '屏蔽并举报', 'danger'], ['exit', '显示全部地点', undefined]]);
+assert.deepEqual(userPlacesActions({ ...viewing, status: 'loading', places: null }).map((action) => action.id), ['exit'], '加载完才知道是否已屏蔽');
+const blockedFilter = { ...ready, places: [], total: 0, relation: { self: false, blocked: true, can_block: true } };
+assert.deepEqual(userPlacesActions(blockedFilter).map((action) => [action.id, action.title]), [['unblock', '解除屏蔽'], ['exit', '显示全部地点']]);
+assert.equal(userPlacesMessage(blockedFilter), '你已屏蔽 九日缤，TA 创建的地点、地点下 TA 的公开日记和同好名片不会显示给你。');
+assert.equal(userPlacesChipText(blockedFilter), '已屏蔽 九日缤');
+assert.equal(userPlacesSummary(blockedFilter), '');
 
 // iOS 原生列表面板：通过桥接白名单；操作在前，地点行带分类与日期，避雷红色、审核中橙色
 const sheet = sanitizeSheet({ ...userPlacesChromeSheet(ready), token: 4 });
@@ -76,5 +86,14 @@ assert.deepEqual(loadingSheet.sections.map((section) => section.id), ['actions']
 const errorSheet = sanitizeSheet({ ...userPlacesChromeSheet({ ...loading, status: 'error', error: 'x' }), token: 6 });
 assert.equal(errorSheet.messageTone, 'danger');
 assert.deepEqual(errorSheet.sections[0].rows.map((row) => row.id), ['retry', 'exit']);
+// iOS 原生面板同样出现屏蔽并举报（红色）/ 解除屏蔽；已屏蔽时没有地点分组，只显示说明
+const viewingSheet = sanitizeSheet({ ...userPlacesChromeSheet(viewing), token: 7 });
+assert.deepEqual(viewingSheet.sections[0].rows.map((row) => [row.id, row.symbol, row.tone]),
+    [['block', 'hand.raised', 'danger'], ['exit', 'xmark.circle', undefined]]);
+const blockedSheet = sanitizeSheet({ ...userPlacesChromeSheet(blockedFilter), token: 8 });
+assert.deepEqual(blockedSheet.sections.map((section) => section.id), ['actions']);
+assert.deepEqual(blockedSheet.sections[0].rows.map((row) => [row.id, row.symbol]),
+    [['unblock', 'person.crop.circle.badge.checkmark'], ['exit', 'xmark.circle']]);
+assert.equal(blockedSheet.message, userPlacesMessage(blockedFilter));
 
 console.log('user places tests passed');

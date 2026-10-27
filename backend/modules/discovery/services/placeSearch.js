@@ -43,7 +43,8 @@ function searchCenter(point) {
 // Keyword search shared by both HTTP aliases and the QQ bot. The optional center
 // biases broad discovery; a complete restaurant name still wins across cities.
 // See services/placeSearch.md for sources, weights and warning-query rules.
-// viewerId：网页 / App 带登录态时传入，结果包含自己还在复核中的地点；QQ 机器人等不传，只搜公开地点。
+// viewerId：网页 / App 带登录态时传入，结果包含自己还在复核中的地点、不含自己屏蔽的住民创建的地点；
+// QQ 机器人等不传，只搜公开地点。
 function fastSearch(query, limit = 50, { center, viewerId = null } = {}) {
     const rawQuery = String(query ?? '').trim().slice(0, QUERY_MAX_LENGTH);
     const queryTerms = splitTerms(rawQuery);
@@ -65,6 +66,7 @@ function fastSearch(query, limit = 50, { center, viewerId = null } = {}) {
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  WHERE (p.moderation_status = 'visible' OR p.creator_id = @viewer)
+                   AND NOT EXISTS (SELECT 1 FROM UserBlock ub WHERE ub.user_id = @viewer AND ub.blocked_id = p.creator_id)
                    AND ${predicates.length ? predicates.join(' AND ') : '1 = 1'}`;
     // Never truncate candidates here: a nearby category match can otherwise be
     // lost behind an entire page of remote name matches before ranking starts.

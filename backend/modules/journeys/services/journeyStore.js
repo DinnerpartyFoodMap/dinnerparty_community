@@ -128,6 +128,9 @@ function normalizeDocument(input, userId) {
     // Whole-entry public text and photos are explicit author choices; the private original input is never copied in automatically.
     document.public_text = string(input.public_text, 5000);
     document.public_media_ids = (Array.isArray(input.public_media_ids) ? [...new Set(input.public_media_ids)] : []).filter(id => document.entry_media_ids.includes(id)).slice(0, MAX_ENTRY_MEDIA);
+    // Set when the model organised this entry (journeyAI.reconstruct): its title and summary may be model-written,
+    // so the review page and the public diary label it as AI-assisted. Kept through edits, restores and merges.
+    if (input.ai_assisted === true) document.ai_assisted = true;
     if (source_input) document.source_input = source_input;
     if (Buffer.byteLength(JSON.stringify(document)) > 200000) fail('行程内容过大');
     return document;

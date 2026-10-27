@@ -10,6 +10,7 @@ import {pickImages,prepareImageForUpload,UPLOAD_LIMITS,MediaError} from '../plat
 import {PageHeader,Notice,PrivatePhoto,Badge,centerLabel,formatRange} from './shared';
 import {newStop,needsReview,issueOf,unassignedSentences,addExcerpt,located,distanceMeters,formatDistance,placeToStop,pointToStop} from './reviewUtils';
 import { t, tx } from '../i18n/index.js';
+import { AiTag } from '../components/primitives/AiLabel';
 
 const SYNC_TEXT={idle:'',saved:t('journey:review.sync.saved'),saving:t('journey:review.sync.saving'),offline:t('journey:review.sync.offline'),conflict:t('journey:review.sync.conflict'),pending:t('journey:review.sync.unconfirmed')};
 
@@ -190,6 +191,7 @@ export default function JourneyReview({ctx,nav,params}) {
         <div className="jw-scroll"><div className="jw-content jw-stack">
             {message&&<Notice onClose={()=>setMessage('')}>{message}</Notice>}
             {error&&<Notice tone="error" onClose={()=>setError('')}>{error}</Notice>}
+            {document.ai_assisted&&<Notice><AiTag label={t('common:ai.assisted')} style={{marginRight:6}}/>{t('journey:review.aiAssisted')}</Notice>}
             {dirty&&['offline','conflict','pending'].includes(drafts.state.kind)&&<Notice tone="warn" role="status">
                 <span aria-label={t('journey:review.syncStatusLabel')}>{drafts.state.message||SYNC_TEXT[drafts.state.kind]}</span>
                 <span className="jw-inline-actions">

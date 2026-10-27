@@ -13,7 +13,7 @@ const botConfig = require('../../qqbot/runtime/config');
 const { sendPrivateText } = require('../../qqbot/runtime/directMessage');
 const { normalizeQQ } = require('../../qqbot/runtime/qqIdentity');
 const { normalizeLocation, saveUserLocation } = require('../services/userLocation');
-const { viewerRelation } = require('../services/userRelations');
+const { viewerRelation, setBlocked } = require('../services/userRelations');
 const { CREATOR_PLACES_LIMIT, listCreatorPlaces } = require('../../places/services/creatorPlaces');
 const logger = require('../../../infrastructure/logger');
 
@@ -548,19 +548,41 @@ router.get('/:id/avatar', (req, res) => {
 });
 
 // 某位住民创建的地点（地点卡片点“最近修改”的名字后筛选地图）：最近创建的在前，最多 limit 个，total 是全部可见数量。
-// relation 是观看者与这位住民的关系（self：就是自己；blocked：为屏蔽功能预留，见 services/userRelations.js）
+// relation 是观看者与这位住民的关系（self / blocked / can_block，见 services/userRelations.js）；
+// 屏蔽了 Ta 时列表仍可打开（用来解除屏蔽），但不列出地点
 router.get('/:id/places', attachViewer, (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
         const user = db._raw.prepare('SELECT id, username FROM User WHERE id = ?').get(req.params.id);
         if (!user) return res.status(404).json({ error: '住民不存在' });
-        const { places, total } = listCreatorPlaces(user.id, req.viewer?.id ?? null);
-        res.json({ user, relation: viewerRelation(req.viewer, user.id), places, total, limit: CREATOR_PLACES_LIMIT });
+        const relation = viewerRelation(req.viewer, user.id);
+        const { places, total } = relation.blocked ? { places: [], total: 0 } : listCreatorPlaces(user.id, req.viewer?.id ?? null);
+        res.json({ user, relation, places, total, limit: CREATOR_PLACES_LIMIT });
     } catch (error) {
         res.locals.unhandledError = error;
         res.status(500).json({ error: '住民的地点加载失败，请稍后重试' });
     }
 });
+
+// 屏蔽 / 解除屏蔽某位住民（住民地点列表里的“屏蔽并举报”“解除屏蔽”），返回新的 relation。
+// 只影响自己看到的内容；举报由前端另外打开预填的反馈表，住民写下原因后提交
+const setBlockedRoute = (blocked) => (req, res) => {
+    try {
+        const user = db._raw.prepare('SELECT id FROM User WHERE id = ?').get(req.params.id);
+        if (!user) return res.status(404).json({ error: '住民不存在' });
+        if (String(user.id) === String(req.user.id)) return res.status(400).json({ error: '不能屏蔽自己' });
+        setBlocked(req.user.id, user.id, blocked);
+        logger.info(blocked ? 'User blocked' : 'User unblocked', {
+            event: blocked ? 'accounts.user.blocked' : 'accounts.user.unblocked', userId: req.user.id, targetId: user.id
+        });
+        res.json({ relation: viewerRelation(req.user, user.id) });
+    } catch (error) {
+        res.locals.unhandledError = error;
+        res.status(500).json({ error: '操作失败，请稍后重试' });
+    }
+};
+router.post('/:id/block', requireAuth, setBlockedRoute(true));
+router.delete('/:id/block', requireAuth, setBlockedRoute(false));
 
 // 退出登录：只清理当前设备的会话，不影响其他设备
 router.post('/logout', requireAuth, async (req, res) => {

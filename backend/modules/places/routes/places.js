@@ -20,18 +20,20 @@ const { nearbyCandidates, drawRecommendation, personalizeCandidates } = require(
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
 const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
 const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
+const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 
 // 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
-// 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者
+// 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者；
+// 观看者屏蔽了的住民创建的地点也不返回（accounts/services/userRelations.js）
 router.get("/", attachViewer, (req, res) => {
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
-                 WHERE ${viewerPlaceSql('p')}
+                 WHERE ${viewerPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}
                  ORDER BY p.created_time DESC`;
-    db.all(sql, [req.viewer?.id ?? null], (err, rows) => {
+    db.all(sql, [req.viewer?.id ?? null, req.viewer?.id ?? null], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
@@ -45,8 +47,9 @@ router.get("/nearby", attachViewer, (req, res) => {
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
-                 WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND ${viewerPlaceSql('p')}`;
-    db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null], (err, rows) => {
+                 WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND ${viewerPlaceSql('p')}
+                   AND ${notBlockedSql('p.creator_id')}`;
+    db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
@@ -99,7 +102,8 @@ router.get("/:id/diaries", attachViewer, (req, res) => {
     const place = db._raw.prepare('SELECT id, creator_id, moderation_status FROM Place WHERE id = ?').get(req.params.id);
     if (place && !canViewPlace(place, req.viewer)) return res.status(404).json({ error: '地点不存在' });
     try {
-        res.json(require('../../journeys/services/journeyPublication').placeDiaries(req.params.id, { cursor: req.query.cursor, limit: req.query.limit }));
+        res.json(require('../../journeys/services/journeyPublication').placeDiaries(req.params.id,
+            { cursor: req.query.cursor, limit: req.query.limit, viewerId: req.viewer?.id ?? null }));
     } catch (error) {
         if (error.status) return res.status(error.status).json({ error: error.message });
         res.locals.unhandledError = error;

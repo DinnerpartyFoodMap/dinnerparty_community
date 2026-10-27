@@ -64,7 +64,9 @@ function Harness() {
     const contentRef = useOverlayContentRef();
     return <main ref={contentRef} style={{ position: 'fixed', inset: 0 }}>
         <MapView backendUrl={location.origin} token={window.__TEST_TOKEN} isAuthenticated mapPageActive
-            initialCenter={{ lng: 120, lat: 30 }} onRequireAuth={() => { throw new Error('Unexpected auth request'); }} />
+            initialCenter={{ lng: 120, lat: 30 }} onRequireAuth={() => { throw new Error('Unexpected auth request'); }}
+            // Opt-in: a test that sets window.__TEST_FEEDBACK = [] records the feedback prefills instead of opening the form
+            onOpenFeedback={window.__TEST_FEEDBACK ? (prefill) => window.__TEST_FEEDBACK.push(prefill) : undefined} />
     </main>;
 }
 createRoot(document.getElementById('root')).render(

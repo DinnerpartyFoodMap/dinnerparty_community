@@ -184,7 +184,8 @@
       "createFailed": "创建分类失败 {{status}}"
     },
     "userPlaces": {
-      "loadFailed": "住民的地点加载失败 {{status}}"
+      "loadFailed": "住民的地点加载失败 {{status}}",
+      "blockFailed": "屏蔽操作失败 {{status}}"
     },
     "rating": {
       "loadFailed": "评价加载失败 {{status}}",
@@ -637,6 +638,14 @@
     "reviewing": "审核中",
     "open": "查看 {{name}} 创建的地点",
     "cardRow": "{{date}} · 查看 TA 创建的地点",
-    "deletedUser": "已注销的住民"
+    "deletedUser": "已注销的住民",
+    "block": "屏蔽并举报",
+    "unblock": "解除屏蔽",
+    "blockConfirm": "屏蔽 {{name}}？屏蔽后，TA 创建的地点、地点下 TA 的公开日记和同好名片都不会再显示给你，可以随时在这里解除。接下来会打开举报表单，写下原因后提交给管理员。",
+    "blocked": "已屏蔽 {{name}}",
+    "unblocked": "已解除对 {{name}} 的屏蔽",
+    "blockedMessage": "你已屏蔽 {{name}}，TA 创建的地点、地点下 TA 的公开日记和同好名片不会显示给你。",
+    "chipBlocked": "已屏蔽 {{name}}",
+    "blockFailed": "操作失败：{{message}}"
   }
 }

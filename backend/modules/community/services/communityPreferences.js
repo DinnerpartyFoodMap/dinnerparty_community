@@ -1,6 +1,7 @@
 const { createHash } = require('crypto');
 const { sql, now } = require('../../journeys/services/journeyStore');
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
+const { notBlockedSql } = require('../../accounts/services/userRelations');
 function consent(userId) {
     sql.prepare(`INSERT OR IGNORE INTO MapConsent(user_id,feedback,research,discovery,tags,version,updated_at)
         SELECT id,1,1,1,'[]',0,? FROM User WHERE id=?`).run(now(), userId);
@@ -14,8 +15,8 @@ function neighbors(userId) {
     if (mine?.status !== 'ready' || !mine.vector) return { neighbors: [], profile_status: mine?.status || 'empty', signal_count: mine?.vector_place_count || 0, algorithm, notice: '用户向量尚未就绪；收藏地点或使用地图后，系统会逐步更新偏好。无需公开收藏夹。' };
     const people = sql.prepare(`SELECT u.id,u.username,c.tags FROM User u
         JOIN MapConsent c ON c.user_id=u.id JOIN UserPreference p ON p.user_id=u.id
-        WHERE c.discovery=1 AND u.id<>? AND COALESCE(u.is_banned,0)=0
-        ORDER BY p.updated_at DESC,u.id LIMIT 1000`).all(userId);
+        WHERE c.discovery=1 AND u.id<>? AND COALESCE(u.is_banned,0)=0 AND ${notBlockedSql('u.id')}
+        ORDER BY p.updated_at DESC,u.id LIMIT 1000`).all(userId, userId);
     const results = [];
     for (const user of people) {
         const other = getUserPreference(user.id);

@@ -11,6 +11,8 @@ async function planMerge(a, b, options = {}) {
     const hash = digest({ document: preview.document, sources: preview.sources, policy: preview.order_policy,
         resolutions: Object.entries(calculationOptions.expense_resolutions).sort(), conflicts: preview.conflicts });
     if (hash !== preview.preview_hash || preview.order_policy !== calculationOptions.order_policy) fail('日记算法返回的合并预览无效', 502);
+    // The AI-assisted label (journeyStore.normalizeDocument) survives a merge; it is not part of the sealed preview hash.
+    if (a.document.ai_assisted || b.document.ai_assisted) preview.document.ai_assisted = true;
     return preview;
 }
 function sources(userId, aId, bId, revisions) {

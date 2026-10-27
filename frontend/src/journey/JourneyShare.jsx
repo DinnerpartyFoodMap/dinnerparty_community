@@ -3,6 +3,7 @@ import {makeCover} from './cover';
 import {copyText,saveBlob,saveImageBlob,shareContent} from '../platform/share';
 import {PageHeader,Notice} from './shared';
 import { t, tx } from '../i18n/index.js';
+import { AiTag, withAiLabel } from '../components/primitives/AiLabel';
 
 /** 生成分享图文：只处理选中且确认到访的站点；默认不提供私人描述与账目。与站内公开阅读是两项独立能力。 */
 export default function JourneyShare({ctx,nav,params}) {
@@ -31,6 +32,8 @@ export default function JourneyShare({ctx,nav,params}) {
     });
     const visited=journal?.document.stops.filter(s=>s.confirmed&&s.visit_status==='visited')||[];
     const length=share?Array.from(share.text).length:0;
+    // 模型写的贴文：复制、保存、系统分享时末尾附上“AI 辅助生成”的显式标识
+    const exportText=share?(share.generated?withAiLabel(share.text):share.text):'';
     return <div className="jw-page">
         <PageHeader title={t('journey:common.action.generateShare')} onBack={nav.pop}/>
         <div className="jw-scroll"><div className="jw-content jw-stack">
@@ -51,8 +54,9 @@ export default function JourneyShare({ctx,nav,params}) {
                 <label className="jw-check"><input type="checkbox" checked={options.include_expenses} onChange={e=>setOptions({...options,include_expenses:e.target.checked})}/><span>{t('journey:share.includeExpenses')}</span></label>
                 <button type="button" className="jw-primary" disabled={busy||!options.stop_ids.length} onClick={generate}>{t('journey:share.generate')}</button>
                 {share&&<>
-                    <label className="jw-field"><span className="jw-field__label">{t('journey:share.postLabel')}</span><textarea rows={9} maxLength={4000} value={share.text} onChange={e=>setShare({...share,text:e.target.value})}/></label>
+                    <label className="jw-field"><span className="jw-field__label">{t('journey:share.postLabel')}{share.generated&&<AiTag style={{marginLeft:6}}/>}</span><textarea rows={9} maxLength={4000} value={share.text} onChange={e=>setShare({...share,text:e.target.value})}/></label>
                     <p className="jw-muted">{tx('journey:share.lengthInfo', { length, min: share.min, max: share.max, rangeHint: length<share.min||length>share.max?t('journey:share.lengthOutOfRange'):'', aiNote: !share.generated?t('journey:share.noAiNote'):'' })}</p>
+                    {share.generated&&<p className="jw-muted">{t('journey:share.aiExportNote')}</p>}
                     <div className="jw-actions">
                         <label className="jw-field"><span className="jw-field__label">{t('journey:share.coverStyle')}</span><select value={coverStyle} onChange={e=>setCoverStyle(e.target.value)}>{[['主站',t('journey:share.coverOption.site')],['奶油',t('journey:share.coverOption.cream')],['薄荷',t('journey:share.coverOption.mint')],['夜色',t('journey:share.coverOption.night')]].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
                         <label className="jw-field"><span className="jw-field__label">{t('journey:share.caption')}</span><input value={caption} maxLength={100} onChange={e=>setCaption(e.target.value)}/></label>
@@ -62,10 +66,10 @@ export default function JourneyShare({ctx,nav,params}) {
                     {coverUrl&&<img className="jw-cover" src={coverUrl} alt={t('journey:share.coverAlt')}/>}
                     <p className="jw-muted">{t('journey:share.exportHint')}</p>
                     <div className="jw-actions">
-                        <button type="button" onClick={()=>run(async()=>{if(!await copyText(share.text))throw new Error(t('journey:share.copyFailed'));tip(t('journey:share.postCopied'));})}>{t('journey:share.copyPost')}</button>
+                        <button type="button" onClick={()=>run(async()=>{if(!await copyText(exportText))throw new Error(t('journey:share.copyFailed'));tip(t('journey:share.postCopied'));})}>{t('journey:share.copyPost')}</button>
                         <button type="button" disabled={!coverBlob} onClick={()=>run(async()=>{const r=await saveImageBlob(coverBlob,t('journey:share.coverFilename'));if(r==='failed')throw new Error(t('journey:share.coverSaveFailed'));})}>{t('journey:share.saveCover')}</button>
-                        <button type="button" onClick={()=>run(async()=>{const r=await saveBlob(new Blob([share.text],{type:'text/plain;charset=utf-8'}),t('journey:share.postFilename'));if(r==='failed')throw new Error(t('journey:share.postSaveFailed'));})}>{t('journey:share.savePost')}</button>
-                        <button type="button" disabled={!coverBlob} onClick={()=>run(async()=>{const file=new File([coverBlob],t('journey:share.coverFilename'),{type:'image/png'});const r=await shareContent({files:[file],text:share.text,title:share.cover.title});if(r==='unsupported')throw new Error(t('journey:share.shareUnsupported'));if(r==='failed')throw new Error(t('journey:share.shareFailed'));})}>{t('journey:share.systemShare')}</button>
+                        <button type="button" onClick={()=>run(async()=>{const r=await saveBlob(new Blob([exportText],{type:'text/plain;charset=utf-8'}),t('journey:share.postFilename'));if(r==='failed')throw new Error(t('journey:share.postSaveFailed'));})}>{t('journey:share.savePost')}</button>
+                        <button type="button" disabled={!coverBlob} onClick={()=>run(async()=>{const file=new File([coverBlob],t('journey:share.coverFilename'),{type:'image/png'});const r=await shareContent({files:[file],text:exportText,title:share.cover.title});if(r==='unsupported')throw new Error(t('journey:share.shareUnsupported'));if(r==='failed')throw new Error(t('journey:share.shareFailed'));})}>{t('journey:share.systemShare')}</button>
                     </div>
                 </>}
             </>}

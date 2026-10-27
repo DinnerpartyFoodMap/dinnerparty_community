@@ -4,6 +4,7 @@ import {buildPublicUrl} from '../platform/runtimeConfig';
 import {PageHeader,Notice,PublicPhoto,formatRange} from './shared';
 import {diaryReportPrefill} from '../feedback/feedbackTypes';
 import { t, tx } from '../i18n/index.js';
+import { AiTag } from '../components/primitives/AiLabel';
 
 /** 整篇公开日记：未登录也可阅读（举报需要登录）；打开时定位到相关站点；有标记的站点可反向查看地图标记。 */
 export default function PublicJourneyView({ctx,nav,params}) {
@@ -40,6 +41,7 @@ export default function PublicJourneyView({ctx,nav,params}) {
                         {report&&author.id!==userId&&<button type="button" className="jw-report" style={{marginLeft:8}} aria-label={t('journey:public.reportLabel', { title: journey.title })} onClick={()=>report(diaryReportPrefill(journey))}>{t('journey:public.report')}</button>}
                     </h3>
                     <p className="jw-muted">{tx('journey:public.meta', { range: formatRange(journey.start_date,journey.end_date), count: journey.stops.length })}</p>
+                    {journey.ai_assisted&&<p className="jw-muted"><AiTag label={t('common:ai.assisted')} style={{marginRight:6}}/>{t('journey:public.aiAssisted')}</p>}
                 </header>
                 {journey.summary&&<p className="jw-detail-summary">{journey.summary}</p>}
                 {journey.text&&<p className="jw-detail-summary">{journey.text}</p>}

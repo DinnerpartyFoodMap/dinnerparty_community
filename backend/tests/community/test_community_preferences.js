@@ -66,6 +66,11 @@ async function main(){
     assert.equal(result.neighbors[0].confidence,'参考数据较少');
     assert.deepEqual(result.neighbors[0].shared,[]);
     assert.deepEqual(Object.keys(result.neighbors[0]).sort(),['id','username','similarity','x','y','confidence','shared'].sort());
+    // A resident the viewer blocked disappears from the viewer's matches only.
+    sql.prepare('INSERT INTO UserBlock(user_id,blocked_id) VALUES(?,?)').run(viewer,peer);
+    assert.deepEqual((await call('GET','/neighbors')).neighbors,[]);
+    sql.prepare('DELETE FROM UserBlock WHERE user_id=? AND blocked_id=?').run(viewer,peer);
+    assert.deepEqual((await call('GET','/neighbors')).neighbors.map(p=>p.id),[peer]);
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM Favorite').get().n,0,'Matching needs only ready vectors');
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM PublicCollection').get().n,0);
     assert.deepEqual((await call('GET',`/users/${peer}/collections`)).collections,[]);

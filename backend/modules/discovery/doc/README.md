@@ -1,6 +1,6 @@
 # 搜索、随机推荐与顺路发现
 
-入口：routes/search.js（`/api/places/search*`）、routes/alongRoute.js（`/api/along-route`）；随机路由由 places 模块挂载。服务：placeSearch、semanticSearch、randomRecommendation、alongRoute。依赖 ratings 统一避雷规则、preferences 用户向量及基础设施 AI / 数据库。
+入口：routes/search.js（`/api/places/search*`）、routes/alongRoute.js（`/api/along-route`）；随机路由由 places 模块挂载。AI 搜索（`POST /api/places/search/ai`）需要登录（游客 401，基础搜索不受影响）。每条推荐带 `reason_source`（`deepseek`：模型写的推荐语，前端标注“AI 生成”；`fallback`：本地模板兜底，不标注）；所用已备案模型的名称和备案号公示在用户协议第九部分。服务：placeSearch、semanticSearch、randomRecommendation、alongRoute。依赖 ratings 统一避雷规则、preferences 用户向量及基础设施 AI / 数据库。
 
 ```mermaid
 flowchart TD

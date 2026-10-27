@@ -1,7 +1,7 @@
 const express = require('express');
 const { performance } = require('perf_hooks');
 const { fastSearch } = require('../services/placeSearch');
-const { attachViewer } = require('../../accounts/middleware/auth');
+const { attachViewer, requireAuth } = require('../../accounts/middleware/auth');
 const {
     searchSemanticPlaces,
     normalizeCenter,
@@ -56,7 +56,8 @@ router.get('/places/search/fast', attachViewer, sendFastSearch);
 router.get('/places/search', attachViewer, sendFastSearch);
 
 // Request B: embedding -> sqlite-vec KNN -> DeepSeek Yuyuko recommendation.
-router.post('/places/search/ai', async (req, res) => {
+// 需要登录；reason_source 为 deepseek 的推荐语由模型写成，前端标注“AI 生成”（所用模型公示在用户协议）。
+router.post('/places/search/ai', requireAuth, async (req, res) => {
     const query = String(req.body?.q || '').trim();
     if (!query) return res.status(400).json({ error: '搜索内容不能为空' });
     if (query.length > AI_QUERY_MAX_LENGTH) {

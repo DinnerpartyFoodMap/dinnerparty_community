@@ -4,6 +4,7 @@ const { db } = require("../../../infrastructure/database");
 const requireAdmin = require("../middleware/adminAuth");
 const { hasPermission } = require('../services/adminPermissions');
 const { insertAdminAction } = require("../services/adminAudit");
+const { WHITELIST_QQ_PATTERN } = require('../../accounts/services/qqWhitelist');
 
 const ALLOWED_LEVELS = new Set(["YUYUKO", "YOUMU", "KOMACHI", ""]);
 const SUPER_LEVEL = "YUYUKO";
@@ -65,6 +66,19 @@ const banStateTransaction = db._raw.transaction(({ actingAdminId, userId, mode, 
             .run(userId);
         insertAdminAction(actingAdminId, 'unban-user', userId, null);
     }
+});
+
+// 改绑 QQ 号：qq 为空表示解绑。一个 QQ 号只能绑定一个账号（User.qq 唯一索引），不要求在白名单中。
+const setQqTransaction = db._raw.transaction(({ actingAdminId, userId, qq }) => {
+    const target = db._raw.prepare('SELECT id, qq FROM User WHERE id = ?').get(userId);
+    if (!target) throw adminMutationFailure(404, 'USER_NOT_FOUND', '用户不存在');
+    const current = target.qq || null;
+    if (current === qq) return;
+    if (qq && db._raw.prepare('SELECT id FROM User WHERE qq = ? AND id <> ?').get(qq, userId)) {
+        throw adminMutationFailure(409, 'QQ_IN_USE', '该 QQ 号已绑定其他账号');
+    }
+    db._raw.prepare('UPDATE User SET qq = ? WHERE id = ?').run(qq, userId);
+    insertAdminAction(actingAdminId, 'set-qq', userId, JSON.stringify({ from: current, to: qq }));
 });
 
 const deleteUserTransaction = db._raw.transaction(({ actingAdminId, targetId }) => {
@@ -145,6 +159,20 @@ router.post('/unban', requireAdmin('manage_bans'), (req, res) => {
         banStateTransaction.immediate({ actingAdminId, userId, mode: 'unban', reason: null, banExpires: null,
             canManageAdmins: hasPermission(req.user, 'manage_users') });
         return res.json({ success: true });
+    } catch (error) {
+        return sendMutationError(res, error);
+    }
+});
+
+// 修改住民绑定的 QQ 号（仅Y级管理员）：{ userId, qq }，qq 为空字符串表示解绑
+router.post('/set-qq', requireAdmin('manage_users'), (req, res) => {
+    const { userId } = req.body || {};
+    const qq = typeof req.body?.qq === 'string' ? req.body.qq.trim() : null;
+    if (!userId || qq === null) return res.status(400).json({ error: '缺少参数' });
+    if (qq && !WHITELIST_QQ_PATTERN.test(qq)) return res.status(400).json({ error: 'QQ 号格式不正确' });
+    try {
+        setQqTransaction.immediate({ actingAdminId: req.user && req.user.id, userId, qq: qq || null });
+        return res.json({ success: true, qq: qq || null });
     } catch (error) {
         return sendMutationError(res, error);
     }

@@ -25,6 +25,14 @@
     "reasonPlaceholder": "请输入封禁原因",
     "confirm": "确认封禁"
   },
+  "qqModal": {
+    "title": "修改 QQ 号 · {{username}}",
+    "label": "QQ 号",
+    "placeholder": "5–15 位数字",
+    "hint": "留空保存即解绑。一个 QQ 号只能绑定一个账号，不要求在白名单中。",
+    "invalid": "QQ 号应为 5–15 位数字",
+    "confirm": "保存"
+  },
   "common": {
     "error": {
       "sessionExpired": "未登录或授权已失效，请重新登录",
@@ -207,6 +215,9 @@
     "status": "状态",
     "statusBanned": "已封禁",
     "statusNormal": "正常",
+    "editQq": "修改 QQ 号…",
+    "qqUpdated": "QQ 号已更新",
+    "qqFailed": "QQ 号修改失败：{{message}}",
     "col": {
       "username": "用户名"
     }

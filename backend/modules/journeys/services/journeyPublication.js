@@ -4,6 +4,7 @@ const {draftRow,closeDraft}=require('./journeyDrafts');
 const links=require('./journeyMapLinks');
 const {enqueuePlaceCreatedNotifications}=require('../../places/services/placeNotifications');
 const {afterPlacesCreated}=require('../../places/services/placeService');
+const {notBlockedSql}=require('../../accounts/services/userRelations');
 
 // Public diary content is an independent snapshot of exactly what the author previewed.
 // Private editing, autosave, restore and merge never touch it; only commit and withdraw do.
@@ -27,9 +28,11 @@ function publicBody(document,plan) {
             lng:mapped?stop.lng:null,lat:mapped?stop.lat:null,address:mapped?stop.address||'':''};
     });
     const entryPhotos=(document.public_media_ids||[]).filter(id=>(document.entry_media_ids||[]).includes(id));
+    // ai_assisted only when set, so snapshots and preview hashes of other diaries stay unchanged.
     return {title:document.title,start_date:document.start_date,end_date:document.end_date,summary:document.summary||'',
         text:document.public_text||'',entry_media_ids:entryPhotos,stops,
-        media_ids:[...new Set([...entryPhotos,...stops.flatMap(s=>s.media_ids)])]};
+        media_ids:[...new Set([...entryPhotos,...stops.flatMap(s=>s.media_ids)])],
+        ...(document.ai_assisted?{ai_assisted:true}:{})};
 }
 function publicationOf(journeyId) {
     return journeyId?sql.prepare('SELECT id,status,version,source_revision FROM JourneyPublication WHERE journey_id=?').get(journeyId)||null:null;
@@ -179,7 +182,8 @@ function publicJourney(publicId) {
     // A marker deleted after publication keeps the stop text but loses its map link.
     const stops=body.stops.map(s=>({...s,place_id:s.place_id&&sql.prepare('SELECT id FROM Place WHERE id=?').get(s.place_id)?s.place_id:null}));
     return {public_id:row.id,version:row.version,author:author(row),title:body.title,start_date:body.start_date,end_date:body.end_date,
-        summary:body.summary,text:body.text||'',entry_media_ids:body.entry_media_ids||[],stops,media_ids:body.media_ids,published_at:row.published_at,updated_at:row.updated_at};
+        summary:body.summary,text:body.text||'',entry_media_ids:body.entry_media_ids||[],stops,media_ids:body.media_ids,published_at:row.published_at,updated_at:row.updated_at,
+        ai_assisted:!!body.ai_assisted};
 }
 function publicMedia(publicId,mediaId) {
     const row=sql.prepare("SELECT user_id,snapshot FROM JourneyPublication WHERE id=? AND status='active'").get(String(publicId));
@@ -195,15 +199,17 @@ function decodeCursor(value) {
     fail('分页参数无效');
 }
 // One card per public diary; several visits of one diary to the place are merged into that card.
-function placeDiaries(placeId,{cursor,limit}={}) {
+// viewerId: diaries by residents the viewer blocked are left out (accounts/services/userRelations.js).
+function placeDiaries(placeId,{cursor,limit,viewerId=null}={}) {
     const id=Number(placeId);
     if(!Number.isSafeInteger(id)||id<=0)fail('地点无效');
     const size=Math.max(1,Math.min(20,Number(limit)||3));
     const after=decodeCursor(cursor);
-    const base="FROM PlaceDiaryExcerpt e JOIN JourneyPublication p ON p.id=e.publication_id AND p.status='active' WHERE e.place_id=?";
-    const total=sql.prepare(`SELECT COUNT(DISTINCT e.publication_id) AS n ${base}`).get(id).n;
+    const base=`FROM PlaceDiaryExcerpt e JOIN JourneyPublication p ON p.id=e.publication_id AND p.status='active' WHERE e.place_id=? AND ${notBlockedSql('p.user_id')}`;
+    const viewer=viewerId==null?null:String(viewerId);
+    const total=sql.prepare(`SELECT COUNT(DISTINCT e.publication_id) AS n ${base}`).get(id,viewer).n;
     const groups=sql.prepare(`SELECT e.publication_id AS publication_id,MAX(e.record_date) AS record_date ${base} GROUP BY e.publication_id
-        ${after?'HAVING (MAX(e.record_date),e.publication_id)<(?,?)':''} ORDER BY record_date DESC,publication_id DESC LIMIT ?`).all(...(after?[id,...after,size+1]:[id,size+1]));
+        ${after?'HAVING (MAX(e.record_date),e.publication_id)<(?,?)':''} ORDER BY record_date DESC,publication_id DESC LIMIT ?`).all(...(after?[id,viewer,...after,size+1]:[id,viewer,size+1]));
     const page=groups.slice(0,size);
     const items=page.map(g=>{
         const pub=sql.prepare('SELECT p.id,p.user_id,p.snapshot,u.username,(u.avatar_blob IS NOT NULL) AS has_avatar FROM JourneyPublication p JOIN User u ON u.id=p.user_id WHERE p.id=?').get(g.publication_id);

@@ -58,21 +58,35 @@ async function main() {
             continue;
         }
         await page.getByRole('button', { name: '查看操作日志', exact: true }).click();
-        await page.getByText('管理员操作日志（最近 200 条）', { exact: true }).waitFor();
+        await page.getByText('最近200条管理员操作日志', { exact: true }).waitFor();
         await page.keyboard.press('Escape');
-        if (level === 'YUYUKO') continue;
+        if (level === 'YUYUKO') {
+            // 用户管理: QQ rebinding on the regular resident's row.
+            const row = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'regular', exact: true }) });
+            await row.getByRole('button').click();
+            await page.getByRole('menuitem', { name: '修改 QQ 号…', exact: true }).click();
+            const qqDialog = page.getByRole('dialog', { name: '修改 QQ 号 · regular', exact: true });
+            await qqDialog.getByLabel('QQ 号').fill('12ab');
+            assert.equal(await qqDialog.getByRole('button', { name: '保存', exact: true }).isDisabled(), true);
+            await qqDialog.getByLabel('QQ 号').fill('10001');
+            await qqDialog.getByRole('button', { name: '保存', exact: true }).click();
+            await qqDialog.waitFor({ state: 'hidden' });
+            await row.getByRole('cell', { name: '10001', exact: true }).waitFor();
+            assert.equal(db._raw.prepare('SELECT qq FROM User WHERE id = ?').get(users.regular.user.id).qq, '10001');
+            continue;
+        }
         await page.getByRole('cell', { name: 'regular', exact: true }).waitFor();
         await page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'regular', exact: true }) }).getByRole('button').click();
         if (level === 'KOMACHI') {
-            assert.equal(await page.getByRole('menuitem', { name: '封禁账号…', exact: true }).count(), 0);
+            assert.equal(await page.getByRole('menuitem', { name: '封禁账号', exact: true }).count(), 0);
             await page.getByRole('menuitem', { name: '永久删除用户…', exact: true }).waitFor();
             continue;
         }
-        await page.getByRole('menuitem', { name: '封禁账号…', exact: true }).click();
+        await page.getByRole('menuitem', { name: '封禁账号', exact: true }).click();
         await page.getByRole('dialog', { name: '封禁用户 regular', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
         assert.equal(db._raw.prepare('SELECT is_banned FROM User WHERE id = ?').get(users.regular.user.id).is_banned, 0);
         await page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'regular', exact: true }) }).getByRole('button').click();
-        await page.getByRole('menuitem', { name: '封禁账号…', exact: true }).click();
+        await page.getByRole('menuitem', { name: '封禁账号', exact: true }).click();
         // An account promoted since the list loaded must be rejected by the server.
         db._raw.prepare('UPDATE User SET admin_level = ? WHERE id = ?').run('KOMACHI', users.regular.user.id);
         await page.getByRole('button', { name: '确认封禁', exact: true }).click();
@@ -128,7 +142,7 @@ async function main() {
     const heldEdit = page.locator('tr').filter({ hasText: '加微信领券' }).first();
     await heldEdit.getByText('文字含不良信息', { exact: true }).waitFor();
     await heldEdit.locator('button[aria-haspopup="menu"]').click();
-    await page.getByRole('menuitem', { name: '驳回申请…', exact: true }).click();
+    await page.getByRole('menuitem', { name: '驳回申请', exact: true }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
     await heldEdit.waitFor({ state: 'detached' });
     assert.equal(db._raw.prepare('SELECT description FROM Place WHERE id = ?').get(editedPlace).description, '牛肉面');
@@ -144,7 +158,7 @@ async function main() {
     await page.getByText('当前没有匹配的待处理申请。', { exact: true }).waitFor();
     assert.equal(db._raw.prepare('SELECT moderation_status FROM Place WHERE id = ?').get(hidden).moderation_status, 'visible');
     assert.deepEqual(errors, []);
-    console.log('Admin browser permissions passed: role panels, audit, skin restrictions, YOUMU ban/unban on desktop/mobile, cancel, server rejection/retry and KOMACHI without ban controls.');
+    console.log('Admin browser permissions passed: role panels, audit, skin restrictions, YOUMU ban/unban on desktop/mobile, cancel, server rejection/retry, KOMACHI without ban controls, YUYUKO QQ rebinding.');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

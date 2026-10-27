@@ -37,6 +37,8 @@ async function main() {
 
     const app = express();
     app.use('/users', require('../../modules/accounts/routes/users'));
+    app.use('/places', require('../../modules/places/routes/places'));
+    app.use('/api', require('../../modules/discovery/routes/search'));
     server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}`;
     const get = async (userId, who) => {
@@ -53,7 +55,7 @@ async function main() {
     assert.deepEqual(guest.body.places.map((p) => p.id), [newest, oldest]);
     assert.equal(guest.body.total, 2);
     assert.equal(guest.body.limit, CREATOR_PLACES_LIMIT);
-    assert.deepEqual(guest.body.relation, { self: false, blocked: false });
+    assert.deepEqual(guest.body.relation, { self: false, blocked: false, can_block: false });
     const [first, second] = guest.body.places;
     assert.equal(first.creator_name, 'maker');
     assert.deepEqual([first.rating_count, first.rating_average], [1, 4]);
@@ -66,7 +68,7 @@ async function main() {
     assert.equal(own.body.total, 4);
     assert.deepEqual(own.body.places.map((p) => p.name), ['新店', '被驳回的店', '审核中的店', '老店']);
     assert.ok(own.body.places.some((p) => p.id === hidden && p.moderation_status === 'checking'));
-    assert.deepEqual(own.body.relation, { self: true, blocked: false });
+    assert.deepEqual(own.body.relation, { self: true, blocked: false, can_block: false });
 
     // 3. 没有创建过地点的住民：空列表；不存在的住民（含已注销）：404
     const quiet = await get(users.quiet, 'other');
@@ -87,7 +89,44 @@ async function main() {
     assert.equal(capped.places[0].name, '别人的店');
     assert.equal(capped.places[1].name, `批量 ${CREATOR_PLACES_LIMIT + 4}`);
 
-    console.log('creator places tests passed: newest first, visibility for others vs. the creator, empty and unknown users, cap and total, relation reserved for blocking.');
+    // 5. 屏蔽：只影响屏蔽者自己。列表仍可打开（解除屏蔽用）但不列出地点；附近、全部地点和快速搜索都不再有 TA 创建的地点
+    const send = async (method, userId, who) => {
+        const res = await fetch(`${base}/users/${encodeURIComponent(userId)}/block`, { method, headers: who ? { Authorization: `Bearer ${tokens[who]}` } : {} });
+        return { status: res.status, body: await res.json() };
+    };
+    const nearby = async (who) => (await (await fetch(`${base}/places/nearby?minLng=113&minLat=23&maxLng=114&maxLat=24`,
+        tokens[who] ? { headers: { Authorization: `Bearer ${tokens[who]}` } } : {})).json()).map((p) => p.id);
+    const searchIds = async (who) => (await (await fetch(`${base}/api/places/search/fast?q=${encodeURIComponent('新店')}`,
+        tokens[who] ? { headers: { Authorization: `Bearer ${tokens[who]}` } } : {})).json()).map((p) => p.id);
+    assert.equal((await send('POST', users.maker, null)).status, 401);
+    assert.equal((await send('POST', users.other, 'other')).status, 400, 'cannot block yourself');
+    assert.equal((await send('POST', randomUUID(), 'other')).status, 404);
+    assert.ok((await nearby('other')).includes(newest));
+    assert.ok((await searchIds('other')).includes(newest));
+    const blocked = await send('POST', users.maker, 'other');
+    assert.equal(blocked.status, 200);
+    assert.deepEqual(blocked.body.relation, { self: false, blocked: true, can_block: true });
+    assert.equal((await send('POST', users.maker, 'other')).status, 200, 'blocking twice is harmless');
+    const hiddenList = (await get(users.maker, 'other')).body;
+    assert.deepEqual([hiddenList.relation.blocked, hiddenList.places, hiddenList.total], [true, [], 0]);
+    assert.ok(!(await nearby('other')).includes(newest));
+    assert.ok(!(await nearby('other')).includes(oldest), 'places created by the blocked resident, even if last edited by someone else');
+    assert.ok(!(await searchIds('other')).includes(newest));
+    const all = await (await fetch(`${base}/places`, { headers: { Authorization: `Bearer ${tokens.other}` } })).json();
+    assert.ok(!all.some((p) => p.creator_id === users.maker));
+    assert.ok((await nearby(null)).includes(newest), 'guests are not affected');
+    assert.ok((await nearby('quiet')).includes(newest), 'other residents are not affected');
+    assert.deepEqual((await get(users.maker, 'maker')).body.places.length, 4, 'the blocked resident still sees their own places');
+    const unblocked = await send('DELETE', users.maker, 'other');
+    assert.deepEqual(unblocked.body.relation, { self: false, blocked: false, can_block: true });
+    assert.ok((await nearby('other')).includes(newest));
+    assert.equal((await get(users.maker, 'other')).body.total, 2);
+    // 注销账号时屏蔽记录随之删除
+    await send('POST', users.maker, 'other');
+    sql.prepare('DELETE FROM User WHERE id = ?').run(users.maker);
+    assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM UserBlock').get().n, 0);
+
+    console.log('creator places tests passed: newest first, visibility for others vs. the creator, empty and unknown users, cap and total, blocking (list, nearby, all places, fast search, unblock, cascade).');
 }
 
 main().catch((error) => {

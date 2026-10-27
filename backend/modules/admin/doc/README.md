@@ -26,6 +26,8 @@ flowchart TD
 
 采用集中权限表 + 中间件，便于核对不同入口；对照每个路由散写角色判断，前者能减少漂移。审计目前不是所有管理行为统一装饰器，不能据此推断所有操作均与日志原子提交。`manage_invites` 是旧权限名，注册现为 QQ 验证码流程，不新增注册邀请码路由；它现在管理 QQ 白名单和 Bot。皮肤兑换码独立用 `manage_skin_codes`，仅 YUYUKO（adminSkinCodes 挂载 `/admin/skin-codes`，沿用 InviteCode 表，见 [皮肤模块](../../skins/doc/README.md)）。
 
+`manage_users`（仅 YUYUKO）的“用户管理”页还可以改绑 QQ 号（`POST /admin/users/set-qq`，`{ userId, qq }`，空字符串表示解绑；格式与白名单相同为 5–15 位数字，同一 QQ 只能绑定一个账号，返回 409 `QQ_IN_USE`，不要求在白名单中，审计 `set-qq`，值未变化时不写审计），测试入口 `npm run test:admin-qq`。
+
 `manage_feedback` 控制 `/admin/feedback`（反馈列表、截图、标记处理、删除），三个等级都有，见 [反馈模块](../../feedback/doc/README.md)。`view_audit` 独立控制日志读取，三个等级都有；`manage_bans` 控制 `/admin/users/ban`、`/unban`，YUYUKO、YOUMU 有。YOUMU 的目标只能是普通用户，检查与写入同处事务；YUYUKO 保留原有目标规则。`manage_places` 同时控制地点申请审核和他人地点编辑/删除。角色通过每次鉴权读取数据库，调整后下一次请求立即生效，无需迁移数据库。
 
 文字测试案例：

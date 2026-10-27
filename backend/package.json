@@ -33,6 +33,7 @@
         "vectors:backfill": "node scripts/vectors/backfill_place_vectors.js",
         "test:qq-bot": "node tests/qqbot/test_qq_bot.js",
         "test:qq-verification": "node tests/accounts/test_qq_verification.js",
+        "test:admin-qq": "node tests/admin/test_admin_set_qq.js",
         "test:images": "node tests/media/test_image_storage.js",
         "test:place-share": "node tests/places/test_place_share.js",
         "test:place-moderation": "node tests/places/test_place_moderation.js",

@@ -6,6 +6,10 @@ const path = require('path');
 const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'yuyuko-search-'));
 process.env.DB_FILE = path.join(tempDirectory, 'search.sqlite');
 process.env.LOG_TO_FILE = 'false';
+process.env.LOG_TO_CONSOLE = 'false';
+require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
+const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 const { db, init } = require('../../infrastructure/database');
 process.env.SILICONFLOW_API_KEY = '';
 process.env.DEEPSEEK_API_KEY = '';
@@ -202,14 +206,23 @@ async function main() {
         assert.equal(passesLocalRecommendationThreshold({ score: 0.57 }), false, 'local fallback should reject weak adjusted scores');
         assert.equal(passesLocalRecommendationThreshold({ score: 0.59 }), true, 'local fallback should retain sufficiently strong adjusted scores');
 
+        // AI search needs a logged-in resident.
+        const aiBodyText = JSON.stringify({
+            q: '想吃新鲜的鱼粥',
+            center: { lat: 23.1291, lng: 113.2644 },
+            bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
+        });
+        const anonymous = await fetch(`${baseUrl}/api/places/search/ai`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: aiBodyText
+        });
+        assert.equal(anonymous.status, 401, 'AI search must require login');
+        const userId = randomUUID();
+        db._raw.prepare('INSERT INTO User (id, username, password) VALUES (?, ?, ?)').run(userId, '搜索烟测住民', 'unused');
+        const token = jwt.sign({ id: userId }, process.env.JWT_SECRET || 'yuyuko_secret_key');
         const aiResponse = await fetch(`${baseUrl}/api/places/search/ai`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                q: '想吃新鲜的鱼粥',
-                center: { lat: 23.1291, lng: 113.2644 },
-                bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
-            })
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: aiBodyText
         });
         const aiBody = await aiResponse.json();
         if (![200, 503].includes(aiResponse.status)

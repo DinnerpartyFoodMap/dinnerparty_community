@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import Button from "../components/primitives/Button";
 import { useAuth } from "../auth/AuthContext";
 import AdminBanModal from "./AdminBanModal";
+import AdminQqModal from "./AdminQqModal";
 import ResponsiveTable from "../components/data/ResponsiveTable";
 import TextInput from "../components/forms/TextInput";
 import ActionMenu from "../components/overlay/ActionMenu";
@@ -31,6 +32,7 @@ export default function AdminUsers({ backendUrl = null }) {
     const [processing, setProcessing] = useState({});
     const [banModalOpen, setBanModalOpen] = useState(false);
     const [banTarget, setBanTarget] = useState(null);
+    const [qqTarget, setQqTarget] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [page, setPage] = useState(1);
     const fetchIdRef = useRef(0);
@@ -275,6 +277,31 @@ export default function AdminUsers({ backendUrl = null }) {
         }
     };
 
+    // 改绑 QQ 号（留空即解绑）；失败时保留弹窗，便于改正后重试
+    const saveQq = async (qq) => {
+        const target = qqTarget;
+        if (!target) return;
+        setProcessing(p => ({ ...p, [target.id]: true }));
+        try {
+            const res = await fetch(`${base}/admin/users/set-qq`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify({ userId: target.id, qq })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                setUsers(list => list.map(u => u.id === target.id ? { ...u, qq: data.qq } : u));
+                showTip(t('admin:users.qqUpdated'));
+                setQqTarget(null);
+            } else if (res.status === 401) handleUnauthorized();
+            else showTip(data.error || t('admin:users.qqFailed', { message: res.status }));
+        } catch (e) {
+            showTip(t('admin:users.qqFailed', { message: e.message || e }));
+        } finally {
+            setProcessing(p => ({ ...p, [target.id]: false }));
+        }
+    };
+
     if (!canManage) return <div style={{ color: 'var(--color-danger)' }}>{t('admin:common.error.noPanelAccess')}</div>;
 
     const PAGE_SIZE = 10;
@@ -318,6 +345,7 @@ export default function AdminUsers({ backendUrl = null }) {
                 disabled={processing[target.id]}
                 items={[
                     ...levelItems,
+                    { key: 'qq', label: t('admin:users.editQq'), onClick: () => setQqTarget(target) },
                     target.is_banned
                         ? { key: 'unban', label: t('admin:users.unban'), disabled: protectedTarget, onClick: () => unbanUser(target) }
                         : { key: 'ban', label: t('admin:users.ban'), tone: 'warning', disabled: protectedTarget, onClick: () => onBanClick(target) },
@@ -409,6 +437,8 @@ export default function AdminUsers({ backendUrl = null }) {
             )}
 
             <AdminBanModal open={banModalOpen} onClose={() => { setBanModalOpen(false); setBanTarget(null); }} onConfirm={handleBanConfirm} targetUser={banTarget} />
+            <AdminQqModal open={!!qqTarget} onClose={() => setQqTarget(null)} onConfirm={saveQq} targetUser={qqTarget}
+                saving={!!(qqTarget && processing[qqTarget.id])} />
         </div>
     );
 }

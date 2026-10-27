@@ -100,7 +100,7 @@ async function main(){
     const draftUrl=/\/api\/journeys\/drafts\/[^/]+$/;
     await page.route(draftUrl,route=>route.request().method()==='PUT'?route.abort('failed'):route.continue());
     await top.getByLabel('第 1 站的文字').fill('断网期间继续记录。');
-    await top.getByText('草稿尚未同步，将自动重试',{exact:false}).waitFor();
+    await top.getByText('同步失败，将自动重试',{exact:false}).waitFor();
     assert.equal(await page.evaluate(()=>window.__TEST_LEAVE()),false,'navigation is blocked while latest edits cannot be saved');
     await page.unroute(draftUrl);
     let draftAckLost=false;
@@ -192,7 +192,7 @@ async function main(){
     await top.getByRole('combobox',{name:/^这笔支出如何保留/}).selectOption('separate');
     await top.getByText('合计 ¥67.00',{exact:true}).waitFor();
     await top.getByRole('button',{name:'确认合并',exact:true}).click();
-    await top.getByText('已合并为一篇新的私密日记',{exact:false}).waitFor();
+    await top.getByText('已合并为新的私密日记',{exact:false}).waitFor();
     assert.equal(count('Journey'),3);assert.equal(count('JourneyPublication',"user_id=? AND status='active'"),1,'merging never publishes');
 
     // --- Withdraw from the detail page: the place card stops listing it immediately. ---
@@ -201,7 +201,7 @@ async function main(){
     await top.getByRole('button',{name:'更多操作'}).click();
     await page.getByRole('menuitem',{name:'改为私密'}).click();
     await page.getByRole('alertdialog').getByRole('button').last().click();
-    await top.getByText('已改为私密，公开内容已撤下。').waitFor();
+    await top.getByText('已改为私密',{exact:true}).waitFor();
     assert.equal((await page.evaluate(()=>fetch('/places/1/diaries').then(r=>r.json()))).total,0);
     await closeAll();
 
@@ -240,7 +240,7 @@ async function main(){
     await page.route('**/api/journeys/unfinished',route=>route.abort('failed'));
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();
     await top.getByRole('button',{name:/^未完成 · \d/}).click();
-    await top.getByText('暂时无法读取',{exact:false}).waitFor();
+    await top.getByText('无法读取服务器上的未完成内容',{exact:false}).waitFor();
     await top.getByRole('button',{name:'继续：只在本机保存的奶茶记录'}).click();
     assert.equal(await top.getByLabel('说说这顿饭或这一天').inputValue(),'只在本机保存的奶茶记录');
     await page.unroute('**/api/journeys/unfinished');await page.unroute(composeUrl);

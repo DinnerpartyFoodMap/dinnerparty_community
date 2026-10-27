@@ -99,5 +99,10 @@
     "edit": "编辑",
     "previewLabel": "Markdown 预览",
     "emptyPreview": "还没有内容"
+  },
+  "ai": {
+    "generated": "AI 生成",
+    "assisted": "AI 辅助整理",
+    "exportLabel": "（本文由 AI 辅助生成）"
   }
 }

@@ -31,6 +31,7 @@ import { amapNavigationLink } from "./amapNavigation";
 import { getRuntimeConfig } from "../platform/runtimeConfig";
 import { subscribeSkin } from "../skins/skinStore";
 import { t } from "../i18n/index.js";
+import { userReportPrefill } from "../feedback/feedbackTypes";
 
 const DEFAULT_CENTER = MapUtils.DEFAULT_CENTER;
 const DEFAULT_ZOOM = MapUtils.DEFAULT_ZOOM;
@@ -1145,8 +1146,10 @@ export default function MapView({
             setSearchResults(merged);
         };
 
+        // AI 推荐需要登录（封禁期间只读，也不发起）；游客只看快速结果。
+        const aiAllowed = !!token && !isBanned;
         setSearching(true);
-        setAiThinking(true);
+        setAiThinking(aiAllowed);
         setAiRecommendations([]);
 
         // Both network calls are created before either one is awaited.
@@ -1157,16 +1160,17 @@ export default function MapView({
             signal: fastController.signal,
             token
         });
-        const aiPromise = Api.searchPlacesAi(backendUrl, {
+        const aiPromise = aiAllowed ? Api.searchPlacesAi(backendUrl, {
             q: query,
             limit: 5,
             center: effectiveCenter,
             bounds: effectiveBounds,
-            signal: aiController.signal
-        });
+            signal: aiController.signal,
+            token
+        }) : null;
 
         aiPromise
-            .then((result) => {
+            ?.then((result) => {
                 if (requestId !== searchRequestIdRef.current) return;
                 resolvedRecommendations = Array.isArray(result?.recommendations)
                     ? result.recommendations.filter((recommendation) => recommendation?.place).slice(0, 3)
@@ -1277,6 +1281,25 @@ export default function MapView({
         }
     };
     refreshUserFilterRef.current = refreshUserFilter;
+
+    // 屏蔽 / 解除屏蔽筛选中的住民（住民地点列表的操作，网页与 iOS 原生共用）。屏蔽前确认，成功后列表改为“已屏蔽”，
+    // 再打开预填的举报表单；附近地点缓存作废，退出筛选后重新读取，TA 的地点不再出现
+    const setUserPlacesBlocked = async (blocked) => {
+        const current = userFilterRef.current;
+        if (!current || !token) return;
+        const { id, name } = current.user;
+        if (blocked && !(await confirm(t('map:userPlaces.blockConfirm', { name })))) return;
+        try {
+            await Api.setUserBlocked(backendUrl, token, id, blocked);
+        } catch (e) {
+            showTip(t('map:userPlaces.blockFailed', { message: e.message || e }));
+            return;
+        }
+        placeCacheRef.current.invalidate();
+        showTip(blocked ? t('map:userPlaces.blocked', { name }) : t('map:userPlaces.unblocked', { name }));
+        if (String(userFilterRef.current?.user.id) === String(id)) await refreshUserFilter();
+        if (blocked) onOpenFeedback?.(userReportPrefill({ username: name, id }));
+    };
 
     // 公开日记链接 ?diary=<公开 ID>&stop=<站点>：未登录也可阅读；一次性参数，处理后从地址中移除
     const [initialDiary, setInitialDiary] = useState(null);
@@ -1773,6 +1796,7 @@ export default function MapView({
                 onOpenUserPlaces={openUserPlaces}
                 onExitUserPlaces={() => exitUserFilter({ reload: true })}
                 onRetryUserPlaces={() => userFilterRef.current && openUserPlaces(userFilterRef.current.user)}
+                onSetUserPlacesBlocked={setUserPlacesBlocked}
                 onSelectUserPlace={handleSelectAlongRoutePlace}
                 openManagePanel={openManagePanel}
                 openCreateFromPoi={openCreateFromPoi}

@@ -57,6 +57,7 @@ import { useSkinRevision } from '../skins/useSkin';
 import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../skins/nativeSkin';
 import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText';
 import { placeReportPrefill } from '../feedback/feedbackTypes';
+import { AiTag } from '../components/primitives/AiLabel';
 import LegalLinks from '../auth/components/LegalLinks.jsx';
 import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
 import { t, tx } from '../i18n/index.js';
@@ -242,6 +243,7 @@ export default function MapUI(props) {
         onOpenUserPlaces,
         onExitUserPlaces,
         onRetryUserPlaces,
+        onSetUserPlacesBlocked,
         onSelectUserPlace,
         openManagePanel,
         openCreateFromPoi,
@@ -392,11 +394,12 @@ export default function MapUI(props) {
         setUserPlacesOpen(true);
         onOpenUserPlaces({ id: user.id, name: user.name });
     };
-    // 列表的一行（网页按钮与原生面板行共用 id）：地点（窄屏收起列表、让位给地点卡片）、重试，以及底部操作
-    // （userPlacesActions：目前是退出筛选，以后的屏蔽也从这里分发）
+    // 列表的一行（网页按钮与原生面板行共用 id）：地点（窄屏收起列表、让位给地点卡片）、重试，以及操作
+    // （userPlacesActions：屏蔽并举报 / 解除屏蔽、退出筛选）
     const runUserPlacesRow = (rowId) => {
         if (rowId === 'retry') { onRetryUserPlaces?.(); return; }
         if (rowId === 'exit') { setUserPlacesOpen(false); onExitUserPlaces?.(); return; }
+        if (rowId === 'block' || rowId === 'unblock') { onSetUserPlacesBlocked?.(rowId === 'block'); return; }
         const place = userPlaceFromRowId(userFilter, rowId);
         if (!place) return;
         if (layout.sheet) setUserPlacesOpen(false);
@@ -1424,6 +1427,8 @@ export default function MapUI(props) {
                         </div>
                     )}
                     <div style={{ marginTop: 8, color: 'var(--color-text-primary)', fontSize: 13, lineHeight: 1.55 }}>
+                        {/* 模型写的推荐语标注“AI 生成”；本地模板兜底的不标注 */}
+                        {recommendation.reason_source === 'deepseek' && <AiTag style={{ marginRight: 6 }} />}
                         {recommendation.reason}
                     </div>
                 </Exposure>
@@ -2985,11 +2990,11 @@ export default function MapUI(props) {
             >
                 {userFilter && (
                     <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                            <span style={{ flex: 1, minWidth: 0 }}>{userPlacesSummary(userFilter)}</span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 12px 8px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                            <span style={{ flex: '1 1 120px', minWidth: 0 }}>{userPlacesSummary(userFilter)}</span>
                             {userPlacesActions(userFilter).map((action) => (
                                 <Button key={action.id} type="button" onClick={() => runUserPlacesRow(action.id)}
-                                    style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--theme-primary)', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                    style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: action.tone === 'danger' ? 'var(--color-danger)' : 'var(--theme-primary)', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
                                     <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16 }}>{action.icon}</span>
                                     {action.title}
                                 </Button>

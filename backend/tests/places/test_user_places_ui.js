@@ -46,7 +46,7 @@ async function main() {
     vite = await createServer({ root: frontend, server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'warn' });
     const themeCss = (fs.readFileSync(path.join(frontend, 'index.html'), 'utf8').match(/:root(?:\[data-theme='dark'\])?\s*\{[^}]*\}/g) || []).join('\n');
     app.get('/__user_places_ui', async (req, res) => {
-        res.type('html').send(await vite.transformIndexHtml(req.url, `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts/material-symbols.css"><style>${themeCss}body{margin:0;font-family:system-ui,sans-serif}</style></head><body><div id="root"></div><script>window.__TEST_TOKEN=${JSON.stringify(token(ids.visitor))}</script><script type="module" src="/tests/integration/place-location-harness.jsx"></script></body></html>`));
+        res.type('html').send(await vite.transformIndexHtml(req.url, `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts/material-symbols.css"><style>${themeCss}body{margin:0;font-family:system-ui,sans-serif}</style></head><body><div id="root"></div><script>window.__TEST_TOKEN=${JSON.stringify(token(ids.visitor))};window.__TEST_FEEDBACK=[]</script><script type="module" src="/tests/integration/place-location-harness.jsx"></script></body></html>`));
     });
     app.use(vite.middlewares);
     server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
@@ -143,13 +143,46 @@ async function main() {
         await empty.getByRole('button', { name: '显示全部地点' }).click();
         await empty.waitFor({ state: 'hidden' });
 
+        // 屏蔽并举报：确认后列表只剩说明和解除屏蔽，举报表单带着这位住民预填；解除后地点回来。
+        // 再屏蔽一次后退出筛选：附近地点重新读取，TA 创建的地点（含别人改过的）不再出现
+        const blockedNote = 'TA 创建的地点、地点下 TA 的公开日记和同好名片不会显示给你';
+        const blockMaker = async () => {
+            await list.getByRole('button', { name: '屏蔽并举报' }).click();
+            await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
+            await list.getByText(blockedNote, { exact: false }).waitFor();
+        };
+        await page.evaluate(() => window.__TEST_MAPS.filter((m) => !m.destroyed).at(-1).setCenter([120, 30]));
+        await waitMarkers(['测试面馆', '牛肉面', '别人的店']);
+        await clickMarker('牛肉面');
+        await page.waitForTimeout(400);
+        await page.getByRole('button', { name: '查看 maker 创建的地点' }).click();
+        await list.getByText('共 3 个，最近创建的在前').waitFor();
+        await blockMaker();
+        assert.equal(await list.getByRole('listitem').count(), 0);
+        await waitMarkers([]);
+        const prefills = await page.evaluate(() => window.__TEST_FEEDBACK);
+        assert.equal(prefills.length, 1);
+        assert.equal(prefills[0].type, 'report');
+        assert.match(prefills[0].content, new RegExp(`maker[\\s\\S]*${ids.maker}`));
+        assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM UserBlock WHERE user_id = ? AND blocked_id = ?').get(ids.visitor, ids.maker).n, 1);
+        await snap('blocked');
+        await list.getByRole('button', { name: '解除屏蔽' }).click();
+        await list.getByText('共 3 个，最近创建的在前').waitFor();
+        assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM UserBlock').get().n, 0);
+        await blockMaker();
+        await list.getByRole('button', { name: '显示全部地点' }).click();
+        await list.waitFor({ state: 'hidden' });
+        await page.evaluate(() => window.__TEST_MAPS.filter((m) => !m.destroyed).at(-1).setCenter([120, 30]));
+        await waitMarkers(['别人的店']);
+        sql.prepare('DELETE FROM UserBlock').run();
+
         assert.deepEqual(errors, [], `${label}: no page errors`);
         await page.close();
     };
 
     await run({ width: 1280, height: 860, label: 'desktop' });
     await run({ width: 390, height: 844, label: 'mobile' });
-    console.log('user places UI tests passed: modifier link, filtered markers and list, card from list, chip reopen/exit, empty user, desktop and mobile.');
+    console.log('user places UI tests passed: modifier link, filtered markers and list, card from list, chip reopen/exit, empty user, block and report / unblock, desktop and mobile.');
 }
 
 main().catch((error) => {

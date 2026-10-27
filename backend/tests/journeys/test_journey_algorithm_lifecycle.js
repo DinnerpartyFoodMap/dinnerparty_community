@@ -83,7 +83,8 @@ async function main() {
     const reviewDocument={...document('待确认的生成结果'),stops:[{id:randomUUID(),name:'待选店',note:'',at:'',mood:'',expenses:[],media_ids:[],lng:null,lat:null,confirmed:false,visit_status:'unknown',candidates:[],suggested_id:null,needs_choice:true}]};
     fixture.result('reconstruct',{document:reviewDocument,questions:[],resolution:{status:'needs_input',questions:[]},algorithm_version:'test-v1'});
     const generated=await ai.reconstruct(user,{text:'一碗面',start_date:'2026-10-16',end_date:'2026-10-16',media_ids:[]});
-    assert.deepEqual(generated.document,reviewDocument,'validation must preserve the review metadata expected by the unchanged frontend');
+    // Only the AI-assisted label is added; everything the service returned is kept.
+    assert.deepEqual(generated.document,{...reviewDocument,ai_assisted:true},'validation must preserve the review metadata expected by the unchanged frontend');
     assert.equal(fixture.calls.filter(c=>c.operation==='reconstruct').at(-1).input.amap_storage_allowed,false,'the caller storage gate must reach the private service');
 
     const foreign = randomUUID();

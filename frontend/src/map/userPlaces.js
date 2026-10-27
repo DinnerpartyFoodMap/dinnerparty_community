@@ -1,6 +1,6 @@
 // 按住民筛选（地点卡片点“最近修改”的名字）：卡片上的住民、列表文案与操作、iOS 原生列表面板快照（纯函数，纳入 test:map）。
 // 筛选状态由 MapView 持有：{ user: { id, name }, status: 'loading'|'ready'|'error', places, total, relation, error }，
-// relation 来自 GET /users/:id/places（self：就是自己；blocked：为以后的屏蔽功能预留，目前恒为 false）。
+// relation 来自 GET /users/:id/places（self：就是自己；blocked：已屏蔽 TA，此时不列出地点；can_block：已登录且不是自己）。
 import { t } from '../i18n/index.js';
 import { isAvoidedPlace } from '../places/rating.js';
 
@@ -54,6 +54,7 @@ export function userPlacesMessage(filter) {
     if (!filter) return '';
     if (filter.status === 'loading') return t('map:userPlaces.loading');
     if (filter.status === 'error') return t('map:userPlaces.failed', { message: filter.error || '' });
+    if (filter.relation?.blocked) return t('map:userPlaces.blockedMessage', { name: filter.user.name });
     if (!filter.places?.length) return filter.relation?.self ? t('map:userPlaces.emptySelf') : t('map:userPlaces.empty');
     return '';
 }
@@ -62,6 +63,7 @@ export function userPlacesMessage(filter) {
 export function userPlacesChipText(filter) {
     if (!filter) return '';
     if (filter.status !== 'ready') return t('map:userPlaces.chipLoading', { name: filter.user.name });
+    if (filter.relation?.blocked) return t('map:userPlaces.chipBlocked', { name: filter.user.name });
     return filter.relation?.self
         ? t('map:userPlaces.chipSelf', { count: filter.total })
         : t('map:userPlaces.chip', { name: filter.user.name, count: filter.total });
@@ -90,14 +92,19 @@ export function userPlaceFromRowId(filter, rowId) {
 }
 
 /**
- * 列表底部的操作（网页按钮与原生面板行共用 id）。目前只有退出筛选；
- * 以后的“屏蔽 / 取消屏蔽”按 filter.relation（不是自己时）加在这里，网页与 iOS 原生同时出现。
+ * 列表的操作（网页按钮与原生面板行共用 id，网页与 iOS 原生同时出现）：
+ * 已登录、看的不是自己时，“屏蔽并举报”或“解除屏蔽”（按 filter.relation），以及退出筛选。
  */
 export function userPlacesActions(filter) {
     if (!filter) return [];
+    const relation = filter.status === 'ready' ? filter.relation : null;
+    const block = !relation?.can_block ? null : relation.blocked
+        ? { id: 'unblock', title: t('map:userPlaces.unblock'), symbol: 'person.crop.circle.badge.checkmark', icon: 'how_to_reg' }
+        : { id: 'block', title: t('map:userPlaces.block'), symbol: 'hand.raised', icon: 'block', tone: 'danger' };
     return [
+        block,
         { id: 'exit', title: t('map:userPlaces.exit'), symbol: 'xmark.circle', icon: 'filter_alt_off' }
-    ];
+    ].filter(Boolean);
 }
 
 /** iOS 原生列表面板（list：工具栏上方的玻璃面板，点地图或下滑关闭，筛选仍保留） */
@@ -110,7 +117,7 @@ export function userPlacesChromeSheet(filter) {
         size: 'list',
         message: message || undefined,
         messageTone: filter.status === 'loading' ? 'loading' : (filter.status === 'error' ? 'danger' : undefined),
-        // 操作在前：列表最多 200 行，退出筛选（以后的屏蔽）不沉到最底下
+        // 操作在前：列表最多 200 行，屏蔽和退出筛选不沉到最底下
         sections: [
             {
                 id: 'actions',

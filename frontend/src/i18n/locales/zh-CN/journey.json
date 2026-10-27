@@ -288,6 +288,7 @@
     "removeHint": "移除后图片仍在私人图片空间，可在日历的管理中删除。"
   },
   "review": {
+    "aiAssisted": "这份草稿由 AI 根据你的素材整理，标题、摘要和站点可能有误，请核对后再保存。公开后会标注“AI 辅助整理”。",
     "sync": {
       "saved": "草稿已同步",
       "saving": "正在同步…",
@@ -439,6 +440,7 @@
     "refreshCover": "更新首图预览",
     "coverAlt": "行程分享首图预览",
     "exportHint": "导出前请检查贴文、地点和首图。",
+    "aiExportNote": "这段贴文由 AI 生成；复制、保存或分享时会在末尾附上“（本文由 AI 辅助生成）”。",
     "copyFailed": "复制失败，请长按文字手动复制。",
     "postCopied": "贴文已复制",
     "copyPost": "复制贴文",
@@ -624,7 +626,8 @@
     "meta": "{{range}} · {{count}} 站",
     "viewMarker": "查看地图标记",
     "report": "举报",
-    "reportLabel": "举报日记{{title}}"
+    "reportLabel": "举报日记{{title}}",
+    "aiAssisted": "作者使用 AI 整理了这篇日记，标题和摘要可能由 AI 生成。"
   },
   "resolution": {
     "stale": "地点或顺序已变化，请重新选择候选。"

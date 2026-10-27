@@ -88,6 +88,7 @@ async function main(){
     assert.deepEqual(algorithm.calls.find(c=>c.operation==='reconstruct').input.images,[],'text-only generation sends no image bytes to the service');
     const generated=await call('GET',`/api/journeys/drafts/${ready.draft_id}`);
     const gdoc=generated.document;
+    assert.equal(gdoc.ai_assisted,true,'a model-organised draft is labelled AI-assisted');
     assert.equal(generated.compose_draft_id,composeId);assert.equal(gdoc.intended_visibility,'public');
     assert.deepEqual(gdoc.entry_media_ids,[dish,drink,extra],'every photo stays with the entry, including unassigned ones');
     assert.equal(gdoc.source_input.text,text);assert.equal(gdoc.source_input.center.name,'大学城');
@@ -137,6 +138,7 @@ async function main(){
     const pub=await call('GET',`/api/public/journeys/${committed.public_id}`,undefined,null);
     const pubText=JSON.stringify(pub);
     assert.equal(pub.title,'大学城的一天');assert.equal(pub.stops.length,2);assert.equal(pub.stops[0].excerpt[0].kind,'quote');
+    assert.equal(pub.ai_assisted,true,'the AI-assisted label survives review edits into the public diary');
     for(const secret of ['私人备注','大学城"','source_input','expenses','想去的甜品店','"center"'])assert.ok(!pubText.includes(secret),`public payload leaks ${secret}`);
     assert.ok(!pub.media_ids.includes(extra),'unselected entry photos stay private');
     const media=async(id,status)=>{const r=await nativeFetch(`${base}/api/public/journeys/${committed.public_id}/media/${id}`);assert.equal(r.status,status);};
@@ -144,6 +146,12 @@ async function main(){
     let diaries=await call('GET',`/places/${noodle}/diaries`,undefined,null);
     assert.equal(diaries.total,1);assert.equal(diaries.items[0].public_id,committed.public_id);assert.equal(diaries.items[0].stops[0].excerpt[0].text,'中午在阿明牛肉面吃了牛肉面，汤比较清淡。');
     assert.equal((await call('GET',`/places/${teaShop}/diaries`,undefined,null)).total,1);
+    // A viewer who blocked the author no longer sees the diary under the place; everyone else still does.
+    sql.prepare('INSERT INTO UserBlock(user_id,blocked_id) VALUES(?,?)').run(b,a);
+    assert.equal((await call('GET',`/places/${noodle}/diaries`,undefined,b)).total,0);
+    assert.equal((await call('GET',`/places/${noodle}/diaries`,undefined,a)).total,1);
+    sql.prepare('DELETE FROM UserBlock WHERE user_id=? AND blocked_id=?').run(b,a);
+    assert.equal((await call('GET',`/places/${noodle}/diaries`,undefined,b)).total,1);
     await call('DELETE',`/api/journeys/media/${dish}`,undefined,a,409);
 
     // --- Duplicate protection for manual points; acknowledged duplicates create once. ---
@@ -159,6 +167,8 @@ async function main(){
     assert.deepEqual([preview.counts.create,preview.counts.conflict],[1,0],'two visits to one new shop create one marker');
     const second2=await call('POST',`/api/journeys/drafts/${draft2.id}/commit`,{draft_revision:draft2.revision,visibility:'public',preview_hash:preview.preview_hash,request_id:randomUUID()});
     assert.equal(second2.created_place_ids.length,1);
+    const handWritten=await call('GET',`/api/public/journeys/${second2.public_id}`,undefined,null);
+    assert.equal(handWritten.ai_assisted,false,'a hand-written diary carries no AI label');
     const eastShop=second2.created_place_ids[0];
     assert.deepEqual(notified(eastShop),['20001','20002']);assert.equal(notifications(),4,'two stops of one new shop notify once');
     diaries=await call('GET',`/places/${eastShop}/diaries`,undefined,null);

@@ -158,6 +158,7 @@ router.post('/:id/share',run(async(req,res)=>{
         text=string(out.text,4000);if(!text) fail('模型未返回贴文',502);generated=true;
     }
     // Do not silently truncate a generated sentence. Return range compliance for editing.
+    // generated: the frontend labels the post "AI 生成" and appends the AI label on export.
     const length=Array.from(text).length;
     res.json({text,length,min,max,in_range:length>=min&&length<=max,generated,revision:journey.revision,stop_ids:stops.map(s=>s.id),
         cover:{title:journey.document.title,stops:stops.map(s=>({name:s.name,lng:s.lng,lat:s.lat,source:s.source})),caption:`${stops.length} 站 · 我的生活片段`}});
