@@ -135,7 +135,7 @@ for (const version of [0, 1]) {
     const multi = captureClusterFrame({ container: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 390, height: 844 }) }, entries: [a], viewport: { width: 390, height: 844 }, getStyle, occluders: [{ left: 20, top: 30, width: 20, height: 65 }, { left: 30, top: 50, width: 35, height: 25 }] });
     assert.deepEqual(multi.markers[0].visibleRects, [{ x: 20, y: 0, width: 25, height: 20 }, { x: 20, y: 45, width: 25, height: 20 }], 'overlapping occluders subtract their union without filling gaps back in');
     const covered = captureClusterFrame({ container: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 390, height: 844 }) }, entries: [a], viewport: { width: 390, height: 844 }, getStyle, occluders: [{ left: 0, top: 0, width: 390, height: 844 }] });
-    assert.deepEqual(covered.markers[0].visibleRects, [], 'a fully covered glass marker contributes no visible fragment');
+    assert.deepEqual(covered.markers, [], 'a fully covered marker is removed from the native glass render tree');
     assert.equal(covered.parts.length, 1, 'a fully covered marker does not reveal a PNG underneath');
     const hidden = captureClusterFrame({ visible: false, entries: [a], viewport: { width: 390, height: 844 }, getStyle });
     assert.equal(hidden.markers.length, 0);

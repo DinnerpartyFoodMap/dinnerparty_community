@@ -16,6 +16,8 @@ const requests = [];
 const searchResults = Array.from({ length: 12 }, (_, index) => ({ id: index + 1, name: '搜索结果面馆 ' + (index + 1), category: '面食', description: '供搜索结果交叠布局验证', longitude: 120 + index / 10000, latitude: 30, rating_count: 2, rating_average: 3.5 }));
 const focusPlace = { id: 99, name: '列表定位回归面馆', category: '面食', description: '首次点击就应正确定位', longitude: 120.025, latitude: 30.02, rating_count: 0, rating_average: null };
 let listHasPlace = false;
+let longList = false;
+const longListPlaces = Array.from({ length: 20 }, (_, index) => ({ ...focusPlace, id: 100 + index, name: '安全区滚动测试面馆 ' + (index + 1) }));
 const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts/material-symbols.css"><style>${theme}body{margin:0;font-family:system-ui,sans-serif}</style></head><body><div id="root"></div><script>
 window.__WEB_LAYOUT_ERRORS=[]; addEventListener('error', event => window.__WEB_LAYOUT_ERRORS.push(event.message));
 addEventListener('unhandledrejection', event => window.__WEB_LAYOUT_ERRORS.push(String(event.reason)));
@@ -32,7 +34,7 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
             '/places/nearby': [], '/api/favorites': [], '/categories': ['面食'],
             '/api/community/consent': { feedback: false, version: 1 },
             '/api/places/search/fast': searchResults,
-            '/places/list': { items: listHasPlace ? [focusPlace] : [], total: listHasPlace ? 1 : 0, personalized: false },
+            '/places/list': { items: longList ? longListPlaces : listHasPlace ? [focusPlace] : [], total: longList ? 20 : listHasPlace ? 1 : 0, personalized: false },
             '/places/99': focusPlace,
             '/api/ratings/places/99': { summary: { count: 0, average: null }, mine: null }
         };
@@ -170,6 +172,53 @@ try {
     const restoredCenter = await waitForRequest(query => query.lat === '30.000000' && query.lng === '120.000000');
     assert.deepEqual(restoredCenter.query, {lat:'30.000000',lng:'120.000000',radiusKm:'0.5',offset:'0',limit:'20'}, 'restoring the map center also restores its API coordinates');
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'list center controls have no browser errors');
+
+    // iOS paints the map behind the status bar; list mode must replace that surface too,
+    // while its heading remains below the safe area. Ordinary mobile/desktop retain their offsets.
+    for (const fixture of [
+        { mode: 'map&iosSafeArea=1', width: 390, height: 844, safeTop: 59, titleTop: 79 },
+        { mode: 'map', width: 390, height: 844, safeTop: 0, titleTop: 20 },
+        { mode: 'map', width: 1280, height: 900, safeTop: 0, titleTop: 80 }
+    ]) {
+        longList = fixture.safeTop > 0;
+        await navigate(fixture.mode, fixture.width, fixture.height);
+        await waitFor(`!!window.__WEB_LAYOUT_MAP && !!document.querySelector('[data-tour="listView"]:not([disabled])')`);
+        const mapTop = await evaluate(`document.querySelector('.fm-map-canvas').getBoundingClientRect().top`);
+        assert.equal(mapTop, 0, 'the underlying map really extends to the viewport top');
+        await click('[data-tour="listView"]');
+        await waitFor(`!!document.querySelector('.fm-map-list__title')`);
+        const surface = await evaluate(`(() => {
+            const list = document.querySelector('.fm-map-list'), rect = list.getBoundingClientRect();
+            const hit = document.elementFromPoint(innerWidth / 2, ${fixture.safeTop ? 20 : 1});
+            return { top: rect.top, bottom: rect.bottom, titleTop: document.querySelector('.fm-map-list__title').getBoundingClientRect().top,
+                background: getComputedStyle(list).backgroundColor, listOnTop: !!hit?.closest('.fm-map-list') };
+        })()`);
+        assert.equal(surface.top, 0, `${fixture.mode}: list background covers the full top safe area: ${JSON.stringify(surface)}`);
+        assert.equal(surface.bottom, fixture.height, 'list background still reaches the bottom');
+        assert.equal(surface.titleTop, fixture.titleTop, 'list content retains its safe inset and layout spacing');
+        assert.notEqual(surface.background, 'rgba(0, 0, 0, 0)', 'list surface is opaque');
+        if (fixture.safeTop) assert.ok(surface.listOnTop, 'the list surface covers the map in the iOS status bar area');
+        if (fixture.safeTop) {
+            await waitFor(`document.querySelectorAll('.fm-place-card').length === 20`);
+            await screenshot('ios-list-top-safe-area');
+            const scrolled = await evaluate(`(() => {
+                const scroll = document.querySelector('.fm-map-list__scroll');
+                scroll.scrollTop = 400;
+                const hit = document.elementFromPoint(innerWidth / 2, 20);
+                return { scrollTop: scroll.scrollTop, contentTop: scroll.getBoundingClientRect().top,
+                    safeAreaIsBackground: hit?.matches('.fm-map-list') };
+            })()`);
+            assert.ok(scrolled.scrollTop > 0, 'the actual populated list scrolls');
+            assert.equal(scrolled.contentTop, fixture.safeTop, 'scroll viewport stays below the status bar');
+            assert.ok(scrolled.safeAreaIsBackground, 'scrolling cannot paint rows over the safe-area background');
+            await screenshot('ios-list-scrolled-safe-area');
+        }
+        await click('[data-tour="listView"]');
+        await waitFor(`!document.querySelector('.fm-map-list')`);
+        assert.equal(await evaluate(`document.querySelector('.fm-map-canvas').getBoundingClientRect().top`), 0, 'returning to the map retains its edge-to-edge surface');
+        assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'safe-area list toggle has no browser errors');
+    }
+    longList = false;
 
     await navigate('radar', 500, 500);
     await waitFor(`document.querySelectorAll('svg text').length===6`);

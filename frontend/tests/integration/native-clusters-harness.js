@@ -2,6 +2,9 @@ import { MarkerLayerController } from '../../src/map/MarkerLayerController.js';
 import { registerOverlay } from '../../src/components/overlay/overlayStack.js';
 import { getMotionPolicy, setMotionPreferences, reportSustainedJank } from '../../src/motion/policy.js';
 import { NATIVE_CLUSTER_PROTOCOL } from '../../src/platform/nativeClusterMarkers.js';
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import MapListMode from '../../src/map/MapListMode.jsx';
 
 // Real controller, DOM, Supercluster and Web Animations; replace only AMap and the native WebKit boundary.
 export async function runNativeClusterBrowserTests() {
@@ -185,13 +188,48 @@ export async function runNativeClusterBrowserTests() {
         await until(() => nativeMarkers.length === 1, 'overlay removed');
         check(true, 'web overlay return has no PNG or duplicate visual');
 
-        const cover = document.createElement('div');
-        cover.style.cssText = 'position:absolute;inset:0;background:white;z-index:1000';
-        container.parentElement.style.position = 'relative'; container.parentElement.append(cover);
-        await until(() => nativeMarkers.length === 1 && area(nativeMarkers[0]) === 0, 'list-like cover');
-        cover.remove();
-        await until(() => nativeMarkers.length === 1 && area(nativeMarkers[0]) > 0, 'list-like cover removed');
-        check(!!container.querySelector('[data-native-glass]'), 'non-overlay DOM cover masks glass without reverting to PNG');
+        // Mount the real list surface and exercise its open/close state while an old map frame is in flight.
+        const mapBounds = container.getBoundingClientRect();
+        const listHost = document.createElement('div');
+        listHost.style.cssText = `position:absolute;left:${mapBounds.left}px;top:${mapBounds.top}px;width:${mapBounds.width}px;height:${mapBounds.height}px;pointer-events:none;--color-bg-base:white`;
+        document.body.append(listHost);
+        const listRoot = createRoot(listHost);
+        function ListToggle() {
+            const [open, setOpen] = useState(false);
+            return React.createElement(React.Fragment, null,
+                React.createElement('button', { 'data-test-list-toggle': '', onClick: () => setOpen(value => !value), style: { position: 'fixed', right: 0, bottom: 0, pointerEvents: 'auto' } }, 'List / map'),
+                open && React.createElement(MapListMode, { backendUrl: '/__native-cluster-api', getMapCenter: () => null }));
+        }
+        try {
+            listRoot.render(React.createElement(ListToggle));
+            await until(() => listHost.querySelector('[data-test-list-toggle]'), 'list toggle mounted');
+            let releaseBeforeList;
+            gateNextFrame = new Promise(resolve => { releaseBeforeList = resolve; });
+            const beforeList = frames.length;
+            controller.nativeClusters.invalidate();
+            await until(() => frames.length > beforeList, 'old map frame pending before list');
+            listHost.querySelector('[data-test-list-toggle]').click();
+            await until(() => listHost.querySelector('.fm-map-list'), 'actual list mounted');
+            releaseBeforeList();
+            await until(() => inFlight === 0 && frames.length > beforeList + 1, 'list frame applied after old map frame');
+            check(nativeMarkers.length === 0, 'opening the real list removes all native glass instances after a pending map frame');
+            check(!!container.querySelector('[data-native-glass]'), 'the real list retains PNG ownership while native glass is absent');
+
+            let releaseListReturn;
+            gateNextFrame = new Promise(resolve => { releaseListReturn = resolve; });
+            const beforeReturn = frames.length;
+            listHost.querySelector('[data-test-list-toggle]').click();
+            await until(() => !listHost.querySelector('.fm-map-list') && frames.length > beforeReturn, 'list return frame pending');
+            check(nativeMarkers.length === 0 && !!container.querySelector('[data-native-glass]'), 'a delayed list return keeps glass absent and never flashes the PNG');
+            releaseListReturn();
+            await until(() => nativeMarkers.length === 1 && inFlight === 0, 'list return glass restored');
+            check(nativeMarkers[0].text === '12', 'closing the real list restores the existing cluster and count');
+
+            listHost.querySelector('[data-test-list-toggle]').click();
+            await until(() => !!listHost.querySelector('.fm-map-list') && nativeMarkers.length === 0, 'list reopened');
+            check(!!container.querySelector('[data-native-glass]'), 'reopening the list leaves no native remnant and preserves material ownership');
+        } finally { listRoot.unmount(); listHost.remove(); }
+        await until(() => nativeMarkers.length === 1, 'list regression surface removed');
 
         setMotionPreferences({ nativeGlass: false });
         check(nativeMarkers.length === 1, 'cluster material is independent from the glass-button preference');

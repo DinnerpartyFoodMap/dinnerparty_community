@@ -98,7 +98,7 @@ struct MapChromeSheet: Identifiable, Equatable {
     var message: String?
     /// "loading" / "danger" / nil
     var messageTone: String?
-    /// "fit"：菜单 / 随机美食，"list"：列表（都是工具栏上方独立淡入淡出的玻璃面板，超出时滚动）；
+    /// "fit"：菜单 / 随机美食，"list"：列表（共用右侧按钮的伸缩玻璃外壳，超出时滚动）；
     /// "card"：地点卡片，两段停靠（摘要 / 全屏详情），摘要高度时地图仍可拖动、点选
     var style: String
     /// 卡片左上角的圆钮（分享）

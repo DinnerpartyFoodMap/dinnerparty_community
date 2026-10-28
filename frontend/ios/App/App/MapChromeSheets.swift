@@ -2,7 +2,7 @@ import UIKit
 import SwiftUI
 
 /// 地点卡片的 UIKit 呈现（代替 SwiftUI .sheet）。住民菜单、我的收藏、随机美食不走这里，
-/// 而是由 MapChromeView 在工具栏上方独立画成玻璃面板（MapChromeMenuPanel），与工具栏同一种 Liquid Glass。
+/// 而是由 MapChromeView 在工具栏上方用共享玻璃外壳承载（MapChromeMorphingPanel），与工具栏同一种 Liquid Glass。
 /// SwiftUI 的 .sheet 不知道宿主已经呈现了别的界面：例如分享时插件先弹出系统分享面板，
 /// 随后网页的分享浮层关闭、地点卡片恢复，.sheet 会把分享面板顶掉，自己又因宿主“正在呈现”而弹出失败，
 /// 状态卡在“已呈现”，之后点其他地点也不再出现卡片。这里自己持有面板控制器，按期望状态对账：
@@ -205,7 +205,7 @@ struct MapChromeSheetRoot: View {
     }
 }
 
-/// 住民菜单 / 我的收藏 / 随机美食：独立于工具栏玻璃容器的面板，浮在工具栏上方。
+/// 住民菜单 / 我的收藏 / 随机美食的正文。玻璃外壳由 MapChromeMorphingPanel 持有并缩回右侧按钮。
 /// 不再用 UIKit 系统面板：iOS 26 半屏面板的系统玻璃比工具栏的 Glass.regular 更厚、更亮，两者看起来不一致。
 /// 交互与系统面板一致：右上角关闭、拖住顶部下滑关闭、点地图关闭（PassThroughHostView）；内容超出可用高度时滚动。
 @available(iOS 26.0, *)
@@ -215,9 +215,11 @@ struct MapChromeMenuPanel: View {
     /// 面板可用的最大高度（工具栏上方的空间）
     let maxHeight: CGFloat
     @State private var contentHeight: CGFloat = 0
-    /// 拖住顶部下滑的位移；松手未达到关闭距离时回弹
+    /// 拖动整个共享外壳，避免文字与玻璃分离。
+    @Binding var dragOffset: CGFloat
+    /// 系统中断手势时 onEnded 不一定执行，GestureState 仍会自动复位并通知外壳。
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.36, dampingFraction: 0.86)))
-    private var dragOffset: CGFloat = 0
+    private var gestureOffset: CGFloat = 0
 
     static let cornerRadius: CGFloat = 32
     static let grabberHeight: CGFloat = 14
@@ -227,7 +229,6 @@ struct MapChromeMenuPanel: View {
     private var groupFill: Color { Color(uiColor: .tertiarySystemFill) }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
         let bodyLimit = max(120, maxHeight - Self.grabberHeight - 64)
         let scrolls = contentHeight > bodyLimit
         VStack(spacing: 0) {
@@ -265,21 +266,15 @@ struct MapChromeMenuPanel: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .glassEffect(Glass.regular, in: shape)
-        .glassEffectTransition(.identity)
-        .offset(y: dragOffset)
-        .onGeometryChange(for: CGRect.self, of: { proxy in
-            proxy.frame(in: .named(MapChromeView.coordinateSpaceName))
-        }, action: { rect in
-            model.setFrame("panel", rect)
-        })
+        .onChange(of: gestureOffset) { _, next in dragOffset = next }
+        .onDisappear { dragOffset = 0 }
         .accessibilityElement(children: .contain)
         .accessibilityAction(.escape) { model.dismissSheet() }
     }
 
     private var dismissGesture: some Gesture {
         DragGesture(minimumDistance: 6, coordinateSpace: .global)
-            .updating($dragOffset) { value, state, _ in
+            .updating($gestureOffset) { value, state, _ in
                 // 只跟随向下拖；向上拖带阻尼
                 let y = value.translation.height
                 state = y >= 0 ? y : y * 0.15

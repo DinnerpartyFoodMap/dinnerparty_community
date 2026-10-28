@@ -16,6 +16,9 @@ catch(error) { document.getElementById('result').textContent = JSON.stringify({p
 </script></body></html>`;
 const server = await createServer({ root, configFile: resolve(root, 'vite.config.js'), server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'native-cluster-smoke', configureServer(server) {
     server.middlewares.use((req, res, next) => {
+        if (new URL(req.url, 'http://localhost').pathname === '/__native-cluster-api/places/list') {
+            res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ items: [], total: 0 })); return;
+        }
         if (req.url !== '/__native-cluster-smoke') return next();
         res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html);
     });

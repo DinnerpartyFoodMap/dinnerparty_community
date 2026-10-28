@@ -71,7 +71,9 @@ export function captureClusterFrame({ container, entries = [], ghosts = [], view
             const rgba = countStyle.color?.match(/^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/);
             if (rgba) marker.color = [Number(rgba[1]) / 255, Number(rgba[2]) / 255, Number(rgba[3]) / 255, rgba[4] === undefined ? 1 : Number(rgba[4])];
         }
-        frame.markers.push(marker);
+        // 完全被列表等前景盖住时不创建原生玻璃实例；空 mask 不能保证系统材质不残留。
+        // parts 仍保留所有权，返回地图时不会先闪回 PNG。
+        if (marker.visibleRects.length) frame.markers.push(marker);
         frame.parts.push({ id: entry.nativeGlassId, glyph });
     }
     return frame;

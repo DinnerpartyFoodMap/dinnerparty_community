@@ -6,7 +6,7 @@ import { t } from '../i18n/index.js';
 // 指引内容有大的变化（例如新增主要按钮）时加一，看过旧版的人会再看到一次。
 // 2：iOS 原生工具栏的指引改为指出真实按钮、演示并练习上滑展开更多功能
 // 3：新增地图筛选与列表 / 地图切换按钮；iOS 原生工具栏的随机美食与日记互换位置
-// （之后缩成三步：看过旧版的人已经认识这些按钮，不再加一）
+// （之后精简步骤、恢复 iOS 的更多功能练习：看过旧版的人已经认识这些按钮，不再加一）
 export const ONBOARDING_VERSION = 3;
 export const ONBOARDING_KEY = 'foodmap.onboarding';
 let seenThisSession = false;
@@ -39,6 +39,7 @@ export function rememberOnboardingSeen() {
 
 /**
  * 指引只讲最常用的一条路：找店（搜索 / 定位）→ 打开店卡 → 导航 / 收藏。
+ * iOS 在收藏前补充打开更多功能：原生端练习上滑，网页回退端指出“更多”按钮。
  * 筛选、列表、顺路吃等其他功能不在这里挨个介绍，第一次用到时提示一句（featureIntro.js）。
  * target 是 data-tour 的取值（各布局都有搜索与收藏按钮）；“打开店卡”没有目标，居中显示。
  * iOS 原生玻璃工具栏（variant 'native'）网页指不到原生按钮：步骤带 native（{ target, drawer }，见 nativeMapChrome.js 的 sanitizeTour），
@@ -47,26 +48,35 @@ export function rememberOnboardingSeen() {
 const NATIVE_TOUR = {
     search: { target: 'search', drawer: false },
     card: { target: null, drawer: false },
+    more: { target: 'drawer', drawer: false },
     favorites: { target: 'favorites', drawer: false }
 };
 
 export function buildOnboardingSteps({ variant = 'desktop' } = {}) {
     const native = variant === 'native';
+    const ios = native || variant === 'ios';
     const nativeWhere = {
         search: t('map:onboarding.where.native.search'),
+        more: t('map:onboarding.where.native.more'),
         favorites: t('map:onboarding.where.native.favorites')
     };
     const step = (id, icon, title, body, target) => {
         const item = { id, icon, title, body, target: native ? null : target };
         if (native) {
             item.native = NATIVE_TOUR[id];
-            if (nativeWhere[id]) item.where = { icon: 'location_on', text: nativeWhere[id] };
+            if (nativeWhere[id]) item.where = { icon: id === 'more' ? 'swipe_up' : 'location_on', text: nativeWhere[id] };
+            if (id === 'more') {
+                item.practice = 'drawer';
+                item.hint = t('map:onboarding.more.practice');
+            }
         }
         return item;
     };
     return [
         step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body'), 'search'),
         step('card', 'storefront', t('map:onboarding.card.title'), t('map:onboarding.card.body'), null),
+        // 上滑成功后复用 MapOnboarding 的自动换步，保留收藏作为下一步。
+        ...(ios ? [step('more', native ? 'swipe_up' : 'more_horiz', t('map:onboarding.more.title'), native ? t('map:onboarding.more.bodyNative') : t('map:onboarding.more.bodyIos'), 'more')] : []),
         step('favorites', 'directions', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body'), 'favorites')
     ];
 }

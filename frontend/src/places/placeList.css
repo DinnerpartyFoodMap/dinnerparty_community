@@ -192,6 +192,9 @@
 }
 
 /* 地图的列表模式（map/MapListMode.jsx） */
+:root[data-platform='ios'] .fm-map-list {
+    --map-list-safe-top: var(--safe-top, 0px);
+}
 .fm-map-list__title {
     margin: 4px 0 12px;
     font-size: 20px;

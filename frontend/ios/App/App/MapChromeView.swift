@@ -54,12 +54,12 @@ final class MapChromeHostingController<Content: View>: UIHostingController<Conte
 
 /// iOS 26 地图浮动按钮组与底部工具栏（系统 Liquid Glass）。
 /// - 工具栏是一块整体玻璃（按钮与头像都在里面，内部不再叠加玻璃）；顶部拖动条上滑展开“更多功能”，下滑或点地图收起。
-/// - 浮动按钮共用一块竖向玻璃，打开独立面板时缩小隐去，关闭后恢复。
+/// - 右侧浮动按钮与菜单共用一块常驻玻璃，打开时放大成面板，关闭时缩回按钮组。
 /// - 点“搜索”后工具栏形变为输入框：搜索按钮的高亮拉长成输入框底色。
 ///   输入时右侧头像位置变为关闭搜索按钮；收起键盘后头像回来，左侧分出一个返回圆钮用于退出搜索。
 /// - 按压反馈、形变与布局留在原生线程；网页只下发按钮快照并接收动作与输入事件。
 /// - 控件位置由始终参与布局的透明占位决定：即使控件尚未显示，网页也能先拿到占用区域完成握手。
-/// - 住民菜单、我的收藏、随机美食是工具栏上方独立淡入淡出的玻璃面板（MapChromeMenuPanel）；
+/// - 住民菜单、我的收藏、随机美食只替换共享玻璃内的内容，不创建第二块转场玻璃；
 ///   地点卡片仍由 MapChromeSheetPresenter 以 UIKit 系统面板呈现，见 MapChromeSheets.swift。
 @available(iOS 26.0, *)
 struct MapChromeView: View {
@@ -76,6 +76,7 @@ struct MapChromeView: View {
     @State private var drawerContentHeight: CGFloat = 0
     /// 工具栏占位的顶边（根坐标系）：菜单面板的高度上限由它决定
     @State private var toolbarTop: CGFloat = 0
+    @State private var toolbarWidth: CGFloat = 0
     /// 操作指引“更多功能”一步：工具栏自动露出的一截更多功能（示意上滑），与手指示意同一节拍
     @State private var tourPeek: CGFloat = 0
     @State private var tourHintCycle = 0
@@ -127,8 +128,8 @@ struct MapChromeView: View {
         let panel = showing ? model.presentedPanel : nil
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            // 融合距离小于控件间距：静止时各自独立，返回圆钮从胶囊分离的过程中呈液滴状断开
-            GlassEffectContainer(spacing: 8) {
+            // 菜单与工具栏分别合成：菜单只调整同一块玻璃的外框，不让系统猜测匹配对象。
+            Group {
                 VStack(alignment: .trailing, spacing: model.floatingGap) {
                     if !model.floatingItems.isEmpty {
                         // v12：列表 / 地图切换、筛选与定位共用一个竖向圆角矩形（只有一个按钮时就是圆形）。
@@ -144,18 +145,22 @@ struct MapChromeView: View {
                                     })
                             }
                         }
-                        .overlay {
+                        .overlay(alignment: .bottomTrailing) {
                             // 搜索展开时让位给网页搜索结果
-                            if showing && !searching && panel == nil {
-                                VStack(spacing: 0) {
-                                    ForEach(model.floatingItems) { item in
-                                        floatingButton(item)
+                            if showing && !searching {
+                                GlassEffectContainer(spacing: 0) {
+                                    MapChromeMorphingPanel(model: model, panel: panel, width: toolbarWidth, maxHeight: panelMaxHeight) {
+                                        VStack(spacing: 0) {
+                                            ForEach(model.floatingItems) { item in
+                                                floatingButton(item)
+                                            }
+                                        }
                                     }
+                                    // 新会话不能使用旧账号的退场内容。
+                                    .id(model.sessionId)
                                 }
-                                .glassEffect(Glass.regular.interactive(), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
-                                // 不参与工具栏或弹窗的玻璃匹配，整组只缩小并淡出。
-                                .glassEffectTransition(.identity)
-                                .transition(.scale(scale: reduceMotion ? 1 : 0.82, anchor: .bottom).combined(with: .opacity))
+                                // 离页、搜索或网页浮层接管时直接移除材质，不留下正在淡出的玻璃。
+                                .transition(.identity)
                             }
                         }
                         // 上滑更多功能时随抽屉顶边一起上移，始终停在抽屉上方。
@@ -172,6 +177,7 @@ struct MapChromeView: View {
                         }, action: { rect in
                             model.setFrame("toolbar", rect)
                             toolbarTop = rect.minY
+                            toolbarWidth = rect.width
                         })
                         .background(alignment: .bottom) {
                             if swipeHinting {
@@ -187,10 +193,13 @@ struct MapChromeView: View {
                         }
                         .overlay(alignment: .bottom) {
                             if showing && !model.toolbarItems.isEmpty {
-                                if searching {
-                                    searchBar(showBack: !editing, editing: editing)
-                                } else {
-                                    dock(revealed: revealed)
+                                // 搜索与工具栏仍在自己的容器内融合、分离。
+                                GlassEffectContainer(spacing: 8) {
+                                    if searching {
+                                        searchBar(showBack: !editing, editing: editing)
+                                    } else {
+                                        dock(revealed: revealed)
+                                    }
                                 }
                             }
                         }
@@ -200,19 +209,6 @@ struct MapChromeView: View {
                             }
                         }
                 }
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if let panel {
-                // 独立于工具栏的 GlassEffectContainer，防止系统把浮动按钮匹配为放大的弹窗。
-                GlassEffectContainer(spacing: 0) {
-                    MapChromeMenuPanel(model: model, sheet: panel, maxHeight: panelMaxHeight)
-                }
-                .id(panel.id)
-                .frame(maxWidth: 624)
-                .padding(.bottom, Self.dockHeight + model.floatingGap)
-                .transition(.opacity)
-                .zIndex(1)
             }
         }
         .padding(.horizontal, 12)
@@ -230,7 +226,6 @@ struct MapChromeView: View {
         .animation(searchAnimation, value: editing)
         .animation(drawerAnimation, value: model.drawerExpanded)
         .animation(drawerAnimation, value: model.tour)
-        .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.2), value: panel?.id)
         .task(id: swipeHinting && !reduceMotion) {
             await playSwipeHint()
         }
@@ -817,6 +812,106 @@ struct MapChromeView: View {
         if item.tone == "danger" { return .red }
         if item.selected || item.tone == "accent" { return accent }
         return .primary
+    }
+}
+
+/// 菜单与右侧按钮共用同一块玻璃外壳。只改变它的尺寸与圆角，避免系统玻璃匹配留下小胶囊残影。
+/// 内容始终按面板最终宽度排版，再由外壳裁剪；加载中与列表更新不会重建外壳。
+@available(iOS 26.0, *)
+private struct MapChromeMorphingPanel<Buttons: View>: View {
+    @ObservedObject var model: MapChromeModel
+    let panel: MapChromeSheet?
+    let width: CGFloat
+    let maxHeight: CGFloat
+    let buttons: Buttons
+    @State private var expanded = false
+    @State private var closingPanel: MapChromeSheet?
+    @State private var panelHeight: CGFloat = 0
+    @State private var dragOffset: CGFloat = 0
+    @State private var revision = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(model: MapChromeModel, panel: MapChromeSheet?, width: CGFloat, maxHeight: CGFloat,
+         @ViewBuilder buttons: () -> Buttons) {
+        self.model = model
+        self.panel = panel
+        self.width = width
+        self.maxHeight = maxHeight
+        self.buttons = buttons()
+    }
+
+    private var animation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88)
+    }
+
+    var body: some View {
+        let content = panel ?? closingPanel
+        let panelWidth = max(50, width)
+        let buttonHeight = CGFloat(model.floatingItems.count) * 50
+        let height = expanded && panelHeight > 0 ? panelHeight : buttonHeight
+        let shape = RoundedRectangle(cornerRadius: expanded ? MapChromeMenuPanel.cornerRadius : 25, style: .continuous)
+        Color.clear
+            .frame(width: expanded ? panelWidth : 50, height: height)
+            .overlay(alignment: .bottomTrailing) {
+                buttons
+                    .frame(width: 50, height: buttonHeight)
+                    .opacity(expanded ? 0 : 1)
+                    .allowsHitTesting(panel == nil && !expanded)
+                    .accessibilityHidden(panel != nil || expanded)
+                    .animation(.easeOut(duration: 0.12), value: expanded)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let content {
+                    MapChromeMenuPanel(model: model, sheet: content, maxHeight: maxHeight, dragOffset: $dragOffset)
+                        // 只重建面板正文，外壳始终保持同一身份。
+                        .id(content.id)
+                        .frame(width: panelWidth)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self, of: { proxy in proxy.size.height }, action: { height in
+                            guard height > 0, abs(height - panelHeight) >= 1 else { return }
+                            withAnimation(animation) { panelHeight = height }
+                        })
+                        .opacity(expanded ? 1 : 0)
+                        .allowsHitTesting(panel != nil && expanded)
+                        .accessibilityHidden(panel == nil || !expanded)
+                        .animation(.easeOut(duration: 0.12), value: expanded)
+                }
+            }
+            .clipShape(shape)
+            .glassEffect(expanded ? Glass.regular : Glass.regular.interactive(), in: shape)
+            .glassEffectTransition(.identity)
+            .offset(y: dragOffset)
+            .onGeometryChange(for: CGRect.self, of: { proxy in
+                proxy.frame(in: .named(MapChromeView.coordinateSpaceName))
+            }, action: { rect in
+                if panel != nil { model.setFrame("panel", rect) }
+            })
+            .onAppear { update(panel) }
+            .onChange(of: panel) { _, next in update(next) }
+    }
+
+    private func update(_ next: MapChromeSheet?) {
+        revision += 1
+        let current = revision
+        if let next {
+            if closingPanel?.id != next.id {
+                // 面板之间切换时保留外壳当前高度，等新正文量好再平滑调整。
+                if !expanded { panelHeight = 0 }
+                dragOffset = 0
+            }
+            closingPanel = next
+            withAnimation(animation) { expanded = true }
+        } else {
+            withAnimation(animation, completionCriteria: .logicallyComplete) {
+                expanded = false
+                dragOffset = 0
+            } completion: {
+                // 快速重开或换面板后，旧收起动画不能清掉新内容。
+                guard revision == current, !expanded else { return }
+                closingPanel = nil
+                panelHeight = 0
+            }
+        }
     }
 }
 

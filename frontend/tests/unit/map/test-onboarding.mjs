@@ -10,10 +10,13 @@ assert.equal(parseOnboardingSeen(JSON.stringify({ version: ONBOARDING_VERSION - 
 assert.equal(parseOnboardingSeen(null), false);
 assert.equal(parseOnboardingSeen('{broken'), false);
 
-// 步骤：只讲找店（搜索 / 定位）→ 打开店卡 → 导航 / 收藏，各布局相同；“打开店卡”没有目标，居中显示
+// iOS 要先学会打开更多功能；其他布局保留三步。“打开店卡”没有目标，居中显示。
 for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
     const steps = buildOnboardingSteps({ variant });
-    assert.deepEqual(steps.map((step) => step.id), ['search', 'card', 'favorites'], `${variant} order`);
+    const expectedOrder = variant === 'ios' || variant === 'native'
+        ? ['search', 'card', 'more', 'favorites']
+        : ['search', 'card', 'favorites'];
+    assert.deepEqual(steps.map((step) => step.id), expectedOrder, `${variant} order`);
     for (const step of steps) {
         assert.ok(step.title && step.body && step.icon, `${variant}/${step.id} has copy and icon`);
         const target = variant === 'native' || step.id === 'card' ? null : step.id;
@@ -21,7 +24,7 @@ for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
         // 写给用户的位置：只有原生布局需要（网页的高亮框已经指明了位置），“打开店卡”没有按钮
         assert.equal(!!step.where?.text, variant === 'native' && step.id !== 'card', `${variant}/${step.id} where`);
         assert.equal('native' in step, variant === 'native', `${variant}/${step.id} native tour`);
-        assert.equal(step.practice, undefined, `${variant}/${step.id} has nothing to practise`);
+        assert.equal(step.practice, variant === 'native' && step.id === 'more' ? 'drawer' : undefined, `${variant}/${step.id} practice`);
     }
 }
 
@@ -29,7 +32,18 @@ for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
 const nativeSteps = Object.fromEntries(buildOnboardingSteps({ variant: 'native' }).map((step) => [step.id, step]));
 assert.deepEqual(nativeSteps.search.native, { target: 'search', drawer: false });
 assert.deepEqual(nativeSteps.card.native, { target: null, drawer: false });
+assert.deepEqual(nativeSteps.more.native, { target: 'drawer', drawer: false }, 'more starts with the drawer closed so users can practise opening it');
 assert.deepEqual(nativeSteps.favorites.native, { target: 'favorites', drawer: false });
+assert.equal(nativeSteps.more.where.icon, 'swipe_up');
+assert.match(nativeSteps.more.body, /往上滑|上滑/, 'native copy explains the available drawer gesture');
+assert.ok(nativeSteps.more.hint, 'native swipe practice explains automatic advancement');
+
+// iOS 原生工具栏不可用时，网页只有“更多”按钮，不要求上滑练习。
+const iosMore = buildOnboardingSteps({ variant: 'ios' }).find((step) => step.id === 'more');
+assert.equal(iosMore.target, 'more', 'web fallback highlights its actual more button');
+assert.match(iosMore.body, /「更多」/, 'web fallback explains the more button');
+assert.doesNotMatch(iosMore.body, /上滑|往上滑/, 'web fallback does not claim to have the native drawer');
+assert.equal(iosMore.hint, undefined, 'web fallback has no native swipe instruction');
 
 // 其他功能第一次用到时提示一句，每个功能只提示一次
 function memoryStorage() {

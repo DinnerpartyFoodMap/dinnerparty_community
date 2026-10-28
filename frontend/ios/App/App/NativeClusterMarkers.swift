@@ -13,6 +13,7 @@ private struct ClusterGlassMarker: Identifiable {
     let countY: CGFloat
     let zIndex: Double
     let color: Color?
+    let countBackdrop: Color
     let visibleRects: [CGRect]
 }
 
@@ -206,13 +207,18 @@ final class NativeClusterMarkerBridge: NSObject, WKScriptMessageHandlerWithReply
                                            width: CGFloat(pw) * scale, height: CGFloat(ph) * scale))
             }
             var color: Color?
+            var countBackdrop: Color = dark ? .black : .white
             if let rgba = item["color"] as? [Double] {
                 guard rgba.count == 4, rgba.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { return nil }
                 color = Color(.sRGB, red: rgba[0], green: rgba[1], blue: rgba[2], opacity: rgba[3])
+                // 自定义数字颜色也配独立的黑/白底，不依赖玻璃当前折射到的地图颜色。
+                let linear = rgba.prefix(3).map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+                let luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+                countBackdrop = luminance > 0.179 ? .black : .white
             }
             let bounds = converted(x, y, width, height).offsetBy(dx: -clipping.minX, dy: -clipping.minY)
             markers.append(ClusterGlassMarker(id: key, rect: bounds, opacity: opacity, text: text,
-                                              fontSize: CGFloat(fontSize) * scale, countX: CGFloat(countX), countY: CGFloat(countY), zIndex: zIndex, color: color, visibleRects: visibleRects))
+                                              fontSize: CGFloat(fontSize) * scale, countX: CGFloat(countX), countY: CGFloat(countY), zIndex: zIndex, color: color, countBackdrop: countBackdrop, visibleRects: visibleRects))
         }
         return ClusterGlassGroup(id: id, clip: clipping, markers: markers, dark: dark)
     }
@@ -241,43 +247,65 @@ private struct ClusterGlassLayer: View {
     @Namespace private var glassNamespace
 
     var body: some View {
-        GlassEffectContainer(spacing: 8) {
-            ZStack(alignment: .topLeading) {
-                ForEach(model.groups) { group in
-                    ZStack(alignment: .topLeading) {
-                        ForEach(group.markers) { marker in
-                            Color.clear
-                                .frame(width: marker.rect.width, height: marker.rect.height)
-                                .glassEffect(.regular, in: ClusterDropShape())
-                                .glassEffectID(marker.id, in: glassNamespace)
-                                .overlay(alignment: .topLeading) {
-                                    Text(marker.text)
-                                        .font(.system(size: marker.fontSize, weight: .semibold))
-                                        .monospacedDigit()
-                                        .foregroundStyle(marker.color ?? (group.dark ? Color.white : Color.black))
-                                        .shadow(color: (group.dark ? Color.black : Color.white).opacity(0.9), radius: 1)
-                                        .fixedSize()
-                                        .position(x: marker.rect.width * marker.countX, y: marker.rect.height * marker.countY)
-                                }
-                                .mask {
-                                    Path { path in
-                                        for piece in marker.visibleRects { path.addRect(piece) }
-                                    }
-                                }
-                                .opacity(marker.opacity)
-                                .position(x: marker.rect.midX, y: marker.rect.midY)
-                                .zIndex(marker.zIndex)
-                        }
-                    }
-                    .frame(width: group.clip.width, height: group.clip.height, alignment: .topLeading)
-                    .environment(\.colorScheme, group.dark ? .dark : .light)
-                    .clipped()
-                    .position(x: group.clip.midX, y: group.clip.midY)
-                }
+        ZStack(alignment: .topLeading) {
+            GlassEffectContainer(spacing: 8) {
+                groupsLayer(counts: false)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .zIndex(0)
+            // 数字在整个玻璃容器之外、所有材质之上，避免被自身或相邻玻璃取景影响。
+            groupsLayer(counts: true)
+                .zIndex(1)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func groupsLayer(counts: Bool) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(model.groups) { group in
+                ZStack(alignment: .topLeading) {
+                    // 完全遮挡时直接移除玻璃实例，不依赖空 Path mask 隐藏系统材质。
+                    ForEach(group.markers.filter { !$0.visibleRects.isEmpty }) { marker in
+                        Group {
+                            if counts {
+                                Color.clear
+                                    .frame(width: marker.rect.width, height: marker.rect.height)
+                                    .overlay(alignment: .topLeading) {
+                                        Text(marker.text)
+                                            .font(.system(size: marker.fontSize, weight: .semibold))
+                                            .monospacedDigit()
+                                            .foregroundStyle(marker.color ?? (group.dark ? Color.white : Color.black))
+                                            .fixedSize()
+                                            .padding(.horizontal, marker.fontSize * 0.18)
+                                            .padding(.vertical, marker.fontSize * 0.04)
+                                            .background {
+                                                Capsule().fill(marker.countBackdrop.opacity(0.96))
+                                            }
+                                            .position(x: marker.rect.width * marker.countX, y: marker.rect.height * marker.countY)
+                                    }
+                            } else {
+                                Color.clear
+                                    .frame(width: marker.rect.width, height: marker.rect.height)
+                                    .glassEffect(.regular, in: ClusterDropShape())
+                                    .glassEffectID(marker.id, in: glassNamespace)
+                            }
+                        }
+                        .mask {
+                            Path { path in
+                                for piece in marker.visibleRects { path.addRect(piece) }
+                            }
+                        }
+                        .opacity(marker.opacity)
+                        .position(x: marker.rect.midX, y: marker.rect.midY)
+                        .zIndex(marker.zIndex)
+                    }
+                }
+                .frame(width: group.clip.width, height: group.clip.height, alignment: .topLeading)
+                .environment(\.colorScheme, group.dark ? .dark : .light)
+                .clipped()
+                .position(x: group.clip.midX, y: group.clip.midY)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

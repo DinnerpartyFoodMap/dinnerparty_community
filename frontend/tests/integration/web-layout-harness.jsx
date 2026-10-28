@@ -13,6 +13,14 @@ import { ConfirmProvider } from '../../src/components/feedback/Confirm';
 import TipsProvider from '../../src/components/feedback/Tips';
 import '../../src/styles/tokens.css';
 
+// Mirror AppFrame's iOS safe-area origin while keeping the real map underneath the list.
+const iosSafeArea = new URLSearchParams(location.search).has('iosSafeArea');
+if (iosSafeArea) {
+    document.documentElement.dataset.platform = 'ios';
+    document.documentElement.style.setProperty('--safe-top', '59px');
+    document.documentElement.style.setProperty('--safe-bottom', '34px');
+}
+
 // Match the existing location harness's AMap boundary; all inspected components are real.
 class LngLat {
     constructor(lng, lat) { this.lng = lng; this.lat = lat; }
@@ -100,7 +108,7 @@ function MapHarness() {
     const contentRef = useOverlayContentRef();
     const [alongRouteRequestId, setAlongRouteRequestId] = useState(0);
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
-    return <main ref={contentRef} style={{ position: 'fixed', inset: 0 }}>
+    return <main ref={contentRef} className="fm-app-root" style={{ position: 'fixed', left: 0, right: 0, top: 'var(--safe-top, 0px)', height: 'calc(100vh - var(--safe-top, 0px))', overflow: 'hidden' }}>
         <MapView backendUrl={location.origin} token="synthetic-web-layout" isAuthenticated mapPageActive
             initialCenter={{ lng: 120, lat: 30 }} alongRouteRequestId={alongRouteRequestId} desktopHeaderMenu={desktopHeaderMenu}
             onRequireAuth={() => { throw new Error('Unexpected auth request'); }} />
