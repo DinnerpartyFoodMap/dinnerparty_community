@@ -262,8 +262,8 @@ private struct ClusterGlassLayer: View {
                                         Text(marker.text)
                                             .font(.system(size: marker.fontSize, weight: .semibold))
                                             .monospacedDigit()
-                                            .foregroundStyle(group.dark ? Color.white : Color.black)
-                                            .shadow(color: (group.dark ? Color.black : Color.white).opacity(0.8), radius: 1)
+                                            .foregroundStyle(Color.black)
+                                            .shadow(color: Color.white.opacity(0.8), radius: 1)
                                             .fixedSize()
                                             .position(x: marker.rect.width * marker.countX, y: marker.rect.height * marker.countY)
                                     }
@@ -272,6 +272,10 @@ private struct ClusterGlassLayer: View {
                                     .frame(width: marker.rect.width, height: marker.rect.height)
                                     .glassEffect(.regular, in: ClusterDropShape())
                                     .glassEffectID(marker.id, in: glassNamespace)
+                                    // 深浅模式统一提亮整个水滴，保留底下的玻璃取景；数字仍在独立前景层。
+                                    .overlay {
+                                        ClusterDropShape().fill(Color.white.opacity(0.6))
+                                    }
                             }
                         }
                         .mask {

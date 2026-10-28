@@ -102,6 +102,88 @@ export async function runNativeClusterBrowserTests() {
         await until(() => nativeMarkers.length === 1 && container.querySelector('[data-native-glass]'), 'initial native frame');
         check(nativeMarkers[0].text === '12', 'initial full cluster uses native ownership');
 
+        // Mobile WebViews may finish a tap without AMap emitting its synthetic marker click.
+        // Exercise the DOM touch path independently, then deliver that SDK click late.
+        let clusterTaps = 0;
+        let expandTouch = false;
+        controller.options.onClusterClick = (node, engine) => {
+            clusterTaps += 1;
+            if (expandTouch) setZoom(engine.expansionZoom(node));
+        };
+        const tapEntry = Array.from(controller.entries.values())[0];
+        const pointer = (type, x = 100, y = 100) => tapEntry.parts.hit.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y
+        }));
+        pointer('pointerdown');
+        pointer('pointerup');
+        await until(() => clusterTaps === 1, 'direct touch activation without an SDK click');
+        tapEntry.marker.events.click();
+        check(controller.entries.get(tapEntry.key) === tapEntry && !tapEntry.ghost && clusterTaps === 1, 'a delayed SDK click cannot activate the same live entry twice');
+        pointer('pointerdown');
+        tapEntry.marker.events.click();
+        check(clusterTaps === 1, 'SDK click before touch release does not start a second activation');
+        pointer('pointerup');
+        await until(() => clusterTaps === 2, 'a new finger tap is independent of the previous dedup window');
+        tapEntry.parts.hit.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', isPrimary: true }));
+        tapEntry.marker.events.click();
+        check(clusterTaps === 3, 'desktop mouse click still uses the normal SDK activation');
+        const touchEvent = (type, count) => {
+            const event = new Event(type, { bubbles: true });
+            Object.defineProperty(event, 'touches', { value: Array.from({ length: count }, () => ({})) });
+            tapEntry.parts.hit.dispatchEvent(event);
+        };
+        touchEvent('touchstart', 2);
+        pointer('pointerdown'); pointer('pointerup');
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        check(clusterTaps === 3, 'multi-finger gestures cannot activate a cluster through the touch fallback');
+        touchEvent('touchend', 0);
+        tapEntry.marker.events.click();
+        check(clusterTaps === 3, 'pinch release does not become a synthetic click');
+        await until(() => performance.now() - controller.multiTouchEndedAt >= 400, 'post-pinch tap guard expires');
+        expandTouch = true;
+        pointer('pointerdown'); pointer('pointerup');
+        await until(() => clusterTaps === 4 && controller.entries.size > 1 && controller.txns.size === 0, 'one touch expands the cluster without an SDK click');
+        check(true, 'one mobile tap reaches the cluster split zoom without a second tap');
+        setZoom(12);
+        await until(() => controller.entries.size === 1 && controller.txns.size === 0 && inFlight === 0 && nativeMarkers.length === 1
+            && nativeMarkers[0].text === '12' && nativeMarkers[0].opacity >= 0.999
+            && nativeMarkers[0].id === Array.from(controller.entries.values())[0].nativeGlassId, 'single-tap fixture restored');
+        const guardedHit = Array.from(controller.entries.values())[0].parts.hit;
+        const guardedPointer = (type, x = 100) => guardedHit.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, pointerId: 2, pointerType: 'touch', isPrimary: true, clientX: x, clientY: 100
+        }));
+        guardedPointer('pointerdown'); guardedPointer('pointermove', 130); guardedPointer('pointerup', 130);
+        check(clusterTaps === 4, 'dragging over a cluster is not a tap');
+        guardedPointer('pointerdown'); guardedPointer('pointercancel'); guardedPointer('pointerup');
+        check(clusterTaps === 4, 'a canceled touch does not expand a cluster');
+        const reusePlaces = [{ id: 'touch-reuse-a', name: 'Reuse A', longitude: 120, latitude: 30 },
+            { id: 'touch-reuse-b', name: 'Reuse B', longitude: 120.000001, latitude: 30.000001 }];
+        controller.update({ places: reusePlaces.slice(0, 1) });
+        const reused = Array.from(controller.entries.values())[0];
+        controller.update({ places: reusePlaces });
+        check(Array.from(controller.entries.values())[0] === reused && reused.node.kind === 'cluster', 'data refresh actually reuses a place entry as a cluster');
+        controller.options.onClusterClick = () => { clusterTaps += 1; };
+        for (const type of ['pointerdown', 'pointerup']) reused.parts.hit.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, pointerId: 3, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100
+        }));
+        await until(() => clusterTaps === 5, 'a reused place-to-cluster entry supports the same mobile tap');
+        check(true, 'clusters created by data refresh also respond to one touch');
+        let placeTaps = 0;
+        controller.options.onPlaceClick = () => { placeTaps += 1; };
+        controller.update({ places: reusePlaces.slice(0, 1) });
+        check(Array.from(controller.entries.values())[0] === reused && reused.node.kind === 'place', 'the same entry can return to a single place');
+        for (const type of ['pointerdown', 'pointerup']) reused.parts.hit.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, pointerId: 4, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100
+        }));
+        reused.marker.events.click();
+        check(placeTaps === 1 && clusterTaps === 5, 'a fresh place tap is not swallowed by the previous cluster dedup window');
+        controller.options.onPlaceClick = undefined;
+        controller.options.onClusterClick = undefined;
+        controller.update({ places });
+        await until(() => controller.entries.size === 1 && controller.txns.size === 0 && inFlight === 0 && nativeMarkers.length === 1
+            && nativeMarkers[0].text === '12' && nativeMarkers[0].opacity >= 0.999
+            && nativeMarkers[0].id === Array.from(controller.entries.values())[0].nativeGlassId, 'touch reuse fixture restored');
+
         // A static count color belongs to the skin's PNG artwork, not to native liquid-glass text.
         registerSkinPacks([{ id: 'cluster-theme-test', manifest: { markers: { clusterCountColor: '#ffffff' } } }]);
         const countGeometry = marker => JSON.stringify([marker.id, marker.x, marker.y, marker.width, marker.height, marker.fontSize, marker.countX, marker.countY]);
@@ -110,7 +192,7 @@ export async function runNativeClusterBrowserTests() {
             activateSkin('cluster-theme-test');
             applyDarkMode(true);
             await until(() => frames.at(-1)?.dark === true && inFlight === 0, 'stationary skinned dark frame');
-            check(JSON.stringify(nativeMarkers[0].color) === '[1,1,1,1]', 'dark glass counts use opaque white with a fixed skin color');
+            check(JSON.stringify(nativeMarkers[0].color) === '[0,0,0,1]', 'dark glass counts stay opaque black with a fixed skin color');
             check(getComputedStyle(container.querySelector('.fm-marker__count')).color === 'rgb(255, 255, 255)', 'the skin still owns the ordinary PNG count color');
 
             let releaseOldDark;
@@ -121,13 +203,13 @@ export async function runNativeClusterBrowserTests() {
             applyDarkMode(false);
             releaseOldDark();
             await until(() => frames.length > beforeTheme + 1 && frames.at(-1)?.dark === false && inFlight === 0, 'stationary skinned light frame after delayed dark reply');
-            check(JSON.stringify(nativeMarkers[0].color) === '[0,0,0,1]', 'light glass counts become opaque black despite a fixed white skin color and delayed dark frame');
+            check(JSON.stringify(nativeMarkers[0].color) === '[0,0,0,1]', 'light glass counts stay opaque black despite a fixed white skin color and delayed dark frame');
             check(getComputedStyle(container.querySelector('.fm-marker__count')).color === 'rgb(255, 255, 255)', 'light mode preserves the skin color for the PNG fallback');
             check(countGeometry(nativeMarkers[0]) === stationaryGeometry && !!container.querySelector('[data-native-glass]'), 'theme-only updates preserve count geometry and glass ownership');
 
             applyDarkMode(true);
             await until(() => frames.at(-1)?.dark === true && inFlight === 0, 'stationary glass dark return');
-            check(JSON.stringify(nativeMarkers[0].color) === '[1,1,1,1]', 'stationary glass counts switch back to white on the next dark toggle');
+            check(JSON.stringify(nativeMarkers[0].color) === '[0,0,0,1]', 'stationary glass counts remain black on the next dark toggle');
         } finally { activateSkin('default'); applyDarkMode(false); }
         await until(() => frames.at(-1)?.dark === false && inFlight === 0, 'theme regression fixture removed');
 

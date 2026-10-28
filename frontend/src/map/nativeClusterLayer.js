@@ -63,7 +63,7 @@ export function captureClusterFrame({ container, entries = [], ghosts = [], view
             countX: clamp(parseFloat(countStyle.left) / width, 0, 1),
             countY: clamp(parseFloat(countStyle.top) / height, 0, 1),
             zIndex: entry.ghost ? 100 : (entry.parts.root?.hasAttribute('data-selected') ? 400 : 120),
-            color: dark ? [1, 1, 1, 1] : [0, 0, 0, 1],
+            color: [0, 0, 0, 1],
             visibleRects: visibleFragments(bounds, clip, occluders)
         };
         // 完全被列表等前景盖住时不创建原生玻璃实例；空 mask 不能保证系统材质不残留。
@@ -157,7 +157,7 @@ export class NativeClusterLayer {
                 if (top && !controller.touchTarget.contains(top)) occluders.push(top.getBoundingClientRect());
             }
             const ghosts = Array.from(controller.txns).flatMap(txn => txn.done ? [] : txn.ghosts);
-            // 玻璃数字随当前主题变色；皮肤的固定数字色只用于原来的 PNG 图案。
+            // 玻璃水滴统一叠白、数字固定黑色；皮肤的固定数字色只用于原来的 PNG 图案。
             this.frame = captureClusterFrame({ container: controller.touchTarget, entries: controller.entries.values(), ghosts, viewport, visible, occluders, dark: document.documentElement.dataset.theme === 'dark' });
             // 页面暂时离开时只收起原生图层，已接管的 PNG 继续隐藏；返回第一帧仍是玻璃。
             // 用户关闭玻璃、系统减少透明度或桥接故障则真正归还 PNG 所有权。

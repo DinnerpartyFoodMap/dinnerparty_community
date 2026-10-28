@@ -131,7 +131,7 @@ for (const version of [0, 1]) {
     assert.equal(blocked.parts[0].glyph, a.parts.glyph, 'the covered PNG stays hidden');
     const edge = captureClusterFrame({ container: { getBoundingClientRect: () => ({ left: 30, top: 40, width: 390, height: 844 }) }, entries: [a], viewport: { width: 390, height: 844 }, getStyle, dark: true });
     assert.deepEqual(edge.markers[0].visibleRects, [{ x: 10, y: 10, width: 35, height: 55 }], 'map edges clip the full glass without changing its shape or count anchor');
-    assert.deepEqual(edge.markers[0].color, [1, 1, 1, 1], 'dark map counts have an explicit opaque foreground');
+    assert.deepEqual(edge.markers[0].color, [0, 0, 0, 1], 'dark map counts stay opaque black on the white glass overlay');
     const multi = captureClusterFrame({ container: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 390, height: 844 }) }, entries: [a], viewport: { width: 390, height: 844 }, getStyle, occluders: [{ left: 20, top: 30, width: 20, height: 65 }, { left: 30, top: 50, width: 35, height: 25 }] });
     assert.deepEqual(multi.markers[0].visibleRects, [{ x: 20, y: 0, width: 25, height: 20 }, { x: 20, y: 45, width: 25, height: 20 }], 'overlapping occluders subtract their union without filling gaps back in');
     const covered = captureClusterFrame({ container: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 390, height: 844 }) }, entries: [a], viewport: { width: 390, height: 844 }, getStyle, occluders: [{ left: 0, top: 0, width: 390, height: 844 }] });

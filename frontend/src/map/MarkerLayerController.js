@@ -42,6 +42,8 @@ const EASE_IN_OUT = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const ONSCREEN_MARGIN = 80;
 // 双指手势结束后这段时间内的标记点按不生效
 const MULTI_TOUCH_TAP_GUARD_MS = 350;
+const TOUCH_TAP_SLOP_PX = 10;
+const TOUCH_SDK_CLICK_GUARD_MS = 500;
 
 function readDebugFlag() {
     try { return window.localStorage.getItem('debug.mapMetrics') === '1'; } catch (e) { return false; }
@@ -277,10 +279,34 @@ export class MarkerLayerController {
         });
         const entry = { key: node.key, node, marker, parts, ghost: false, size: null };
         marker.on('click', () => this._handleActivate(entry));
+        // entry 会在单点与聚合之间复用，所以监听常驻，按当前节点类型判断。
+        // 原生玻璃只负责显示；轻触由 DOM 命中区域处理，不依赖高德合成 click。
+        let touch = null;
+        const blockSdkClick = () => { entry.touchSdkBlockedUntil = performance.now() + TOUCH_SDK_CLICK_GUARD_MS; };
+        parts.hit.addEventListener('pointerdown', (event) => {
+            if (event.pointerType === 'mouse' || entry.node.kind !== 'cluster') entry.touchSdkBlockedUntil = 0;
+            const clusterTouch = event.pointerType === 'touch' && entry.node.kind === 'cluster';
+            if (clusterTouch) blockSdkClick();
+            touch = clusterTouch && event.isPrimary ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
+        });
+        parts.hit.addEventListener('pointermove', (event) => {
+            if (touch?.id === event.pointerId && Math.hypot(event.clientX - touch.x, event.clientY - touch.y) > TOUCH_TAP_SLOP_PX) touch = null;
+        });
+        parts.hit.addEventListener('pointercancel', () => { if (touch) blockSdkClick(); touch = null; });
+        parts.hit.addEventListener('pointerup', (event) => {
+            const start = touch;
+            touch = null;
+            if (event.pointerType === 'touch' && entry.node.kind === 'cluster') blockSdkClick();
+            if (!start || start.id !== event.pointerId || Math.hypot(event.clientX - start.x, event.clientY - start.y) > TOUCH_TAP_SLOP_PX) return;
+            // 等本轮地图手势收尾后再移动相机，避免 touchend 的 SDK 清理打断缩放。
+            requestAnimationFrame(() => {
+                if (this.entries.get(entry.key) === entry && entry.node.kind === 'cluster') this._handleActivate(entry, 'touch');
+            });
+        });
         parts.hit.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
-                this._handleActivate(entry);
+                this._handleActivate(entry, 'keyboard');
             }
         });
         this._refreshAppearance(entry);
@@ -297,9 +323,11 @@ export class MarkerLayerController {
         this.nativeClusters?.invalidate();
     }
 
-    _handleActivate(entry) {
+    _handleActivate(entry, source = 'sdk') {
         if (this.destroyed || entry.ghost) return;
-        if (this.multiTouch || performance.now() - this.multiTouchEndedAt < MULTI_TOUCH_TAP_GUARD_MS) return;
+        const now = performance.now();
+        if (this.multiTouch || now - this.multiTouchEndedAt < MULTI_TOUCH_TAP_GUARD_MS) return;
+        if (source === 'sdk' && now < (entry.touchSdkBlockedUntil || 0)) return;
         const node = entry.node;
         if (node.kind === 'place') this.options.onPlaceClick?.(node.place, node);
         else this.options.onClusterClick?.(node, this.engine);
