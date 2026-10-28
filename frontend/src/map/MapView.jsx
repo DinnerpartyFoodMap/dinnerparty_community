@@ -1443,14 +1443,15 @@ export default function MapView({
         setInitialDiary({ publicId, stopId: stop && /^[A-Za-z0-9_-]{1,80}$/.test(stop) ? stop : null });
     }, [routeSearch]);
 
-    // 日记中的「查看地图标记」：读取地点后居中并打开地点卡片
+    // 列表、收藏与日记中的地点：读取后居中并打开地点卡片
     const focusPlaceById = async (placeId) => {
         try {
             const res = await Api.fetchPlace(backendUrl, placeId, { token });
             if (!res.ok) { showTip(t('map:main.markerMissing')); return false; }
             const place = await res.json();
             if (mapRef.current && place.longitude != null && place.latitude != null) {
-                mapRef.current.setZoomAndCenter(17, [place.longitude, place.latitude]);
+                // 卡片下一帧会测量锚点并自动避让：先完成定位，避免按旧视口平移并打断定位动画。
+                mapRef.current.setZoomAndCenter(17, [place.longitude, place.latitude], true);
             }
             showPopup(place);
             return true;

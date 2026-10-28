@@ -14,6 +14,8 @@ const browser = process.env.CHROME_BIN || (process.platform === 'win32' ? 'C:/Pr
 const theme = (readFileSync(join(root, 'index.html'), 'utf8').match(/:root(?:\[data-theme='dark'\])?\s*\{[^}]*\}/g) || []).join('\n');
 const requests = [];
 const searchResults = Array.from({ length: 12 }, (_, index) => ({ id: index + 1, name: '搜索结果面馆 ' + (index + 1), category: '面食', description: '供搜索结果交叠布局验证', longitude: 120 + index / 10000, latitude: 30, rating_count: 2, rating_average: 3.5 }));
+const focusPlace = { id: 99, name: '列表定位回归面馆', category: '面食', description: '首次点击就应正确定位', longitude: 120.025, latitude: 30.02, rating_count: 0, rating_average: null };
+let listHasPlace = false;
 const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts/material-symbols.css"><style>${theme}body{margin:0;font-family:system-ui,sans-serif}</style></head><body><div id="root"></div><script>
 window.__WEB_LAYOUT_ERRORS=[]; addEventListener('error', event => window.__WEB_LAYOUT_ERRORS.push(event.message));
 addEventListener('unhandledrejection', event => window.__WEB_LAYOUT_ERRORS.push(String(event.reason)));
@@ -30,7 +32,9 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
             '/places/nearby': [], '/api/favorites': [], '/categories': ['面食'],
             '/api/community/consent': { feedback: false, version: 1 },
             '/api/places/search/fast': searchResults,
-            '/places/list': { items: [], total: 0, personalized: false }
+            '/places/list': { items: listHasPlace ? [focusPlace] : [], total: listHasPlace ? 1 : 0, personalized: false },
+            '/places/99': focusPlace,
+            '/api/ratings/places/99': { summary: { count: 0, average: null }, mine: null }
         };
         if (!Object.hasOwn(responses, url.pathname)) return next();
         requests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
@@ -177,6 +181,31 @@ try {
     assert.equal(radar.circles, 5, 'the unknown axis has no fabricated value marker');
     await screenshot('radar-six-labels-and-fill');
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'radar has no browser errors');
+
+    // Exercise the real list -> MapView -> card flow, including AMap's default deferred camera move.
+    listHasPlace = true;
+    for (const [width, height] of [[1280, 900], [390, 844]]) {
+        await navigate('map&deferredCamera=1', width, height);
+        await waitFor(`!!document.querySelector('[data-tour="listView"]:not([disabled])')`);
+        for (let selection = 1; selection <= 2; selection += 1) {
+            await click('[data-tour="listView"]');
+            await waitFor(`document.querySelector('.fm-place-card__title')?.textContent === '列表定位回归面馆'`);
+            await click('.fm-place-card__title');
+            await waitFor(`!document.querySelector('.fm-map-list') && !!document.querySelector('.fm-card-host,.fm-skin-card') && window.__WEB_LAYOUT_MAP.cameraMoves.length === ${selection} && !window.__WEB_LAYOUT_MAP.pendingCamera`);
+            await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+            const focused = await evaluate(`(() => {
+                const map = window.__WEB_LAYOUT_MAP;
+                return { point: map.lngLatToContainer([120.025,30.02]), zoom: map.getZoom(), pans: map.autoPans };
+            })()`);
+            assert.ok(focused.pans.every(pan => !pan.duringCameraMove), `${width}px selection ${selection}: card avoidance must not interrupt the camera move: ${JSON.stringify(focused)}`);
+            assert.equal(focused.zoom, 17, 'selecting a list place applies the detail zoom');
+            assert.ok(focused.point.x >= 12 && focused.point.x <= width - 12 && focused.point.y >= 12 && focused.point.y <= height - 12, `${width}px selection ${selection}: selected place stays on screen`);
+            await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }, sessionId);
+            await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' }, sessionId);
+            await waitFor(`!document.querySelector('.fm-card-host,.fm-skin-card')`);
+        }
+        assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'list selection has no browser errors');
+    }
     console.log(JSON.stringify({ passed: true, overlap, wide, options, radarFillCount: radar.fills.length, screenshots: scratch }));
     await command('Browser.close');
 } catch (error) { console.error(error); console.error('Artifacts: ' + scratch); process.exitCode = 1; }

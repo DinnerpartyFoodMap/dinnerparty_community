@@ -6,6 +6,7 @@ import MapListMode from '../../src/map/MapListMode';
 import TasteRadar from '../../src/profile/TasteRadar';
 import AuthPage from '../../src/auth/AuthPage';
 import AddForm from '../../src/places/components/AddPlaceForm';
+import { worldPixel, unprojectWorldPixel } from '../../src/map/viewport';
 import { MotionProvider } from '../../src/motion/MotionProvider';
 import { OverlayHost, useOverlayContentRef } from '../../src/components/overlay/OverlayHost';
 import { ConfirmProvider } from '../../src/components/feedback/Confirm';
@@ -29,6 +30,9 @@ class Marker {
 class TestMap {
     constructor(el, options) {
         this.el = el; this.center = options.center; this.zoom = options.zoom; this.handlers = {}; this.markers = new Set();
+        this.deferredCamera = new URLSearchParams(location.search).has('deferredCamera');
+        this.cameraMoves = []; this.autoPans = [];
+        window.__WEB_LAYOUT_MAP = this;
         Object.assign(el.style, { background: '#e2eee5' });
     }
     on(event, fn) { (this.handlers[event] ||= new Set()).add(fn); }
@@ -39,9 +43,21 @@ class TestMap {
     getZoom() { return this.zoom; }
     getZooms() { return [2, 20]; }
     getBounds() { const [lng, lat] = this.center; return { getSouthWest: () => new LngLat(lng - 0.03, lat - 0.03), getNorthEast: () => new LngLat(lng + 0.03, lat + 0.03) }; }
-    setCenter(center) { this.center = center; this.emit('moveend'); }
-    setZoom(zoom) { this.zoom = zoom; this.emit('zoomend'); }
-    setZoomAndCenter(zoom, center) { this.zoom = zoom; this.setCenter(center); }
+    setCenter(center) { this.center = center; this.positionMarkers(); this.emit('moveend'); }
+    setZoom(zoom) { this.zoom = zoom; this.positionMarkers(); this.emit('zoomend'); }
+    setZoomAndCenter(zoom, center, immediately = false) {
+        this.cameraMoves.push({ zoom, center });
+        const apply = () => { this.zoom = zoom; this.setCenter(center); this.emit('zoomend'); };
+        if (!this.deferredCamera || immediately) { this.pendingCamera = null; apply(); return; }
+        // AMap moves asynchronously by default. Keep the old projection until that move completes.
+        const pending = {};
+        this.pendingCamera = pending;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (this.pendingCamera !== pending) return;
+            this.pendingCamera = null;
+            apply();
+        }));
+    }
     setMapStyle() { queueMicrotask(() => this.emit('styleChanged')); }
     add(items) {
         for (const marker of [].concat(items)) {
@@ -49,10 +65,31 @@ class TestMap {
             const el = marker.options?.content;
             if (el instanceof HTMLElement) { Object.assign(el.style, { position: 'absolute', left: '50%', top: '55%' }); this.el.appendChild(el); }
         }
+        this.positionMarkers();
     }
     remove(items) { for (const marker of [].concat(items)) { marker.options?.content?.remove(); marker.map = null; this.markers.delete(marker); } }
-    lngLatToContainer() { return { x: this.el.clientWidth / 2, y: this.el.clientHeight / 2 }; }
-    panBy() {}
+    lngLatToContainer(coordinate) {
+        if (!this.deferredCamera) return { x: this.el.clientWidth / 2, y: this.el.clientHeight / 2 };
+        const point = Array.isArray(coordinate) ? coordinate : [coordinate.lng, coordinate.lat];
+        const p = worldPixel(...point, this.zoom), c = worldPixel(...this.center, this.zoom);
+        return { x: this.el.clientWidth / 2 + p.x - c.x, y: this.el.clientHeight / 2 + p.y - c.y };
+    }
+    positionMarkers() {
+        if (!this.deferredCamera) return;
+        for (const marker of this.markers) {
+            const el = marker.options?.content;
+            if (!(el instanceof HTMLElement)) continue;
+            const p = this.lngLatToContainer(marker.position);
+            Object.assign(el.style, { left: `${p.x}px`, top: `${p.y}px` });
+        }
+    }
+    panBy(dx, dy) {
+        if (!this.deferredCamera) return;
+        this.autoPans.push({ dx, dy, duringCameraMove: !!this.pendingCamera });
+        const c = worldPixel(...this.center, this.zoom);
+        const next = unprojectWorldPixel(c.x - dx, c.y - dy, this.zoom);
+        this.setCenter([next.lng, next.lat]);
+    }
     resize() {}
     destroy() {}
 }
