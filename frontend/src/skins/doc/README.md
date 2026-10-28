@@ -85,7 +85,7 @@ App 内的玻璃材质（`overlay.css`，iOS 与安卓）以 `!important` 固定
 | 账号入口 | `account.defaultAvatar` | 图片 | 没有上传头像时的默认头像，正方形 |
 | | `account.avatarFrame` | `{ image, scale }` | 主题头像框，中间透明，比头像大 `scale` 倍（默认 1.3）；住民自己的头像保留 |
 | 标记点与聚合点 | `markers.place` / `avoid` / `cluster` | 图片 | 显示 36×43（聚合 36×52，按数量放大）；等比缩放，尖端在底边中点 |
-| | `markers.clusterCountColor` / `clusterCountX` / `clusterCountY` | 颜色 / 百分比 | 聚合数字的颜色和位置（默认 54%、30%） |
+| | `markers.clusterCountColor` / `clusterCountX` / `clusterCountY` | 颜色 / 百分比 | 聚合数字的颜色和位置（默认聚合图 50%、35%；皮肤聚合图未指定时为 54%、30%） |
 | | `markers.labelBackground` / `labelBorderColor` / `labelTextColor` | 颜色 | 店名标签；避雷店名仍用红色 |
 
 不在表里的位置（详情面板、海报、分享卡片、管理后台）不跟随皮肤。

@@ -31,6 +31,20 @@
     -webkit-user-drag: none;
 }
 
+/* src/img/union.png 原画布 2481×3508，可见图形位于 (790, 1116)，大小 912×1309。
+   仅裁掉默认聚合图的透明留白，使图形填满标记；皮肤图片仍使用完整画布。 */
+.fm-marker__glyph[data-default-cluster] {
+    overflow: hidden;
+}
+
+.fm-marker__glyph[data-default-cluster] img {
+    position: absolute;
+    left: calc(-100% * 790 / 912);
+    top: calc(-100% * 1116 / 1309);
+    width: calc(100% * 2481 / 912);
+    height: calc(100% * 3508 / 1309);
+}
+
 .fm-marker__count {
     position: absolute;
     left: var(--skin-marker-count-x, 54%);
@@ -42,6 +56,17 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
+}
+
+.fm-marker__glyph[data-default-cluster] .fm-marker__count {
+    left: var(--skin-marker-count-x, 50%);
+    top: var(--skin-marker-count-y, 35%);
+}
+
+/* 原生确认后只隐藏图形内容；保留几何、动画、点击区域和唯一的网页读屏标签。 */
+.fm-marker__glyph[data-native-glass] > img,
+.fm-marker__glyph[data-native-glass] > .fm-marker__count {
+    visibility: hidden;
 }
 
 .fm-marker__label {

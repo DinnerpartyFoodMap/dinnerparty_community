@@ -26,6 +26,7 @@ function markerIcon(slot, fallback) {
 
 function setMarkerImage(img, src, fallback) {
     img.dataset.fallback = fallback;
+    img.parentElement.toggleAttribute('data-default-cluster', src === unionIcon);
     if (img.getAttribute('src') !== src) img.src = src;
 }
 
@@ -47,7 +48,7 @@ export function createMarkerParts() {
     img.decoding = 'async';
     img.addEventListener('error', () => {
         const fallback = img.dataset.fallback;
-        if (fallback && img.getAttribute('src') !== fallback) img.src = fallback;
+        if (fallback && img.getAttribute('src') !== fallback) setMarkerImage(img, fallback, fallback);
     });
     glyph.appendChild(img);
     const label = document.createElement('div');

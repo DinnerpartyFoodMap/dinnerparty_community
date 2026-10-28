@@ -1,5 +1,7 @@
 # 地图协调、渲染与缓存
 
+iOS 液态玻璃聚合点（2026-10-28）：`nativeClusterLayer.js` 将全部默认聚合图及退出残影的真实 DOM 动画矩形、缩放后字号和透明度镜像到原生 SwiftUI，聚合引擎、合并/拆分/回弹/中断、点击与读屏仍由 `MarkerLayerController` 统一管理。原生确认帧后才隐藏网页图形内容，点击区域保留；移动和转场逐帧发送，静止 200ms 保活，桥接最多一帧在途且只保留最新积压帧。旧系统/旧壳、关闭原生玻璃、减少透明度、性能降级、网页浮层及自定义皮肤聚合图回到 PNG。与公告、搜索结果、展会入口、定位点、选中点等相交的聚合点也保留 PNG，以维持网页原有遮挡顺序；新增网页浮动控件可以用 `data-native-cluster-occluder` 声明遮挡。逻辑入口 `test:map`；真实控制器及 Web Animations 的浏览器替身回归入口 `test:native-clusters-browser`；系统玻璃与帧率需真机检查，见 [原生案例](../../../native/doc/README.md)。
+
 浮动按钮（2026-10 起）：定位旁边多了“筛选”（标签 / 人均，`places/components/PlaceFilterPanel.jsx`，面板不挡地图，改动立即作用到标记；选中的地点即使不符合也保留）与“列表 / 地图”切换（`MapListMode.jsx`：地点列表盖在地图上，图标变成地图；列表有距离下拉框，中心默认是定位到的位置，没定位时是打开列表时的地图中心，也可以在全屏地图上自选（`FullScreenMapPicker`，context `listCenter`）；点列表里的地点退出搜索 / 沿途 / 住民筛选，回到地图并打开卡片）。宽屏从上到下是定位、筛选、列表；窄屏是列表、筛选、定位；iOS 原生三个按钮共用一个竖向圆角矩形（协议 v12 的 `listView`、`filter` 浮动按钮）。iOS 原生工具栏的随机美食与日记 · 同好互换（日记收进上滑的更多功能），iOS 不再提供聚餐活动与导出海报入口。
 
 展会地点：点展会面板里的地址后，复用高德临时地点的标记与卡片（MapView 的 `venuePlace`），卡片只有“导航”；普通的高德临时地点卡片只留“创建地点”。卡片关掉或选了别的地点后，展会地点的标记随之消失。展会卡片开着时在展会列表里换成另一个展会，卡片内容立即换掉（否则列表浮层退场时 iOS 原生控件先恢复旧展会的卡片）。
@@ -14,7 +16,7 @@
 
 导航（MapUI 的导航选择面板、MapView 处理的 `nav=amap` 分享链接）里的高德链接由 `amapNavigation.js` 生成（纳入 `test:map`）：`uri.amap.com` 不是 Universal Link / App Link，所以 App 内直接用高德 scheme（iOS `iosamap://path`，Android `amapuri://route/plan/`，坐标本来就是 GCJ-02，`dev=0`），没装高德时 `openExternal` 的 `fallbackUrl` 改开网页版；网页端（以及后端分享页 `placeShare.js`）用 `uri.amap.com` 加 `callnative=1`，由高德网页尝试唤起 App。只直接打开、不用 `canOpenUrl` 探测，所以 iOS 不需要 `LSApplicationQueriesSchemes`，Android 也不需要在 `<queries>` 里登记。
 
-MapView.jsx 是旧 src/Map.jsx，仍是地图协调者；MapUI.jsx 负责地图 UI 与面板编排，二者尚未拆完。MarkerLayerController、markerContent 与 cluster 下引擎/快照/转场/缓存负责标记；viewport、pinchGuard、overseasTileLayer 各自处理视口、手势与境外底图。MapPanel/MapAnchoredCard 是地图布局容器，不是通用页面组件。locationReport 记下最近一次定位，按最新登录状态上报 `PUT /users/me/location`（QQ Bot `!随机` 的中心），App 启动时的自动定位早于登录恢复时在登录后补报。
+MapView.jsx 是旧 src/Map.jsx，仍是地图协调者；MapUI.jsx 负责地图 UI 与面板编排，二者尚未拆完。MarkerLayerController、markerContent 与 cluster 下引擎/快照/转场/缓存负责标记；默认聚合图使用 `src/img/union.png`（白底蓝边水滴形），CSS 按素材的可见边界裁去透明留白，数量居于图形的 50%、35% 位置；皮肤聚合图沿用完整画布与原有默认数字位置，加载失败后回退到新默认图。viewport、pinchGuard、overseasTileLayer 各自处理视口、手势与境外底图。MapPanel/MapAnchoredCard 是地图布局容器，不是通用页面组件。locationReport 记下最近一次定位，按最新登录状态上报 `PUT /users/me/location`（QQ Bot `!随机` 的中心），App 启动时的自动定位早于登录恢复时在登录后补报。
 
 ```mermaid
 flowchart TD
