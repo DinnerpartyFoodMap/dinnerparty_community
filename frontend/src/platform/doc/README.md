@@ -27,6 +27,6 @@ flowchart TD
 | WGS84/GCJ-02 单点转换 | 坐标转换不是按“是否中国境内”的粗矩形猜测，沿用 chinaRegion 与对应测试 |
 | 缺能力降级 | 能力不可用不等于业务数据无效；不要改为静默成功 |
 
-聚合点的原生显示使用独立的 `nativeClusterMarkers.js` / WebKit `foodMapClusters` 带回复通道（协议 v1），不改变工具栏协议。`open` 获取原生会话，`frame` 只发送显示字段和递增帧序号，`close` 确认清除；一次一帧，后续积压合并为最新状态。超时后到达的握手结果仍负责关闭原生会话。清除失败时等待原生 800ms 显示租期结束，再恢复 PNG；原生拒绝过期发送时间和旧会话，后台与网页重载清空显示。对应测试纳入 `test:map`。
+聚合点的原生显示使用独立的 `nativeClusterMarkers.js` / WebKit `foodMapClusters` 带回复通道（协议 v2），不改变工具栏协议。独立本机偏好 `clusterGlass` 默认关闭。`open` 获取原生会话，`frame` 发送显示字段、每个图形的局部可见矩形和递增帧序号，`close` 确认清除；一次一帧，后续积压合并为最新状态。首次回执后隐藏 PNG，已确认图形在裁切、暂时空帧和切页时持续保留材质所有权；桥接等待覆盖 800ms 显示租期，短暂忙碌不直接切换材质。超时后到达的握手结果仍负责关闭原生会话。清除失败时等待原生租期结束，再恢复 PNG；原生拒绝过期发送时间和旧会话，后台与网页重载清空显示。v1 旧壳使用 PNG，避免忽略可见片段后覆盖网页前景。对应测试纳入 `test:map`。
 
 已有 test:platform / test:native-chrome（含设置），真机另看 [原生文档](../../../native/doc/README.md)。案例见 [TEST_CASES.md](TEST_CASES.md)，待办 PLT-01 / PLT-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。

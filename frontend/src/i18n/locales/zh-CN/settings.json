@@ -81,6 +81,10 @@
       "label": "原生玻璃按钮",
       "hint": "iOS 26 App 中地图浮动按钮与底部工具栏使用系统 Liquid Glass"
     },
+    "clusterGlass": {
+      "label": "聚合点液态玻璃效果",
+      "hint": "iOS 26 App 中将地图聚合点显示为液态玻璃，默认关闭"
+    },
     "native": {
       "notIncluded": "当前安装的 App 未包含原生控件，使用网页工具栏",
       "enabled": "状态：已启用",

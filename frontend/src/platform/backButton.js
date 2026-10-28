@@ -62,6 +62,14 @@ export function hasBackTarget() {
     });
 }
 
+/** 侧滑期间锁定返回目标，手势中出现更高优先级弹窗时取消本次返回。 */
+export function backTargetIdentity() {
+    const ordered = [...handlers].sort((a, b) => (b.priority - a.priority) || (b.id - a.id));
+    return ordered.find((entry) => {
+        try { return !entry.canHandle || entry.canHandle(); } catch (e) { return true; }
+    })?.id ?? null;
+}
+
 /** 订阅“是否有东西可返回”的变化；canHandle 依赖的外部状态变化时调用 refreshBackTarget()。 */
 export function subscribeBackTarget(listener) {
     targetListeners.add(listener);

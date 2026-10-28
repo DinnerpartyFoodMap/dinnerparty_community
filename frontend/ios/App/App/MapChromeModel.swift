@@ -98,7 +98,7 @@ struct MapChromeSheet: Identifiable, Equatable {
     var message: String?
     /// "loading" / "danger" / nil
     var messageTone: String?
-    /// "fit"：菜单，"list"：列表（二者都是工具栏上方的玻璃面板，按内容高度，超出时滚动）；
+    /// "fit"：菜单 / 随机美食，"list"：列表（都是工具栏上方独立淡入淡出的玻璃面板，超出时滚动）；
     /// "card"：地点卡片，两段停靠（摘要 / 全屏详情），摘要高度时地图仍可拖动、点选
     var style: String
     /// 卡片左上角的圆钮（分享）
@@ -297,7 +297,7 @@ final class MapChromeModel: ObservableObject {
         return sheet
     }
 
-    /// 住民菜单、我的收藏：在工具栏同一层画的玻璃面板（与工具栏同一种 Liquid Glass），浮在工具栏上方；搜索时让位
+    /// 住民菜单、我的收藏、随机美食：浮在工具栏上方的独立玻璃面板；搜索时让位
     var presentedPanel: MapChromeSheet? {
         guard !searchExpanded, let sheet = presentedSheet, !sheet.isCard else { return nil }
         return sheet

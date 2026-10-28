@@ -3,7 +3,7 @@
 // 关闭动效只影响过渡表现，新的同步与数据正确性修复始终生效。
 
 const STORAGE_KEY = 'yuyuko.motion.v1';
-const DEFAULT_PREFERENCES = Object.freeze({ clusterMotion: true, webMotion: true, nativeGlass: true });
+const DEFAULT_PREFERENCES = Object.freeze({ clusterMotion: true, webMotion: true, nativeGlass: true, clusterGlass: false });
 const listeners = new Set();
 
 function readStoredPreferences() {
@@ -53,7 +53,8 @@ function derive() {
         preferences: Object.freeze({ ...state.preferences }),
         clusterMotion: state.preferences.clusterMotion && !reduced,
         webMotion: state.preferences.webMotion && !reduced,
-        nativeGlass: state.preferences.nativeGlass
+        nativeGlass: state.preferences.nativeGlass,
+        clusterGlass: state.preferences.clusterGlass
     });
 }
 

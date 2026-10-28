@@ -38,7 +38,7 @@ export function rememberOnboardingSeen() {
 
 /**
  * 各布局下的按钮不同：
- * - desktop：顶栏（入乡/住民、更多）、居中搜索框、右侧圆钮列、左下角日记入口；
+ * - desktop：顶栏（入乡/住民、更多）、居中搜索框及右侧筛选、右侧圆钮列（顺路吃在更多里）、左下角日记入口；
  * - mobile：网页与安卓 App 的底部工具栏（更多、收藏、添加、顺路吃、入乡）与搜索框；
  * - ios：iOS App 的网页工具栏（顺路吃在“更多”里，搜索是工具栏按钮，头像在右上角）；
  * - native：iOS 原生玻璃工具栏（收藏、随机美食、添加、搜索、头像，右上方筛选与定位；上滑展开更多功能，日记 · 同好在里面）。
@@ -49,7 +49,7 @@ export function rememberOnboardingSeen() {
  * where 是写给用户看的位置（“在哪里找到它”），原生布局每一步都有，网页布局只有收在“更多”里的步骤有（高亮框已经指明了位置）。
  */
 const IN_MORE = {
-    desktop: [],
+    desktop: ['alongRoute'],
     mobile: ['journey'],
     ios: ['alongRoute', 'journey'],
     native: ['alongRoute', 'journey']

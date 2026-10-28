@@ -13,12 +13,14 @@ private struct ClusterGlassMarker: Identifiable {
     let countY: CGFloat
     let zIndex: Double
     let color: Color?
+    let visibleRects: [CGRect]
 }
 
 private struct ClusterGlassGroup: Identifiable {
     let id: String
     let clip: CGRect
     let markers: [ClusterGlassMarker]
+    let dark: Bool
 }
 
 private final class ClusterGlassModel: ObservableObject {
@@ -29,7 +31,7 @@ private final class ClusterGlassModel: ObservableObject {
 /// open -> frame(revision, sentAt) -> close。800ms 没有新帧自动收起，旧会话和过期帧不能恢复残影。
 final class NativeClusterMarkerBridge: NSObject, WKScriptMessageHandlerWithReply {
     static let channel = "foodMapClusters"
-    private static let protocolVersion = 1
+    private static let protocolVersion = 2
     private static let lease: TimeInterval = 0.8
     private static let markerLimit = 2048
 
@@ -104,6 +106,9 @@ final class NativeClusterMarkerBridge: NSObject, WKScriptMessageHandlerWithReply
         withTransaction(transaction) {
             model.groups = sources.keys.sorted().compactMap { sources[$0]?.group }
         }
+        // WebKit 只在回执后隐藏 PNG；先让 hosting view 完成本次 SwiftUI 布局。
+        host?.setNeedsLayout()
+        host?.layoutIfNeeded()
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
@@ -178,7 +183,8 @@ final class NativeClusterMarkerBridge: NSObject, WKScriptMessageHandlerWithReply
                                   width: CGFloat(width) * scale, height: CGFloat(height) * scale), to: host)
         }
         let clipping = converted(clipX, clipY, clipWidth, clipHeight).intersection(host.bounds)
-        if raw.isEmpty { return ClusterGlassGroup(id: id, clip: .zero, markers: []) }
+        let dark = (body["dark"] as? Bool) == true
+        if raw.isEmpty { return ClusterGlassGroup(id: id, clip: .zero, markers: [], dark: dark) }
         guard !clipping.isNull, !clipping.isEmpty else { return nil }
         var markers: [ClusterGlassMarker] = []
         var ids = Set<String>()
@@ -189,7 +195,16 @@ final class NativeClusterMarkerBridge: NSObject, WKScriptMessageHandlerWithReply
                   let opacity = number(item, "opacity", 0...1), let fontSize = number(item, "fontSize", 0.01...128),
                   let countX = number(item, "countX", 0...1), let countY = number(item, "countY", 0...1),
                   let zIndex = number(item, "zIndex", 0...400),
-                  let text = item["text"] as? String, !text.isEmpty, text.count <= 12 else { return nil }
+                  let text = item["text"] as? String, !text.isEmpty, text.count <= 12,
+                  let rawVisible = item["visibleRects"] as? [[String: Any]], rawVisible.count <= 256 else { return nil }
+            var visibleRects: [CGRect] = []
+            for piece in rawVisible {
+                guard let px = number(piece, "x", 0...(width + 0.001)), let py = number(piece, "y", 0...(height + 0.001)),
+                      let pw = number(piece, "width", 0...(width + 0.001)), let ph = number(piece, "height", 0...(height + 0.001)), pw > 0, ph > 0,
+                      px + pw <= width + 0.001, py + ph <= height + 0.001 else { return nil }
+                visibleRects.append(CGRect(x: CGFloat(px) * scale, y: CGFloat(py) * scale,
+                                           width: CGFloat(pw) * scale, height: CGFloat(ph) * scale))
+            }
             var color: Color?
             if let rgba = item["color"] as? [Double] {
                 guard rgba.count == 4, rgba.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { return nil }
@@ -197,9 +212,9 @@ final class NativeClusterMarkerBridge: NSObject, WKScriptMessageHandlerWithReply
             }
             let bounds = converted(x, y, width, height).offsetBy(dx: -clipping.minX, dy: -clipping.minY)
             markers.append(ClusterGlassMarker(id: key, rect: bounds, opacity: opacity, text: text,
-                                              fontSize: CGFloat(fontSize) * scale, countX: CGFloat(countX), countY: CGFloat(countY), zIndex: zIndex, color: color))
+                                              fontSize: CGFloat(fontSize) * scale, countX: CGFloat(countX), countY: CGFloat(countY), zIndex: zIndex, color: color, visibleRects: visibleRects))
         }
-        return ClusterGlassGroup(id: id, clip: clipping, markers: markers)
+        return ClusterGlassGroup(id: id, clip: clipping, markers: markers, dark: dark)
     }
 }
 
@@ -239,9 +254,15 @@ private struct ClusterGlassLayer: View {
                                     Text(marker.text)
                                         .font(.system(size: marker.fontSize, weight: .semibold))
                                         .monospacedDigit()
-                                        .foregroundStyle(marker.color ?? Color.primary)
+                                        .foregroundStyle(marker.color ?? (group.dark ? Color.white : Color.black))
+                                        .shadow(color: (group.dark ? Color.black : Color.white).opacity(0.9), radius: 1)
                                         .fixedSize()
                                         .position(x: marker.rect.width * marker.countX, y: marker.rect.height * marker.countY)
+                                }
+                                .mask {
+                                    Path { path in
+                                        for piece in marker.visibleRects { path.addRect(piece) }
+                                    }
                                 }
                                 .opacity(marker.opacity)
                                 .position(x: marker.rect.midX, y: marker.rect.midY)
@@ -249,6 +270,7 @@ private struct ClusterGlassLayer: View {
                         }
                     }
                     .frame(width: group.clip.width, height: group.clip.height, alignment: .topLeading)
+                    .environment(\.colorScheme, group.dark ? .dark : .light)
                     .clipped()
                     .position(x: group.clip.midX, y: group.clip.midY)
                 }

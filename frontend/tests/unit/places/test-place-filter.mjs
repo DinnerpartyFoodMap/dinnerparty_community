@@ -32,7 +32,8 @@ assert.equal(placeFilterQuery({ tags: ['a', 'b'], minCost: 10, maxCost: null }).
 assert.equal(placeListQuery(EMPTY_PLACE_FILTER, { center: { lat: 23.1, lng: 113.3 }, radiusKm: 3 }).toString(), 'lat=23.100000&lng=113.300000&radiusKm=3');
 assert.equal(placeListQuery(EMPTY_PLACE_FILTER, { center: { lat: 23.1, lng: 113.3 }, radiusKm: 4 }).toString(), '');
 assert.equal(placeListQuery(EMPTY_PLACE_FILTER, { center: null, radiusKm: 3 }).toString(), '');
-assert.deepEqual([...RADIUS_OPTIONS_KM], [1, 3, 5, 10, 20, 50], 'same options as backend placeList.js');
+assert.deepEqual([...RADIUS_OPTIONS_KM], [0.5, 1, 3, 5, 10], 'bounded options include a walkable 500m radius');
+assert.equal(placeListQuery(EMPTY_PLACE_FILTER, { center: { lat: 23.1, lng: 113.3 }, radiusKm: 0.5 }).get('radiusKm'), '0.5');
 
 // App 更新：服务器构建号更大时才提示；读不出本机构建号时不提示
 assert.equal(needsUpdate('23', { build: 24 }), true);

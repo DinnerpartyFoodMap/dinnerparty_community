@@ -4,6 +4,7 @@
 
 - PLT-C01（已有逻辑，test:platform）用 Web 与原生配置、缺 HTTPS 地址、站点深链和资源 URL；预期运行配置回退/错误符合既有约束，原生不能猜本机生产地址；移动构建再验配置闸门。
 - PLT-C02（已有逻辑 + 人工，55bbc18）注册不同优先级返回处理器并清理，发送原生返回/浏览器后退。预期顶层优先、无处理时走导航，解绑不残留；真机验证系统手势和 WebView 历史不能只靠 dispatchBack 单测。
+- PLT-C02a（已有浏览器 + 人工真机，2026-10-28）`npm run test:ios-back-browser`：原生 `begin/change/end/cancel` 进度驱动页面或最上层浮层的独立 translate，取消保留 DOM 和未提交输入，完成后只返回一次；更换返回目标时取消旧手势，未保存内容确认保留原页。Swift 原生设置使用 `UIPercentDrivenInteractiveTransition`，取消不结束桥接会话；iOS 触摸、速度阈值与转场需真机检查。
 - PLT-C03（已有逻辑，test:platform）给定境内外区域边界和 WGS84 坐标，转换与区域判断。预期不双重偏移，参数无效按既有规则处理；真实定位权限拒绝、超时和后台恢复需人工验证。
 - PLT-C04（已有逻辑，test:native-chrome）清洗不安全 URL、未知动作、过大列表；建立/结束会话后发送旧事件。预期只接受白名单，过期请求不回写当前界面；隐私字段不透传到原生状态。
 - PLT-C05（已有逻辑，test:native-chrome 中设置组）原生保存请求对应 requestId，成功/失败/超时/未知动作。预期响应只关联原请求，业务请求仍在 Web，受限 state 更新当前会话；plugin 不可用走已有降级。

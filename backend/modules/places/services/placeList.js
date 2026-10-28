@@ -13,7 +13,7 @@ const { parseCategoryNames } = require('./placeService');
 const LIST_PAGE_LIMIT = 30;
 const MAX_COST = 100000;
 // 距离筛选的几档半径（公里），与前端的下拉框一致
-const RADIUS_OPTIONS_KM = Object.freeze([1, 3, 5, 10, 20, 50]);
+const RADIUS_OPTIONS_KM = Object.freeze([0.5, 1, 3, 5, 10]);
 const EARTH_RADIUS_KM = 6371.0088;
 // 评价少的地点向中性分（均线）收缩：1 个人打的“强烈推荐”不应排在 20 个人的“均线之上”前面
 // 观看者的口味平均在一段时间内复用：翻页时不必每页重算

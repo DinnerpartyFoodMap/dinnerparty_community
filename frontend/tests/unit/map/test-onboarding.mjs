@@ -12,12 +12,12 @@ assert.equal(parseOnboardingSeen('{broken'), false);
 // 步骤：先是看得见的按钮，然后是“更多”，最后是收在“更多”里的功能；欢迎页居中，收在“更多”里的步骤指向“更多”按钮
 // 筛选与列表 / 地图切换紧跟定位（同一组浮动按钮）；iOS 原生工具栏上日记收进了更多功能（与随机美食互换）
 const ORDER = {
-    desktop: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'alongRoute', 'journey', 'more'],
+    desktop: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'journey', 'more', 'alongRoute'],
     mobile: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'alongRoute', 'more', 'journey'],
     ios: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'more', 'alongRoute', 'journey'],
     native: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'more', 'alongRoute', 'journey']
 };
-const inMore = { desktop: [], mobile: ['journey'], ios: ['alongRoute', 'journey'], native: ['alongRoute', 'journey'] };
+const inMore = { desktop: ['alongRoute'], mobile: ['journey'], ios: ['alongRoute', 'journey'], native: ['alongRoute', 'journey'] };
 for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
     const steps = buildOnboardingSteps({ variant });
     assert.deepEqual(steps.map((step) => step.id), ORDER[variant], `${variant} order`);

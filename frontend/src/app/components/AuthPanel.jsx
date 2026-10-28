@@ -10,7 +10,7 @@ import { t } from "../../i18n/index.js";
 import LegalLinks from '../../auth/components/LegalLinks.jsx';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
 
-const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onOpenMyPlaces, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
+const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenAlongRoute, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onOpenMyPlaces, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
     // 自己有被驳回的地点：头像与“我创建的地点”上的小红点
     const rejectedCount = Number(user?.rejected_place_count) || 0;
     const [userOpen, setUserOpen] = useState(false);
@@ -249,6 +249,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                     <span className="material-symbols-outlined">more_horiz</span>
                 </Button>
                 <AnchoredPopover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreAnchorRef} placement="bottom-end" label={t('auth:panel.moreMenu')} style={menuStyle}>
+                        {onOpenAlongRoute && <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenAlongRoute(); }}>{t('map:ui.alongRoute')}</Button>}
                         {onOpenRandomFood && (
                             <>
                                 <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenRandomFood(); }}>

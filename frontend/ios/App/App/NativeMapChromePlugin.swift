@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 12）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 13）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
@@ -65,11 +65,11 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 12
+    static let protocolVersion = 13
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "random", "add", "search", "alongRoute", "account", "locate", "filter", "listView"]
-    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces"]
+    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces", "random"]
     /// 单个面板最多的行数（收藏列表）
     static let sheetRowLimit = 300
     /// 心跳超时（秒）；网页每 1.5 秒发一次

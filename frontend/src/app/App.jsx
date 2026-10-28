@@ -90,6 +90,7 @@ export default function App() {
     const [authPanelDisabled, setAuthPanelDisabled] = useState(false);
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
     const [randomFoodRequestId, setRandomFoodRequestId] = useState(0);
+    const [alongRouteRequestId, setAlongRouteRequestId] = useState(0);
     // 顶栏“我创建的地点”：交给地图打开自己的地点（与随机美食同样用递增的请求号）
     const [myPlacesRequestId, setMyPlacesRequestId] = useState(0);
     const [onboardingRequestId, setOnboardingRequestId] = useState(0);
@@ -105,6 +106,12 @@ export default function App() {
     });
     const authPanelRef = useRef(null);
     const [mapCovered, setMapCovered] = useState(false);
+    const [mapBackPreview, setMapBackPreview] = useState(false);
+    useEffect(() => {
+        const preview = event => setMapBackPreview(!!event.detail?.active);
+        window.addEventListener('foodmap:edge-back-preview', preview);
+        return () => window.removeEventListener('foodmap:edge-back-preview', preview);
+    }, []);
     // App 内原生住民设置打不开或异常结束：本次停留在 /settings 期间改用网页版设置页
     const [nativeSettingsFailed, setNativeSettingsFailed] = useState(false);
     const lastPathRef = useRef(pathname);
@@ -906,7 +913,7 @@ export default function App() {
     }
     const pageDirection = pageDirectionRef.current;
     // 主地图常驻：子页面完全进入后才隐藏地图，转场途中地图保持可见
-    const mapHidden = !showMapPage && mapCovered;
+    const mapHidden = !showMapPage && !nativeSettingsActive && !mapBackPreview && mapCovered;
 
     return (
         <MotionProvider>
@@ -977,12 +984,14 @@ export default function App() {
                                 onOpenProfile={openProfile}
                                 desktopHeaderMenu={desktopHeaderMenu}
                                 randomFoodRequestId={randomFoodRequestId}
+                                alongRouteRequestId={alongRouteRequestId}
                                 myPlacesRequestId={myPlacesRequestId}
                                 onboardingRequestId={onboardingRequestId}
                                 exhibition={exhibition}
                                 exhibitionOpen={exhibitionOpen}
                                 onCloseExhibition={closeExhibition}
-                                mapPageActive={showMapPage}
+                                mapPageActive={showMapPage || nativeSettingsActive}
+                                mapPreviewActive={mapBackPreview}
                             />
                         </div>
 
@@ -1024,6 +1033,7 @@ export default function App() {
                             onGoHome={() => goPath("/")}
                             onMenuOpenChange={setDesktopHeaderMenu}
                             onOpenRandomFood={showMapPage ? () => setRandomFoodRequestId((id) => id + 1) : undefined}
+                            onOpenAlongRoute={showMapPage ? () => setAlongRouteRequestId((id) => id + 1) : undefined}
                             onOpenGuide={showMapPage ? () => setOnboardingRequestId((id) => id + 1) : undefined}
                             onOpenFeedback={openFeedback}
                             onOpenPlaceList={() => goPath('/places')}

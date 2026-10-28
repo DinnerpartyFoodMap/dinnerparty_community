@@ -107,12 +107,14 @@ for (const response of [{ id: 'old', action: 'deleteAccount' }, { action: 'eval'
     await emit({ id: openedId, type: 'saveMap', requestId: 'r2', values: { zoom: 'x' } });
     await emit({ id: openedId, type: 'saveMap', values: {} });                      // 缺 requestId
     await emit({ id: openedId, type: 'motion', key: 'webMotion', value: false });
+    await emit({ id: openedId, type: 'motion', key: 'clusterGlass', value: true });
     await emit({ id: openedId, type: 'motion', key: 'evil', value: true });          // 非白名单开关
     await emit({ id: openedId, type: 'motion', key: 'clusterMotion', value: 'yes' }); // 非布尔
     await emit({ id: openedId, type: 'eval', code: '1' });
-    assert.deepEqual(events.map(e => e.type), ['saveMap', 'saveMap', 'motion']);
+    assert.deepEqual(events.map(e => e.type), ['saveMap', 'saveMap', 'motion', 'motion']);
     assert.deepEqual(events[0].values, { style: 'standard', lat: '23.1', lng: '113.3', zoom: '15' }, '只保留四个表单字段');
     assert.deepEqual(events[2], { type: 'motion', key: 'webMotion', value: false });
+    assert.deepEqual(events[3], { type: 'motion', key: 'clusterGlass', value: true });
     assert.deepEqual(responses, [
         { id: openedId, requestId: 'r1', ok: true, message: '已保存' },
         { id: openedId, requestId: 'r2', ok: false, message: '请输入有效的缩放等级' }
@@ -120,7 +122,7 @@ for (const response of [{ id: 'old', action: 'deleteAccount' }, { action: 'eval'
     // 离开设置后迟到的事件不再处理
     await session.stop();
     await emit({ id: openedId, type: 'motion', key: 'webMotion', value: true });
-    assert.equal(events.length, 3);
+    assert.equal(events.length, 4);
     finishOpen();
     await started;
 }

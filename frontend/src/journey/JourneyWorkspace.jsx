@@ -153,7 +153,8 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
             <div className="jw-root" style={style}>
                 {stack.map((entry,index)=>{
                     const Page=PAGES[entry.page],isTop=index===stack.length-1;
-                    return <div key={entry.key} className={`jw-layer${isTop?' is-top':''}`} inert={isTop?undefined:''} aria-hidden={isTop?undefined:true}>
+                    return <div key={entry.key} className={`jw-layer${isTop?' is-top':''}`} inert={isTop?undefined:''} aria-hidden={isTop?undefined:true}
+                        data-native-back-content={isTop&&stack.length>1?'':undefined} data-native-back-previous={index===stack.length-2?'':undefined}>
                         <Page ctx={ctx} nav={nav(entry.key)} params={entry.params} active={isTop}/>
                     </div>;
                 })}

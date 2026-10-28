@@ -1,8 +1,8 @@
 import UIKit
 import SwiftUI
 
-/// 地点卡片的 UIKit 呈现（代替 SwiftUI .sheet）。住民菜单、我的收藏不走这里，
-/// 而是由 MapChromeView 在工具栏同一层画成玻璃面板（MapChromeMenuPanel），与工具栏同一种 Liquid Glass。
+/// 地点卡片的 UIKit 呈现（代替 SwiftUI .sheet）。住民菜单、我的收藏、随机美食不走这里，
+/// 而是由 MapChromeView 在工具栏上方独立画成玻璃面板（MapChromeMenuPanel），与工具栏同一种 Liquid Glass。
 /// SwiftUI 的 .sheet 不知道宿主已经呈现了别的界面：例如分享时插件先弹出系统分享面板，
 /// 随后网页的分享浮层关闭、地点卡片恢复，.sheet 会把分享面板顶掉，自己又因宿主“正在呈现”而弹出失败，
 /// 状态卡在“已呈现”，之后点其他地点也不再出现卡片。这里自己持有面板控制器，按期望状态对账：
@@ -205,7 +205,7 @@ struct MapChromeSheetRoot: View {
     }
 }
 
-/// 住民菜单 / 我的收藏：在工具栏同一层（同一个 GlassEffectContainer）里画的玻璃面板，浮在工具栏上方。
+/// 住民菜单 / 我的收藏 / 随机美食：独立于工具栏玻璃容器的面板，浮在工具栏上方。
 /// 不再用 UIKit 系统面板：iOS 26 半屏面板的系统玻璃比工具栏的 Glass.regular 更厚、更亮，两者看起来不一致。
 /// 交互与系统面板一致：右上角关闭、拖住顶部下滑关闭、点地图关闭（PassThroughHostView）；内容超出可用高度时滚动。
 @available(iOS 26.0, *)
@@ -214,9 +214,6 @@ struct MapChromeMenuPanel: View {
     let sheet: MapChromeSheet
     /// 面板可用的最大高度（工具栏上方的空间）
     let maxHeight: CGFloat
-    /// 与工具栏同一个玻璃命名空间：出现 / 收起时由 GlassEffectContainer 形变
-    let glassNamespace: Namespace.ID
-
     @State private var contentHeight: CGFloat = 0
     /// 拖住顶部下滑的位移；松手未达到关闭距离时回弹
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.36, dampingFraction: 0.86)))
@@ -262,7 +259,7 @@ struct MapChromeMenuPanel: View {
         }
         .frame(maxWidth: .infinity)
         .glassEffect(Glass.regular, in: shape)
-        .glassEffectID("panel", in: glassNamespace)
+        .glassEffectTransition(.identity)
         .offset(y: dragOffset)
         .onGeometryChange(for: CGRect.self, of: { proxy in
             proxy.frame(in: .named(MapChromeView.coordinateSpaceName))
@@ -328,8 +325,39 @@ struct MapChromeMenuPanel: View {
             if let message = sheet.message {
                 messageView(message)
             }
+            if let detail = sheet.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(sheet.paragraphs) { paragraph in
+                VStack(alignment: .leading, spacing: 6) {
+                    if let title = paragraph.title, !title.isEmpty {
+                        Text(title).font(.headline)
+                    }
+                    Text(paragraph.text)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             ForEach(sheet.sections) { section in
                 sectionView(section)
+            }
+            if !sheet.actions.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(sheet.actions.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 { Divider().padding(.leading, 56) }
+                        rowButton(row, footnote: false)
+                    }
+                }
+                .background(groupFill)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+            if let caption = sheet.caption, !caption.isEmpty {
+                Text(caption)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 12)

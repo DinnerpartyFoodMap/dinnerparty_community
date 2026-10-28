@@ -72,6 +72,7 @@ export default function MapView({
     onOpenFeedback,
     desktopHeaderMenu = null,
     randomFoodRequestId = 0,
+    alongRouteRequestId = 0,
     myPlacesRequestId = 0,
     onOpenPlaceList,
     onOpenProfile,
@@ -89,7 +90,8 @@ export default function MapView({
     pickerTitle = '',
     onPickPoint,
     initialCenter = null,
-    mapPageActive = false
+    mapPageActive = false,
+    mapPreviewActive = false
 }) {
     const containerRef = useRef(null);
     const journeyRef = useRef(null);
@@ -114,8 +116,8 @@ export default function MapView({
     const [places, setPlaces] = useState([]);
     const [mapReady, setMapReady] = useState(false);
     useEffect(() => {
-        markerLayerRef.current?.setNativeGlassVisible(mapPageActive || pickerMode);
-    }, [mapPageActive, pickerMode, mapReady]);
+        markerLayerRef.current?.setNativeGlassVisible(mapPageActive || mapPreviewActive || pickerMode);
+    }, [mapPageActive, mapPreviewActive, pickerMode, mapReady]);
     const [amapState, setAmapState] = useState(() => getAmapState());
     useEffect(() => subscribeAmap(setAmapState), []);
     const [addMode, setAddMode] = useState(false);
@@ -439,7 +441,7 @@ export default function MapView({
                     ? (addMode ? t('map:main.addTooltip.cancel') : t('map:main.addTooltip.start'))
                     : t('map:main.addTooltip.loginRequired');
 
-    // 添加地点：在选中的位置放一个标记。窄屏表单先只露出下方三分之一，把这个位置移到上方露出的地图中间
+    // 添加地点：标记固定在点选位置，打开表单不改变地图相机。
     useEffect(() => {
         const map = mapRef.current;
         if (!mapReady || !map || !window.AMap || !addingPos || pickerMode) return undefined;
@@ -452,14 +454,6 @@ export default function MapView({
         pin.append(icon);
         const marker = new window.AMap.Marker({ position: addingPos, content: pin, anchor: 'bottom-center', bubble: true, zIndex: 3100 });
         marker.setMap(map);
-        if (layout.sheet) {
-            try {
-                const pixel = map.lngLatToContainer(new window.AMap.LngLat(addingPos[0], addingPos[1]));
-                const size = map.getSize();
-                const height = size && typeof size.getHeight === 'function' ? size.getHeight() : (containerRef.current?.clientHeight || window.innerHeight);
-                map.panTo(map.containerToLngLat(new window.AMap.Pixel(pixel.x, pixel.y + height / 6)));
-            } catch (error) { /* 尽力而为 */ }
-        }
         return () => marker.setMap(null);
     }, [mapReady, addingPos, pickerMode]);
 
@@ -625,7 +619,7 @@ export default function MapView({
 
             // 标记层：图标、名称、数量同根渲染；点击回调经 ref 读取最新闭包
             markerLayerRef.current = new MarkerLayerController(mapRef.current, {
-                nativeGlassVisible: mapPageActive || pickerMode,
+                nativeGlassVisible: mapPageActive || mapPreviewActive || pickerMode,
                 onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
                 onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
             });
@@ -649,6 +643,9 @@ export default function MapView({
                         showTip(t('map:main.addOutsideMap'));
                         return;
                     }
+                    // 同步结束选点，防止同一次触摸的后续 click 在 React effect 前改写坐标。
+                    addModeRef.current = false;
+                    setAddMode(false);
                     setAddingPos([lng, lat]);
                     return;
                 }
@@ -1973,6 +1970,7 @@ export default function MapView({
                 onOpenFeedback={onOpenFeedback}
                 desktopHeaderMenu={desktopHeaderMenu}
                 randomFoodRequestId={randomFoodRequestId}
+                alongRouteRequestId={alongRouteRequestId}
                 onOpenPlaceList={onOpenPlaceList}
                 onOpenProfile={onOpenProfile}
                 myPlacesRequestId={myPlacesRequestId}

@@ -168,6 +168,8 @@ function SurfaceInner({
             role={rest.role || (modal ? 'dialog' : undefined)}
             aria-modal={modal ? true : undefined}
             {...rest}
+            data-native-back-surface={overlay ? handleRef.current?.id : undefined}
+            data-native-cluster-occluder={overlay ? '' : undefined}
             // 退出中的浮层不再响应操作，避免重复提交
             style={{ ...style, pointerEvents: isPresent ? style && style.pointerEvents : 'none' }}
             onKeyDown={handleKeyDown}

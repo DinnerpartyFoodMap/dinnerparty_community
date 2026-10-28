@@ -54,12 +54,12 @@ final class MapChromeHostingController<Content: View>: UIHostingController<Conte
 
 /// iOS 26 地图浮动按钮组与底部工具栏（系统 Liquid Glass）。
 /// - 工具栏是一块整体玻璃（按钮与头像都在里面，内部不再叠加玻璃）；顶部拖动条上滑展开“更多功能”，下滑或点地图收起。
-/// - 浮动按钮各自是圆形玻璃；二者放在同一个 GlassEffectContainer 中，出现/收起时由 glassEffectID 管理形变。
+/// - 浮动按钮共用一块竖向玻璃，打开独立面板时缩小隐去，关闭后恢复。
 /// - 点“搜索”后工具栏形变为输入框：搜索按钮的高亮拉长成输入框底色。
 ///   输入时右侧头像位置变为关闭搜索按钮；收起键盘后头像回来，左侧分出一个返回圆钮用于退出搜索。
 /// - 按压反馈、形变与布局留在原生线程；网页只下发按钮快照并接收动作与输入事件。
 /// - 控件位置由始终参与布局的透明占位决定：即使控件尚未显示，网页也能先拿到占用区域完成握手。
-/// - 住民菜单、我的收藏是工具栏上方的玻璃面板（MapChromeMenuPanel），与工具栏在同一个 GlassEffectContainer 里、同一种玻璃；
+/// - 住民菜单、我的收藏、随机美食是工具栏上方独立淡入淡出的玻璃面板（MapChromeMenuPanel）；
 ///   地点卡片仍由 MapChromeSheetPresenter 以 UIKit 系统面板呈现，见 MapChromeSheets.swift。
 @available(iOS 26.0, *)
 struct MapChromeView: View {
@@ -130,11 +130,7 @@ struct MapChromeView: View {
             // 融合距离小于控件间距：静止时各自独立，返回圆钮从胶囊分离的过程中呈液滴状断开
             GlassEffectContainer(spacing: 8) {
                 VStack(alignment: .trailing, spacing: model.floatingGap) {
-                    if let panel {
-                        // 住民菜单 / 我的收藏：真正参与布局，停在工具栏上方（浮动按钮让位）。
-                        // 不放在占位的 overlay 里靠 alignmentGuide 上移：那样在真机上没有生效，面板盖住了工具栏
-                        MapChromeMenuPanel(model: model, sheet: panel, maxHeight: panelMaxHeight, glassNamespace: glassNamespace)
-                    } else if !model.floatingItems.isEmpty {
+                    if !model.floatingItems.isEmpty {
                         // v12：列表 / 地图切换、筛选与定位共用一个竖向圆角矩形（只有一个按钮时就是圆形）。
                         // 占位逐个记录位置（地图安全区、操作指引都按按钮算），玻璃画在整组上
                         VStack(spacing: 0) {
@@ -150,14 +146,16 @@ struct MapChromeView: View {
                         }
                         .overlay {
                             // 搜索展开时让位给网页搜索结果
-                            if showing && !searching {
+                            if showing && !searching && panel == nil {
                                 VStack(spacing: 0) {
                                     ForEach(model.floatingItems) { item in
                                         floatingButton(item)
                                     }
                                 }
                                 .glassEffect(Glass.regular.interactive(), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
-                                .glassEffectID("floating", in: glassNamespace)
+                                // 不参与工具栏或弹窗的玻璃匹配，整组只缩小并淡出。
+                                .glassEffectTransition(.identity)
+                                .transition(.scale(scale: reduceMotion ? 1 : 0.82, anchor: .bottom).combined(with: .opacity))
                             }
                         }
                         // 上滑更多功能时随抽屉顶边一起上移，始终停在抽屉上方。
@@ -204,6 +202,19 @@ struct MapChromeView: View {
                 }
             }
         }
+        .overlay(alignment: .bottom) {
+            if let panel {
+                // 独立于工具栏的 GlassEffectContainer，防止系统把浮动按钮匹配为放大的弹窗。
+                GlassEffectContainer(spacing: 0) {
+                    MapChromeMenuPanel(model: model, sheet: panel, maxHeight: panelMaxHeight)
+                }
+                .id(panel.id)
+                .frame(maxWidth: 624)
+                .padding(.bottom, Self.dockHeight + model.floatingGap)
+                .transition(.opacity)
+                .zIndex(1)
+            }
+        }
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -219,7 +230,7 @@ struct MapChromeView: View {
         .animation(searchAnimation, value: editing)
         .animation(drawerAnimation, value: model.drawerExpanded)
         .animation(drawerAnimation, value: model.tour)
-        .animation(animation, value: panel?.id)
+        .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.2), value: panel?.id)
         .task(id: swipeHinting && !reduceMotion) {
             await playSwipeHint()
         }

@@ -10,7 +10,7 @@ let ownerSeq = 0;
 // 首次握手期间最多这么久不显示网页工具栏；超时仍未接管就先显示网页工具栏（之后接管会再切换一次）
 const WEB_HOLD_MS = 1500;
 // pending：本次启用后的首次握手还没有结果（成功、回退网页或等待超时）
-const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: true, tour: null });
+const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: true, tour: null, showing: false });
 
 /**
  * @param {{ enabled: boolean, visible?: boolean, items: Array, theme: object, floatingGap?: number, search?: object, sheet?: object|null,
@@ -62,8 +62,9 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
                 const bottom = Math.round(Number(layout.bottomOccupied) || 0);
                 const tourLayout = readTourLayout(layout);
                 const tourChanged = JSON.stringify(tourLayout) !== JSON.stringify(prev.tour);
-                if (prev.bottomOccupied === bottom && !tourChanged) return prev;
-                return { ...prev, bottomOccupied: bottom, tour: tourChanged ? tourLayout : prev.tour };
+                const showing = !!layout.showing;
+                if (prev.bottomOccupied === bottom && !tourChanged && prev.showing === showing) return prev;
+                return { ...prev, bottomOccupied: bottom, tour: tourChanged ? tourLayout : prev.tour, showing };
             })
         });
         sessionRef.current = session;
@@ -109,5 +110,5 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
 
     // pending 覆盖“上一个会话留下的状态还是 native、新会话刚开始握手”的情形
     const connecting = active && state.mode !== 'native' && (state.pending || handshake === 'idle' || handshake === 'connecting');
-    return { mode: state.mode, bottomOccupied: state.bottomOccupied, connecting, holdWeb, tour: state.mode === 'native' ? state.tour : null };
+    return { mode: state.mode, bottomOccupied: state.bottomOccupied, connecting, holdWeb, tour: state.mode === 'native' ? state.tour : null, showing: state.mode === 'native' && state.showing };
 }

@@ -20,6 +20,17 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
     /// 左边缘侧滑返回：只在网页报告“有东西可返回”时启用
     private var edgeBackGesture: UIScreenEdgePanGestureRecognizer?
     private let edgeBackDelegate = EdgeBackGestureDelegate()
+    /// 新网页声明支持交互进度后，手势开始时锁定本轮协议；旧网页仍只接收最终返回事件。
+    private enum EdgeBackProtocol: Equatable { case legacy, progress }
+    private var edgeBackInteractive = false
+    private var edgeBackTrackingProtocol: EdgeBackProtocol?
+    private var edgeBackProgressActive: Bool { edgeBackTrackingProtocol == .progress }
+    private var edgeBackGestureGeneration = 0
+    private var edgeBackLastSample: (progress: CGFloat, velocity: CGFloat) = (0, 0)
+    private var edgeBackPendingSample: (progress: CGFloat, velocity: CGFloat)?
+    private var edgeBackDisplayLink: CADisplayLink?
+    private let edgeBackFrameTarget = EdgeBackDisplayLinkTarget()
+    private var edgeBackChangeInFlightGeneration: Int?
 
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
@@ -45,6 +56,8 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
                 self?.chromePlugin?.handleWebViewReload()
                 self?.clusterBridge?.reset()
                 // 新页面会重新上报可返回状态，此前先关闭侧滑
+                self?.cancelEdgeBackProgress()
+                self?.edgeBackInteractive = false
                 self?.edgeBackGesture?.isEnabled = false
             }
         }
@@ -63,6 +76,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: Self.edgeBackMessageName)
         loadingObservation?.invalidate()
         frameObservation?.invalidate()
+        edgeBackDisplayLink?.invalidate()
         for observer in keyboardObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -73,7 +87,8 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
     private static let edgeBackMessageName = "foodMapEdgeBack"
 
     /// iOS 没有系统返回键：识别左边缘侧滑后通知网页执行与 Android 返回键相同的 dispatchBack。
-    /// 网页通过 foodMapEdgeBack 消息上报是否有东西可返回；根页面时手势关闭，不抢地图拖动。
+    /// 网页通过 foodMapEdgeBack 上报 { enabled, interactive? }；根页面时手势关闭，不抢地图拖动。
+    /// interactive 为真时发送 begin / change / end / cancel，网页按进度显示跟手反馈；否则保持旧版 ended-only 事件。
     private func installEdgeBack() {
         guard let webView = webView else { return }
         let gesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdgeBack(_:)))
@@ -82,25 +97,102 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         gesture.delegate = edgeBackDelegate
         webView.addGestureRecognizer(gesture)
         edgeBackGesture = gesture
+        edgeBackFrameTarget.onFrame = { [weak self] in self?.flushEdgeBackProgress() }
 
         webView.configuration.userContentController.add(
             WeakScriptMessageHandler { [weak self] message in
-                guard let body = message.body as? [String: Any] else { return }
-                self?.edgeBackGesture?.isEnabled = (body["enabled"] as? Bool) ?? false
+                guard let self, let body = message.body as? [String: Any] else { return }
+                let enabled = (body["enabled"] as? Bool) ?? false
+                if !enabled { self.cancelEdgeBackProgress() }
+                self.edgeBackInteractive = (body["interactive"] as? Bool) ?? false
+                self.edgeBackGesture?.isEnabled = enabled
             },
             name: Self.edgeBackMessageName
         )
     }
 
     @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard gesture.state == .ended, let webView = webView else { return }
-        let distance = gesture.translation(in: webView).x
-        let velocity = gesture.velocity(in: webView).x
-        // 与系统导航一致的手感：滑过约三分之一屏宽，或明显向右甩出
-        let committed = distance > webView.bounds.width * 0.3 || (velocity > 600 && distance > 24)
-        guard committed else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('foodmap:edge-back'))", completionHandler: nil)
+        guard let webView else { cancelEdgeBackProgress(); return }
+        let translation = gesture.translation(in: webView).x
+        let rawVelocity = gesture.velocity(in: webView).x
+        let distance = translation.isFinite ? max(0, translation) : 0
+        let velocity = rawVelocity.isFinite ? rawVelocity : 0
+        let progress = min(1, distance / max(1, webView.bounds.width))
+        let sample = (progress: progress, velocity: velocity)
+        if gesture.state != .began { edgeBackLastSample = sample }
+        switch gesture.state {
+        case .began:
+            cancelEdgeBackProgress()
+            edgeBackLastSample = sample
+            edgeBackGestureGeneration += 1
+            edgeBackTrackingProtocol = edgeBackInteractive ? .progress : .legacy
+            if edgeBackProgressActive { emitEdgeBackProgress("begin", sample: sample) }
+        case .changed:
+            guard edgeBackProgressActive else { return }
+            edgeBackPendingSample = sample
+            if edgeBackDisplayLink == nil {
+                let link = CADisplayLink(target: edgeBackFrameTarget, selector: #selector(EdgeBackDisplayLinkTarget.frame(_:)))
+                edgeBackDisplayLink = link
+                link.add(to: .main, forMode: .common)
+            }
+        case .ended:
+            // 取消、禁用后的迟到 ended 不能落入旧协议并误触返回。
+            guard let mode = edgeBackTrackingProtocol else { return }
+            stopEdgeBackFrames()
+            edgeBackTrackingProtocol = nil
+            // 明显反向拖回时允许取消；旧协议保留原有的完成判断。
+            let committed = mode == .progress
+                ? ((progress >= 0.3 && velocity >= -150) || (velocity > 600 && distance > 24))
+                : (distance > webView.bounds.width * 0.3 || (velocity > 600 && distance > 24))
+            if mode == .progress {
+                // 结束事件携带松手的最新值，不能被逐帧合并丢弃。
+                emitEdgeBackProgress("end", sample: sample, committed: committed)
+            } else if committed {
+                webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('foodmap:edge-back'))", completionHandler: nil)
+            }
+            if committed { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        case .cancelled, .failed:
+            cancelEdgeBackProgress()
+        default:
+            break
+        }
+    }
+
+    private func flushEdgeBackProgress() {
+        guard edgeBackProgressActive, edgeBackChangeInFlightGeneration == nil, let sample = edgeBackPendingSample else { return }
+        edgeBackPendingSample = nil
+        let generation = edgeBackGestureGeneration
+        edgeBackChangeInFlightGeneration = generation
+        // WebView 忙时只保留最新一帧，最多一个 change 正在执行，防止积压过时的拖动位置。
+        emitEdgeBackProgress("change", sample: sample) { [weak self] in
+            // 只释放这次调用占据的槽位，不修改新手势的协议或待发送 sample。
+            guard let self, self.edgeBackChangeInFlightGeneration == generation else { return }
+            self.edgeBackChangeInFlightGeneration = nil
+        }
+    }
+
+    private func stopEdgeBackFrames() {
+        edgeBackDisplayLink?.invalidate()
+        edgeBackDisplayLink = nil
+        edgeBackPendingSample = nil
+    }
+
+    private func cancelEdgeBackProgress() {
+        stopEdgeBackFrames()
+        let mode = edgeBackTrackingProtocol
+        edgeBackTrackingProtocol = nil
+        if mode == .progress { emitEdgeBackProgress("cancel", sample: edgeBackLastSample) }
+    }
+
+    private func emitEdgeBackProgress(_ phase: String, sample: (progress: CGFloat, velocity: CGFloat),
+                                      committed: Bool? = nil, completion: (() -> Void)? = nil) {
+        var detail: [String: Any] = ["phase": phase, "progress": Double(sample.progress), "velocity": Double(sample.velocity)]
+        if let committed { detail["committed"] = committed }
+        guard let webView, let data = try? JSONSerialization.data(withJSONObject: detail),
+              let json = String(data: data, encoding: .utf8) else { completion?(); return }
+        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('foodmap:edge-back-progress',{detail:\(json)}))") { _, _ in
+            completion?()
+        }
     }
 
     // MARK: - 键盘
@@ -206,10 +298,23 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
 
 /// 侧滑返回手势优先于 WebView 自身的滚动拖动；不是从左边缘开始的触摸会让它立即失败，不影响其他手势。
 private final class EdgeBackGestureDelegate: NSObject, UIGestureRecognizerDelegate {
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+        let velocity = pan.velocity(in: pan.view)
+        return velocity.x > 0 && velocity.x > abs(velocity.y)
+    }
+
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         return otherGestureRecognizer is UIPanGestureRecognizer && !(otherGestureRecognizer is UIScreenEdgePanGestureRecognizer)
     }
+}
+
+/// CADisplayLink 强引用 target；通过弱捕获闭包转发，避免它与根控制器相互持有。
+private final class EdgeBackDisplayLinkTarget: NSObject {
+    var onFrame: (() -> Void)?
+
+    @objc func frame(_ link: CADisplayLink) { onFrame?() }
 }
 
 /// WKUserContentController 会强引用消息处理器，用闭包包一层避免与控制器循环引用。

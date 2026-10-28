@@ -3,13 +3,13 @@ import { axisLabel, valueWord } from './tasteAxes';
 import { t } from '../i18n/index.js';
 
 // 六类餐饮偏好的雷达。每轴独立：有依据的轴画一个点和一条从中心出发的线，相邻两轴都有值时用淡线连起来；
-// “待了解”的轴不画点（不当成 0），轴名旁写“待了解”。不填充面积、不算总分。估算出来的轴用空心点区分。
-// 画布按 300 设计、按显示宽度缩放：轴名 15、评价 12.5，在 300px 宽时就是实际字号
+// 未知轴不画点；仅在两个相邻已知轴与中心围出的区域填色，避免给未知轴编造数值。估算轴用空心点区分。
+// 轴值描述保留在读屏标签中，画面只显示类别名。
 const SIZE = 300;
 const CENTER = SIZE / 2;
 const RADIUS = 80;
 const LABEL_RADIUS = 102;
-// 上下各裁掉一截空白（最上面的轴名约从 y=30 开始，最下面的评价到 y≈270）
+// 上下各裁掉一截空白，保留六个类别名。
 const CROP = 18;
 const HEIGHT = SIZE - CROP * 2;
 
@@ -42,7 +42,10 @@ export default function TasteRadar({ axes, selected, onSelect, accent = 'var(--t
                 if (axis.value === null || next.value === null) return null;
                 const [x1, y1] = point(index, axis.value);
                 const [x2, y2] = point((index + 1) % axes.length, next.value);
-                return <line key={`link-${axis.key}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={accent} strokeOpacity={0.35} strokeWidth={1.5} />;
+                return <g key={`link-${axis.key}`}>
+                    <polygon points={`${CENTER},${CENTER} ${x1},${y1} ${x2},${y2}`} fill={accent} fillOpacity={0.2} />
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={accent} strokeOpacity={0.65} strokeWidth={1.5} />
+                </g>;
             })}
             {axes.map((axis, index) => {
                 if (axis.value === null) return null;
@@ -79,9 +82,6 @@ export default function TasteRadar({ axes, selected, onSelect, accent = 'var(--t
                     >
                         <text x={x} y={y - 3} textAnchor={anchor} fontSize={15} fontWeight={active ? 700 : 500} fill={active ? accent : 'var(--color-text-primary)'}>
                             {axisLabel(axis.key)}
-                        </text>
-                        <text x={x} y={y + 13} textAnchor={anchor} fontSize={12.5} fill="var(--color-text-muted)">
-                            {axis.value === null ? t('profile:taste.unknown') : valueWord(axis.value)}
                         </text>
                     </g>
                 );

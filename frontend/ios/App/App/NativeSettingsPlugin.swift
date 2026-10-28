@@ -28,10 +28,16 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
     private var queuedFinish: (action: String, animated: Bool)?
     private var closeCompletions: [() -> Void] = []
     private var loadingObservation: NSKeyValueObservation?
+    /// 地图保持在设置页下方，进入从右侧推入，返回向右退场。
+    private let screenTransition = NativeSettingsTransitionDelegate()
     /// 本次呈现的设置状态（二级页共用）
     private var store: NativeSettingsStore?
     /// 左边缘侧滑关闭整个设置；推入二级页时停用，让系统侧滑返回上一级
     private weak var edgeGesture: UIScreenEdgePanGestureRecognizer?
+    /// 手指仍在驱动退场；松手后的完成 / 回弹由 UIKit 继续执行。
+    private var trackingEdgeBack = false
+    /// 每次退场有独立序号；取消后旧的 UIKit completion 不能结束之后的会话。
+    private var finishGeneration = 0
 
     public override func load() {
         loadingObservation = bridge?.webView?.observe(\.isLoading, options: [.new]) { [weak self] view, _ in
@@ -58,12 +64,30 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
                 self?.edgeGesture?.isEnabled = !shown
             }
             self.store = store
+            self.screenTransition.canBeginInteraction = { [weak self] in
+                guard let self, let host = self.host else { return false }
+                return !self.presenting && !self.finishing && host.presentingViewController != nil
+                    && host.presentedViewController == nil && host.transitionCoordinator == nil
+            }
+            self.screenTransition.onDismissalEnd = { [weak self] completed in
+                guard let self else { return }
+                self.trackingEdgeBack = false
+                self.screenTransition.interactiveDismissal = nil
+                guard !completed else { return }
+                // 取消只结束退场，host、store 和 open 的 promise 全部保留。
+                self.finishGeneration += 1
+                self.finishing = false
+                DispatchQueue.main.async { [weak self] in self?.finishQueued() }
+            }
             let root = NativeSettingsView(store: store) { [weak self] action in
                 self?.finish(action: action)
             }
             let host = UIHostingController(rootView: root)
-            host.modalPresentationStyle = .fullScreen
+            host.modalPresentationStyle = .custom
+            host.transitioningDelegate = self.screenTransition
+            host.modalPresentationCapturesStatusBarAppearance = true
             host.overrideUserInterfaceStyle = store.dark ? .dark : .light
+            host.view.backgroundColor = .systemGroupedBackground
             // 在“个性化主题”里切换暗黑模式：设置页本身立即跟着切换
             store.onDarkChange = { [weak host] dark in
                 host?.overrideUserInterfaceStyle = dark ? .dark : .light
@@ -80,15 +104,13 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
             self.presenting = true
             let back = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(self.edgeBack(_:)))
             back.edges = .left
+            back.delegate = self.screenTransition
             host.view.addGestureRecognizer(back)
             self.edgeGesture = back
             presenter.present(host, animated: !UIAccessibility.isReduceMotionEnabled) { [weak self] in
                 guard let self else { return }
                 self.presenting = false
-                if let queued = self.queuedFinish {
-                    self.queuedFinish = nil
-                    self.finish(action: queued.action, animated: queued.animated)
-                }
+                self.finishQueued()
             }
         }
     }
@@ -115,35 +137,185 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
     private func finish(action: String, animated: Bool = true, completion: (() -> Void)? = nil) {
         guard let host else { completion?(); return }
         if let completion { closeCompletions.append(completion) }
-        guard !finishing else { return }
+        guard !finishing else {
+            if screenTransition.interactiveDismissal != nil {
+                // 网页离开或重新加载发生在拖动途中：先回弹，再执行强制关闭。
+                queuedFinish = (action, animated)
+                if trackingEdgeBack {
+                    trackingEdgeBack = false
+                    screenTransition.interactiveDismissal?.cancel()
+                }
+            }
+            return
+        }
         if presenting { queuedFinish = (action, animated); return }
         finishing = true
+        finishGeneration += 1
+        let generation = finishGeneration
         let call = pending
         let id = requestID
         let complete = { [weak self] in
-            self?.host = nil
-            self?.pending = nil
-            self?.requestID = nil
-            self?.store = nil
-            self?.finishing = false
+            // UIKit 的交互退场可能取消；只有实际离开后才结束桥接会话。
+            guard let self, self.finishGeneration == generation, self.host === host,
+                  host.presentingViewController == nil else { return }
+            self.host = nil
+            self.pending = nil
+            self.requestID = nil
+            self.store = nil
+            self.finishing = false
+            self.queuedFinish = nil
+            self.screenTransition.interactiveDismissal = nil
             call?.resolve(["id": id ?? "", "action": action])
-            let completions = self?.closeCompletions ?? []
-            self?.closeCompletions.removeAll()
+            let completions = self.closeCompletions
+            self.closeCompletions.removeAll()
             completions.forEach { $0() }
         }
         // 从父控制器关闭整个设置页；账号确认 alert 尚在退场时，不能只关闭 alert 留下孤立的设置页。
         if let presenter = host.presentingViewController {
-            presenter.dismiss(animated: animated && !UIAccessibility.isReduceMotionEnabled, completion: complete)
+            let interactive = screenTransition.interactiveDismissal != nil
+            presenter.dismiss(animated: animated && (interactive || !UIAccessibility.isReduceMotionEnabled), completion: complete)
         } else {
             complete()
         }
     }
 
+    private func finishQueued() {
+        guard !presenting, !finishing, let queued = queuedFinish else { return }
+        queuedFinish = nil
+        finish(action: queued.action, animated: queued.animated)
+    }
+
     @objc private func edgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard gesture.state == .ended, let view = gesture.view else { return }
-        let distance = gesture.translation(in: view).x
-        if distance > view.bounds.width * 0.3 || (distance > 24 && gesture.velocity(in: view).x > 600) {
+        guard let view = gesture.view else { return }
+        let distance = max(0, gesture.translation(in: view).x)
+        let progress = min(1, distance / max(1, view.bounds.width))
+        switch gesture.state {
+        case .began:
+            guard screenTransition.canBeginInteraction?() == true else { return }
+            let interaction = UIPercentDrivenInteractiveTransition()
+            interaction.completionCurve = .easeOut
+            screenTransition.interactiveDismissal = interaction
+            trackingEdgeBack = true
             finish(action: "back")
+            interaction.update(progress)
+        case .changed:
+            guard trackingEdgeBack else { return }
+            screenTransition.interactiveDismissal?.update(progress)
+        case .ended:
+            guard trackingEdgeBack, let interaction = screenTransition.interactiveDismissal else { return }
+            trackingEdgeBack = false
+            interaction.update(progress)
+            let velocity = gesture.velocity(in: view).x
+            let committed = (progress >= 0.3 && velocity >= -150) || (distance > 24 && velocity > 600)
+            if committed { interaction.finish() } else { interaction.cancel() }
+        case .cancelled, .failed:
+            guard trackingEdgeBack else { return }
+            trackingEdgeBack = false
+            screenTransition.interactiveDismissal?.cancel()
+        default:
+            break
+        }
+    }
+}
+
+/// 自定义导航式呈现保留地图宿主及其实时玻璃。fullScreen 会移除地图视图，
+/// 返回时重新挂载地图与原生控件会出现一帧空白或网页按钮。
+private final class NativeSettingsTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate, UIGestureRecognizerDelegate {
+    var interactiveDismissal: UIPercentDrivenInteractiveTransition?
+    var canBeginInteraction: (() -> Bool)?
+    var onDismissalEnd: ((Bool) -> Void)?
+
+    func animationController(forPresented presented: UIViewController, presenting: UIViewController,
+                             source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+        NativeSettingsSlideAnimator(presenting: true)
+    }
+
+    func animationController(forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+        NativeSettingsSlideAnimator(presenting: false)
+    }
+
+    func interactionControllerForDismissal(using animator: UIViewControllerAnimatedTransitioning) -> UIViewControllerInteractiveTransitioning? {
+        interactiveDismissal
+    }
+
+    func presentationController(forPresented presented: UIViewController, presenting: UIViewController?,
+                                source: UIViewController) -> UIPresentationController? {
+        let controller = NativeSettingsPresentationController(presentedViewController: presented, presenting: presenting)
+        controller.onDismissalEnd = { [weak self] completed in self?.onDismissalEnd?(completed) }
+        return controller
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard canBeginInteraction?() == true, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+        let velocity = pan.velocity(in: pan.view)
+        return velocity.x > 0 && velocity.x > abs(velocity.y)
+    }
+}
+
+private final class NativeSettingsPresentationController: UIPresentationController {
+    var onDismissalEnd: ((Bool) -> Void)?
+
+    override var shouldRemovePresentersView: Bool { false }
+
+    override func dismissalTransitionDidEnd(_ completed: Bool) {
+        super.dismissalTransitionDidEnd(completed)
+        onDismissalEnd?(completed)
+    }
+
+    override var frameOfPresentedViewInContainerView: CGRect {
+        containerView?.bounds ?? .zero
+    }
+
+    override func containerViewWillLayoutSubviews() {
+        super.containerViewWillLayoutSubviews()
+        // 用 bounds / center 布局，保留横向动画正在使用的 transform。
+        let frame = frameOfPresentedViewInContainerView
+        presentedView?.bounds = CGRect(origin: .zero, size: frame.size)
+        presentedView?.center = CGPoint(x: frame.midX, y: frame.midY)
+    }
+}
+
+private final class NativeSettingsSlideAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+    private let presenting: Bool
+
+    init(presenting: Bool) { self.presenting = presenting }
+
+    func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
+        UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.34
+    }
+
+    func animateTransition(using context: UIViewControllerContextTransitioning) {
+        let key: UITransitionContextViewControllerKey = presenting ? .to : .from
+        guard let controller = context.viewController(forKey: key),
+              let movingView = context.view(forKey: presenting ? .to : .from) else {
+            context.completeTransition(false)
+            return
+        }
+        let container = context.containerView
+        let frame = presenting ? context.finalFrame(for: controller) : context.initialFrame(for: controller)
+        movingView.frame = frame.isEmpty ? container.bounds : frame
+        let offset = CGAffineTransform(translationX: container.bounds.width, y: 0)
+        // 手指直接驱动时仍按水平距离跟随；自动动画遵循“减弱动态效果”。
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled && !context.isInteractive
+        if presenting {
+            container.addSubview(movingView)
+            movingView.transform = reduceMotion ? .identity : offset
+            movingView.alpha = reduceMotion ? 0 : 1
+        }
+        let curve: UIView.AnimationOptions = context.isInteractive ? .curveLinear : .curveEaseInOut
+        UIView.animate(withDuration: transitionDuration(using: context), delay: 0,
+                       options: [curve, .beginFromCurrentState]) {
+            movingView.transform = self.presenting || reduceMotion ? .identity : offset
+            movingView.alpha = !self.presenting && reduceMotion ? 0 : 1
+        } completion: { _ in
+            let completed = !context.transitionWasCancelled
+            if !completed {
+                movingView.transform = .identity
+                movingView.alpha = 1
+            }
+            context.completeTransition(completed)
+            movingView.transform = .identity
+            movingView.alpha = 1
         }
     }
 }

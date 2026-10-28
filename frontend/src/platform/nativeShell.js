@@ -7,6 +7,7 @@ import { initNavigationState, placeSharePath } from './navigation.js';
 import { initLifecycle } from './lifecycle.js';
 import { getRuntimeConfig } from './runtimeConfig.js';
 import { startGlassRefraction } from './glassRefraction.js';
+import { createIosBackGesture } from './iosBackGesture.js';
 
 function setKeyboardInset(height) {
     const root = document.documentElement;
@@ -36,8 +37,8 @@ export function toInAppPath(rawUrl, base = getRuntimeConfig().publicWebBaseUrl) 
     return placeSharePath(url.pathname, url.search) || `${url.pathname || '/'}${url.search}`;
 }
 
-// iOS 没有系统返回键：FoodMapBridgeViewController 识别左边缘侧滑后派发 foodmap:edge-back，
-// 走与 Android 返回键相同的 dispatchBack。只在有东西可返回时让原生接管左边缘，
+// iOS 左边缘返回：新壳派发进度事件，拖动/取消保持真实页面与输入；完成后走 dispatchBack。
+// 旧壳继续派发 foodmap:edge-back。只在有东西可返回时让原生接管左边缘，
 // 根页面不拦截，地图从左边缘开始的拖动不受影响。
 function setupIosEdgeBack() {
     const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.foodMapEdgeBack;
@@ -46,11 +47,15 @@ function setupIosEdgeBack() {
     const report = (enabled) => {
         if (enabled === last) return;
         last = enabled;
-        try { handler.postMessage({ enabled }); } catch (e) { /* 原生未注册时忽略 */ }
+        try { handler.postMessage({ enabled, interactive: true }); } catch (e) { /* 原生未注册时忽略 */ }
     };
     subscribeBackTarget(report);
     report(hasBackTarget());
     window.addEventListener('foodmap:edge-back', () => { dispatchBack(); });
+    const gesture = createIosBackGesture();
+    window.addEventListener('foodmap:edge-back-progress', event => {
+        Promise.resolve(gesture.handle(event.detail)).catch(error => console.warn('侧滑返回失败', error));
+    });
 }
 
 async function setupNative() {

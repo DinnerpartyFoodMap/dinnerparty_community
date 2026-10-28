@@ -1,11 +1,11 @@
 // 高频坐标走 WebKit 带回复通道；一次只发一帧，积压只保留最新状态。
 export const NATIVE_CLUSTER_CHANNEL = 'foodMapClusters';
-export const NATIVE_CLUSTER_PROTOCOL = 1;
+export const NATIVE_CLUSTER_PROTOCOL = 2;
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class NativeClusterSession {
-    constructor({ transport, onFrame = () => {}, timeoutMs = 350, leaseMs = 800, retryMs = 2000 } = {}) {
+    constructor({ transport, onFrame = () => {}, leaseMs = 800, timeoutMs = leaseMs, retryMs = 2000 } = {}) {
         this.transport = transport;
         this.onFrame = onFrame;
         this.timeoutMs = timeoutMs;

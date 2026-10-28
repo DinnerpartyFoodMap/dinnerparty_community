@@ -2,6 +2,8 @@
 
 hooks/useSearchPanel 控制搜索面板；components/RandomFoodPanel 与 AlongRoutePanel 管理推荐/顺路交互；alongRoute.js 处理高德路线输入等工具。普通关键词、AI、随机的服务端规则仍由后端决定。MapView/MapUI 继续持有部分搜索状态；api/client 提供请求函数。
 
+随机美食的抽取生命周期由 `hooks/useRandomFood.js` 统一持有：网页 `RandomFoodPanel` 与 iOS 原生 `random` 弹窗（工具栏协议 v13，`randomFoodSheet.js`）共用一次请求、固定中心与最近两家的排除记录。原生的查看、换一家、重定中心动作仍回网页执行。关闭、换账号与换中心会取消旧轮次，迟到结果不回写；失败重试保留社区抽取的 `draw_id`。`npm run test:random-browser` 用真实 React 与受控 HTTP 边界覆盖这些交互。
+
 输入预览和回车只查询站内地点，回车保留 AI 推荐。网页和 iOS 原生输入共用这一规则；点击“没找到？查找未收录地点”才经后端查询高德。`useExternalSearch` 管理本次结果、错误、重复点击及过期响应；自有标记更新会刷新本地结果，但不会触发外部查询。额度与上线步骤见[外部搜索配置](../../../../backend/modules/maps/doc/search-budget.md)。
 
 ```mermaid

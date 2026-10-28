@@ -62,7 +62,7 @@ export function matchesPlaceFilter(place, filter) {
 }
 
 /** 距离筛选的几档半径（公里），与后端 placeList.js 的 RADIUS_OPTIONS_KM 一致；null 为不限 */
-export const RADIUS_OPTIONS_KM = Object.freeze([1, 3, 5, 10, 20, 50]);
+export const RADIUS_OPTIONS_KM = Object.freeze([0.5, 1, 3, 5, 10]);
 
 /** 列表接口的查询参数：标签 / 人均 + 距离（center 与 radiusKm 都有时） */
 export function placeListQuery(filter, distance) {

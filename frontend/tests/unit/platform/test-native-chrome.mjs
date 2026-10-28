@@ -2,6 +2,7 @@
 // 用假插件模拟原生端，覆盖握手、浮层接管、动作回执、会话丢失与故障回退。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { randomFoodChromeSheet } from '../../../src/discovery/randomFoodSheet.js';
 
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
@@ -10,6 +11,26 @@ const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitize
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Random shares the same native popup contract through loading, retry and result actions.
+{
+    const loading = sanitizeSheet(randomFoodChromeSheet({ busy: true }));
+    assert.equal(loading.id, 'random');
+    assert.equal(loading.messageTone, 'loading');
+    assert.ok(loading.actions.every(action => action.disabled && action.keepsOpen));
+    const failed = sanitizeSheet(randomFoodChromeSheet({ error: 'request failed' }));
+    assert.equal(failed.message, 'request failed');
+    assert.equal(failed.messageTone, 'danger');
+    const ready = sanitizeSheet(randomFoodChromeSheet({ result: {
+        place: { id: 7, name: '店名', category: '面馆', description: '**简介**', latitude: 30, longitude: 120 }, distanceKm: 0.3, candidateCount: 4
+    }, activeOrigin: { label: '展会' } }));
+    assert.deepEqual(ready.actions.map(action => action.id), ['view', 'another', 'redraw']);
+    assert.ok(ready.actions.every(action => action.keepsOpen && !action.disabled));
+    assert.equal(ready.paragraphs[0].title, '店名');
+    assert.equal(ready.paragraphs[1].text, '简介');
+    assert.ok(ready.subtitle.includes('展会'));
+    assert.equal(JSON.stringify(ready).includes('latitude'), false, 'native receives display data, not coordinates');
+}
 
 // Switching activities while a native card is visible must invalidate its old callbacks.
 {
@@ -293,7 +314,7 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 12);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 13);
     // Swift 插件的协议版本与面板 / 动作白名单必须与网页一致：网页新增面板忘了改 Swift 时，原生会静默丢掉它
     const swift = readFileSync(new URL('../../../ios/App/App/NativeMapChromePlugin.swift', import.meta.url), 'utf8');
     const swiftSet = (name) => [...swift.split(`static let ${name}: Set<String> = [`)[1].split(']')[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();

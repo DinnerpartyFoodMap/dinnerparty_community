@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import ScrollableView from '../components/layout/ScrollableView';
 import Button from '../components/primitives/Button';
+import AnchoredPopover from '../components/overlay/AnchoredPopover';
 import PlaceListView, { RADIUS_OPTIONS_KM } from '../places/PlaceListView';
 import { t } from '../i18n/index.js';
 import '../places/placeList.css';
@@ -11,15 +12,20 @@ import '../places/placeList.css';
  * 也可以在全屏地图上自己选（与修改地点位置同一个选点界面）。点列表里的地点回到地图并打开它。
  */
 export default function MapListMode({ backendUrl, token, filter, locatedCenter, getMapCenter, onPickCenter, onOpenPlace, insets = {} }) {
-    const [radiusKm, setRadiusKm] = useState(null);
+    const [radiusKm, setRadiusKm] = useState(3);
     const [customCenter, setCustomCenter] = useState(null);
+    const [centerMenuOpen, setCenterMenuOpen] = useState(false);
+    const centerButtonRef = useRef(null);
     // 没定位时用打开列表那一刻的地图中心，之后移动地图不影响
     const [mapCenter] = useState(() => getMapCenter?.() || null);
     const center = customCenter || locatedCenter || mapCenter;
     const source = customCenter ? 'custom' : (locatedCenter ? 'location' : 'map');
     const distance = radiusKm && center ? { center, radiusKm } : null;
 
-    const pickCenter = () => onPickCenter?.(center, (point) => setCustomCenter(point));
+    const pickCenter = () => {
+        setCenterMenuOpen(false);
+        onPickCenter?.(center, (point) => setCustomCenter(point));
+    };
 
     return (
         <ScrollableView
@@ -37,21 +43,23 @@ export default function MapListMode({ backendUrl, token, filter, locatedCenter, 
                     <div className="fm-map-list__distance">
                         <label className="fm-map-list__radius">
                             <span>{t('places:list.distanceLabel')}</span>
-                            <select value={radiusKm ?? ''} onChange={(event) => setRadiusKm(event.target.value ? Number(event.target.value) : null)}>
-                                <option value="">{t('places:list.distanceAny')}</option>
-                                {RADIUS_OPTIONS_KM.map((km) => <option key={km} value={km}>{t('places:list.distanceWithin', { km })}</option>)}
+                            <select value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}>
+                                {RADIUS_OPTIONS_KM.map((km) => <option key={km} value={km}>{km < 1 ? t('places:list.distanceWithinMeters', { meters: km * 1000 }) : t('places:list.distanceWithin', { km })}</option>)}
                             </select>
                         </label>
                         {radiusKm && (
-                            <span className="fm-map-list__center">
-                                <span className="material-symbols-outlined" aria-hidden="true">{source === 'location' ? 'my_location' : 'location_on'}</span>
-                                {source === 'custom' ? t('places:list.center.custom') : (source === 'location' ? t('places:list.center.location') : t('places:list.center.map'))}
-                                <Button themeAware onClick={pickCenter} style={{ padding: '4px 10px', fontSize: 13 }}>{t('places:list.center.change')}</Button>
-                                {customCenter && (
-                                    <Button themeAware onClick={() => setCustomCenter(null)} style={{ padding: '4px 10px', fontSize: 13 }}>
+                            <span className="fm-map-list__center" ref={centerButtonRef}>
+                                <Button themeAware className="fm-map-list__center-button" onClick={() => setCenterMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={centerMenuOpen}>
+                                    <span className="material-symbols-outlined" aria-hidden="true">{source === 'location' ? 'my_location' : 'location_on'}</span>
+                                    {source === 'custom' ? t('places:list.center.custom') : source === 'location' ? t('places:list.center.location') : t('places:list.center.map')}
+                                    <span className="material-symbols-outlined" aria-hidden="true">expand_more</span>
+                                </Button>
+                                <AnchoredPopover open={centerMenuOpen} onClose={() => setCenterMenuOpen(false)} anchorRef={centerButtonRef} placement="bottom-start" label={t('places:list.center.pickTitle')}>
+                                    <Button themeAware variant="menu" full role="menuitem" onClick={pickCenter}>{t('places:list.center.change')}</Button>
+                                    {customCenter && <Button themeAware variant="menu" full role="menuitem" onClick={() => { setCustomCenter(null); setCenterMenuOpen(false); }}>
                                         {locatedCenter ? t('places:list.center.useLocation') : t('places:list.center.useMap')}
-                                    </Button>
-                                )}
+                                    </Button>}
+                                </AnchoredPopover>
                             </span>
                         )}
                     </div>

@@ -69,6 +69,7 @@ export default function PageTransition({ pageKey, direction, children, onCovered
                         zIndex: 1
                     }}
                     data-app-scroll=""
+                    data-native-cluster-occluder=""
                 >
                     {children}
                 </motion.div>

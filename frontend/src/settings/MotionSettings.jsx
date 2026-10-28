@@ -9,7 +9,8 @@ import { t, tx } from '../i18n/index.js';
 export const MOTION_ITEMS = [
     { key: 'clusterMotion', label: t('settings:motion.cluster.label'), hint: t('settings:motion.cluster.hint') },
     { key: 'webMotion', label: t('settings:motion.web.label'), hint: t('settings:motion.web.hint') },
-    { key: 'nativeGlass', label: t('settings:motion.nativeGlass.label'), hint: t('settings:motion.nativeGlass.hint'), iosOnly: true }
+    { key: 'nativeGlass', label: t('settings:motion.nativeGlass.label'), hint: t('settings:motion.nativeGlass.hint'), iosOnly: true },
+    { key: 'clusterGlass', label: t('settings:motion.clusterGlass.label'), hint: t('settings:motion.clusterGlass.hint'), iosOnly: true }
 ];
 
 // 原生控件最近一次握手的结果，便于真机上直接看到没有启用的原因（iOS 原生设置页也用它）

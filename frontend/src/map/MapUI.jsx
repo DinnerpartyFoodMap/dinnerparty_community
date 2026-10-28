@@ -22,6 +22,8 @@ import { recordPlaceBehavior, sharePlaceContent, copyPlaceContent } from "../pla
 import { buildShareCardModel } from "../places/shareCard";
 import useShareCard from "../places/hooks/useShareCard";
 import RandomFoodPanel from "../discovery/components/RandomFoodPanel";
+import useRandomFood from '../discovery/hooks/useRandomFood';
+import { randomFoodChromeSheet } from '../discovery/randomFoodSheet';
 import { Exposure } from '../journey/feedback';
 import { usePlaceDiaryCount } from '../journey/PlaceDiaryList';
 import { buildPublicUrl, getRuntimeConfig, imageThumbnailUrl } from '../platform/runtimeConfig';
@@ -288,6 +290,7 @@ export default function MapUI(props) {
         onOpenFeedback,
         desktopHeaderMenu,
         randomFoodRequestId = 0,
+        alongRouteRequestId = 0,
         onboardingRequestId = 0,
         exhibition = null,
         exhibitionOpen = false,
@@ -612,6 +615,12 @@ export default function MapUI(props) {
 
     const closeAlongRoute = () => setAlongRouteOpen(false);
 
+    const randomFood = useRandomFood({
+        open: randomFoodOpen && !pickerMode,
+        mapRef, backendUrl, token: isAuthenticated ? token : null, feedback, origin: randomFoodOrigin,
+        onSelectPlace: onSelectRandomPlace, onClose: () => setRandomFoodOpen(false)
+    });
+
     const openRandomFoodAt = (origin) => {
         setAlongRouteOpen(false);
         setFavPageOpen(false);
@@ -657,6 +666,13 @@ export default function MapUI(props) {
         handledRandomFoodRequest.current = randomFoodRequestId;
         openRandomFood();
     }, [randomFoodRequestId, mapReady]);
+
+    const handledAlongRouteRequest = useRef(0);
+    useEffect(() => {
+        if (!mapReady || !alongRouteRequestId || handledAlongRouteRequest.current === alongRouteRequestId) return;
+        handledAlongRouteRequest.current = alongRouteRequestId;
+        openAlongRoute();
+    }, [alongRouteRequestId, mapReady]);
 
     const toggleMobileMore = () => {
         setRandomFoodOpen(false);
@@ -901,7 +917,7 @@ export default function MapUI(props) {
     const chromeItems = [
         { id: 'favorites', title: t('map:ui.favorites'), symbol: favPageOpen ? 'heart.fill' : 'heart', ...nativeIcon('toolbar.icons.favorites'), selected: favPageOpen, opensOverlay: true, sheetWhenNative: isAuthenticated },
         // iOS：随机美食在工具栏，日记 · 同好收进上滑的更多功能（二者互换了位置）
-        { id: 'random', title: t('map:ui.randomFood'), symbol: 'dice', ...nativeIcon('expanded.panel.icons.random'), disabled: !mapReady, opensOverlay: true },
+        { id: 'random', title: t('map:ui.randomFood'), symbol: 'dice', ...nativeIcon('expanded.panel.icons.random'), disabled: !mapReady, selected: randomFoodOpen, opensOverlay: true, sheetWhenNative: true },
         {
             id: 'add',
             title: addMode ? t('map:ui.cancelAdd') : t('map:ui.add'),
@@ -997,6 +1013,7 @@ export default function MapUI(props) {
 
     const openSheetId = (isAuthenticated && mobileAccountOpen) ? 'account'
         : (isAuthenticated && favPageOpen) ? 'favorites'
+        : (randomFoodOpen && !pickerMode) ? 'random'
         // 展会面板盖在地点卡片之上：关闭后仍选中的地点卡片重新出现
         : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
         : (selectedPlace && !pickerMode) ? 'place'
@@ -1039,6 +1056,8 @@ export default function MapUI(props) {
                 })
             }]
         };
+    } else if (openSheetId === 'random') {
+        chromeSheet = randomFoodChromeSheet(randomFood);
     } else if (openSheetId === 'exhibition') {
         chromeSheet = exhibitionChromeSheet(exhibition, { iconUrl: exhibitionIconSource(exhibition.icon_url, backendUrl) });
     } else if (openSheetId === 'place') {
@@ -1204,6 +1223,11 @@ export default function MapUI(props) {
             setFavPageOpen(false);
             const item = type === 'select' && favItems.find((fav) => favoriteRowId(fav) === rowId);
             if (item) navigateToPlace(item.longitude, item.latitude);
+        } else if (sheetId === 'random') {
+            if (type === 'dismiss') setRandomFoodOpen(false);
+            else if (rowId === 'view') randomFood.selectPlace();
+            else if (rowId === 'another') randomFood.drawNext();
+            else if (rowId === 'redraw') randomFood.redrawAtMapCenter();
         } else if (sheetId === 'exhibition') {
             if (type === 'dismiss') onCloseExhibition?.();
             else if (rowId === 'random') openExhibitionRandom();
@@ -1266,6 +1290,15 @@ export default function MapUI(props) {
     });
     // 原生控件接管后：网页工具栏、定位按钮与输入框不再渲染（也从读屏树中移除），网页只保留原生输入框上方的搜索结果
     const nativeChrome = chrome.mode === 'native';
+    // 原生显示没有网页 Exposure 元素；只在原生弹窗实际可见并停留后记录曝光。
+    useEffect(() => {
+        const place = randomFood.result?.place;
+        if (!nativeChrome || !chromeOwner || !chrome.showing || !randomFoodOpen || !place || !feedback?.consent?.feedback) return undefined;
+        const timer = setTimeout(() => {
+            if (document.visibilityState === 'visible') feedback.expose('random', place.id, 0, randomFood.result.decision_id, undefined);
+        }, 800);
+        return () => clearTimeout(timer);
+    }, [nativeChrome, chromeOwner, chrome.showing, randomFoodOpen, randomFood.result, feedback]);
     // 网页工具栏、定位按钮、头像与底部输入框：原生接管后不渲染；预计会接管、首次握手还没结果时也先不渲染
     const webChromeHidden = nativeChrome || chrome.holdWeb;
 
@@ -2014,7 +2047,7 @@ export default function MapUI(props) {
         if (nativeChrome) {
             const bottom = chrome.bottomOccupied + 8;
             return (
-                <div className="fm-map-search" style={{ position: 'absolute', zIndex: 2000, left: 12, right: 12, bottom, height: 0 }}>
+                <div className="fm-map-search" style={{ position: 'absolute', zIndex: 2100, left: 12, right: 12, bottom, height: 0 }}>
                     {renderSearchDropdown({ left: 0, right: 0, bottom: 0, maxHeight: compactDropdownMaxHeight(bottom) })}
                 </div>
             );
@@ -2103,7 +2136,7 @@ export default function MapUI(props) {
             {compactSearch && renderCompactSearch()}
 
             {!compactSearch && <div ref={searchBarRef} data-map-search-bar data-native-cluster-occluder="" data-tour="search" className="fm-map-search" style={(() => {
-                const base = { position: "absolute", zIndex: 2000 };
+                const base = { position: "absolute", zIndex: isNarrow ? 2100 : 2000 };
                 if (isNarrow) {
                     return {
                         ...base,
@@ -2117,7 +2150,7 @@ export default function MapUI(props) {
             })()}>
                 <div style={{
                     position: 'relative', height: 44, zIndex: 2001,
-                    width: isNarrow ? '100%' : 'min(420px, calc(100vw - 104px))'
+                    width: isNarrow ? '100%' : 'min(472px, calc(100vw - 104px))'
                 }}>
                     <input
                         ref={inputRef}
@@ -2141,7 +2174,7 @@ export default function MapUI(props) {
                             left: 12,
                             top: 0,
                             height: 44,
-                            right: 56,
+                            right: isNarrow ? 56 : 108,
                             boxSizing: 'border-box',
                             padding: '6px 34px 6px 12px',
                             borderRadius: 22,
@@ -2164,7 +2197,7 @@ export default function MapUI(props) {
                             disabled={!mapReady}
                             style={{
                                 position: 'absolute',
-                                right: 64,
+                                right: isNarrow ? 64 : 116,
                                 top: '50%',
                                 transform: 'translateY(-50%)',
                                 width: 20,
@@ -2188,9 +2221,9 @@ export default function MapUI(props) {
                         </Button>
                     )}
 
-                    {renderSearchDropdown({ ...(isNarrow ? { bottom: 48 } : { top: 48 }), right: 0, width: '100%', maxHeight: '60vh' })}
+                    {renderSearchDropdown({ ...(isNarrow ? { bottom: 48 } : { top: 48 }), left: 0, width: isNarrow ? '100%' : 'calc(100% - 52px)', maxHeight: '60vh' })}
 
-                    <div style={{ position: 'absolute', right: 0, top: 0 }}>
+                    <div style={{ position: 'absolute', right: isNarrow ? 0 : 52, top: 0 }}>
                         <Tooltip text={searchButtonLabel} placement="top">
                             <Button
                                 onClick={handleSearchButtonClick}
@@ -2226,6 +2259,7 @@ export default function MapUI(props) {
                             </Button>
                         </Tooltip>
                     </div>
+                    {!isNarrow && !pickerMode && !hideNonSearchButtons && <div className="fm-map-search__filter" style={{ position: 'absolute', right: 0, top: 0 }}>{filterButton(28)}</div>}
                 </div>
             </div>}
 
@@ -2253,8 +2287,9 @@ export default function MapUI(props) {
             />}
 
             {!pickerMode && <RandomFoodPanel
-                open={randomFoodOpen}
+                open={randomFoodOpen && !nativeChrome && !chrome.holdWeb}
                 origin={randomFoodOrigin}
+                session={randomFood}
                 feedback={feedback}
                 mapRef={mapRef} backendUrl={backendUrl} isNarrow={isNarrow}
                 token={isAuthenticated ? token : null}
@@ -2401,36 +2436,6 @@ export default function MapUI(props) {
                     zIndex: 2000
                 }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-                        {!pickerMode && (
-                            <Tooltip text={alongRouteOpen ? t('map:ui.alongRouteClose') : t('map:ui.alongRouteTooltip')}>
-                                <div style={{ display: 'inline-block' }}>
-                                    <Button
-                                        data-tour="alongRoute"
-                                        onClick={() => alongRouteOpen ? setAlongRouteOpen(false) : openAlongRoute()}
-                                        disabled={!mapReady}
-                                        aria-label={alongRouteOpen ? t('map:ui.alongRouteClose') : t('map:ui.alongRouteOpen')}
-                                        aria-pressed={alongRouteOpen}
-                                        style={{
-                                            width: 44,
-                                            height: 44,
-                                            padding: 0,
-                                            borderRadius: '50%',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            background: alongRouteOpen ? 'var(--color-primary-active)' : customThemeColor,
-                                            color: '#FFFFFF',
-                                            border: 'none',
-                                            boxShadow: '0 4px 12px var(--color-glow)',
-                                            opacity: mapReady ? 1 : 0.6
-                                        }}
-                                    >
-                                        <span className="material-symbols-outlined" style={{ fontSize: 28 }}>route</span>
-                                    </Button>
-                                </div>
-                            </Tooltip>
-                        )}
-
                         {!pickerMode && (
                             <div style={{ display: "inline-block" }}>
                                 <Tooltip text={addPlaceTipText}>
@@ -2582,7 +2587,6 @@ export default function MapUI(props) {
                             </Tooltip>
                         )}
 
-                        {!pickerMode && filterButton(28)}
                         {!pickerMode && listToggleButton(28)}
                     </div>
                 </div>

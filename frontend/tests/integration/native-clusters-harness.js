@@ -1,6 +1,7 @@
 import { MarkerLayerController } from '../../src/map/MarkerLayerController.js';
 import { registerOverlay } from '../../src/components/overlay/overlayStack.js';
-import { setMotionPreferences } from '../../src/motion/policy.js';
+import { getMotionPolicy, setMotionPreferences, reportSustainedJank } from '../../src/motion/policy.js';
+import { NATIVE_CLUSTER_PROTOCOL } from '../../src/platform/nativeClusterMarkers.js';
 
 // Real controller, DOM, Supercluster and Web Animations; replace only AMap and the native WebKit boundary.
 export async function runNativeClusterBrowserTests() {
@@ -18,12 +19,16 @@ export async function runNativeClusterBrowserTests() {
     };
     window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', isPluginAvailable: () => false };
     let nativeMarkers = [], inFlight = 0, maxInFlight = 0, rejectNext = false;
+    let gateNextFrame, gateFrameText;
     const frames = [];
     const transport = { async postMessage(message) {
-        if (message.op === 'open') return { protocolVersion: 1, sessionId: 'browser-native', leaseMs: 800 };
+        if (message.op === 'open') return { protocolVersion: NATIVE_CLUSTER_PROTOCOL, sessionId: 'browser-native', leaseMs: 800 };
         if (message.op === 'close') { nativeMarkers = []; return { closed: true }; }
         inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
         frames.push(structuredClone(message));
+        if (gateNextFrame && (!gateFrameText || message.markers.some(marker => marker.text === gateFrameText))) {
+            const gate = gateNextFrame; gateNextFrame = null; gateFrameText = null; await gate;
+        }
         await new Promise(resolve => setTimeout(resolve, 8));
         inFlight--;
         if (rejectNext) { rejectNext = false; return { appliedRevision: -1 }; }
@@ -73,8 +78,21 @@ export async function runNativeClusterBrowserTests() {
     const setZoom = value => {
         emit('zoomstart'); zoom = value; for (const marker of attached) marker.render(); emit('zoomchange'); emit('zoomend');
     };
+    const area = marker => marker.visibleRects.reduce((sum, piece) => sum + piece.width * piece.height, 0);
+    const avoids = (marker, cover) => marker.visibleRects.every(piece => {
+        const left = marker.x + piece.x, top = marker.y + piece.y;
+        return left >= cover.x + cover.width || left + piece.width <= cover.x || top >= cover.y + cover.height || top + piece.height <= cover.y;
+    });
     try {
         controller.update({ places });
+        await until(() => frames.length > 0, 'default material decision');
+        check(!getMotionPolicy().clusterGlass && nativeMarkers.length === 0 && !container.querySelector('[data-native-glass]'), 'cluster glass is off by default');
+        let releaseInitial;
+        gateNextFrame = new Promise(resolve => { releaseInitial = resolve; }); gateFrameText = '12';
+        setMotionPreferences({ clusterGlass: true });
+        await until(() => frames.some(message => message.markers.some(marker => marker.text === '12')), 'first native glass frame pending');
+        check(!container.querySelector('[data-native-glass]'), 'first material acquisition keeps PNG visible until native acknowledgement');
+        releaseInitial();
         await until(() => nativeMarkers.length === 1 && container.querySelector('[data-native-glass]'), 'initial native frame');
         check(nativeMarkers[0].text === '12', 'initial full cluster uses native ownership');
         const first = frames.length;
@@ -94,10 +112,23 @@ export async function runNativeClusterBrowserTests() {
         check(controller.entries.size === 1 && nativeMarkers[0].text === '12', 'gesture interruption clears ghosts');
 
         controller.setNativeGlassVisible(false);
-        await until(() => nativeMarkers.length === 0 && !container.querySelector('[data-native-glass]'), 'page hidden');
+        await until(() => nativeMarkers.length === 0, 'page hidden');
+        check(!!container.querySelector('[data-native-glass]'), 'leaving a page retains committed material ownership');
+        let releaseReturn;
+        gateNextFrame = new Promise(resolve => { releaseReturn = resolve; });
+        const returning = frames.length;
         controller.setNativeGlassVisible(true);
+        await until(() => frames.length > returning, 'return frame pending');
+        check(!!container.querySelector('[data-native-glass]'), 'a delayed return frame never reveals the PNG');
+        releaseReturn();
         await until(() => nativeMarkers.length === 1, 'page restored');
-        check(true, 'page visibility restores PNG before native reacquisition');
+        check(true, 'page return keeps the chosen material continuously');
+
+        container.style.width = '200px';
+        await until(() => nativeMarkers.length === 1 && nativeMarkers[0].visibleRects.some(piece => piece.x + piece.width < nativeMarkers[0].width), 'edge clipping');
+        check(!!container.querySelector('[data-native-glass]') && area(nativeMarkers[0]) > 0, 'partially visible edge markers keep clipped glass');
+        container.style.width = '390px';
+        await until(() => area(nativeMarkers[0]) === nativeMarkers[0].width * nativeMarkers[0].height, 'edge restored');
 
         // Pointer-transparent foreground glyphs and a notice away from the map center still cover glass.
         for (const className of ['fm-notice', 'fm-user-location', 'fm-search-results', 'fm-exhibition-stack', 'declared-map-controls']) {
@@ -106,31 +137,95 @@ export async function runNativeClusterBrowserTests() {
             if (className === 'declared-map-controls') foreground.setAttribute('data-native-cluster-occluder', '');
             foreground.style.cssText = `position:absolute;left:${bounds.x + 4}px;top:${bounds.y + 4}px;width:30px;height:8px;z-index:3000;pointer-events:none`;
             document.body.append(foreground);
-            await until(() => nativeMarkers.length === 0 && !container.querySelector('[data-native-glass]'), `${className} overlap`);
+            const cover = { x: bounds.x + 4, y: bounds.y + 4, width: 30, height: 8 };
+            await until(() => nativeMarkers.length === 1 && area(nativeMarkers[0]) < nativeMarkers[0].width * nativeMarkers[0].height, `${className} overlap`);
+            check(!!container.querySelector('[data-native-glass]') && area(nativeMarkers[0]) > 0 && avoids(nativeMarkers[0], cover), `${className} clips only covered glass and keeps the PNG hidden`);
             foreground.remove();
-            await until(() => nativeMarkers.length === 1, `${className} removed`);
+            await until(() => nativeMarkers.length === 1 && area(nativeMarkers[0]) === nativeMarkers[0].width * nativeMarkers[0].height, `${className} removed`);
             check(true, `${className} preserves foreground stacking`);
         }
 
-        const overlay = registerOverlay({ kind: 'cluster-test', onClose() {} });
-        await until(() => nativeMarkers.length === 0 && !container.querySelector('[data-native-glass]'), 'web overlay fallback');
+        const intersecting = [document.createElement('div'), document.createElement('div')];
+        const covers = [{ x: nativeMarkers[0].x + 4, y: nativeMarkers[0].y + 4, width: 30, height: 8 }, { x: nativeMarkers[0].x + 10, y: nativeMarkers[0].y + 6, width: 15, height: 12 }];
+        intersecting.forEach((el, index) => { const r = covers[index]; el.setAttribute('data-native-cluster-occluder', ''); el.style.cssText = `position:absolute;left:${r.x}px;top:${r.y}px;width:${r.width}px;height:${r.height}px;pointer-events:none`; document.body.append(el); });
+        await until(() => covers.every(cover => avoids(nativeMarkers[0], cover)), 'multiple intersecting occluders');
+        check(!!container.querySelector('[data-native-glass]') && area(nativeMarkers[0]) > 0, 'intersecting foreground controls retain visible glass fragments');
+        intersecting.forEach(el => el.remove());
+        await until(() => area(nativeMarkers[0]) === nativeMarkers[0].width * nativeMarkers[0].height, 'multiple occluders removed');
+
+        const oldGlyph = Array.from(controller.entries.values())[0].parts.glyph;
+        const panelBounds = { x: nativeMarkers[0].x + 4, y: nativeMarkers[0].y + 4, width: 12, height: 24 };
+        const panel = document.createElement('div');
+        panel.setAttribute('data-native-cluster-occluder', '');
+        panel.style.cssText = `position:absolute;left:${panelBounds.x}px;top:${panelBounds.y}px;width:${panelBounds.width}px;height:${panelBounds.height}px;background:white;z-index:3000`;
+        document.body.append(panel);
+        const panelFrame = frames.length;
+        const nonModal = registerOverlay({ kind: 'filter-test', modal: false, onClose() {} });
+        await until(() => frames.length > panelFrame && inFlight === 0, 'non-modal filter frame');
+        check(nativeMarkers.length === 1 && area(nativeMarkers[0]) > 0 && avoids(nativeMarkers[0], panelBounds) && oldGlyph.hasAttribute('data-native-glass'), 'non-modal filters keep uncovered committed glass visible');
+        let releaseFilter;
+        gateNextFrame = new Promise(resolve => { releaseFilter = resolve; }); gateFrameText = '8';
+        const filtering = frames.length;
+        controller.update({ places: places.slice(0, 8).map(place => ({ ...place, id: place.id + 1000 })), queryMode: 'filter-test' });
+        await until(() => frames.slice(filtering).some(message => message.markers.some(marker => marker.text === '8')), 'new filtered glyph frame pending');
+        const filteredEntry = Array.from(controller.entries.values()).find(entry => entry.node.kind === 'cluster' && entry.node.count === 8);
+        check(filteredEntry?.parts.glyph !== oldGlyph && filteredEntry?.parts.glyph.hasAttribute('data-native-glass'), 'new filtered glyphs join the committed glass mode before their delayed frame');
+        check(nativeMarkers.some(marker => area(marker) > 0), 'existing native glass remains visible while a filtered frame is pending');
+        releaseFilter();
+        await until(() => controller.txns.size === 0 && nativeMarkers.length === 1 && nativeMarkers[0].text === '8', 'filtered glass settles');
+        check(area(nativeMarkers[0]) > 0 && avoids(nativeMarkers[0], panelBounds), 'filtered results retain glass with the filter surface clipped');
+        nonModal.unregister(); panel.remove();
+        controller.update({ places });
+        await until(() => controller.txns.size === 0 && nativeMarkers.length === 1 && nativeMarkers[0].text === '12', 'filter removed');
+
+        const overlay = registerOverlay({ kind: 'cluster-test', modal: true, onClose() {} });
+        await until(() => nativeMarkers.length === 0, 'web overlay hidden');
+        check(!!container.querySelector('[data-native-glass]'), 'web overlays suspend glass without changing its material');
         overlay.unregister();
         await until(() => nativeMarkers.length === 1, 'overlay removed');
-        check(true, 'web overlay fallback has no duplicate visual');
+        check(true, 'web overlay return has no PNG or duplicate visual');
 
         const cover = document.createElement('div');
         cover.style.cssText = 'position:absolute;inset:0;background:white;z-index:1000';
         container.parentElement.style.position = 'relative'; container.parentElement.append(cover);
-        await until(() => nativeMarkers.length === 0, 'list-like cover');
+        await until(() => nativeMarkers.length === 1 && area(nativeMarkers[0]) === 0, 'list-like cover');
         cover.remove();
-        await until(() => nativeMarkers.length === 1, 'list-like cover removed');
-        check(true, 'non-overlay DOM cover suppresses native glass');
+        await until(() => nativeMarkers.length === 1 && area(nativeMarkers[0]) > 0, 'list-like cover removed');
+        check(!!container.querySelector('[data-native-glass]'), 'non-overlay DOM cover masks glass without reverting to PNG');
 
         setMotionPreferences({ nativeGlass: false });
+        check(nativeMarkers.length === 1, 'cluster material is independent from the glass-button preference');
+        setMotionPreferences({ clusterGlass: false });
         await until(() => nativeMarkers.length === 0 && !container.querySelector('[data-native-glass]'), 'glass preference off');
-        setMotionPreferences({ nativeGlass: true });
+        setMotionPreferences({ clusterGlass: true });
         await until(() => nativeMarkers.length === 1, 'glass preference on');
         check(true, 'motion preference switches material safely');
+
+        let releaseSwitch;
+        gateNextFrame = new Promise(resolve => { releaseSwitch = resolve; });
+        const switching = frames.length;
+        let revertedDuringSwitch = false;
+        const ownershipObserver = new MutationObserver(records => {
+            if (getMotionPolicy().clusterGlass && records.some(record => record.oldValue !== null && !record.target.hasAttribute('data-native-glass'))) revertedDuringSwitch = true;
+        });
+        ownershipObserver.observe(container, { subtree: true, attributes: true, attributeFilter: ['data-native-glass'], attributeOldValue: true });
+        setMotionPreferences({ clusterGlass: false });
+        await until(() => frames.length > switching, 'off frame pending');
+        setMotionPreferences({ clusterGlass: true });
+        releaseSwitch();
+        await until(() => nativeMarkers.length === 1 && inFlight === 0, 'rapid glass toggle settles');
+        ownershipObserver.disconnect();
+        check(!revertedDuringSwitch && !!container.querySelector('[data-native-glass]'), 'an old off reply cannot undo the current glass choice');
+        reportSustainedJank();
+        await until(() => inFlight === 0, 'performance policy frame');
+        check(nativeMarkers.length === 1 && !!container.querySelector('[data-native-glass]'), 'temporary performance degradation keeps the chosen cluster material');
+
+        document.documentElement.dataset.theme = 'dark';
+        await until(() => nativeMarkers[0]?.color?.[0] === 1, 'dark count color');
+        check(nativeMarkers[0].color[3] === 1, 'dark counts use opaque white');
+        document.documentElement.dataset.theme = 'light';
+        await until(() => nativeMarkers[0]?.color?.[0] === 0, 'light count color');
+        check(nativeMarkers[0].color[3] === 1, 'light counts use opaque black');
 
         rejectNext = true; controller.nativeClusters.invalidate();
         await until(() => nativeMarkers.length === 0 && !container.querySelector('[data-native-glass]'), 'rejected frame fallback');
