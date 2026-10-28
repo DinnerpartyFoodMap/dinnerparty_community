@@ -7,7 +7,8 @@ import { useConfirm } from "../../components/feedback/Confirm";
 import { useTips } from "../../components/feedback/Tips";
 import { useAuth } from "../../auth/AuthContext";
 import useDarkMode from "../../theme/useDarkMode";
-import { colorToRgba, getThemeColor, pickContrastTextColor } from "../../theme/theme";
+import { getThemeColor, pickContrastTextColor } from "../../theme/theme";
+import "../../components/forms/field.css";
 import {
     createCategory as createCategoryRecord,
     fetchCategories
@@ -283,9 +284,11 @@ export default function CategorySelector({ backendUrl, token, value, onChange, p
 
     return (
         <div ref={rootRef} style={{ position: 'relative' }}>
+            {/* 外框与输入框一致（field.css）：平时中性边框，里面的输入框聚焦时主题色；整块都能点进输入 */}
             <div
                 role="group"
                 aria-label={t('map:category.ariaLabel')}
+                className="fm-field fm-field--group"
                 onClick={() => {
                     setOpen(true);
                     inputRef.current?.focus();
@@ -293,17 +296,13 @@ export default function CategorySelector({ backendUrl, token, value, onChange, p
                 style={{
                     width: '100%',
                     minHeight: 44,
-                    padding: '6px 10px',
+                    padding: '4px 10px',
                     boxSizing: 'border-box',
                     display: 'flex',
                     alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: 6,
                     borderRadius: 22,
-                    border: `2px solid ${dark ? 'var(--color-border)' : themeColor}`,
-                    background: 'var(--color-bg-overlay)',
-                    color: 'var(--color-text-primary)',
-                    boxShadow: `0 4px 12px ${colorToRgba(themeColor, 0.2)}, 0 0 8px ${colorToRgba(themeColor, 0.25)}`,
                     cursor: 'text'
                 }}
             >
@@ -336,7 +335,7 @@ export default function CategorySelector({ backendUrl, token, value, onChange, p
                     style={{
                         flex: '1 1 100px',
                         minWidth: 100,
-                        height: 28,
+                        height: 34,
                         padding: 0,
                         border: 0,
                         outline: 'none',

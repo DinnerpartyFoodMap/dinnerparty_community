@@ -4,6 +4,8 @@ import MapView from '../../src/map/MapView';
 import AuthPanel from '../../src/app/components/AuthPanel';
 import MapListMode from '../../src/map/MapListMode';
 import TasteRadar from '../../src/profile/TasteRadar';
+import AuthPage from '../../src/auth/AuthPage';
+import AddForm from '../../src/places/components/AddPlaceForm';
 import { MotionProvider } from '../../src/motion/MotionProvider';
 import { OverlayHost, useOverlayContentRef } from '../../src/components/overlay/OverlayHost';
 import { ConfirmProvider } from '../../src/components/feedback/Confirm';
@@ -87,9 +89,22 @@ function RadarHarness() {
         { key: 'foreign', value: 0.9, basis: 'evidence' }
     ]} /></main>;
 }
+// 登录页的输入框（边框、聚焦与错误状态）与网页添加地点表单（评价必选），不经过地图
+function AuthHarness() {
+    return <main style={{ width: 390, background: 'var(--color-bg-surface)' }}><AuthPage backendUrl={location.origin} onClose={() => {}} /></main>;
+}
+function AddFormHarness() {
+    window.__WEB_LAYOUT_SUBMITS ||= [];
+    return <main style={{ width: 390, padding: 16, boxSizing: 'border-box', background: 'var(--color-bg-surface)' }}>
+        <AddForm backendUrl={location.origin} token="synthetic-web-layout" userId="web-layout-user" defaultPos={[120, 30]} defaultName="测试面馆"
+            onCancel={() => {}} onSubmit={(payload) => window.__WEB_LAYOUT_SUBMITS.push(payload)} />
+    </main>;
+}
 const mode = new URLSearchParams(location.search).get('mode');
+const HARNESS = { list: ListHarness, radar: RadarHarness, auth: AuthHarness, add: AddFormHarness };
+const Harness = HARNESS[mode] || MapHarness;
 createRoot(document.getElementById('root')).render(
     <MotionProvider><OverlayHost><TipsProvider><ConfirmProvider>
-        {mode === 'list' ? <ListHarness /> : mode === 'radar' ? <RadarHarness /> : <MapHarness />}
+        <Harness />
     </ConfirmProvider></TipsProvider></OverlayHost></MotionProvider>
 );

@@ -90,9 +90,6 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
             {summary.count > 0 && summary.count < FEW_RATINGS && (
                 <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:rating.summary.few')}</div>
             )}
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                {t('map:rating.panel.weightedHint')}
-            </div>
 
             {distribution && summary.count > 0 && (
                 <div role="list" aria-label={t('map:rating.panel.distribution')} style={{ marginTop: 14, display: 'grid', gap: 6 }}>

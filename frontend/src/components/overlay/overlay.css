@@ -550,7 +550,7 @@ button,
     right: 0;
     height: 52px;
     box-sizing: border-box;
-    padding: 0 6px 0 14px;
+    padding: 0 4px 0 14px;
     border-radius: 26px;
     display: flex;
     align-items: center;
@@ -586,10 +586,11 @@ button,
     color: var(--color-text-muted);
 }
 
+/* 清空按钮：图标 20px 不变，点按范围 44×44 */
 .fm-compact-search__trailing {
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     padding: 0;
     border: 0;
     border-radius: 50%;

@@ -8,7 +8,7 @@ import { useConfirm } from "../../components/feedback/Confirm";
 import ScrollableView from "../../components/layout/ScrollableView";
 import CategorySelector from "./CategorySelector";
 import { t } from "../../i18n/index.js";
-import { RATING_TIERS, defaultCreationScore, tierLabel, tierHint } from "../rating";
+import { RATING_TIERS, tierLabel, tierHint } from "../rating";
 import { emptyPlaceContent, placeDraftSource, openPlaceDraft, placeContentKey, persistPlaceDraft, discardPlaceDraft } from "../addPlaceDraft";
 
 export default function AddForm({ backendUrl, token, userId, defaultPos, defaultName = "", defaultCategory = "", defaultDescription = "", defaultAddress = "", onCancel, onSubmit }) {
@@ -24,9 +24,9 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
     const [exteriorImages, setExteriorImages] = useState(opening.content.exteriorImages);
     const [menuImages, setMenuImages] = useState(opening.content.menuImages);
     const [perPersonCost, setPerPersonCost] = useState(opening.content.perPersonCost);
-    // 创建者的评价：没手动选过时跟着标签走（带“避雷”预选强烈拒绝，否则强烈推荐）
+    // 创建者的评价：必须自己选一档，不预选
     const [chosenRating, setChosenRating] = useState(opening.content.chosenRating);
-    const rating = chosenRating ?? defaultCreationScore(category);
+    const [ratingMissing, setRatingMissing] = useState(false);
     const [draftNotice, setDraftNotice] = useState(opening.restored ? 'restored' : opening.pending ? 'pending' : null);
     const [draftSaved, setDraftSaved] = useState(opening.restored);
     const showTip = useTips();
@@ -63,6 +63,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
 
     const handle = () => {
         if (!name) { showTip(t('map:addForm.nameRequired')); return; }
+        if (chosenRating == null) { setRatingMissing(true); showTip(t('map:addForm.ratingRequired')); return; }
         const payload = {
             name,
             category,
@@ -70,8 +71,8 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
             // 从高德地点收录时带上地址（单独的字段，不再塞进描述）
             ...(defaultAddress ? { address: defaultAddress } : {}),
             per_person_cost: perPersonCost ? parseInt(perPersonCost, 10) : null,
-            rating,
-            rating_input_kind:chosenRating==null?'default':'explicit',
+            rating: chosenRating,
+            rating_input_kind: 'explicit',
             exterior_images: exteriorImages.filter(Boolean),
             menu_images: menuImages.filter(Boolean),
             longitude: defaultPos[0],
@@ -110,8 +111,6 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
             <div style={{ marginTop: 8 }}>
                 {/* 描述可以写多行，支持基础 Markdown（与后端一致最多 1000 字） */}
                 <TextArea markdown rows={3} maxLength={1000} placeholder={t('map:common.label.description')} value={description} onChange={(e) => setDescription(e.target.value)} style={{ width: "100%", borderRadius: 16, minHeight: 72 }} />
-                {/* 新增地点会先经过初筛（backend/modules/places/doc/placeModeration.md），规则在用户协议里 */}
-                <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-muted)' }}>{t('map:addForm.reviewHint')}</div>
             </div>
             <div style={{ marginTop: 8 }}>
                 <TextInput
@@ -126,10 +125,11 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                 />
             </div>
             <div style={{ marginTop: 10 }}>
-                <div id="add-place-rating-label" style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-secondary)' }}>{t('map:addForm.ratingLabel')}</div>
-                <div role="radiogroup" aria-labelledby="add-place-rating-label" style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+                <div id="add-place-rating-label" style={{ fontSize: 13, fontWeight: 700, color: ratingMissing ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>{t('map:addForm.ratingLabel')}</div>
+                <div role="radiogroup" aria-labelledby="add-place-rating-label" aria-required="true" aria-invalid={ratingMissing || undefined} aria-describedby={ratingMissing ? 'add-place-rating-error' : undefined}
+                    style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
                     {RATING_TIERS.map((item) => {
-                        const selected = rating === item.score;
+                        const selected = chosenRating === item.score;
                         return (
                             <button
                                 key={item.score}
@@ -138,11 +138,11 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                                 aria-checked={selected}
                                 aria-label={t('map:rating.panel.optionLabel', { tier: tierLabel(item), hint: tierHint(item) })}
                                 title={tierHint(item)}
-                                onClick={() => setChosenRating(item.score)}
+                                onClick={() => { setChosenRating(item.score); setRatingMissing(false); }}
                                 className="fm-pressable"
                                 style={{
                                     minHeight: 44, padding: '4px 2px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                                    border: `${selected ? 2 : 1}px solid ${selected ? item.tone : 'var(--color-border)'}`,
+                                    border: `${selected ? 2 : 1}px solid ${selected ? item.tone : (ratingMissing ? 'var(--color-danger)' : 'var(--color-border)')}`,
                                     background: selected ? `color-mix(in srgb, ${item.tone} 14%, transparent)` : 'transparent',
                                     color: selected ? item.tone : 'var(--color-text-primary)', fontSize: 12, fontWeight: selected ? 700 : 500,
                                     whiteSpace: 'nowrap', touchAction: 'manipulation'
@@ -153,6 +153,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                         );
                     })}
                 </div>
+                {ratingMissing && <div id="add-place-rating-error" role="alert" style={{ marginTop: 4, fontSize: 12, color: 'var(--color-danger)' }}>{t('map:addForm.ratingRequired')}</div>}
             </div>
             <ScrollableView style={{ marginTop: 8, maxHeight: "200px", overflowY: "auto" }}>
                 <PlaceImageInputs backendUrl={backendUrl} token={token} images={exteriorImages} setImages={setExteriorImages} label={t('map:addForm.exteriorImages')} />

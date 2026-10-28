@@ -35,6 +35,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import MotionSurface from '../components/overlay/MotionSurface';
 import MapAnchoredCard from './MapAnchoredCard';
+import AnchoredPopover from '../components/overlay/AnchoredPopover';
 import MapPanel from './MapPanel';
 import { useLayoutPolicy, useMotionFlags } from '../motion/MotionProvider';
 import { getPreset } from '../motion/presets';
@@ -43,6 +44,7 @@ import { useMapChrome } from './useMapChrome';
 import { nextNativeSheetIdentity } from '../platform/nativeMapChrome';
 import MapOnboarding from './MapOnboarding';
 import { buildOnboardingSteps, readOnboardingSeen, rememberOnboardingSeen } from './onboarding';
+import { takeFeatureIntro } from './featureIntro';
 import { getOverlayEntries, subscribeOverlays } from '../components/overlay/overlayStack';
 import { ExhibitionPanel } from './MapExhibition';
 import { exhibitionChromeSheet, exhibitionRandomOrigin, exhibitionVenue } from './exhibition';
@@ -67,7 +69,6 @@ import PlaceFilterPanel from '../places/components/PlaceFilterPanel';
 import MapListMode from './MapListMode';
 import useNativePlaceForm from '../places/hooks/useNativePlaceForm';
 import { emptyPlaceContent, placeDraftSource, openPlaceDraft, persistPlaceDraft, discardPlaceDraft } from '../places/addPlaceDraft';
-import { defaultCreationScore } from '../places/rating';
 import { EMPTY_PLACE_FILTER, isPlaceFilterActive } from '../places/placeFilter';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
@@ -203,6 +204,15 @@ function ShareOptionButton({ icon, label, description, onClick, dark }) {
     );
 }
 
+// 列表所在的滚动容器（面板正文）：记下 / 恢复列表位置用
+function scrollParentOf(node) {
+    for (let el = node?.parentElement; el; el = el.parentElement) {
+        const overflow = window.getComputedStyle(el).overflowY;
+        if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+    }
+    return null;
+}
+
 // 原生图集：方块（148pt，3 倍屏约 450px）用 OSS 缩略图，点开的大图用原图
 const NATIVE_GALLERY_THUMB_WIDTH = 450;
 function nativeGalleryGroup(id, title, value) {
@@ -225,6 +235,7 @@ export default function MapUI(props) {
         searchResetKey,
         searchServer,
         searchResults,
+        searchFailed = false,
         aiThinking,
         aiRecommendations = [],
         onProgrammaticMapMove,
@@ -444,6 +455,11 @@ export default function MapUI(props) {
     const [favItems, setFavItems] = useState([]);
     const [favLoading, setFavLoading] = useState(false);
     const [favError, setFavError] = useState('');
+    // 收藏里点开的地点：窄屏与原生面板先让位给店卡，卡片关掉后回到收藏列表原来的位置（宽屏列表不挡卡片，一直开着）。
+    // shown：卡片已打开（之后在地图上换看别的地点，关掉时也回到收藏）
+    const [favReturn, setFavReturn] = useState(null);
+    const favScrollRef = useRef(null);
+    const [favFocusRow, setFavFocusRow] = useState(null);
     const [navPickerOpen, setNavPickerOpen] = useState(false);
     const [shareOpen, setShareOpen] = useState(false);
     // 图片卡片：横竖版在预览里切换，生成一次后缓存同一地点的两版
@@ -477,6 +493,12 @@ export default function MapUI(props) {
     useEffect(() => {
         if (selectedPlace || addMode) setListMode(false);
     }, [selectedPlace, addMode]);
+    // 指引之外的功能：第一次打开时提示一句它能做什么
+    useEffect(() => {
+        const opened = filterOpen ? 'filter' : (listMode ? 'listView' : (alongRouteOpen ? 'alongRoute' : null));
+        const intro = opened && takeFeatureIntro(opened);
+        if (intro) showTip?.(intro, { duration: 6000 });
+    }, [filterOpen, listMode, alongRouteOpen]);
     // 离开地图页（住民主页、设置等）时收起筛选面板：地图常驻，面板不能盖在别的页面上
     useEffect(() => {
         if (!chromeOwner) setFilterOpen(false);
@@ -594,6 +616,7 @@ export default function MapUI(props) {
             return;
         }
         setFavPageOpen((open) => !open);
+        setFavReturn(null);
         setUserPlacesOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
@@ -880,14 +903,16 @@ export default function MapUI(props) {
         token,
         onSubmit: (values) => {
             if (nativeFormSpec?.mode === 'create') {
+                // 评价必须自己选（上一版原生表单没选时会带上按分类预选的一档，标为 default，这里一并拒绝）
+                if (values.rating == null || values.ratingInputKind === 'default') return { ok: false, message: t('map:addForm.ratingRequired') };
                 const payload = {
                     name: values.name,
                     category: values.category,
                     description: values.description,
                     ...(addingPrefill?.address ? { address: addingPrefill.address } : {}),
                     per_person_cost: values.perPersonCost ? parseInt(values.perPersonCost, 10) : null,
-                    rating: values.rating ?? defaultCreationScore(values.category),
-                    rating_input_kind:values.ratingInputKind||'unknown',
+                    rating: values.rating,
+                    rating_input_kind: values.ratingInputKind,
                     exterior_images: values.exteriorImages,
                     menu_images: values.menuImages,
                     longitude: addingPos[0],
@@ -1037,9 +1062,11 @@ export default function MapUI(props) {
             id: 'favorites',
             title: t('map:ui.myFavorites'),
             size: 'list',
-            message: favLoading ? t('common:status.loading') : favError || (favItems.length === 0 ? t('map:ui.noFavorites') : undefined),
-            messageTone: favLoading ? 'loading' : (favError ? 'danger' : undefined),
-            sections: favLoading || favError ? [] : [{
+            message: favLoading && !favItems.length ? t('common:status.loading') : favError || (favItems.length === 0 && !favLoading ? t('map:ui.noFavorites') : undefined),
+            messageTone: favLoading && !favItems.length ? 'loading' : (favError ? 'danger' : undefined),
+            // 从店卡回来时滚到刚才点开的那一行
+            focusRow: favFocusRow || undefined,
+            sections: (favLoading && !favItems.length) || favError ? [] : [{
                 id: 'places',
                 rows: favItems.map((item) => {
                     const located = !!(item.longitude && item.latitude);
@@ -1220,9 +1247,9 @@ export default function MapUI(props) {
             if (entry) runMobileAccountAction(entry.run);
             else setMobileAccountOpen(false);
         } else if (sheetId === 'favorites') {
-            setFavPageOpen(false);
             const item = type === 'select' && favItems.find((fav) => favoriteRowId(fav) === rowId);
-            if (item) navigateToPlace(item.longitude, item.latitude);
+            if (item) openFavorite(item, { native: true });
+            else setFavPageOpen(false);
         } else if (sheetId === 'random') {
             if (type === 'dismiss') setRandomFoodOpen(false);
             else if (rowId === 'view') randomFood.selectPlace();
@@ -1305,8 +1332,8 @@ export default function MapUI(props) {
     // 指引按当前布局介绍按钮：原生控件握手中先不弹出，免得指向随后被替换的网页工具栏
     const onboardingVariant = nativeChrome ? 'native' : (isNarrow ? (iosApp ? 'ios' : 'mobile') : 'desktop');
     const onboardingSteps = React.useMemo(
-        () => buildOnboardingSteps({ variant: onboardingVariant, isAuthenticated }),
-        [onboardingVariant, isAuthenticated]
+        () => buildOnboardingSteps({ variant: onboardingVariant }),
+        [onboardingVariant]
     );
     const canAutoOnboard = chromeOwner && mapReady && !pickerMode && !chrome.connecting && !onboardingOpen
         && !selectedPlace && !addMode && !searchFocused && !searchExpanded && !favPageOpen && !mobileAccountOpen && !mobileMoreOpen;
@@ -1454,7 +1481,7 @@ export default function MapUI(props) {
         }
     };
 
-    const { results: spResults, loading: spLoading } = useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places, token);
+    const { results: spResults, loading: spLoading, error: spError, retry: retrySpSearch } = useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places, token);
 
     // Close detail and rating panels if popup closes
     useEffect(() => {
@@ -1466,7 +1493,8 @@ export default function MapUI(props) {
 
     // search bar stays open by default — collapse behaviors removed
 
-    // Load favorites when panel opens
+    useEffect(() => { setFavItems([]); }, [token]);
+    // Load favorites when panel opens（刷新期间保留旧列表，回到列表时位置不跳）
     useEffect(() => {
         if (!favPageOpen) return;
         if (!isAuthenticated || !token) return;
@@ -1487,6 +1515,47 @@ export default function MapUI(props) {
     }, [favPageOpen, isAuthenticated, token, backendUrl]);
 
     const FAVORITE_LOCATION_ZOOM_LEVEL = 16;
+
+    // 收藏里的一项：选中地点并打开店卡（与列表模式相同，退出搜索、沿途与住民筛选）
+    const openFavorite = (item, { native = false, scroller = null } = {}) => {
+        if (!item?.name || !item.longitude || !item.latitude) return;
+        const yields = native || layout.sheet;
+        if (yields) {
+            favScrollRef.current = scroller ? scroller.scrollTop : null;
+            setFavFocusRow(favoriteRowId(item));
+            setFavReturn({ placeId: String(item.place_id), shown: false });
+            setFavPageOpen(false);
+        }
+        Promise.resolve(props.onFocusPlaceFromList?.(item.place_id)).then((opened) => {
+            if (opened || !yields) return;
+            setFavReturn(null);
+            setFavPageOpen(true);
+        });
+    };
+    useEffect(() => {
+        if (!favReturn) return;
+        if (selectedPlace) {
+            if (!favReturn.shown && String(selectedPlace.id) === favReturn.placeId) setFavReturn({ ...favReturn, shown: true });
+            return;
+        }
+        if (favReturn.shown) {
+            setFavReturn(null);
+            setFavPageOpen(true);
+        }
+    }, [selectedPlace, favReturn]);
+    useEffect(() => {
+        if (favPageOpen || favReturn) return;
+        favScrollRef.current = null;
+        setFavFocusRow(null);
+    }, [favPageOpen, favReturn]);
+    const restoreFavScroll = (node) => {
+        if (!node || favScrollRef.current == null) return;
+        const top = favScrollRef.current;
+        favScrollRef.current = null;
+        const apply = () => { const scroller = scrollParentOf(node); if (scroller) scroller.scrollTop = top; };
+        apply();
+        window.requestAnimationFrame(apply);
+    };
 
     const navigateToPlace = (longitude, latitude) => {
         if (!longitude || !latitude || !mapRef?.current) return;
@@ -1734,13 +1803,22 @@ export default function MapUI(props) {
                         </span>
                     )}
                 </span>
-                <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', color: myRatingTier ? myRatingTier.tone : 'var(--theme-primary)' }}>
-                    {myRatingTier ? t('map:rating.card.mine', { tier: tierLabel(myRatingTier) }) : t('map:rating.card.rateNow')}
-                </span>
                 <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18, flexShrink: 0, color: 'var(--color-text-muted)' }}>chevron_right</span>
             </button>
         );
     };
+
+    // 地点卡片的“更多”：详情、分享、编辑、举报（主次之外的操作）
+    const [cardMoreOpen, setCardMoreOpen] = useState(false);
+    const cardMoreRef = useRef(null);
+    useEffect(() => { setCardMoreOpen(false); }, [selectedPlaceKey]);
+    const favorited = !!(selectedPlace && favoriteIds && favoriteIds.has(selectedPlace.id));
+    const cardMoreEntries = [
+        { id: 'details', title: t('map:ui.card.details'), icon: 'info', slot: 'cardActions.details', run: () => { setDetailFocus(null); setDetailOpen(true); } },
+        { id: 'share', title: t('map:ui.share.title'), icon: 'share', slot: 'cardActions.share', run: () => setShareOpen(true) },
+        { id: 'edit', title: t('map:ui.edit'), icon: 'edit', slot: 'cardActions.edit', run: () => openManagePanel?.() },
+        canReportPlace && { id: 'report', title: t('map:ui.report'), icon: 'flag', slot: 'cardActions.report', run: reportPlace }
+    ].filter(Boolean);
 
     // 地点卡片内容：宽屏卡片与窄屏底部面板共用。外框可由皮肤替换（窄屏面板的外框见 skins/skin.css 的 .fm-skin-card）；
     // App 内的底部面板是液态玻璃，不画主题边框
@@ -1763,14 +1841,22 @@ export default function MapUI(props) {
                 }}
         >
             <SkinFrame slot="placeCard.frame" disabled={inSheet && platform !== 'web'} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong style={{ fontSize: 14, color: 'var(--color-text-primary)' }}>{selectedPlace.name}</strong>
+            {/* 首屏：店名、分类与人均、简介、评价；修改人与日期放到最下面 */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <strong style={{ fontSize: 16, lineHeight: 1.35, color: 'var(--color-text-primary)', overflowWrap: 'anywhere' }}>{selectedPlace.name}</strong>
                 {!hideNonSearchButtons && (
-                    <Button onClick={closePopup} style={{ padding: "2px 8px", borderRadius: 'var(--radius-sm)', border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, color: 'var(--color-text-secondary)' }} title={t('common:action.close')}>
+                    <Button onClick={closePopup} style={{ flexShrink: 0, minWidth: 32, minHeight: 32, padding: "2px 8px", borderRadius: 'var(--radius-sm)', border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, color: 'var(--color-text-secondary)' }} title={t('common:action.close')} aria-label={t('common:action.close')}>
                         <SkinIcon slot="cardActions.close" size={18}>×</SkinIcon>
                     </Button>
                 )}
             </div>
+            {/* 展会地点没有分类和人均，不显示这一行 */}
+            {!selectedPlace.exhibitionVenue && (
+                <div style={{ marginTop: 2, color: 'var(--color-text-secondary)', fontSize: 13, display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 10 }}>
+                    <span>{selectedPlace.category || t('common:label.uncategorized')}</span>
+                    {selectedPlace.per_person_cost != null && <span>{tx('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost })}</span>}
+                </div>
+            )}
             <div style={{ marginTop: 6, fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.5, wordBreak: 'break-word' }}>
                 {(() => {
                     const { text, hasMore } = getPopupDescriptionPreview(selectedPlace);
@@ -1778,48 +1864,21 @@ export default function MapUI(props) {
                         <>
                             <span>{text}</span>
                             {hasMore && !pickerMode && (
-                                <span
+                                <button
+                                    type="button"
                                     onClick={openDetailPanel}
-                                    style={{ marginLeft: 4, color: 'var(--color-text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                    style={{ marginLeft: 4, padding: 0, border: 0, background: 'transparent', font: 'inherit', color: 'var(--theme-primary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
                                     title={t('map:ui.card.seeMoreTitle')}
                                 >
                                     {t('map:ui.card.seeMore')}
-                                </span>
+                                </button>
                             )}
                         </>
                     );
                 })()}
             </div>
-            {/* 展会地点没有分类和人均，不显示这一行 */}
-            {!selectedPlace.exhibitionVenue && (
-                <div style={{ marginTop: 6, color: 'var(--color-text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span>{tx('map:ui.card.category', { category: selectedPlace.category || "-" })}</span>
-                    {selectedPlace.per_person_cost != null && <span>{tx('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost })}</span>}
-                </div>
-            )}
-
             {ratingPlaceId != null && renderRatingRow()}
 
-            {lastModifier && (
-                <div style={{ marginTop: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
-                    {lastModifier.clickable ? tx('map:ui.lastModified', {
-                        modifier: (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={() => openUserPlacesFor(lastModifier)}
-                                    title={t('map:userPlaces.open', { name: lastModifier.name })}
-                                    aria-label={t('map:userPlaces.open', { name: lastModifier.name })}
-                                    style={{ padding: 0, border: 0, background: 'transparent', color: 'var(--theme-primary)', font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}
-                                >
-                                    {lastModifier.name}
-                                </button>
-                                {` · ${lastModifier.date || '-'}`}
-                            </>
-                        )
-                    }) : t('map:ui.lastModified', { modifier: lastModifierText(lastModifier) })}
-                </div>
-            )}
             {moderationNote && (
                 <div role="note" style={{ marginTop: 6, display: 'flex', alignItems: 'flex-start', gap: 4, fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-secondary)' }}>
                     <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16, color: 'var(--color-warning)' }}>visibility_off</span>
@@ -1873,80 +1932,113 @@ export default function MapUI(props) {
                         )}
                     </div>
                 ) : !hideNonSearchButtons && (
-                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    // 导航是主按钮；收藏、评价是次要操作；详情、分享、编辑、举报收进“更多”
+                    <div style={{ marginTop: 10, display: 'flex', alignItems: 'stretch', gap: 6 }}>
                         <Tooltip text={hasNavigationTarget ? t('map:ui.card.navigateTooltip') : t('map:ui.card.noCoordinates')}>
                             <Button
                                 onClick={handleNavigate}
                                 disabled={!hasNavigationTarget}
                                 aria-label={t('map:ui.card.navigateLabel')}
-                                style={popupActionButtonStyle}
+                                style={{
+                                    ...popupActionButtonStyle,
+                                    flex: '1 1 auto', gap: 6, border: 0,
+                                    background: 'var(--theme-primary)', color: pickContrastTextColor(customThemeColor),
+                                    opacity: hasNavigationTarget ? 1 : 0.55
+                                }}
                             >
                                 <SkinIcon slot="cardActions.navigate" size={20}>
                                     <span className="material-symbols-outlined" style={popupActionIconStyle}>near_me</span>
                                 </SkinIcon>
-                                <span style={popupActionLabelStyle}>{t('map:ui.nav.title')}</span>
+                                <span style={{ ...popupActionLabelStyle, fontSize: 14 }}>{t('map:ui.nav.title')}</span>
                             </Button>
                         </Tooltip>
-                        <Tooltip text={t('map:ui.card.share')}>
+                        {/* 评论功能暂不开放，待敏感词机制完善后再开放（openCommentPanel） */}
+                        <Tooltip text={favorited ? t('map:ui.card.favoritedTooltip') : (isAuthenticated ? t('map:ui.card.favoriteTooltip') : t('map:ui.card.loginToFavorite'))}>
                             <Button
-                                onClick={() => setShareOpen(true)}
-                                aria-label={t('map:ui.card.share')}
+                                onClick={() => onToggleFavorite && onToggleFavorite(selectedPlace)}
+                                disabled={favoriteLoading}
+                                aria-label={favorited ? t('map:ui.card.unfavoriteLabel') : t('map:ui.card.favoriteLabel')}
+                                aria-pressed={favorited}
+                                style={{ ...popupActionButtonStyle, color: favorited ? 'var(--color-primary)' : popupActionButtonStyle.color }}
+                            >
+                                <SkinIcon slot={favorited ? 'cardActions.favoriteActive' : 'cardActions.favorite'} size={20}>
+                                    <span className="material-symbols-outlined" style={{ ...popupActionIconStyle, fontVariationSettings: favorited ? "'FILL' 1" : undefined }}>favorite</span>
+                                </SkinIcon>
+                                <span style={popupActionLabelStyle}>{favorited ? t('map:ui.favorited') : t('map:ui.favorites')}</span>
+                            </Button>
+                        </Tooltip>
+                        <Button
+                            onClick={openRating}
+                            aria-label={t('map:rating.card.openLabel', { summary: summaryText(ratingSummary) })}
+                            style={{ ...popupActionButtonStyle, color: myRatingTier ? myRatingTier.tone : popupActionButtonStyle.color }}
+                        >
+                            <SkinIcon slot={myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none'} size={20}>
+                                <span className="material-symbols-outlined" style={popupActionIconStyle}>{myRatingTier ? myRatingTier.icon : 'rate_review'}</span>
+                            </SkinIcon>
+                            <span style={popupActionLabelStyle}>{myRatingTier ? tierLabel(myRatingTier) : t('map:rating.card.rate')}</span>
+                        </Button>
+                        <span ref={cardMoreRef} style={{ display: 'inline-flex' }}>
+                            <Button
+                                onClick={() => setCardMoreOpen((open) => !open)}
+                                aria-label={t('map:ui.card.moreLabel')}
+                                aria-haspopup="menu"
+                                aria-expanded={cardMoreOpen}
                                 style={popupActionButtonStyle}
                             >
-                                <SkinIcon slot="cardActions.share" size={20}>
-                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>
-                                        share
-                                    </span>
-                                </SkinIcon>
-                                <span style={popupActionLabelStyle}>{t('map:ui.share.title')}</span>
-                            </Button>
-                        </Tooltip>
-                        {/* 评论功能暂不开放，待敏感词机制完善后再开放 */}
-                        { /*<Tooltip text="在这里留下你的评论">
-                        <Button onClick={openCommentPanel} style={{ background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' }}>评论</Button>
-                    </Tooltip>
-                    <span style={{ padding: 4 }}></span> */ }
-                        {selectedPlace.isMarked !== false && (
-                            <Tooltip text={favoriteIds && favoriteIds.has(selectedPlace.id) ? t('map:ui.card.favoritedTooltip') : (isAuthenticated ? t('map:ui.card.favoriteTooltip') : t('map:ui.card.loginToFavorite'))}>
-                                <Button
-                                    onClick={() => onToggleFavorite && onToggleFavorite(selectedPlace)}
-                                    disabled={favoriteLoading}
-                                    aria-label={favoriteIds && favoriteIds.has(selectedPlace.id) ? t('map:ui.card.unfavoriteLabel') : t('map:ui.card.favoriteLabel')}
-                                    aria-pressed={favoriteIds && favoriteIds.has(selectedPlace.id)}
-                                    style={{ ...popupActionButtonStyle, color: favoriteIds && favoriteIds.has(selectedPlace.id) ? 'var(--color-primary)' : popupActionButtonStyle.color }}
-                                >
-                                    <SkinIcon slot={favoriteIds && favoriteIds.has(selectedPlace.id) ? 'cardActions.favoriteActive' : 'cardActions.favorite'} size={20}>
-                                        <span className="material-symbols-outlined" style={popupActionIconStyle}>
-                                            {favoriteIds && favoriteIds.has(selectedPlace.id) ? 'heart_minus' : 'heart_plus'}
-                                        </span>
-                                    </SkinIcon>
-                                </Button>
-                            </Tooltip>
-                        )}
-                        <Tooltip text={selectedPlace.isMarked === false ? t('map:ui.card.create') : t('map:ui.card.manage')}>
-                            {selectedPlace.isMarked === false ? (
-                                <Button onClick={openCreateFromPoi} aria-label={t('map:ui.card.create')} style={popupActionButtonStyle}>
-                                    <SkinIcon slot="cardActions.create" size={20}>
-                                        <span className="material-symbols-outlined" style={popupActionIconStyle}>add_circle</span>
-                                    </SkinIcon>
-                                </Button>
-                            ) : (
-                                <Button onClick={openManagePanel} aria-label={t('map:ui.card.editLabel')} style={popupActionButtonStyle}>
-                                    <SkinIcon slot="cardActions.edit" size={20}>
-                                        <span className="material-symbols-outlined" style={popupActionIconStyle}>edit</span>
-                                    </SkinIcon>
-                                </Button>
-                            )}
-                        </Tooltip>
-                        <Tooltip text={t('map:ui.card.detailsTooltip')}>
-                            <Button onClick={() => { setDetailFocus(null); setDetailOpen(true); }} aria-label={t('map:ui.card.detailsLabel')} style={popupActionButtonStyle}>
                                 <SkinIcon slot="cardActions.details" size={20}>
                                     <span className="material-symbols-outlined" style={popupActionIconStyle}>more_horiz</span>
                                 </SkinIcon>
                             </Button>
-                        </Tooltip>
+                        </span>
+                        <AnchoredPopover
+                            open={cardMoreOpen && !!selectedPlace}
+                            onClose={() => setCardMoreOpen(false)}
+                            anchorRef={cardMoreRef}
+                            placement="bottom-end"
+                            label={t('map:ui.card.moreLabel')}
+                            title={selectedPlace.name}
+                            sheetOnNarrow
+                            style={{ padding: 7, minWidth: 168 }}
+                        >
+                            {cardMoreEntries.map((entry) => (
+                                <Button
+                                    key={entry.id}
+                                    themeAware
+                                    variant="menu"
+                                    full
+                                    role="menuitem"
+                                    onClick={() => { setCardMoreOpen(false); entry.run(); }}
+                                    style={{ minHeight: 44, justifyContent: 'flex-start', gap: 10, color: 'var(--color-text-primary)' }}
+                                >
+                                    <SkinIcon slot={entry.slot} size={20}>
+                                        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, color: 'var(--color-text-secondary)' }}>{entry.icon}</span>
+                                    </SkinIcon>
+                                    {entry.title}
+                                </Button>
+                            ))}
+                        </AnchoredPopover>
                     </div>
                 )
+            )}
+            {lastModifier && !pickerMode && (
+                <div style={{ marginTop: 10, color: 'var(--color-text-muted)', fontSize: 12 }}>
+                    {lastModifier.clickable ? tx('map:ui.lastModified', {
+                        modifier: (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => openUserPlacesFor(lastModifier)}
+                                    title={t('map:userPlaces.open', { name: lastModifier.name })}
+                                    aria-label={t('map:userPlaces.open', { name: lastModifier.name })}
+                                    style={{ padding: 0, border: 0, background: 'transparent', color: 'var(--theme-primary)', font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}
+                                >
+                                    {lastModifier.name}
+                                </button>
+                                {` · ${lastModifier.date || '-'}`}
+                            </>
+                        )
+                    }) : t('map:ui.lastModified', { modifier: lastModifierText(lastModifier) })}
+                </div>
             )}
         </div>
     );
@@ -1954,7 +2046,7 @@ export default function MapUI(props) {
     // 搜索建议与结果：placement 决定相对输入框的位置（窄屏向上展开）
     const renderSearchDropdown = (placement) => (
         <AnimatePresence>
-        {searchTerm && searchResultsVisible && (aiThinking || aiRecommendations.length > 0 || Array.isArray(searchResults) || spLoading || Array.isArray(spResults)) && (
+        {searchTerm && searchResultsVisible && (aiThinking || aiRecommendations.length > 0 || Array.isArray(searchResults) || searchFailed || spLoading || spError || Array.isArray(spResults)) && (
             <ScrollableView
                 key="search-results"
                 className="fm-search-results"
@@ -2004,14 +2096,25 @@ export default function MapUI(props) {
                         : [];
                     const siteResults = visibleResults.filter((place) => place.isMarked !== false);
                     const amapResults = unmarkedExternalPlaces(externalSearch.results, [...(places || []), ...siteResults], currentMapCenter(mapRef));
-                    if (!Array.isArray(baseResults) && spLoading) {
+                    if (!Array.isArray(baseResults) && spLoading && !searchFailed) {
                         return <div style={{ padding: 12, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>{t('map:ui.search.loading')}</div>;
                     }
+                    // 请求失败与“没有结果”分开：提示连接问题，原位重试（提交过的搜索重新提交，输入预览重新请求）
+                    const failed = searchFailed || (!Array.isArray(searchResults) && spError);
                     return (
                         <>
+                            {failed && (
+                                <div role="alert" style={{ padding: '12px 12px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 10, fontSize: 13, color: 'var(--color-text-secondary)' }}>
+                                    <span>{t('map:ui.search.failed')}</span>
+                                    <Button type="button" onClick={() => (searchFailed ? submitSearch(searchTerm) : retrySpSearch())} disabled={searching}
+                                        style={{ minHeight: 36, padding: '6px 16px', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                        {t('map:ui.search.retry')}
+                                    </Button>
+                                </div>
+                            )}
                             {renderSpSection(t('map:ui.search.sitePlaces'), siteResults, false, null)}
                             {renderSpSection(t('map:ui.search.amapResults'), amapResults, false, null)}
-                            {!visibleResults.length && !amapResults.length && !aiThinking && aiRecommendations.length === 0 && !spLoading && (
+                            {!failed && !visibleResults.length && !amapResults.length && !aiThinking && aiRecommendations.length === 0 && !spLoading && (
                                 <div style={{ padding: 12, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>{t('map:ui.search.noResults')}</div>
                             )}
                             {!aiThinking && aiRecommendations.length === 0 && !Array.isArray(searchResults) && Array.isArray(spResults) && !spLoading && (
@@ -2028,7 +2131,6 @@ export default function MapUI(props) {
                                     style={{ width: '100%', textAlign: 'center', padding: '10px 12px', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
                                     {externalSearch.loading ? t('map:ui.search.externalLoading') : externalSearch.loaded ? t('map:ui.search.externalLoaded') : externalSearch.error ? t('map:ui.search.externalRetry') : t('map:ui.search.findUnlisted')}
                                 </Button>
-                                {!externalSearch.loaded && !externalSearch.loading && <p style={{ margin: '6px 0 0', textAlign: 'center', fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:ui.search.externalHint')}</p>}
                             </div>
                         </>
                     );
@@ -2178,14 +2280,18 @@ export default function MapUI(props) {
                             boxSizing: 'border-box',
                             padding: '6px 34px 6px 12px',
                             borderRadius: 22,
-                            // 底栏展开后的搜索框：边框与底纹默认延续底栏的皮肤（见 skins/slots.js）
-                            border: `2px solid var(--skin-search-border-color, ${dark ? 'var(--color-border)' : customThemeColor})`,
+                            // 底栏展开后的搜索框：边框与底纹默认延续底栏的皮肤（见 skins/slots.js）。
+                            // 平时中性边框（浮在地图上，只留一层投影）；聚焦时主题色边框加一圈淡色描边
+                            border: `1px solid ${searchFocused ? customThemeColor : 'var(--skin-search-border-color, var(--color-border))'}`,
                             backgroundColor: 'var(--skin-search-bg, var(--color-bg-overlay))',
                             backgroundImage: 'var(--skin-search-texture, none)',
                             backgroundSize: 'var(--skin-search-texture-size, auto)',
                             color: 'var(--color-text-primary)',
                             outline: 'none',
-                            boxShadow: `0 4px 12px ${hexToRgba(customThemeColor, 0.2)}, 0 0 8px ${hexToRgba(customThemeColor, 0.25)}`,
+                            boxShadow: searchFocused
+                                ? `0 0 0 3px ${hexToRgba(customThemeColor, 0.25)}, 0 2px 10px rgba(0, 0, 0, 0.12)`
+                                : '0 2px 10px rgba(0, 0, 0, 0.12)',
+                            transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
                             zIndex: 2002
                         }}
                     />
@@ -3243,7 +3349,7 @@ export default function MapUI(props) {
                     <div style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
                         {t('map:ui.loginToViewFavorites')}
                     </div>
-                ) : favLoading ? (
+                ) : favLoading && favItems.length === 0 ? (
                     <div style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
                         {t('map:ui.search.loading')}
                     </div>
@@ -3256,34 +3362,39 @@ export default function MapUI(props) {
                         {t('map:ui.noFavorites')}
                     </div>
                 ) : (
-                    favItems.map(item => (
-                        <div
-                            key={item.place_id}
-                            onClick={() => {
-                                navigateToPlace(item.longitude, item.latitude);
-                                setFavPageOpen(false);
-                            }}
-                            style={{
-                                padding: '10px 16px',
-                                cursor: (item.longitude && item.latitude) ? 'pointer' : 'default',
-                                borderBottom: '1px solid var(--color-border)',
-                                display: 'flex',
-                                flexDirection: 'column'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-overlay)'}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        >
-                            <span style={{ fontSize: 14, color: item.name ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {item.name || t('map:ui.deletedPlace', { place_id: item.place_id })}
-                            </span>
-                            {item.category && (
-                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>{item.category}</span>
-                            )}
-                            {item.name && (!item.longitude || !item.latitude) && (
-                                <span style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 2 }}>{t('map:ui.missingCoordinatesShort')}</span>
-                            )}
-                        </div>
-                    ))
+                    <div role="list" ref={restoreFavScroll}>
+                        {favItems.map((item) => {
+                            const located = !!(item.name && item.longitude && item.latitude);
+                            const current = !!selectedPlace && String(selectedPlace.id) === String(item.place_id);
+                            return (
+                                <button
+                                    key={item.place_id}
+                                    type="button"
+                                    role="listitem"
+                                    className="fm-pressable"
+                                    disabled={!located}
+                                    aria-current={current ? 'true' : undefined}
+                                    onClick={(event) => openFavorite(item, { scroller: scrollParentOf(event.currentTarget) })}
+                                    style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%', minHeight: 48,
+                                        padding: '10px 16px', border: 0, borderBottom: '1px solid var(--color-border)',
+                                        background: current ? 'var(--color-bg-overlay)' : 'transparent',
+                                        color: 'var(--color-text-primary)', textAlign: 'left', cursor: located ? 'pointer' : 'default'
+                                    }}
+                                >
+                                    <span style={{ maxWidth: '100%', fontSize: 14, color: item.name ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {item.name || t('map:ui.deletedPlace', { place_id: item.place_id })}
+                                    </span>
+                                    {item.category && (
+                                        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>{item.category}</span>
+                                    )}
+                                    {item.name && (!item.longitude || !item.latitude) && (
+                                        <span style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 2 }}>{t('map:ui.missingCoordinatesShort')}</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 )}
             </MapPanel>
 

@@ -71,7 +71,18 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
     useEffect(()=>{navs.current.clear();},[navFor]);
     useEffect(()=>{const keys=new Set(stack.map(e=>e.key));for(const key of navs.current.keys())if(!keys.has(key))navs.current.delete(key);},[stack]);
 
-    const showPlace=useCallback(placeId=>{close();onShowPlace?.(placeId);},[close,onShowPlace]);
+    // returnHere（同好收藏里的地点）：页面先让位给店卡，卡片关掉后回到原页面。页面栈与参数保留，页面重新挂载时按参数恢复
+    const [placeView,setPlaceView]=useState(null);
+    const showPlace=useCallback((placeId,options)=>{
+        if(!options?.returnHere){close();onShowPlace?.(placeId);return;}
+        setPlaceView({placeId:String(placeId),shown:false});
+        Promise.resolve(onShowPlace?.(placeId)).then(opened=>{if(!opened)setPlaceView(null);});
+    },[close,onShowPlace]);
+    useEffect(()=>{
+        if(!placeView)return;
+        if(selectedPlace){if(!placeView.shown&&String(selectedPlace.id)===placeView.placeId)setPlaceView({...placeView,shown:true});return;}
+        if(placeView.shown)setPlaceView(null);
+    },[selectedPlace,placeView]);
     const showJourneyOnMap=useCallback(journey=>setMapView(journey),[]);
     // 全屏地图选点：与地图首页相同的标记与搜索。结果为 {kind:'place',place} / {kind:'point',point}，取消为 null。
     const [picker,setPicker]=useState(null);
@@ -94,7 +105,7 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
         loadUnfinished(api,getTokenUserId(token)).then(r=>setCounts({count:r.total,material:r.material})).catch(()=>{});
     },[authed,onRequireAuth,onOpen,api,token]);
     // 同一篇已在最上层时不再叠一层（地址里保留着 ?diary=，重复处理同一链接也只打开一次）
-    const openPublic=useCallback((publicId,stopId)=>{setEntryOpen(false);setMapView(null);setStack(s=>{const top=s[s.length-1];return top?.page==='public'&&top.params.publicId===publicId?s:[...s,entryOf('public',{publicId,stopId})];});},[]);
+    const openPublic=useCallback((publicId,stopId)=>{setEntryOpen(false);setMapView(null);setPlaceView(null);setStack(s=>{const top=s[s.length-1];return top?.page==='public'&&top.params.publicId===publicId?s:[...s,entryOf('public',{publicId,stopId})];});},[]);
     React.useImperativeHandle(ref,()=>({open:openEntry,openPublic}),[openEntry,openPublic]);
     useEffect(()=>{if(initialPublic?.publicId)openPublic(initialPublic.publicId,initialPublic.stopId);},[initialPublic,openPublic]);
     // 地图上的地点详情等模块通过事件进入日记，避免层层传递回调
@@ -105,6 +116,7 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
             if(detail.kind==='record-place'&&detail.place){
                 if(!authed){onRequireAuth?.();return;}
                 const p=detail.place;
+                setPlaceView(null);
                 setStack(s=>[...s,entryOf('composer',{preset:{center:{name:p.name,city:'',lng:Number(p.longitude),lat:Number(p.latitude),source:'place'}}})]);
             }
         };
@@ -114,7 +126,7 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
         return()=>{window.removeEventListener('journey:open',handler);window.removeEventListener('journey:leave-blocked',blocked);window.removeEventListener('journey:places-changed',changed);};
     },[openPublic,authed,onRequireAuth,tip]);
 
-    const selectEntry=id=>{setEntryOpen(false);setStack([entryOf(id,{})]);};
+    const selectEntry=id=>{setEntryOpen(false);setPlaceView(null);setStack([entryOf(id,{})]);};
     const top=stack[stack.length-1];
     // 系统返回 / Esc：交给当前页（例如素材落盘、未同步确认），默认返回上一页
     const onPanelClose=()=>{
@@ -145,10 +157,10 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
 
     const style={'--journey-on-primary':palette.onPrimary};
     return <>
-        {!entryOpen&&!stack.length&&!mapView&&<button type="button" className="journey-launch" data-tour="journey" style={style} onClick={openEntry}>{t('journey:workspace.launcher')}</button>}
+        {!entryOpen&&(!stack.length||placeView)&&!mapView&&<button type="button" className="journey-launch" data-tour="journey" style={style} onClick={openEntry}>{t('journey:workspace.launcher')}</button>}
         {mapView&&<button type="button" className="journey-launch journey-launch--visible" style={style} onClick={()=>setMapView(null)}>{tx('journey:workspace.backToDiary', { title: mapView.document.title })}</button>}
         <JourneyEntrySheet open={entryOpen} counts={counts} onSelect={selectEntry} onClose={()=>setEntryOpen(false)}/>
-        <ResponsivePanel open={stack.length>0&&!mapView} onClose={onPanelClose} label={top?LABELS[top.page]:t('journey:common.feature.diary')} kind="journey" desktop="full" mobile="full"
+        <ResponsivePanel open={stack.length>0&&!mapView&&!placeView} onClose={onPanelClose} label={top?LABELS[top.page]:t('journey:common.feature.diary')} kind="journey" desktop="full" mobile="full"
             draggable={false} plain showClose={false} dismissOnBackdrop={false} bodyStyle={{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
             <div className="jw-root" style={style}>
                 {stack.map((entry,index)=>{

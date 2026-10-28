@@ -1,7 +1,7 @@
 // 地点评价纯逻辑与请求封装：npm run test:rating
 import assert from 'node:assert/strict';
 import {
-    RATING_TIERS, tierForAverage, ratingTierFor, isAvoidedPlace, defaultCreationScore, summaryText, summaryFromPlace, formatAverage
+    RATING_TIERS, tierForAverage, ratingTierFor, isAvoidedPlace, summaryText, summaryFromPlace, formatAverage
 } from "../../../src/places/rating.js";
 import { fetchPlaceRating, savePlaceRating, withdrawPlaceRating } from "../../../src/api/client.js";
 
@@ -30,9 +30,6 @@ assert.equal(isAvoidedPlace({ category: '火锅', rating_count: 2, rating_averag
 assert.equal(isAvoidedPlace({ category: '火锅', rating_count: 2, rating_average: 2.5 }), false);
 assert.equal(isAvoidedPlace(null), false);
 
-assert.equal(defaultCreationScore('甜品, 避雷'), 1);
-assert.equal(defaultCreationScore('甜品'), 4);
-assert.equal(defaultCreationScore(''), 4);
 
 assert.deepEqual(summaryFromPlace({ rating_count: 3, rating_average: 2.6667 }), { count: 3, average: 2.6667 });
 assert.deepEqual(summaryFromPlace({}), { count: 0, average: null });

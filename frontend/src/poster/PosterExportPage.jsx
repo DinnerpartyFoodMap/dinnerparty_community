@@ -247,9 +247,6 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
                                     rows={5}
                                     style={{
                                         borderRadius: 12,
-                                        border: '1px solid var(--color-border)',
-                                        background: 'var(--color-bg-overlay)',
-                                        color: 'var(--color-text-primary)',
                                         padding: 12
                                     }}
                                 />

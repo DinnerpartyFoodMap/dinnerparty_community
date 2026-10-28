@@ -40,6 +40,12 @@
 .jw-wide{width:100%;min-height:48px!important}
 .jw-root .jw-danger,.jw-pad .jw-danger{color:var(--color-danger);border-color:color-mix(in srgb,var(--color-danger) 45%,var(--color-border))}
 .jw-root .jw-link,.jw-place-diaries .jw-link{border:0;background:transparent;color:var(--theme-primary);padding:4px 0;min-height:32px;text-decoration:underline;text-underline-offset:3px}
+/* 同好收藏里的地点：整行可点，打开店卡 */
+.jw-root .jw-place-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column}
+.jw-root .jw-place-link{width:100%;display:flex;align-items:baseline;gap:8px;text-align:left;border:0;border-bottom:1px solid var(--color-border);border-radius:0;background:transparent;padding:10px 2px;min-height:44px}
+.jw-root .jw-place-link span{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.jw-root .jw-place-link small{color:var(--color-text-secondary);flex-shrink:0}
+.jw-root .jw-place-link:not(:disabled):hover{color:var(--theme-primary)}
 /* 名字或标题后的小字举报入口（与地点详情店名后的“举报”一致） */
 .jw-root .jw-report{border:0;background:transparent;color:var(--color-text-muted);padding:2px 0;min-height:24px;font-size:12px;font-weight:400;line-height:1.4;vertical-align:middle;white-space:nowrap}
 .jw-root .jw-report:not(:disabled):hover{color:var(--color-text-secondary)}

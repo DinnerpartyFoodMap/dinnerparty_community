@@ -346,7 +346,8 @@ struct MapChromeView: View {
                 .opacity(available ? (hinting ? 1 : 0.55) : 0)
                 .frame(maxWidth: .infinity)
                 .frame(height: Self.grabberHeight)
-                .contentShape(Rectangle())
+                // 拖动条只有 14pt 高：点按范围以小横条为中心向上扩到 44pt（往下是工具栏按钮，不能占用；宿主的触摸区域见 MapChromeModel.grabberHitRect）
+                .contentShape(MapChromeGrabberHitShape())
         }
         .buttonStyle(.plain)
         .disabled(!available)
@@ -684,9 +685,10 @@ struct MapChromeView: View {
             if model.search.busy {
                 ProgressView()
                     .controlSize(.small)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .accessibilityLabel(Text(model.search.busyLabel))
             } else if !model.searchText.isEmpty {
+                // 图标仍是 17pt，点按范围 44×44
                 Button {
                     model.updateSearchText("")
                     searchFocused = true
@@ -694,15 +696,15 @@ struct MapChromeView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 17))
                         .foregroundStyle(.secondary)
-                        .frame(width: 36, height: 36)
-                        .contentShape(Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(model.text("clearSearch", "清空搜索内容")))
             }
         }
         .padding(.leading, 16)
-        .padding(.trailing, 8)
+        .padding(.trailing, 4)
         .frame(maxWidth: .infinity)
         .frame(height: 52)
         .background {
@@ -932,5 +934,15 @@ struct MapChromeBadgeDot: View {
             .frame(width: 10, height: 10)
             .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
             .accessibilityHidden(true)
+    }
+}
+
+/// 拖动条的点按范围：与小横条同一中心线、120pt 宽，底边与拖动条对齐，向上多出 rise（14pt 的拖动条加上 30pt 共 44pt 高）
+struct MapChromeGrabberHitShape: Shape {
+    static let width: CGFloat = 120
+    static let rise: CGFloat = 30
+
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: rect.midX - Self.width / 2, y: rect.minY - Self.rise, width: Self.width, height: rect.height + Self.rise))
     }
 }

@@ -92,22 +92,28 @@ export default function PlaceImageInputs({ backendUrl, token, images, setImages,
             </div>
 
             {images.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, padding: '6px 6px 0 0', marginBottom: 8 }}>
                     {images.map((url, i) => (
                         <div key={`${url}-${i}`} style={{ position: 'relative', width: 64, height: 64 }}>
                             <img src={imageThumbnailUrl(url, 160)} alt={t('map:imageInputs.previewAlt', { index: i + 1 })}
                                 style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }} />
+                            {/* 删除钮看起来仍是 22px 的小圆，点按范围是以它为中心的 44×44 */}
                             <button
                                 type="button"
                                 onClick={() => handleRemove(i)}
                                 aria-label={t('map:imageInputs.removeImage', { index: i + 1 })}
                                 style={{
-                                    position: 'absolute', top: -6, right: -6, width: 22, height: 22, padding: 0, borderRadius: '50%',
-                                    border: 0, background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', cursor: 'pointer',
+                                    position: 'absolute', top: -17, right: -17, width: 44, height: 44, padding: 0,
+                                    border: 0, background: 'transparent', cursor: 'pointer', touchAction: 'manipulation',
                                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
                                 }}
                             >
-                                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16 }}>close</span>
+                                <span aria-hidden="true" style={{
+                                    width: 22, height: 22, borderRadius: '50%', background: 'var(--color-danger)', color: 'var(--color-on-emphasis)',
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
+                                </span>
                             </button>
                         </div>
                     ))}

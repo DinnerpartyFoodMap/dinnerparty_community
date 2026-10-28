@@ -123,6 +123,8 @@ struct MapChromeSheet: Identifiable, Equatable {
     /// 可点的副标题 / 地址行（v9，展会地点）：点按与行相同，回传行 id；行标题用作读屏标签
     var subtitleAction: MapChromeSheetRow? = nil
     var captionAction: MapChromeSheetRow? = nil
+    /// 列表打开时滚到这一行（收藏：从店卡回来时停在原来的位置）
+    var focusRow: String? = nil
 
     var id: String { "\(sheetId)#\(token)" }
     var isCard: Bool { style == "card" }
@@ -416,7 +418,15 @@ final class MapChromeModel: ObservableObject {
         var rects = interactiveRects
         if drawerOpen, let drawer = frames["drawer"] { rects.append(drawer) }
         if presentedPanel != nil, let panel = frames["panel"] { rects.append(panel) }
+        if let grabber = grabberHitRect { rects.append(grabber) }
         return rects
+    }
+
+    /// 拖动条扩大后伸出工具栏上沿的那一截（MapChromeGrabberHitShape）：只占小横条上方 120pt 宽，地图的其余部分照常可拖
+    var grabberHitRect: CGRect? {
+        guard isShowing, drawerAvailable, !searchExpanded, presentedPanel == nil, let dock = frames["drawer"] else { return nil }
+        return CGRect(x: dock.midX - MapChromeGrabberHitShape.width / 2, y: dock.minY - MapChromeGrabberHitShape.rise,
+                      width: MapChromeGrabberHitShape.width, height: MapChromeGrabberHitShape.rise)
     }
 
     func tap(_ item: MapChromeItem) {

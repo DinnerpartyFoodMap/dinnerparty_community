@@ -45,10 +45,7 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
                 <div role="status" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('places:filter.fromAi')}</div>
             )}
             <section>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 14 }}>{t('places:filter.tagsTitle')}</h3>
-                    <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('places:filter.tagsHint')}</span>
-                </div>
+                <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>{t('places:filter.tagsTitle')}</h3>
                 {loadError && <div style={{ fontSize: 12, color: 'var(--color-danger)' }}>{loadError}</div>}
                 <div role="group" aria-label={t('places:filter.tagsTitle')} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: showAll ? 220 : undefined, overflowY: showAll ? 'auto' : undefined }}>
                     {shown.map((tag) => {
@@ -95,9 +92,6 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
                     labels={[t('places:filter.costMinLabel'), t('places:filter.costMaxLabel')]}
                     formatValue={(cost) => (cost >= COST_SLIDER.max ? t('places:filter.costNoMax') : t('places:filter.costValue', { cost }))}
                 />
-                {(filter.minCost !== null || filter.maxCost !== null) && (
-                    <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('places:filter.costHint')}</div>
-                )}
             </section>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button themeAware onClick={() => onChange(EMPTY_PLACE_FILTER)} disabled={!isPlaceFilterActive(filter)}>{t('places:filter.reset')}</Button>

@@ -3,7 +3,7 @@ import { useOverlayEntry } from '../../components/overlay/MotionSurface';
 import { getPlatform, isPluginAvailable } from '../../platform/env';
 import { createNativePlaceFormSession } from '../../platform/nativePlaceForm';
 import { loadCategoryDirectory } from '../categoryDirectory';
-import { RATING_TIERS, AVOID_TAG } from '../rating';
+import { RATING_TIERS } from '../rating';
 import { PLACE_IMAGE_PICK_LIMIT, uploadPlaceImage } from '../components/PlaceImageInputs';
 import { imageThumbnailUrl } from '../../platform/runtimeConfig';
 import { getThemeColor } from '../../theme/theme';
@@ -22,6 +22,17 @@ function base64ToFile(base64) {
     return new File([bytes], `place-${Date.now()}.jpg`, { type: 'image/jpeg' });
 }
 
+// 评价四档的颜色：tone 是 CSS 变量，取当前主题（浅色 / 深色）下的实际值，原生表单用它给选项上色
+function tierColor(tone) {
+    const name = /^var\((--[\w-]+)\)$/.exec(tone)?.[1];
+    if (!name) return tone;
+    try {
+        return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim() || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 const imageEntries = (list) => (Array.isArray(list) ? list : [])
     .filter((url) => typeof url === 'string' && url)
     .map((url) => ({ url, thumb: imageThumbnailUrl(url, 240) }));
@@ -38,13 +49,14 @@ function formLabels(mode, canDirect) {
         categorySearch: t('map:placeForm.categorySearch'),
         categoryAdd: t('map:placeForm.categoryAdd'),
         categoryInvalid: t('map:placeForm.categoryInvalid'),
+        clearSearch: t('map:ui.search.clear'),
         description: t('map:common.label.description'),
         descriptionPlaceholder: t('map:placeForm.descriptionPlaceholder'),
         markdownHint: t('map:placeForm.markdownHint'),
-        reviewHint: t('map:addForm.reviewHint'),
         cost: t('map:placeForm.cost'),
         costPlaceholder: t('map:addForm.perPersonCostPlaceholder'),
         rating: t('map:addForm.ratingLabel'),
+        ratingRequired: t('map:addForm.ratingRequired'),
         exteriorImages: t('map:addForm.exteriorImages'),
         menuImages: t('map:addForm.menuImages'),
         chooseFromAlbum: t('map:placeForm.chooseFromAlbum'),
@@ -108,8 +120,7 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
                 dark: latest.current.dark,
                 primary: getThemeColor() || '#E2789F',
                 categories: categories.map((item) => ({ name: item.name, common: !!item.is_common })),
-                tiers: RATING_TIERS.map((tier) => ({ score: tier.score, title: tier.label, hint: tier.hint })),
-                avoidTag: AVOID_TAG,
+                tiers: RATING_TIERS.map((tier) => ({ score: tier.score, title: tier.label, hint: tier.hint, color: tierColor(tier.tone) })),
                 limits: { descriptionLength: 1000, images: PLACE_IMAGE_PICK_LIMIT },
                 canDirect: current.canDirect !== false,
                 canDelete: !!current.canDelete,

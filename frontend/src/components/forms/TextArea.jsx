@@ -1,50 +1,30 @@
 import React, { forwardRef, useState } from 'react';
-import useDarkMode from "../../theme/useDarkMode";
-import { getThemeColor } from "../../theme/theme";
 import Markdown from "../markdown/Markdown";
 import { t } from "../../i18n/index.js";
-
-function hexToRgba(hex, a = 1) {
-    try {
-        let h = (hex || '').replace('#', '');
-        if (h.length === 3) h = h.split('').map(c => c + c).join('');
-        const bigint = parseInt(h, 16);
-        const r = (bigint >> 16) & 255;
-        const g = (bigint >> 8) & 255;
-        const b = bigint & 255;
-        return `rgba(${r},${g},${b},${a})`;
-    } catch (e) {
-        return `rgba(0,0,0,${a})`;
-    }
-}
+import './field.css';
 
 // markdown：输入框下方提示支持基础 Markdown，并可切换到预览（预览用 Markdown 组件，HTML 不解析）。
 // 预览时输入框仍保留在页面里（只是隐藏），表单状态、ref 与提交都不受影响。
 const TextArea = forwardRef(({ style = {}, className, rows, markdown = false, ...rest }, ref) => {
-    const dark = useDarkMode();
-    const themeColor = getThemeColor() || '#E2789F';
     const [preview, setPreview] = useState(false);
 
     const base = {
         padding: '6px 12px',
         boxSizing: 'border-box',
         borderRadius: 22,
-        border: `2px solid ${dark ? 'var(--color-border)' : themeColor}`,
-        background: 'var(--color-bg-overlay)',
-        color: 'var(--color-text-primary)',
         // Chrome gives <textarea> a different user-agent font by default.
         // Inherit the application font so edit descriptions match labels and other fields.
         fontFamily: 'inherit',
         fontSize: 16,
         lineHeight: 1.5,
-        outline: 'none',
-        boxShadow: `0 4px 12px ${hexToRgba(themeColor, 0.2)}, 0 0 8px ${hexToRgba(themeColor, 0.25)}`,
         resize: 'vertical',
         minHeight: 80
     };
 
     const merged = { ...base, ...style };
-    const props = { ref, ...rest, className, style: merged };
+    // 边框、聚焦与错误状态在 field.css（fm-field）
+    const fieldClass = className ? `fm-field ${className}` : 'fm-field';
+    const props = { ref, ...rest, className: fieldClass, style: merged };
     if (rows) props.rows = rows;
     if (!markdown) return <textarea {...props} />;
 
@@ -54,7 +34,7 @@ const TextArea = forwardRef(({ style = {}, className, rows, markdown = false, ..
         <div style={{ width, maxWidth: '100%', boxSizing: 'border-box' }}>
             <textarea {...props} style={{ ...fieldStyle, width: '100%', display: preview ? 'none' : undefined }} />
             {preview && (
-                <div className={className} role="region" aria-label={t('common:markdown.previewLabel')}
+                <div className={fieldClass} role="region" aria-label={t('common:markdown.previewLabel')}
                     style={{ ...fieldStyle, width: '100%', resize: 'none', overflowY: 'auto', fontSize: 15, minHeight: fieldStyle.minHeight }}>
                     <Markdown text={value} fallback={<span style={{ color: 'var(--color-text-muted)' }}>{t('common:markdown.emptyPreview')}</span>} />
                 </div>

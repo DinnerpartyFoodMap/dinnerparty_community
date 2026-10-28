@@ -123,6 +123,8 @@ export default function MapView({
     const [addMode, setAddMode] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [searchResults, setSearchResults] = useState(null);
+    // 提交的搜索请求失败（连不上、服务端出错）：与“没有结果”区分，结果面板里原位重试，关键词保留
+    const [searchFailed, setSearchFailed] = useState(false);
     const [alongRouteResults, setAlongRouteResults] = useState(null);
     const [searching, setSearching] = useState(false);
     const [aiThinking, setAiThinking] = useState(false);
@@ -218,6 +220,7 @@ export default function MapView({
         searchAbortControllersRef.current = [];
         if (resetTerm) setSearchTerm("");
         setSearchResults(null);
+        setSearchFailed(false);
         setSearching(false);
         setAiThinking(false);
         setAiRecommendations([]);
@@ -234,6 +237,7 @@ export default function MapView({
             searchAbortControllersRef.current.forEach((controller) => controller.abort());
             searchAbortControllersRef.current = [];
             setSearchResults(null);
+            setSearchFailed(false);
             setSearching(false);
             setAiThinking(false);
             setAiRecommendations([]);
@@ -1092,7 +1096,8 @@ export default function MapView({
         if (venuePlace && (!selectedPlace || placeKey(selectedPlace) !== placeKey(venuePlace))) setVenuePlace(null);
     }, [selectedPlace, venuePlace]);
 
-    // 列表模式里点了一个地点：退出搜索、沿途与住民筛选，地图移到这个地点并打开卡片，附近地点随之重新加载
+    // 列表模式、收藏里点了一个地点：退出搜索、沿途与住民筛选，地图移到这个地点并打开卡片，附近地点随之重新加载。
+    // 返回卡片是否打开（地点已删除、网络失败时为 false，调用方据此直接回到列表）
     const focusPlaceFromList = (placeId) => {
         clearSearchState({ reloadPlaces: false });
         setAlongRouteResults(null);
@@ -1100,7 +1105,10 @@ export default function MapView({
         searchResultsRef.current = null;
         alongRouteResultsRef.current = null;
         armSkipAutoSearch();
-        focusPlaceById(placeId).then(() => loadPlacesRef.current?.(true));
+        return focusPlaceById(placeId).then((opened) => {
+            loadPlacesRef.current?.(true);
+            return opened;
+        });
     };
     const currentMapCenter = () => {
         const center = mapRef.current?.getCenter?.();
@@ -1249,6 +1257,7 @@ export default function MapView({
 
         // AI 推荐需要登录（封禁期间只读，也不发起）；游客只看快速结果。
         const aiAllowed = !!token && !isBanned;
+        setSearchFailed(false);
         setSearching(true);
         setAiThinking(aiAllowed);
         setAiRecommendations([]);
@@ -1306,10 +1315,15 @@ export default function MapView({
             // 若匹配成功，调整视野到所有匹配 marker
             if (autoFit) fitMapToPlaces(baseData.filter((place) => place.isMarked !== false || place.showOnMap === true));
         } catch (e) {
-            if (e?.name !== 'AbortError') console.error("searchServer error", e);
-            if (requestId === searchRequestIdRef.current) {
-                fastSettled = true;
-                publishResults([], resolvedRecommendations);
+            if (e?.name === 'AbortError' || requestId !== searchRequestIdRef.current) return;
+            console.error("searchServer error", e);
+            // 失败不是空结果：标记回到附近地点，AI 推荐（若稍后返回）照常显示
+            fastSettled = true;
+            setSearchFailed(true);
+            if (resolvedRecommendations.length) publishResults([], resolvedRecommendations);
+            else {
+                searchResultsRef.current = null;
+                setSearchResults(null);
             }
         } finally {
             if (requestId === searchRequestIdRef.current) setSearching(false);
@@ -1328,6 +1342,7 @@ export default function MapView({
 
     const handleSelectSuggestion = (item) => {
         exitUserFilter();
+        setSearchFailed(false);
         setSearchResults([item?.isMarked === false ? { ...item, showOnMap: true } : item]);
     };
 
@@ -1432,14 +1447,16 @@ export default function MapView({
     const focusPlaceById = async (placeId) => {
         try {
             const res = await Api.fetchPlace(backendUrl, placeId, { token });
-            if (!res.ok) { showTip(t('map:main.markerMissing')); return; }
+            if (!res.ok) { showTip(t('map:main.markerMissing')); return false; }
             const place = await res.json();
             if (mapRef.current && place.longitude != null && place.latitude != null) {
                 mapRef.current.setZoomAndCenter(17, [place.longitude, place.latitude]);
             }
             showPopup(place);
+            return true;
         } catch (e) {
             showTip(t('map:main.markerLoadFailed'));
+            return false;
         }
     };
     // 公开日记保存时新建了标记：让附近地点缓存过期并重新加载
@@ -1896,6 +1913,7 @@ export default function MapView({
                 searchResetKey={searchResetKey}
                 searchServer={searchServer}
                 searchResults={searchResults}
+                searchFailed={searchFailed}
                 aiThinking={aiThinking}
                 aiRecommendations={aiRecommendations}
                 onProgrammaticMapMove={armSkipAutoSearch}

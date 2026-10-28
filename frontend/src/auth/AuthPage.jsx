@@ -287,10 +287,14 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
     const [codeSentTo, setCodeSentTo] = useState(null); // { qq, minutes } | null
     // 重新获取的倒计时只对刚发送过的那个 QQ 生效，改了 QQ 号可以立即获取
     const [cooldown, setCooldown] = useState({ qq: "", seconds: 0 });
-    // 提示是成功还是错误由设置的地方说明，不从文字内容推断
-    const [notice, setNotice] = useState({ text: "", tone: "error" });
+    // 提示是成功还是错误由设置的地方说明，不从文字内容推断；fields 是出错的输入框（标红并关联到提示）
+    const [notice, setNotice] = useState({ text: "", tone: "error", fields: [] });
     const message = notice.text;
-    const setMessage = useCallback((text, tone = "error") => setNotice({ text, tone }), []);
+    const setMessage = useCallback((text, tone = "error") => setNotice({ text, tone, fields: [] }), []);
+    const failFields = useCallback((text, fields) => setNotice({ text, tone: "error", fields: fields.filter(Boolean) }), []);
+    const fieldError = (field) => (notice.tone === "error" && notice.fields.includes(field)
+        ? { "aria-invalid": true, "aria-describedby": "auth-notice" }
+        : {});
     const [loading, setLoading] = useState(false);
     const [pendingAction, setPendingAction] = useState(null); // "submit" | "code"
     const [slowConnection, setSlowConnection] = useState(false);
@@ -441,9 +445,9 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         if (loading) return;
         setMessage("");
         const normalizedUsername = username.trim();
-        if (!normalizedUsername || !password) return setMessage(t('auth:page.login.missingFields'));
-        if (normalizedUsername.length > MAX_USERNAME_LENGTH) return setMessage(t('auth:page.usernameTooLong', { MAX_USERNAME_LENGTH }));
-        if (password.length > MAX_PASSWORD_LENGTH) return setMessage(t('auth:page.passwordTooLong', { MAX_PASSWORD_LENGTH }));
+        if (!normalizedUsername || !password) return failFields(t('auth:page.login.missingFields'), [!normalizedUsername && "username", !password && "password"]);
+        if (normalizedUsername.length > MAX_USERNAME_LENGTH) return failFields(t('auth:page.usernameTooLong', { MAX_USERNAME_LENGTH }), ["username"]);
+        if (password.length > MAX_PASSWORD_LENGTH) return failFields(t('auth:page.passwordTooLong', { MAX_PASSWORD_LENGTH }), ["password"]);
         const request = startRequest();
         reportAuthStage(backendUrl, request.requestId, 'submitted', isIOSChrome() ? 'crios' : 'other');
         try {
@@ -465,7 +469,8 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     setMessage(t('auth:page.login.noUserInfo'));
                 }
             } else {
-                setMessage(appendRequestId(getFriendlyErrorMessage(res.status, data.error, t('auth:page.login.action')), data.requestId));
+                const text = appendRequestId(getFriendlyErrorMessage(res.status, data.error, t('auth:page.login.action')), data.requestId);
+                failFields(text, res.status === 401 ? ["username", "password"] : []);
             }
         } catch (err) {
             if (closingRef.current) return;
@@ -489,7 +494,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         if (loading) return;
         setMessage("");
         const normalizedQq = qq.trim();
-        if (!QQ_PATTERN.test(normalizedQq)) return setMessage(t('auth:page.code.invalidQq'));
+        if (!QQ_PATTERN.test(normalizedQq)) return failFields(t('auth:page.code.invalidQq'), ["qq"]);
         if (cooldown.seconds > 0 && cooldown.qq === normalizedQq) return;
         const purpose = tab === "reset" ? CODE_PURPOSE.reset : CODE_PURPOSE.register;
         const request = startRequest("code");
@@ -524,13 +529,15 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         const normalizedUsername = username.trim();
         const normalizedQq = qq.trim();
         const normalizedCode = verificationCode.trim();
-        if (!normalizedUsername || !password || !confirmPassword || !normalizedQq || !normalizedCode) return setMessage(t('auth:page.register.missingFields'));
-        if (normalizedUsername.length > MAX_USERNAME_LENGTH) return setMessage(t('auth:page.usernameTooLong', { MAX_USERNAME_LENGTH }));
-        if (password.length > MAX_PASSWORD_LENGTH) return setMessage(t('auth:page.passwordTooLong', { MAX_PASSWORD_LENGTH }));
-        if (password !== confirmPassword) return setMessage(t('auth:page.register.passwordMismatch'));
-        if (!QQ_PATTERN.test(normalizedQq)) return setMessage(t('auth:page.code.invalidQq'));
-        if (!VERIFICATION_CODE_PATTERN.test(normalizedCode)) return setMessage(t('auth:page.code.invalidCode'));
-        if (!agreedTerms) return setMessage(t('auth:page.register.agreeRequired'));
+        if (!normalizedUsername || !password || !confirmPassword || !normalizedQq || !normalizedCode) {
+            return failFields(t('auth:page.register.missingFields'), [!normalizedUsername && "username", !password && "password", !confirmPassword && "confirmPassword", !normalizedQq && "qq", !normalizedCode && "code"]);
+        }
+        if (normalizedUsername.length > MAX_USERNAME_LENGTH) return failFields(t('auth:page.usernameTooLong', { MAX_USERNAME_LENGTH }), ["username"]);
+        if (password.length > MAX_PASSWORD_LENGTH) return failFields(t('auth:page.passwordTooLong', { MAX_PASSWORD_LENGTH }), ["password"]);
+        if (password !== confirmPassword) return failFields(t('auth:page.register.passwordMismatch'), ["confirmPassword"]);
+        if (!QQ_PATTERN.test(normalizedQq)) return failFields(t('auth:page.code.invalidQq'), ["qq"]);
+        if (!VERIFICATION_CODE_PATTERN.test(normalizedCode)) return failFields(t('auth:page.code.invalidCode'), ["code"]);
+        if (!agreedTerms) return failFields(t('auth:page.register.agreeRequired'), ["terms"]);
         const request = startRequest();
         try {
             const { response: res, data } = await fetchResponseWithTimeout(withRequestId(`${backendUrl}/users/register`, request.requestId), {
@@ -549,7 +556,8 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     setTab("login");
                 }
             } else {
-                setMessage(appendRequestId(getFriendlyErrorMessage(res.status, data.error, t('auth:page.register.action')), data.requestId));
+                const text = appendRequestId(getFriendlyErrorMessage(res.status, data.error, t('auth:page.register.action')), data.requestId);
+                failFields(text, res.status === 409 ? ["username"] : []);
             }
         } catch (err) {
             showRequestError(err, request);
@@ -564,12 +572,14 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         setMessage("");
         const normalizedQq = qq.trim();
         const normalizedCode = verificationCode.trim();
-        if (!normalizedQq || !normalizedCode || !password || !confirmPassword) return setMessage(t('auth:page.reset.missingFields'));
-        if (!QQ_PATTERN.test(normalizedQq)) return setMessage(t('auth:page.code.invalidQq'));
-        if (!VERIFICATION_CODE_PATTERN.test(normalizedCode)) return setMessage(t('auth:page.code.invalidCode'));
-        if (password.length < MIN_RESET_PASSWORD_LENGTH) return setMessage(t('auth:page.reset.passwordTooShort', { MIN_RESET_PASSWORD_LENGTH }));
-        if (password.length > MAX_PASSWORD_LENGTH) return setMessage(t('auth:page.passwordTooLong', { MAX_PASSWORD_LENGTH }));
-        if (password !== confirmPassword) return setMessage(t('auth:page.register.passwordMismatch'));
+        if (!normalizedQq || !normalizedCode || !password || !confirmPassword) {
+            return failFields(t('auth:page.reset.missingFields'), [!normalizedQq && "qq", !normalizedCode && "code", !password && "password", !confirmPassword && "confirmPassword"]);
+        }
+        if (!QQ_PATTERN.test(normalizedQq)) return failFields(t('auth:page.code.invalidQq'), ["qq"]);
+        if (!VERIFICATION_CODE_PATTERN.test(normalizedCode)) return failFields(t('auth:page.code.invalidCode'), ["code"]);
+        if (password.length < MIN_RESET_PASSWORD_LENGTH) return failFields(t('auth:page.reset.passwordTooShort', { MIN_RESET_PASSWORD_LENGTH }), ["password"]);
+        if (password.length > MAX_PASSWORD_LENGTH) return failFields(t('auth:page.passwordTooLong', { MAX_PASSWORD_LENGTH }), ["password"]);
+        if (password !== confirmPassword) return failFields(t('auth:page.register.passwordMismatch'), ["confirmPassword"]);
         const request = startRequest();
         try {
             const { response: res, data } = await fetchResponseWithTimeout(withRequestId(`${backendUrl}/users/password-reset`, request.requestId), {
@@ -643,12 +653,13 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         opacity: loading ? 0.7 : 1
     };
 
-    const renderPasswordField = ({ id, label, placeholder, value, onChange }) => (
+    const renderPasswordField = ({ id, field, label, placeholder, value, onChange }) => (
         <div style={{ marginTop: 10 }}>
             <label htmlFor={id} style={labelStyle}>{label}</label>
             <div style={{ position: 'relative' }}>
                 <TextInput
                     id={id}
+                    {...fieldError(field)}
                     type={showPassword ? "text" : "password"}
                     placeholder={placeholder}
                     value={value}
@@ -701,6 +712,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <TextInput
                             id={`${idPrefix}-qq`}
+                            {...fieldError("qq")}
                             type="text"
                             inputMode="numeric"
                             autoComplete="off"
@@ -742,6 +754,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                         value={verificationCode}
                         onChange={(e) => handleVerificationCodeChange(e.target.value)}
                         aria-describedby={sentToCurrentQq ? `${idPrefix}-code-hint` : undefined}
+                        {...fieldError("code")}
                         style={{ width: '100%', letterSpacing: verificationCode ? '0.2em' : undefined }}
                     />
                     {sentToCurrentQq && (
@@ -812,6 +825,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                         <label htmlFor="auth-username" style={labelStyle}>{t('auth:page.field.username')}</label>
                         <TextInput
                             id="auth-username"
+                            {...fieldError("username")}
                             placeholder={t('auth:page.field.usernamePlaceholder')}
                             value={username}
                             autoComplete="username"
@@ -824,6 +838,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                         <label htmlFor="auth-password-login" style={labelStyle}>{t('auth:page.field.password')}</label>
                         <TextInput
                             id="auth-password-login"
+                            {...fieldError("password")}
                             type="password"
                             placeholder={t('auth:page.field.passwordPlaceholder')}
                             value={password}
@@ -852,6 +867,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     {renderVerificationFields("auth-reset")}
                     {renderPasswordField({
                         id: "auth-password-reset",
+                        field: "password",
                         label: t('auth:page.field.newPassword'),
                         placeholder: t('auth:page.field.newPasswordPlaceholder'),
                         value: password,
@@ -859,6 +875,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     })}
                     {renderPasswordField({
                         id: "auth-confirm-password-reset",
+                        field: "confirmPassword",
                         label: t('auth:page.field.confirmPassword'),
                         placeholder: t('auth:page.field.confirmPasswordPlaceholder'),
                         value: confirmPassword,
@@ -913,6 +930,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                         <label htmlFor="auth-username-register" style={labelStyle}>{t('auth:page.field.username')}</label>
                         <TextInput
                             id="auth-username-register"
+                            {...fieldError("username")}
                             placeholder={t('auth:page.field.usernamePlaceholder')}
                             value={username}
                             autoComplete="username"
@@ -923,6 +941,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     </div>
                     {renderPasswordField({
                         id: "auth-password-register",
+                        field: "password",
                         label: t('auth:page.field.password'),
                         placeholder: t('auth:page.field.newPasswordPlaceholder'),
                         value: password,
@@ -930,6 +949,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     })}
                     {renderPasswordField({
                         id: "auth-confirm-password-register",
+                        field: "confirmPassword",
                         label: t('auth:page.field.confirmPassword'),
                         placeholder: t('auth:page.field.confirmPasswordPlaceholder'),
                         value: confirmPassword,
@@ -940,6 +960,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                         <input
                             type="checkbox"
                             checked={agreedTerms}
+                            {...fieldError("terms")}
                             onChange={(e) => {
                                 setAgreedTerms(e.target.checked);
                                 if (message) setMessage("");
@@ -993,6 +1014,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
 
             {message && (
                 <p
+                    id="auth-notice"
                     role="status"
                     aria-live="polite"
                     style={{

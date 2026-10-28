@@ -245,17 +245,24 @@ struct MapChromeMenuPanel: View {
             }
             .contentShape(Rectangle())
             .gesture(dismissGesture)
-            ScrollView {
-                content
-                    .onGeometryChange(for: CGFloat.self, of: { proxy in
-                        proxy.size.height
-                    }, action: { height in
-                        contentHeight = height
-                    })
+            ScrollViewReader { reader in
+                ScrollView {
+                    content
+                        .onGeometryChange(for: CGFloat.self, of: { proxy in
+                            proxy.size.height
+                        }, action: { height in
+                            contentHeight = height
+                        })
+                }
+                .scrollDisabled(!scrolls)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: min(contentHeight, bodyLimit))
+                // 从店卡回到收藏：滚到刚才点开的那一行（内容高度量出来、可以滚动之后）
+                .onChange(of: scrolls) { _, canScroll in
+                    guard canScroll, let row = sheet.focusRow else { return }
+                    reader.scrollTo(row, anchor: .center)
+                }
             }
-            .scrollDisabled(!scrolls)
-            .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(contentHeight, bodyLimit))
         }
         .frame(maxWidth: .infinity)
         .glassEffect(Glass.regular, in: shape)
@@ -392,6 +399,7 @@ struct MapChromeMenuPanel: View {
                             Divider().padding(.leading, section.footnote ? 48 : 56)
                         }
                         rowButton(row, footnote: section.footnote)
+                            .id(row.id)
                     }
                 }
                 .background(groupFill)

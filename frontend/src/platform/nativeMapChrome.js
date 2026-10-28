@@ -228,7 +228,9 @@ export function sanitizeSheet(sheet) {
         ...renameSkinIcon(sanitizeSkinIcon({ image: sheet.closeImage, imageTemplate: sheet.closeImageTemplate }), 'closeImage'),
         // 可点的副标题（摘要）与地址行（详情）：与面板行相同的字段，点按回传行 id
         subtitleAction: sheet.subtitleAction ? sanitizeSheetRows([sheet.subtitleAction], { rows: 1 })[0] : undefined,
-        captionAction: sheet.captionAction ? sanitizeSheetRows([sheet.captionAction], { rows: 1 })[0] : undefined
+        captionAction: sheet.captionAction ? sanitizeSheetRows([sheet.captionAction], { rows: 1 })[0] : undefined,
+        // 列表打开时滚到这一行（从店卡回到收藏时停在原来的位置）；只是行 id，旧版原生忽略
+        focusRow: clipText(sheet.focusRow, 80)
     };
 }
 

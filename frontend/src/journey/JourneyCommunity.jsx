@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {request} from './feedback';
 import {PageHeader,Notice,Empty} from './shared';
 import {userReportPrefill} from '../feedback/feedbackTypes';
@@ -10,21 +10,33 @@ const KIND_LABEL={search:t('common:action.search'),exposure:t('journey:community
  * 同好：首期沿用偏好向量匹配、星图与公开收藏夹。同好列表优先，星图为可切换视图；
  * 「我的公开收藏夹」「发现设置」是页面内的明确入口。日记公开与同好设置分别管理。
  */
-export default function JourneyCommunity({ctx,nav}) {
-    const {base,token,feedback,confirm,report,userId}=ctx;
+export default function JourneyCommunity({ctx,nav,params}) {
+    const {base,token,feedback,confirm,report,userId,showPlace}=ctx;
     const api=(path,options)=>request(base,token,`/api/community${path}`,options);
-    const [section,setSection]=useState('neighbors'),[view,setView]=useState('list');
+    // 从同好收藏里点开地点、关掉店卡回来时页面重新挂载：按参数恢复分区、展开的住民与滚动位置
+    const [section,setSection]=useState(params?.section||'neighbors'),[view,setView]=useState(params?.view||'list');
+    const scrollRef=useRef(null),restoreRef=useRef(params?.personId?{personId:params.personId,scrollTop:params.scrollTop||0}:null);
     const [settings,setSettings]=useState(null),[collections,setCollections]=useState([]),[favorites,setFavorites]=useState([]),[neighbors,setNeighbors]=useState(null),[person,setPerson]=useState(null),[stats,setStats]=useState(null);
     const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState('');
     const [researchChoice,setResearchChoice]=useState(false);
     const load=async()=>{
         const [c,l,f,n,s]=await Promise.all([api('/consent'),api('/collections'),request(base,token,'/api/favorites'),api('/neighbors'),api('/feedback')]);
         setSettings(c);setCollections(l);setFavorites(f);setNeighbors(n);setStats(s);feedback?.updateConsent(c);
+        const restore=restoreRef.current;restoreRef.current=null;
+        if(restore){
+            const p=(n?.neighbors||[]).find(item=>String(item.id)===String(restore.personId))||{id:restore.personId};
+            setPerson({...await api(`/users/${p.id}/collections`),similarity:p.similarity,shared:p.shared});
+            requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollTop=restore.scrollTop;});
+        }
     };
     useEffect(()=>{let active=true;load().catch(e=>{if(active)setError(e.message);});return()=>{active=false;};
         // eslint-disable-next-line react-hooks/exhaustive-deps
     },[base,token]);
     const perform=async fn=>{setBusy(true);setError('');setSaved('');try{await fn();}catch(e){setError(e.message);}finally{setBusy(false);}};
+    const openPlace=p=>{
+        nav.setParams({section,view,personId:person.user.id,scrollTop:scrollRef.current?.scrollTop||0});
+        showPlace(p.id,{returnHere:true});
+    };
     const openPerson=p=>perform(async()=>setPerson({...await api(`/users/${p.id}/collections`),similarity:p.similarity,shared:p.shared}));
     const saveSettings=()=>perform(async()=>{const next=await api('/consent',{method:'PUT',body:JSON.stringify({...settings,research_choice:researchChoice})});setSettings(next);setResearchChoice(false);feedback?.updateConsent(next);setNeighbors(await api('/neighbors'));setPerson(null);setStats(await api('/feedback'));setSaved(t('journey:community.settingsSaved'));});
     const saveCollection=c=>perform(async()=>{await api(`/collections/${c.id}`,{method:'PUT',body:JSON.stringify({...c,place_ids:c.places.map(p=>p.id)})});await load();setSaved(t('journey:community.collectionSaved'));});
@@ -37,7 +49,7 @@ export default function JourneyCommunity({ctx,nav}) {
     };
     return <div className="jw-page">
         <PageHeader title={t('journey:common.feature.community')} onBack={nav.pop}/>
-        <div className="jw-scroll"><div className="jw-content jw-stack" aria-busy={busy}>
+        <div className="jw-scroll" ref={scrollRef}><div className="jw-content jw-stack" aria-busy={busy}>
             <div className="jw-segmented" role="tablist" aria-label={t('journey:community.tabsLabel')}>
                 {[['neighbors',t('journey:common.feature.community')],['collections',t('journey:community.tab.collections')],['settings',t('journey:community.tab.settings')]].map(([id,label])=><button type="button" key={id} role="tab" aria-selected={section===id} onClick={()=>{setSection(id);setSaved('');}}>{label}</button>)}
             </div>
@@ -68,7 +80,7 @@ export default function JourneyCommunity({ctx,nav}) {
                     <div className="jw-row-between"><strong>{tx('journey:community.collectionOf', { username: person.user.username })}
                         {report&&person.user.id!==userId&&<button type="button" className="jw-report" style={{marginLeft:8}} aria-label={t('journey:community.reportLabel', { username: person.user.username })} onClick={()=>report(userReportPrefill(person.user))}>{t('journey:community.report')}</button>}
                     </strong><button type="button" onClick={()=>setPerson(null)}>{t('journey:community.collapse')}</button></div>
-                    {person.collections.length?person.collections.map(c=><div key={c.id}><strong>{c.title}</strong><ul>{c.places.map(p=><li key={p.id}>{p.name} · {p.category||t('common:label.uncategorized')}</li>)}</ul></div>)
+                    {person.collections.length?person.collections.map(c=><div key={c.id}><strong>{c.title}</strong><ul className="jw-place-list">{c.places.map(p=><li key={p.id}><button type="button" className="jw-place-link" onClick={()=>openPlace(p)}><span>{p.name}</span><small>{p.category||t('common:label.uncategorized')}</small></button></li>)}</ul></div>)
                         :<p className="jw-muted">{t('journey:community.noPublicCollections')}</p>}
                 </section>}
             </>}

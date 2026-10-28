@@ -53,11 +53,6 @@ export function isAvoidedPlace(place) {
     return hasAvoidTag(place.category);
 }
 
-/** 添加地点时预选的评价：带“避雷”标签预选强烈拒绝，否则强烈推荐 */
-export function defaultCreationScore(category) {
-    return hasAvoidTag(category) ? 1 : 4;
-}
-
 /** 卡片上的一行摘要：“均线之上 3.2 · 12 人评价”，没人评价时“暂无评价” */
 export function summaryText(summary) {
     const count = Number(summary && summary.count) || 0;

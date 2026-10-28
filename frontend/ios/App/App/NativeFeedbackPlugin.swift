@@ -427,19 +427,24 @@ private struct NativeFeedbackView: View {
                                 .frame(width: 76, height: 76)
                                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .overlay(alignment: .topTrailing) {
+                                    // 图标仍是 20pt、位置不变，点按范围 44×44
                                     Button { model.removeImage(image.id) } label: {
                                         Image(systemName: "xmark.circle.fill")
                                             .font(.system(size: 20))
                                             .symbolRenderingMode(.palette)
                                             .foregroundStyle(Color.white, Color.black.opacity(0.6))
+                                            .frame(width: 44, height: 44)
+                                            .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.borderless)
-                                    .padding(4)
+                                    .offset(x: 8, y: -8)
                                     .accessibilityLabel(Text(model.text("removeImage", "移除图片")))
                                 }
                         }
                     }
-                    .padding(.vertical, 4)
+                    // 留出删除钮扩大后伸出图片右上角的点按范围
+                    .padding(.vertical, 8)
+                    .padding(.trailing, 8)
                 }
             }
             if model.remainingImages > 0 {

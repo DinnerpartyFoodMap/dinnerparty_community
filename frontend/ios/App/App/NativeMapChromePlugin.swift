@@ -12,7 +12,7 @@ import Capacitor
 ///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
 ///                   image?: https, paragraphs?: [{ id, title?, text, markdown? }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
-///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row }
+///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row, focusRow? }
 ///   drawer: null | { sections: [section] }
 ///   row: { id, title, subtitle?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands? }
 ///   skin: { avatarFrame?: { image, scale }, ornamentStart? / ornamentEnd?: { image, width, height, x, y },
@@ -388,7 +388,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             closeImage: skinImage(raw["closeImage"]),
             closeImageTemplate: (raw["closeImageTemplate"] as? Bool) ?? false,
             subtitleAction: parseSingleRow(raw["subtitleAction"]),
-            captionAction: parseSingleRow(raw["captionAction"])
+            captionAction: parseSingleRow(raw["captionAction"]),
+            focusRow: clip(raw["focusRow"], 80)
         )
     }
 

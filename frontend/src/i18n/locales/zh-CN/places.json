@@ -3,10 +3,9 @@
     "title": "筛选地点",
     "button": "筛选",
     "buttonActive": "筛选中",
-    "fromAi": "这是根据你的搜索自动设置的筛选，可以在这里修改或清除。",
-    "aiApplied": "已按你的搜索筛选地图，点筛选按钮可修改或清除",
+    "fromAi": "已按你的搜索自动筛选",
+    "aiApplied": "已按你的搜索筛选地图",
     "tagsTitle": "标签",
-    "tagsHint": "符合任一个即可",
     "tagsLoadFailed": "标签加载失败",
     "tagsExpand": "展开全部 {{count}} 个标签",
     "tagsCollapse": "只看常用标签",
@@ -17,7 +16,6 @@
     "costValue": "¥{{cost}}",
     "costMinLabel": "最低人均",
     "costMaxLabel": "最高人均",
-    "costHint": "设了人均范围时，没填人均的地点不显示",
     "reset": "清除筛选"
   },
   "list": {

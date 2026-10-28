@@ -185,6 +185,8 @@ final class NativePlaceFormModel: ObservableObject {
         let id: Int
         let title: String
         let hint: String
+        /// 网页按当前主题取好的颜色（与网页评价选项一致）；没有时按档位用系统色
+        let color: UIColor?
     }
 
     @Published var name: String
@@ -192,6 +194,8 @@ final class NativePlaceFormModel: ObservableObject {
     @Published var description: String
     @Published var cost: String
     @Published var rating: Int?
+    /// 提交时还没选评价：评价选项标红
+    @Published var ratingMissing = false
     @Published var exterior: [FormImage]
     @Published var menu: [FormImage]
     @Published private(set) var submitting = false
@@ -212,7 +216,6 @@ final class NativePlaceFormModel: ObservableObject {
     let positionText: String
     let maxDescription: Int
     let maxImages: Int
-    let avoidTag: String
     var onFinish: ((String) -> Void)?
     var onLockChange: ((Bool) -> Void)?
     private let labels: [String: String]
@@ -232,7 +235,6 @@ final class NativePlaceFormModel: ObservableObject {
         canPickPosition = call.getBool("canPickPosition", false)
         addressText = String((call.getString("address") ?? "").prefix(250))
         positionText = String((call.getString("position") ?? "").prefix(80))
-        avoidTag = String((call.getString("avoidTag") ?? "").prefix(16))
         let limits = call.getObject("limits") ?? [:]
         maxDescription = max(1, (limits["descriptionLength"] as? NSNumber)?.intValue ?? 1000)
         maxImages = max(1, (limits["images"] as? NSNumber)?.intValue ?? 20)
@@ -242,7 +244,8 @@ final class NativePlaceFormModel: ObservableObject {
         }
         tiers = (call.getArray("tiers", JSObject.self) ?? []).compactMap { item -> Tier? in
             guard let score = (item["score"] as? NSNumber)?.intValue, (1...4).contains(score) else { return nil }
-            return Tier(id: score, title: item["title"] as? String ?? String(score), hint: item["hint"] as? String ?? "")
+            return Tier(id: score, title: item["title"] as? String ?? String(score), hint: item["hint"] as? String ?? "",
+                        color: (item["color"] as? String).flatMap { UIColor(cssHex: $0) })
         }
         var labels: [String: String] = [:]
         for (key, value) in call.getObject("labels") ?? [:] {
@@ -289,8 +292,16 @@ final class NativePlaceFormModel: ObservableObject {
     var hasChanges: Bool { contentKey != initialKey || (exterior + menu).contains { $0.state != .done } }
     /// 修改地点有改动或正在提交时不能直接下滑关掉；新增地点的内容会存成草稿，可以直接关
     var isLocked: Bool { submitting || (!isCreate && hasChanges) }
-    /// 没手动选过评价时跟着分类走：带避雷标签预选强烈拒绝，否则强烈推荐
-    var effectiveRating: Int { rating ?? (!avoidTag.isEmpty && categories.contains(where: { $0.contains(avoidTag) }) ? 1 : 4) }
+    /// 评价选项的颜色：强烈推荐绿、均线之上主题色、均线之下橙、强烈拒绝红
+    func color(for tier: Tier) -> Color {
+        if let color = tier.color { return Color(uiColor: color) }
+        switch tier.id {
+        case 4: return .green
+        case 2: return .orange
+        case 1: return .red
+        default: return tint
+        }
+    }
 
     /// 交给网页的填写内容（提交、取消存草稿、去地图选点）
     var values: [String: Any] {
@@ -433,10 +444,15 @@ final class NativePlaceFormModel: ObservableObject {
             if trimmedName.isEmpty { alertMessage = text("nameRequired", "请填写店名") }
             return
         }
+        // 新增地点必须自己选评价，不预选
+        if isCreate && rating == nil {
+            ratingMissing = true
+            alertMessage = text("ratingRequired", "请选择你的评价")
+            return
+        }
         var values = self.values
         if isCreate {
-            values["rating_input_kind"] = rating == nil ? "default" : "explicit"
-            values["rating"] = NSNumber(value: effectiveRating)
+            values["rating_input_kind"] = "explicit"
         }
         startRequest(kind: "submit", payload: ["values": values])
     }
@@ -549,9 +565,6 @@ private struct NativePlaceFormView: View {
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(model.text("markdownHint", "支持基础 Markdown"))
-                        if model.isCreate {
-                            Text(model.text("reviewHint", "新地点会先经过审核"))
-                        }
                         HStack {
                             Spacer()
                             Text("\(model.description.count) / \(model.maxDescription)").monospacedDigit()
@@ -566,18 +579,20 @@ private struct NativePlaceFormView: View {
                 }
                 if model.isCreate && !model.tiers.isEmpty {
                     Section {
-                        Picker(selection: Binding(get: { model.effectiveRating }, set: { model.rating = $0 })) {
+                        HStack(spacing: 8) {
                             ForEach(model.tiers) { tier in
-                                Text(tier.title).tag(tier.id)
+                                ratingOption(tier)
                             }
-                        } label: {
-                            Text(model.text("rating", "我的评价"))
                         }
-                        .pickerStyle(.segmented)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     } header: {
                         Text(model.text("rating", "我的评价"))
                     } footer: {
-                        Text(model.tiers.first(where: { $0.id == model.effectiveRating })?.hint ?? "")
+                        if let tier = model.tiers.first(where: { $0.id == model.rating }) {
+                            Text(tier.hint)
+                        } else if model.ratingMissing {
+                            Text(model.text("ratingRequired", "请选择你的评价")).foregroundStyle(Color.red)
+                        }
                     }
                 }
                 imagesSection(.exterior, items: $exteriorItems)
@@ -654,6 +669,30 @@ private struct NativePlaceFormView: View {
         .onChange(of: menuItems) { _, items in load(items, into: .menu) }
     }
 
+    /// 评价的一档：四档各有颜色，选中时加粗、描边、底色加深。同一行有四个按钮，用 borderless 才能分别点
+    private func ratingOption(_ tier: NativePlaceFormModel.Tier) -> some View {
+        let selected = model.rating == tier.id
+        let color = model.color(for: tier)
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        return Button {
+            model.rating = tier.id
+            model.ratingMissing = false
+        } label: {
+            Text(tier.title)
+                .font(.subheadline.weight(selected ? .bold : .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(color)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(shape.fill(color.opacity(selected ? 0.18 : 0.07)))
+                .overlay(shape.strokeBorder(selected ? color : (model.ratingMissing ? Color.red : color.opacity(0.35)), lineWidth: selected ? 2 : 1))
+                .contentShape(shape)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text(tier.hint.isEmpty ? tier.title : "\(tier.title)：\(tier.hint)"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
     private func load(_ items: [PhotosPickerItem], into group: NativePlaceFormModel.ImageGroup) {
         guard !items.isEmpty else { return }
         model.loadingImages = true
@@ -686,7 +725,9 @@ private struct NativePlaceFormView: View {
                             imageTile(image)
                         }
                     }
-                    .padding(.vertical, 6)
+                    // 留出删除钮扩大后伸出图片右上角的点按范围
+                    .padding(.vertical, 8)
+                    .padding(.trailing, 8)
                 }
             }
             if model.remaining(group) > 0 {
@@ -747,6 +788,7 @@ private struct NativePlaceFormView: View {
         .frame(width: 76, height: 76)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .topTrailing) {
+            // 图标仍是 20pt、位置不变（中心距右上角 14pt），点按范围扩大到 44×44
             Button {
                 model.removeImage(image.id)
             } label: {
@@ -754,9 +796,11 @@ private struct NativePlaceFormView: View {
                     .font(.system(size: 20))
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(Color.white, Color.black.opacity(0.6))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .padding(4)
+            .offset(x: 8, y: -8)
             .accessibilityLabel(Text(model.text("removeImage", "移除图片")))
         }
     }
@@ -766,6 +810,7 @@ private struct NativePlaceFormView: View {
 private struct NativePlaceCategoryPicker: View {
     @ObservedObject var model: NativePlaceFormModel
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespaces) }
 
@@ -777,6 +822,9 @@ private struct NativePlaceCategoryPicker: View {
 
     var body: some View {
         List {
+            Section {
+                searchField
+            }
             // 已选但不在目录里的（新分类、旧数据）也要能取消
             let extra = model.categories.filter { name in !model.categoryOptions.contains { $0.name == name } }
             if !extra.isEmpty {
@@ -807,9 +855,38 @@ private struct NativePlaceCategoryPicker: View {
                 }
             }
         }
-        .searchable(text: $query, prompt: Text(model.text("categorySearch", "搜索或添加分类")))
         .navigationTitle(model.text("category", "分类"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// 搜索框占满一整行、至少 44pt 高，点这一行任何位置都能开始输入
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField(model.text("categorySearch", "搜索或添加分类"), text: $query)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(Text(model.text("clearSearch", "清空")))
+            }
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .onTapGesture { searchFocused = true }
     }
 
     private func row(_ name: String) -> some View {

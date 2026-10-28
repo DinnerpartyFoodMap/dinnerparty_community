@@ -52,7 +52,7 @@
       "position": "位置",
       "perPersonCost": "人均（元）",
       "perPersonCostPlaceholder": "可选，正整数",
-      "exteriorImages": "外观/招牌图片（可选）",
+      "exteriorImages": "外观/招牌图片",
       "menuImages": "菜单图片"
     },
     "needsReview": "修改会提交给管理员审核。",
@@ -72,11 +72,11 @@
     "address": "地址：",
     "namePlaceholder": "店名",
     "perPersonCostPlaceholder": "人均价格（元，可选）",
-    "exteriorImages": "外观/招牌图片（可选）",
-    "menuImages": "菜单图片（可选）",
+    "exteriorImages": "外观/招牌图片",
+    "menuImages": "菜单图片",
     "submit": "提交",
     "ratingLabel": "你的评价",
-    "reviewHint": "写清楚吃什么、有什么特色。描述过于简略、与美食和东方都无关，或含不良信息的地点，要等管理员审核后才对其他住民显示。",
+    "ratingRequired": "请选择你的评价",
     "draft": {
       "saved": "已自动保存草稿",
       "restored": "已恢复上次没提交的内容",
@@ -127,9 +127,9 @@
     "tripDestination": "行程终点",
     "waypoints": "· 含 {{count}} 个途经点",
     "travelMode": "出行方式",
-    "wantLabel": "想吃什么（可不填）",
+    "wantLabel": "想吃什么",
     "wantPlaceholder": "例如：火锅、想吃辣的、奶茶",
-    "tagsLabel": "标签（可多选）",
+    "tagsLabel": "标签",
     "deselectTag": "取消选择标签{{name}}",
     "tagSearchPlaceholder": "搜索全部标签",
     "matchingTags": "匹配标签",
@@ -298,25 +298,21 @@
     "perPersonAbout": "人均约 {{per_person_cost}} 元",
     "card": {
       "seeMoreTitle": "在详情中查看更多",
-      "seeMore": "[在详情中查看更多]",
-      "category": "分类: {{category}}",
+      "seeMore": "查看全文",
       "unpick": "取消选择此地点",
       "pick": "选择此地点",
       "unpickShort": "取消选择",
       "navigateTooltip": "发送到设备地图 App",
       "noCoordinates": "该地点缺少坐标，无法导航",
       "navigateLabel": "导航到此地点",
-      "share": "分享此地点",
       "favoritedTooltip": "已收藏，点击取消收藏",
       "favoriteTooltip": "点击收藏此地点",
       "loginToFavorite": "核验通行凭证后可收藏",
       "unfavoriteLabel": "取消收藏此地点",
       "favoriteLabel": "收藏此地点",
       "create": "创建此地点",
-      "manage": "管理此地点",
-      "editLabel": "编辑此地点",
-      "detailsTooltip": "查看详情与图片",
-      "detailsLabel": "查看更多地点详情"
+      "details": "详情与图片",
+      "moreLabel": "更多操作"
     },
     "search": {
       "loadingFun": "少女觅食中",
@@ -324,6 +320,8 @@
       "sitePlaces": "站内地点",
       "amapResults": "高德地图结果 · 选择后在地图显示",
       "noResults": "未找到匹配的结果",
+      "failed": "搜索失败，请检查网络",
+      "retry": "重试",
       "aiHintMobile": "点键盘上的“搜索”，幽幽子帮你挑几家",
       "aiHint": "按回车，幽幽子帮你挑几家",
       "exit": "退出搜索",
@@ -331,7 +329,6 @@
       "searching": "正在搜索",
       "clear": "清空搜索内容",
       "findUnlisted": "没找到？查找未收录地点",
-      "externalHint": "输入具体店名或地址，查找后可添加到地图。",
       "externalLoading": "正在查找未收录地点…",
       "externalLoaded": "已查找未收录地点",
       "externalRetry": "重试查找未收录地点",
@@ -417,7 +414,7 @@
     "uploadFailed": "图片上传失败",
     "uploading": "上传中...",
     "retryUpload": "重试上传",
-    "addImages": "+ 传图 / 拍照（可多选）",
+    "addImages": "+ 传图 / 拍照",
     "uploadingProgress": "上传中 {{done}}/{{total}}",
     "uploadFailedCount": "{{count}} 张图片上传失败，可以重试",
     "retryUploadCount": "重试上传 {{count}} 张",
@@ -522,8 +519,8 @@
       "summary": "{{tier}} {{average}} · {{count}} 人评价",
       "personalized": "按你口味 {{average}}",
       "mine": "我：{{tier}}",
-      "rateNow": "去评价",
       "rate": "评价",
+      "rateNow": "去评价",
       "openLabel": "评价：{{summary}}，点击查看或评价"
     },
     "native": {
@@ -537,12 +534,11 @@
       "close": "关闭评价",
       "count": "{{count}} 人评价",
       "empty": "还没有评价",
-      "weightedHint": "综合分按评价者的贡献、一致度和评价新旧加权",
       "distribution": "评价分布",
       "distributionRow": "{{tier}} {{count}} 人",
       "personalizedTitle": "按你的口味加权",
       "personalizedText": "{{tier}} {{average}}",
-      "personalizedHint": "口味越接近你的人权重越大，共参考 {{matched}} 人",
+      "personalizedHint": "参考了 {{matched}} 位口味相近的人",
       "personalizedUnavailable": "收藏或评价几家店后，可以按你的口味加权",
       "yourRating": "你的评价",
       "loginToRate": "登录后评价",
@@ -569,71 +565,29 @@
     "prev": "上一步",
     "next": "下一步",
     "done": "开始探索",
-    "welcome": {
-      "title": "欢迎来到东方饭联地图",
-      "body": "地图上的每个标记都是饭友收录的店，点开能看图片、评价和评论，还能一键导航。先认识一下这些按钮。"
-    },
     "search": {
-      "title": "搜索",
-      "body": "输入店名，或者直接说说现在想吃什么。地图上还没收录的店，也能从高德地图里找到。"
+      "title": "找店",
+      "body": "搜店名，或者直接说想吃什么；也可以点定位，看看身边有什么。"
     },
-    "add": {
-      "title": "添加地点",
-      "body": "发现好店就标上来：点这里，再在地图上点选店的位置，填写名称、分类和图片。需要先入乡（登录）。"
+    "card": {
+      "title": "打开店卡",
+      "body": "点地图上的标记打开店卡，人均、简介和大家的评价都在上面。"
     },
     "favorites": {
-      "title": "收藏",
-      "body": "在地点卡片上点爱心就能收藏。收藏过的店都在这里，点一下回到它在地图上的位置。"
-    },
-    "alongRoute": {
-      "title": "顺路吃",
-      "body": "填好出发地和目的地，找出沿途值得一去的店，出门路上顺便吃一顿。"
-    },
-    "journey": {
-      "title": "日记 · 同好",
-      "body": "把一天吃过的店写成图文日记，按日历回顾，也能看看同好们公开的日记。"
-    },
-    "locate": {
-      "title": "定位",
-      "body": "把地图移回你现在的位置，看看附近有什么好吃的。第一次使用需要允许定位权限。"
-    },
-    "more": {
-      "title": "更多功能",
-      "bodyDesktop": "顺路吃、随机美食在这里；入乡后还有聚餐活动和导出海报。想再看这份指引，也从这里打开。",
-      "bodyMobile": "随机美食、日记 · 同好在这里；入乡后还有聚餐活动和导出海报。想再看这份指引，也从这里打开。",
-      "bodyIos": "顺路吃、随机美食、日记 · 同好在这里；入乡后还有聚餐活动和导出海报。想再看这份指引，也从这里打开。",
-      "bodyNative": "按住底部工具栏往上滑（或点顶上的小横条），展开更多功能：顺路吃、随机美食；入乡后还有聚餐活动和导出海报。想再看这份指引，也在那里打开。",
-      "practice": "现在就把工具栏往上滑试试，展开后自动进入下一步。"
-    },
-    "account": {
-      "loginTitle": "入乡",
-      "loginBody": "登录或注册后才能添加地点、收藏、评价和评论。注册需要先加入饭联 QQ 群，验证码由 QQ 机器人私聊发送。",
-      "title": "住民菜单",
-      "body": "头像、住民名、密码、主题配色和个性化地图都在账号设置里，也可以在这里退出登录。"
+      "title": "导航 / 收藏",
+      "body": "店卡上点「导航」直接出发；点爱心收藏，以后在「收藏」里找回。"
     },
     "where": {
-      "inMore": "在底部工具栏最左边的「更多」里",
       "native": {
-        "account": "底部工具栏最右边的头像",
-        "search": "底部工具栏右数第二个「搜索」",
-        "locate": "工具栏右上方圆角按钮组的最下面",
-        "favorites": "底部工具栏最左边的「收藏」",
-        "add": "底部工具栏正中间的「添加」",
-        "journey": "工具栏上滑 › 更多功能 › 日记 · 同好",
-        "more": "按住底部工具栏，往上滑",
-        "alongRoute": "工具栏上滑 › 更多功能 › 顺路吃",
-        "filter": "工具栏右上方圆角按钮组的中间",
-        "listView": "工具栏右上方圆角按钮组的最上面"
+        "search": "底部工具栏右数第二个「搜索」；定位在右上方按钮组最下面",
+        "favorites": "底部工具栏最左边的「收藏」"
       }
-    },
-    "filter": {
-      "title": "筛选",
-      "body": "只看某些标签、某个人均范围的地点。搜索时说“人均 50 以内的烧烤”，也会自动帮你筛好。"
-    },
-    "listView": {
-      "title": "列表 / 地图",
-      "body": "把地图换成地点列表，按评价排好，还能按距离筛选；点列表里的地点回到地图。"
     }
+  },
+  "featureIntro": {
+    "filter": "筛选：只看某些标签或人均范围的店。搜索时说「人均 50 以内的烧烤」，也会自动筛好。",
+    "listView": "列表：附近的店按评价排好，可以按距离筛选；点一家回到地图打开店卡。",
+    "alongRoute": "顺路吃：填好出发地和目的地，找出沿途值得一去的店。"
   },
   "userPlaces": {
     "title": "{{name}} 创建的地点",
@@ -676,9 +630,9 @@
     "categoryAdd": "添加新分类：",
     "categoryInvalid": "分类最多 8 个汉字或 16 个英文字符，且不能包含逗号",
     "descriptionPlaceholder": "写点简介：招牌菜、营业时间、怎么找到……",
-    "markdownHint": "支持基础 Markdown（加粗、列表、链接），最多 1000 字",
+    "markdownHint": "支持基础 Markdown",
     "cost": "人均",
-    "chooseFromAlbum": "从相册选择（可多选）",
+    "chooseFromAlbum": "从相册选择",
     "removeImage": "移除图片",
     "imageUnreadable": "有图片无法读取",
     "address": "地址",

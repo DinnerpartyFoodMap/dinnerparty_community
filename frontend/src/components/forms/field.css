@@ -1,0 +1,37 @@
+/* 输入框（TextInput / TextArea / SelectInput，分类选择器的外框）：
+   平时是中性细边框、没有光晕；聚焦时边框换成主题色并加一圈淡色描边；aria-invalid 时为错误色。 */
+.fm-field {
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-overlay);
+    color: var(--color-text-primary);
+    outline: none;
+    box-shadow: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fm-field:is(input, textarea, select):focus,
+.fm-field--group:focus-within {
+    border-color: var(--theme-primary);
+    box-shadow: 0 0 0 3px var(--theme-primary-0-25, color-mix(in srgb, var(--theme-primary) 25%, transparent));
+}
+
+.fm-field[aria-invalid="true"],
+.fm-field--group:has([aria-invalid="true"]) {
+    border-color: var(--color-danger);
+}
+
+.fm-field[aria-invalid="true"]:focus,
+.fm-field--group:has([aria-invalid="true"]):focus-within {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-danger) 25%, transparent);
+}
+
+.fm-field:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fm-field {
+        transition: none;
+    }
+}

@@ -1,11 +1,12 @@
 // 第一次打开地图的操作指引：步骤表、“已看过”记录与卡片位置计算（纯逻辑，纳入 test:map）。
-// 界面在 MapOnboarding.jsx；目标按钮用 data-tour 标记，取值即步骤 id（收在“更多”里的功能指向“更多”）；
+// 界面在 MapOnboarding.jsx；目标按钮用 data-tour 标记，取值即步骤 id；
 // iOS 原生工具栏的按钮由原生画高亮圈并回传位置（步骤的 native 字段）。
 import { t } from '../i18n/index.js';
 
 // 指引内容有大的变化（例如新增主要按钮）时加一，看过旧版的人会再看到一次。
 // 2：iOS 原生工具栏的指引改为指出真实按钮、演示并练习上滑展开更多功能
 // 3：新增地图筛选与列表 / 地图切换按钮；iOS 原生工具栏的随机美食与日记互换位置
+// （之后缩成三步：看过旧版的人已经认识这些按钮，不再加一）
 export const ONBOARDING_VERSION = 3;
 export const ONBOARDING_KEY = 'foodmap.onboarding';
 let seenThisSession = false;
@@ -37,91 +38,37 @@ export function rememberOnboardingSeen() {
 }
 
 /**
- * 各布局下的按钮不同：
- * - desktop：顶栏（入乡/住民、更多）、居中搜索框及右侧筛选、右侧圆钮列（顺路吃在更多里）、左下角日记入口；
- * - mobile：网页与安卓 App 的底部工具栏（更多、收藏、添加、顺路吃、入乡）与搜索框；
- * - ios：iOS App 的网页工具栏（顺路吃在“更多”里，搜索是工具栏按钮，头像在右上角）；
- * - native：iOS 原生玻璃工具栏（收藏、随机美食、添加、搜索、头像，右上方筛选与定位；上滑展开更多功能，日记 · 同好在里面）。
- *   网页指不到原生按钮：步骤带 native（{ target, drawer }，见 nativeMapChrome.js 的 sanitizeTour），由原生画高亮圈并回传位置，
- *   指引打开时原生控件不收起。“更多功能”一步（practice: 'drawer'）播放上滑示意，用户真的上滑展开后自动进入下一步。
- * 各布局步骤的相对顺序相同：先是看得见的按钮，然后是“更多”，最后是收在“更多”里的功能（先学会打开“更多”，再看里面的功能）。
- * target 是 data-tour 的取值：欢迎页与原生布局为 null（居中，或等原生回传位置）；收在“更多”里的步骤指向“更多”按钮。
- * where 是写给用户看的位置（“在哪里找到它”），原生布局每一步都有，网页布局只有收在“更多”里的步骤有（高亮框已经指明了位置）。
+ * 指引只讲最常用的一条路：找店（搜索 / 定位）→ 打开店卡 → 导航 / 收藏。
+ * 筛选、列表、顺路吃等其他功能不在这里挨个介绍，第一次用到时提示一句（featureIntro.js）。
+ * target 是 data-tour 的取值（各布局都有搜索与收藏按钮）；“打开店卡”没有目标，居中显示。
+ * iOS 原生玻璃工具栏（variant 'native'）网页指不到原生按钮：步骤带 native（{ target, drawer }，见 nativeMapChrome.js 的 sanitizeTour），
+ * 由原生画高亮圈并回传位置；where 是写给用户看的位置，只有原生布局需要（网页的高亮框已经指明了位置）。
  */
-const IN_MORE = {
-    desktop: ['alongRoute'],
-    mobile: ['journey'],
-    ios: ['alongRoute', 'journey'],
-    native: ['alongRoute', 'journey']
-};
-
 const NATIVE_TOUR = {
-    welcome: { target: null, drawer: false },
-    account: { target: 'account', drawer: false },
     search: { target: 'search', drawer: false },
-    locate: { target: 'locate', drawer: false },
-    filter: { target: 'filter', drawer: false },
-    listView: { target: 'listView', drawer: false },
-    favorites: { target: 'favorites', drawer: false },
-    add: { target: 'add', drawer: false },
-    journey: { target: 'journey', drawer: true },
-    more: { target: 'drawer', drawer: false },
-    alongRoute: { target: 'alongRoute', drawer: true }
+    card: { target: null, drawer: false },
+    favorites: { target: 'favorites', drawer: false }
 };
 
-export function buildOnboardingSteps({ variant = 'desktop', isAuthenticated = false } = {}) {
+export function buildOnboardingSteps({ variant = 'desktop' } = {}) {
     const native = variant === 'native';
-    const inMore = IN_MORE[variant] || [];
-    const nativeWhere = native ? {
-        account: t('map:onboarding.where.native.account'),
+    const nativeWhere = {
         search: t('map:onboarding.where.native.search'),
-        locate: t('map:onboarding.where.native.locate'),
-        filter: t('map:onboarding.where.native.filter'),
-        listView: t('map:onboarding.where.native.listView'),
-        favorites: t('map:onboarding.where.native.favorites'),
-        add: t('map:onboarding.where.native.add'),
-        journey: t('map:onboarding.where.native.journey'),
-        more: t('map:onboarding.where.native.more'),
-        alongRoute: t('map:onboarding.where.native.alongRoute')
-    } : {};
-    const step = (id, icon, title, body) => {
-        const item = { id, icon, title, body, target: native || id === 'welcome' ? null : (inMore.includes(id) ? 'more' : id) };
+        favorites: t('map:onboarding.where.native.favorites')
+    };
+    const step = (id, icon, title, body, target) => {
+        const item = { id, icon, title, body, target: native ? null : target };
         if (native) {
             item.native = NATIVE_TOUR[id];
-            if (nativeWhere[id]) item.where = { icon: id === 'more' ? 'swipe_up' : 'location_on', text: nativeWhere[id] };
-            if (id === 'more') {
-                item.practice = 'drawer';
-                item.hint = t('map:onboarding.more.practice');
-            }
-        } else if (inMore.includes(id)) {
-            item.where = { icon: 'location_on', text: t('map:onboarding.where.inMore') };
+            if (nativeWhere[id]) item.where = { icon: 'location_on', text: nativeWhere[id] };
         }
         return item;
     };
-    const moreBody = {
-        desktop: t('map:onboarding.more.bodyDesktop'),
-        mobile: t('map:onboarding.more.bodyMobile'),
-        ios: t('map:onboarding.more.bodyIos'),
-        native: t('map:onboarding.more.bodyNative')
-    }[variant] || t('map:onboarding.more.bodyDesktop');
-    const steps = [
-        step('welcome', 'waving_hand', t('map:onboarding.welcome.title'), t('map:onboarding.welcome.body')),
-        isAuthenticated
-            ? step('account', 'person', t('map:onboarding.account.title'), t('map:onboarding.account.body'))
-            : step('account', 'login', t('map:onboarding.account.loginTitle'), t('map:onboarding.account.loginBody')),
-        step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body')),
-        step('locate', 'my_location', t('map:onboarding.locate.title'), t('map:onboarding.locate.body')),
-        step('filter', 'filter_list', t('map:onboarding.filter.title'), t('map:onboarding.filter.body')),
-        step('listView', 'view_list', t('map:onboarding.listView.title'), t('map:onboarding.listView.body')),
-        step('favorites', 'favorite', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body')),
-        step('add', 'add_location_alt', t('map:onboarding.add.title'), t('map:onboarding.add.body')),
-        step('alongRoute', 'route', t('map:onboarding.alongRoute.title'), t('map:onboarding.alongRoute.body')),
-        step('more', 'more_horiz', t('map:onboarding.more.title'), moreBody),
-        step('journey', 'auto_stories', t('map:onboarding.journey.title'), t('map:onboarding.journey.body'))
+    return [
+        step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body'), 'search'),
+        step('card', 'storefront', t('map:onboarding.card.title'), t('map:onboarding.card.body'), null),
+        step('favorites', 'directions', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body'), 'favorites')
     ];
-    // 先介绍看得见的按钮，再介绍“更多”，最后是收在“更多”里的功能
-    const rank = (item) => (item.id === 'more' ? 1 : (inMore.includes(item.id) ? 2 : 0));
-    return steps.map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(({ item }) => item);
 }
 
 /** 原生回传的指引位置是否属于这一步（换步后、原生回传新位置前，旧位置不能用）。 */
