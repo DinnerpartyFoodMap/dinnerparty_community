@@ -4,7 +4,6 @@ import { getPlatform } from '../platform/env.js';
 import { getMotionPolicy, subscribeMotionPolicy } from '../motion/policy.js';
 import { getOverlayEntries, subscribeOverlays } from '../components/overlay/overlayStack.js';
 import { isAppActive, onAppStateChange } from '../platform/lifecycle.js';
-import { skinSlot } from '../skins/skinStore.js';
 
 let visualSeq = 0;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -35,7 +34,7 @@ function visibleFragments(bounds, clip, occluders) {
     return fragments.map(part => ({ x: part.left - bounds.left, y: part.top - bounds.top, width: part.width, height: part.height }));
 }
 
-export function captureClusterFrame({ container, entries = [], ghosts = [], viewport, visible = true, getStyle = getComputedStyle, occluders = [], dark = false, countColor = false }) {
+export function captureClusterFrame({ container, entries = [], ghosts = [], viewport, visible = true, getStyle = getComputedStyle, occluders = [], dark = false }) {
     const view = { width: viewport.width, height: viewport.height, offsetLeft: viewport.offsetLeft || 0, offsetTop: viewport.offsetTop || 0 };
     const frame = { viewport: view, clip: { x: 0, y: 0, width: 0, height: 0 }, markers: [], parts: [], dark };
     if (!visible || !container) return frame;
@@ -67,10 +66,6 @@ export function captureClusterFrame({ container, entries = [], ghosts = [], view
             color: dark ? [1, 1, 1, 1] : [0, 0, 0, 1],
             visibleRects: visibleFragments(bounds, clip, occluders)
         };
-        if (countColor) {
-            const rgba = countStyle.color?.match(/^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/);
-            if (rgba) marker.color = [Number(rgba[1]) / 255, Number(rgba[2]) / 255, Number(rgba[3]) / 255, rgba[4] === undefined ? 1 : Number(rgba[4])];
-        }
         // 完全被列表等前景盖住时不创建原生玻璃实例；空 mask 不能保证系统材质不残留。
         // parts 仍保留所有权，返回地图时不会先闪回 PNG。
         if (marker.visibleRects.length) frame.markers.push(marker);
@@ -162,7 +157,8 @@ export class NativeClusterLayer {
                 if (top && !controller.touchTarget.contains(top)) occluders.push(top.getBoundingClientRect());
             }
             const ghosts = Array.from(controller.txns).flatMap(txn => txn.done ? [] : txn.ghosts);
-            this.frame = captureClusterFrame({ container: controller.touchTarget, entries: controller.entries.values(), ghosts, viewport, visible, occluders, dark: document.documentElement.dataset.theme === 'dark', countColor: !!skinSlot('markers.clusterCountColor') });
+            // 玻璃数字随当前主题变色；皮肤的固定数字色只用于原来的 PNG 图案。
+            this.frame = captureClusterFrame({ container: controller.touchTarget, entries: controller.entries.values(), ghosts, viewport, visible, occluders, dark: document.documentElement.dataset.theme === 'dark' });
             // 页面暂时离开时只收起原生图层，已接管的 PNG 继续隐藏；返回第一帧仍是玻璃。
             // 用户关闭玻璃、系统减少透明度或桥接故障则真正归还 PNG 所有权。
             this.frame.retainOwnership = materialEnabled;

@@ -55,9 +55,10 @@ public class NativePlaceFormPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.notifyListeners("placeFormEvent", data: data)
             }
             model.onFinish = { [weak self] action in self?.finish(action: action) }
-            let host = UIHostingController(rootView: NativePlaceFormView(model: model))
+            let host = MapChromeHostingController(rootView: NativePlaceFormView(model: model), dark: model.dark)
             host.modalPresentationStyle = .pageSheet
-            host.overrideUserInterfaceStyle = model.dark ? .dark : .light
+            // 表单使用不透明的分组底色，避免系统面板材质把深色内容洗成浅灰。
+            host.view.backgroundColor = .systemGroupedBackground
             if let sheet = host.sheetPresentationController {
                 if model.isCreate {
                     // 先停在下方三分之一，地图不变暗、仍能看到选中位置的标记；用户往上拉到全屏
@@ -614,6 +615,8 @@ private struct NativePlaceFormView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemGroupedBackground))
             .disabled(model.submitting)
             .navigationTitle(model.text("title", model.isCreate ? "添加地点" : "修改地点"))
             .navigationBarTitleDisplayMode(.inline)
@@ -634,6 +637,8 @@ private struct NativePlaceFormView: View {
                 }
             }
         }
+        // 同步整个呈现（含导航栏、行背景与系统面板），不只覆盖文字的 environment。
+        .preferredColorScheme(model.dark ? .dark : .light)
         .tint(model.tint)
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
             Button(model.text("ok", "好"), role: .cancel) {}

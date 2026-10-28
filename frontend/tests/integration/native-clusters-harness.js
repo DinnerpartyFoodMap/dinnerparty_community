@@ -5,6 +5,9 @@ import { NATIVE_CLUSTER_PROTOCOL } from '../../src/platform/nativeClusterMarkers
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import MapListMode from '../../src/map/MapListMode.jsx';
+import { registerSkinPacks } from '../../src/skins/registry.js';
+import { activateSkin } from '../../src/skins/skinStore.js';
+import { applyDarkMode } from '../../src/theme/theme.js';
 
 // Real controller, DOM, Supercluster and Web Animations; replace only AMap and the native WebKit boundary.
 export async function runNativeClusterBrowserTests() {
@@ -98,6 +101,36 @@ export async function runNativeClusterBrowserTests() {
         releaseInitial();
         await until(() => nativeMarkers.length === 1 && container.querySelector('[data-native-glass]'), 'initial native frame');
         check(nativeMarkers[0].text === '12', 'initial full cluster uses native ownership');
+
+        // A static count color belongs to the skin's PNG artwork, not to native liquid-glass text.
+        registerSkinPacks([{ id: 'cluster-theme-test', manifest: { markers: { clusterCountColor: '#ffffff' } } }]);
+        const countGeometry = marker => JSON.stringify([marker.id, marker.x, marker.y, marker.width, marker.height, marker.fontSize, marker.countX, marker.countY]);
+        const stationaryGeometry = countGeometry(nativeMarkers[0]);
+        try {
+            activateSkin('cluster-theme-test');
+            applyDarkMode(true);
+            await until(() => frames.at(-1)?.dark === true && inFlight === 0, 'stationary skinned dark frame');
+            check(JSON.stringify(nativeMarkers[0].color) === '[1,1,1,1]', 'dark glass counts use opaque white with a fixed skin color');
+            check(getComputedStyle(container.querySelector('.fm-marker__count')).color === 'rgb(255, 255, 255)', 'the skin still owns the ordinary PNG count color');
+
+            let releaseOldDark;
+            gateNextFrame = new Promise(resolve => { releaseOldDark = resolve; });
+            const beforeTheme = frames.length;
+            controller.nativeClusters.invalidate();
+            await until(() => frames.length > beforeTheme, 'old dark frame pending');
+            applyDarkMode(false);
+            releaseOldDark();
+            await until(() => frames.length > beforeTheme + 1 && frames.at(-1)?.dark === false && inFlight === 0, 'stationary skinned light frame after delayed dark reply');
+            check(JSON.stringify(nativeMarkers[0].color) === '[0,0,0,1]', 'light glass counts become opaque black despite a fixed white skin color and delayed dark frame');
+            check(getComputedStyle(container.querySelector('.fm-marker__count')).color === 'rgb(255, 255, 255)', 'light mode preserves the skin color for the PNG fallback');
+            check(countGeometry(nativeMarkers[0]) === stationaryGeometry && !!container.querySelector('[data-native-glass]'), 'theme-only updates preserve count geometry and glass ownership');
+
+            applyDarkMode(true);
+            await until(() => frames.at(-1)?.dark === true && inFlight === 0, 'stationary glass dark return');
+            check(JSON.stringify(nativeMarkers[0].color) === '[1,1,1,1]', 'stationary glass counts switch back to white on the next dark toggle');
+        } finally { activateSkin('default'); applyDarkMode(false); }
+        await until(() => frames.at(-1)?.dark === false && inFlight === 0, 'theme regression fixture removed');
+
         const first = frames.length;
         setZoom(18);
         await until(() => controller.entries.size === 2 && controller.txns.size === 0 && nativeMarkers.length === 2, 'split settles');
@@ -257,14 +290,6 @@ export async function runNativeClusterBrowserTests() {
         reportSustainedJank();
         await until(() => inFlight === 0, 'performance policy frame');
         check(nativeMarkers.length === 1 && !!container.querySelector('[data-native-glass]'), 'temporary performance degradation keeps the chosen cluster material');
-
-        document.documentElement.dataset.theme = 'dark';
-        await until(() => nativeMarkers[0]?.color?.[0] === 1, 'dark count color');
-        check(nativeMarkers[0].color[3] === 1, 'dark counts use opaque white');
-        document.documentElement.dataset.theme = 'light';
-        await until(() => nativeMarkers[0]?.color?.[0] === 0, 'light count color');
-        check(nativeMarkers[0].color[3] === 1, 'light counts use opaque black');
-
         rejectNext = true; controller.nativeClusters.invalidate();
         await until(() => nativeMarkers.length === 0 && !container.querySelector('[data-native-glass]'), 'rejected frame fallback');
         check(true, 'native rejection clears glass before PNG fallback');

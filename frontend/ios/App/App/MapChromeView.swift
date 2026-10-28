@@ -3,14 +3,19 @@ import UIKit
 import Combine
 
 /// SwiftUI 的 colorScheme 只覆盖内容；Liquid Glass 和系统 sheet 的底色还读取 UIKit traits。
-/// 两类地图控件共用这个宿主，在加载视图前绑定地图主题，并在呈现容器创建后、首帧绘制前同步。
-@available(iOS 26.0, *)
+/// 地图控件与地点表单共用这个宿主，在加载视图前绑定地图主题，并在呈现容器创建后、首帧绘制前同步。
 final class MapChromeHostingController<Content: View>: UIHostingController<Content> {
     private var mapInterfaceStyle: UIUserInterfaceStyle = .light
     private var themeObservation: AnyCancellable?
 
-    init(rootView: Content, model: MapChromeModel) {
+    init(rootView: Content, dark: Bool) {
+        mapInterfaceStyle = dark ? .dark : .light
         super.init(rootView: rootView)
+        applyInterfaceStyle()
+    }
+
+    convenience init(rootView: Content, model: MapChromeModel) {
+        self.init(rootView: rootView, dark: model.theme.dark)
         // @Published 在赋值前发出事件，使用传入值，不能在这里重新读取 model.theme。
         themeObservation = model.$theme.map(\.dark).removeDuplicates().sink { [weak self] dark in
             self?.mapInterfaceStyle = dark ? .dark : .light

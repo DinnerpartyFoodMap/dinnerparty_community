@@ -12,8 +12,6 @@ private struct ClusterGlassMarker: Identifiable {
     let countX: CGFloat
     let countY: CGFloat
     let zIndex: Double
-    let color: Color?
-    let countBackdrop: Color
     let visibleRects: [CGRect]
 }
 
@@ -206,19 +204,9 @@ final class NativeClusterMarkerBridge: NSObject, WKScriptMessageHandlerWithReply
                 visibleRects.append(CGRect(x: CGFloat(px) * scale, y: CGFloat(py) * scale,
                                            width: CGFloat(pw) * scale, height: CGFloat(ph) * scale))
             }
-            var color: Color?
-            var countBackdrop: Color = dark ? .black : .white
-            if let rgba = item["color"] as? [Double] {
-                guard rgba.count == 4, rgba.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { return nil }
-                color = Color(.sRGB, red: rgba[0], green: rgba[1], blue: rgba[2], opacity: rgba[3])
-                // 自定义数字颜色也配独立的黑/白底，不依赖玻璃当前折射到的地图颜色。
-                let linear = rgba.prefix(3).map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
-                let luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-                countBackdrop = luminance > 0.179 ? .black : .white
-            }
             let bounds = converted(x, y, width, height).offsetBy(dx: -clipping.minX, dy: -clipping.minY)
             markers.append(ClusterGlassMarker(id: key, rect: bounds, opacity: opacity, text: text,
-                                              fontSize: CGFloat(fontSize) * scale, countX: CGFloat(countX), countY: CGFloat(countY), zIndex: zIndex, color: color, countBackdrop: countBackdrop, visibleRects: visibleRects))
+                                              fontSize: CGFloat(fontSize) * scale, countX: CGFloat(countX), countY: CGFloat(countY), zIndex: zIndex, visibleRects: visibleRects))
         }
         return ClusterGlassGroup(id: id, clip: clipping, markers: markers, dark: dark)
     }
@@ -274,13 +262,9 @@ private struct ClusterGlassLayer: View {
                                         Text(marker.text)
                                             .font(.system(size: marker.fontSize, weight: .semibold))
                                             .monospacedDigit()
-                                            .foregroundStyle(marker.color ?? (group.dark ? Color.white : Color.black))
+                                            .foregroundStyle(group.dark ? Color.white : Color.black)
+                                            .shadow(color: (group.dark ? Color.black : Color.white).opacity(0.8), radius: 1)
                                             .fixedSize()
-                                            .padding(.horizontal, marker.fontSize * 0.18)
-                                            .padding(.vertical, marker.fontSize * 0.04)
-                                            .background {
-                                                Capsule().fill(marker.countBackdrop.opacity(0.96))
-                                            }
                                             .position(x: marker.rect.width * marker.countX, y: marker.rect.height * marker.countY)
                                     }
                             } else {
