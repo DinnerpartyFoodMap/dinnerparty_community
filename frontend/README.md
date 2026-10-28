@@ -1,5 +1,7 @@
 # 前端维护入口
 
+技术支持页位于 [support/index.html](support/index.html)，无需登录或 JavaScript，可在 `/support/` 阅读联系方式、常见问题、账号注销与英文支持说明。App Store Connect 的 Support URL 使用 `https://www.dinnerparty.cc/support/`，须先将构建后的 `dist/support/index.html` 部署到官网并确认匿名访问正常。该页面已加入 Vite 多页入口与开发/预览路由，并排除在 iOS Universal Links 之外，避免打开支持链接时跳回 App。支持邮箱与政策页保持一致：`bl333@dinnerparty.cc`。
+
 隐私权政策与用户协议为独立静态页面，源文件在 [privacy/index.html](privacy/index.html) 与 [terms/index.html](terms/index.html)，开发和构建后均通过 `/privacy/`、`/terms/`（或不带斜杠）访问。Vite 多页入口将其输出为 `dist/privacy/index.html`、`dist/terms/index.html`，仅阅读政策不会加载业务脚本、高德 SDK 或字体 CDN。两个入口总是成对出现（`src/auth/legalPages.js`、`src/auth/components/LegalLinks.jsx`）：登录页底部、桌面顶部更多菜单、窄屏更多面板底部、iOS 原生工具栏上拉面板底部小字与 iOS 原生设置首页，均以新窗口或系统浏览器打开，不丢失当前表单和编辑状态。注册（登记名册）须勾选同意这两份文件。首次使用由 `src/app/PrivacyConsent.jsx` 阻断业务启动，同意后才动态导入 App、初始化平台并加载高德和图标字体；拒绝后可阅读政策和重新选择。同好发现、反馈和研究的默认开启状态不等于有效的单独授权。
 
 部署静态产物时需保留 `privacy/`、`terms/` 目录，令 `/privacy/`、`/terms/` 提供各自目录的 `index.html`，不要将这些地址回退到地图应用首页（`public/.well-known/apple-app-site-association` 也已把它们排除在通用链接之外）。Vite 开发与预览服务器已处理 `/privacy`、`/terms` 的目录跳转；App 中的政策链接使用运行配置中的公开网站地址并交给系统浏览器打开。高德条款核对依据：[现行隐私权政策](https://lbs.amap.com/pages/privacy/)、[SDK 合规使用方案](https://lbs.amap.com/api/compliance-center/check-and-reference/sdkhgsy)。政策提供方名称以现行政策为准，不能直接套用历史模板。

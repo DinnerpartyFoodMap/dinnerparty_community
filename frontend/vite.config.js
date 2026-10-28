@@ -42,8 +42,8 @@ function bundledIconFont() {
     };
 }
 
-// 独立的静态页面（隐私权政策、用户协议、App 下载页 /home）
-const STATIC_PAGES = ['privacy', 'terms', 'home'];
+// 独立的静态页面（政策、技术支持、App 下载页 /home）
+const STATIC_PAGES = ['privacy', 'terms', 'support', 'home'];
 
 // 无扩展名的政策地址必须先于 Vite 的 SPA fallback 处理，否则会启动地图页。
 function staticPageRoutes() {

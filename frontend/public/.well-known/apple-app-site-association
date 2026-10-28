@@ -11,6 +11,7 @@
           { "/": "/fonts/*", "exclude": true },
           { "/": "/privacy*", "exclude": true },
           { "/": "/terms*", "exclude": true },
+          { "/": "/support*", "exclude": true },
           { "/": "/beian*", "exclude": true },
           { "/": "/home*", "exclude": true },
           { "/": "/p/*/card-*", "exclude": true },
