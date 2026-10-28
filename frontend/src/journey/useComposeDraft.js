@@ -163,6 +163,21 @@ export default function useComposeDraft({base,token,composeId,preset}) {
     const setPhotoKind=useCallback((key,kind)=>update(key,{kind}),[]);
     useEffect(()=>()=>latest.current.photos.forEach(p=>p.url&&URL.revokeObjectURL(p.url)),[]);
 
+    // 离开前立即写入本机并返回结果（含未上传图片是否一起落盘），页面据此如实提示
+    const saveLocalNow=useCallback(async()=>{
+        const {payload:p,photos:list,id:draftId}=latest.current;
+        if(!userId||closed||!hasContent(p,list))return {saved:false,blobs:false};
+        const c=contentOf(p,list);
+        const result=await saveLocalCompose(userId,draftId,{payload:{...p,media_notes:c.media_notes},
+            photos:list.map(x=>({key:x.key,mediaId:x.mediaId||null,kind:x.kind||'',name:x.name||'',blob:x.mediaId?null:x.file||null})),serverRevision:revision.current,synced:false});
+        if(mounted.current)setLocal(result);
+        return result;
+    },[userId,closed]);
+    // 服务器上已是当前内容，且没有待上传的图片
+    const isSynced=useCallback(()=>{
+        const {payload:p,photos:list}=latest.current;
+        return !pendingWrite.current&&!list.some(x=>!x.mediaId)&&JSON.stringify(contentOf(p,list))===syncedHash.current;
+    },[]);
     const flush=useCallback(async()=>{
         const saved=await push();
         if(!saved)throw new Error(t('journey:composeDraft.nothingToSave'));
@@ -188,5 +203,5 @@ export default function useComposeDraft({base,token,composeId,preset}) {
         await deleteLocalCompose(userId,draftId);paused.current=true;
     },[api,userId]);
     return {id,loaded,payload,setPayload,photos,content,pendingPhotos,addFiles,retryPhoto,removePhoto,movePhoto,setPhotoKind,
-        sync,local,job,setJob,structured,closed,flush,fork,reload,discard,revision:()=>revision.current,hasContent:hasContent(payload,photos)};
+        sync,local,job,setJob,structured,closed,flush,fork,reload,discard,saveLocalNow,isSynced,revision:()=>revision.current,hasContent:hasContent(payload,photos)};
 }

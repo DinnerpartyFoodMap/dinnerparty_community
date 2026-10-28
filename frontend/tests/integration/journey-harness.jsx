@@ -11,6 +11,9 @@ import {useMapFeedback,Exposure} from "../../src/journey/feedback";
 import {preserveJourneyBeforeLeave} from "../../src/journey/navigation";
 window.__TEST_LEAVE=preserveJourneyBeforeLeave;
 import {applyDarkMode,applyThemeColors,resolveThemePrimary,resolveThemeSecondary} from "../../src/theme/theme";
+import {rememberPrivacyChoice} from "../../src/platform/privacyConsent";
+// 首次启动的隐私同意由应用自身的弹窗处理，这里视为已同意，高德 SDK 替身才会被使用（逆地理编码、内嵌地图）
+rememberPrivacyChoice('accepted');
 window.__TEST_THEME=(dark,custom={})=>{applyDarkMode(dark);applyThemeColors(resolveThemePrimary(custom),resolveThemeSecondary(custom));};
 // 只替换高德 SDK：标记、折线、内嵌地图、地点搜索、逆地理编码与定位都是可预测的替身。
 class Marker {constructor(options){this.options=options;}on(event,handler){if(event==='click')this.options.content.addEventListener('click',handler);}}

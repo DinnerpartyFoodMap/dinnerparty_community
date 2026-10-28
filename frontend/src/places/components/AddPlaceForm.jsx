@@ -80,7 +80,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
     };
 
     return (
-        <div style={{ width: 'min(320px, 100%)', maxWidth: '100%', boxSizing: 'border-box' }}>
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
             {draftNotice && (
                 <div role="status" style={{ marginBottom: 8, padding: '6px 6px 6px 10px', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 'var(--radius-sm)', background: 'color-mix(in srgb, var(--color-info) 12%, var(--color-bg-surface))', fontSize: 13, lineHeight: 1.5, color: 'var(--color-text-secondary)' }}>
                     <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>

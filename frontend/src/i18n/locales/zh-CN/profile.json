@@ -1,0 +1,76 @@
+{
+  "title": "住民主页",
+  "loadFailed": "住民主页加载失败",
+  "notFound": "这位住民不存在",
+  "retry": "重试",
+  "anonymous": "住民",
+  "city": "上次定位在 {{city}}",
+  "cityUnknown": "还没有定位记录",
+  "unblock": "解除屏蔽",
+  "blockAndReport": "屏蔽并举报",
+  "blockConfirm": "屏蔽 {{name}}？屏蔽后，TA 创建的地点、地点下 TA 的公开日记和同好名片都不会再显示给你，可以随时在这里解除。接下来会打开举报表单，写下原因后提交给管理员。",
+  "blocked": "已屏蔽 {{name}}",
+  "unblocked": "已解除对 {{name}} 的屏蔽",
+  "blockFailed": "操作失败：{{message}}",
+  "blockedNote": "你已屏蔽这位住民，TA 的地点和收藏不会显示给你。",
+  "placeRating": "{{tier}} {{average}}",
+  "taste": {
+    "title": "餐饮偏好",
+    "hint": "点类别名看依据",
+    "unknown": "待了解",
+    "estimated": "估算",
+    "favoriteOnly": "收藏",
+    "axisAria": "{{axis}}：{{value}}",
+    "saveFailed": "保存失败，请稍后重试",
+    "axes": {
+      "homestyle": "家常正餐",
+      "noodles": "粉面简餐",
+      "hotpotBbq": "火锅烧烤",
+      "dessert": "甜品烘焙",
+      "drinks": "咖啡茶饮",
+      "foreign": "异国料理"
+    },
+    "word": {
+      "love": "很喜欢",
+      "like": "喜欢",
+      "neutral": "一般",
+      "dislike": "不太喜欢"
+    },
+    "self": {
+      "title": "自己填",
+      "auto": "按评价自动推断",
+      "level4": "很喜欢",
+      "level3": "喜欢",
+      "level2": "一般",
+      "level1": "不太喜欢"
+    },
+    "basis": {
+      "self": "自己填的：{{level}}",
+      "stores": "依据 {{count}} 家店",
+      "positive": "其中 {{count}} 次明确好评",
+      "negative": "{{count}} 次差评",
+      "favorites": "{{count}} 家收藏",
+      "separator": "，",
+      "embedding": "还没评价过这类店，按评价和收藏过的 {{count}} 家店的整体口味估算：比 {{percent}}% 的随机口味更偏向这一类",
+      "unknown": "还没有对这类店的评价或收藏"
+    }
+  },
+  "widgets": {
+    "edit": "调整小组件",
+    "slot": "第 {{index}} 栏",
+    "saveFailed": "保存失败，请稍后重试",
+    "collection": {
+      "title": "公开收藏夹",
+      "empty": "还没有公开的收藏夹",
+      "item": "{{title}} · {{count}} 个地点"
+    },
+    "recent": {
+      "title": "最近创建的地点",
+      "empty": "还没有创建地点"
+    },
+    "favorite": {
+      "title": "最喜欢的地点",
+      "empty": "还没有评过“均线之上”及以上的地点"
+    }
+  }
+}

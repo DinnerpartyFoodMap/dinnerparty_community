@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 11）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 12）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
@@ -65,10 +65,10 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 11
+    static let protocolVersion = 12
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
-    static let allowedActions: Set<String> = ["more", "favorites", "journey", "add", "search", "alongRoute", "account", "locate"]
+    static let allowedActions: Set<String> = ["more", "favorites", "journey", "random", "add", "search", "alongRoute", "account", "locate", "filter", "listView"]
     static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces"]
     /// 单个面板最多的行数（收藏列表）
     static let sheetRowLimit = 300
@@ -448,7 +448,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 keepsOpen: (rawRow["keepsOpen"] as? Bool) ?? false,
                 expands: (rawRow["expands"] as? Bool) ?? false,
                 image: skinImage(rawRow["image"]),
-                imageTemplate: (rawRow["imageTemplate"] as? Bool) ?? false
+                imageTemplate: (rawRow["imageTemplate"] as? Bool) ?? false,
+                badge: clip(rawRow["badge"], 8)
             ))
         }
         return rows

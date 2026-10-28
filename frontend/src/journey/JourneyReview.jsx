@@ -1,18 +1,19 @@
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import useJourneyDraft from './useJourneyDraft';
 import JourneyStopCard from './JourneyStopCard';
+import JourneyStopPhotos,{STOP_PHOTO_LIMIT} from './JourneyStopPhotos';
 import {useAutoRank} from './JourneyResolution';
 import {applyResolutionPatch} from './resolution.mjs';
 import {StopMapPreview,reverseGeocode} from './maps';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import {requestActionSheet,hasActionSheetHost} from '../components/overlay/ActionSheet';
 import {pickImages,prepareImageForUpload,UPLOAD_LIMITS,MediaError} from '../platform/mediaPicker';
-import {PageHeader,Notice,PrivatePhoto,Badge,centerLabel,formatRange} from './shared';
+import {PageHeader,Notice,PrivatePhoto,Badge,MarkdownField,MarkdownText,centerLabel,formatRange} from './shared';
 import {newStop,needsReview,issueOf,unassignedSentences,addExcerpt,located,distanceMeters,formatDistance,placeToStop,pointToStop} from './reviewUtils';
 import { t, tx } from '../i18n/index.js';
 import { AiTag } from '../components/primitives/AiLabel';
 
-const SYNC_TEXT={idle:'',saved:t('journey:review.sync.saved'),saving:t('journey:review.sync.saving'),offline:t('journey:review.sync.offline'),conflict:t('journey:review.sync.conflict'),pending:t('journey:review.sync.unconfirmed')};
+const SYNC_TEXT={idle:'',saved:t('journey:review.sync.saved'),waiting:t('journey:review.sync.waiting'),saving:t('journey:review.sync.saving'),offline:t('journey:review.sync.offline'),conflict:t('journey:review.sync.conflict'),pending:t('journey:review.sync.unconfirmed')};
 
 /**
  * 「核对行程」（新建）与「修改日记」（历史日记）共用的编辑页：
@@ -27,6 +28,7 @@ export default function JourneyReview({ctx,nav,params}) {
     const [expanded,setExpanded]=useState(null);
     const [preview,setPreview]=useState(null),[previewState,setPreviewState]=useState('none'),[previewOpen,setPreviewOpen]=useState(false);
     const [shopFor,setShopFor]=useState(null),[mapOpen,setMapOpen]=useState(false);
+    const [photosFor,setPhotosFor]=useState(null),[photoNotice,setPhotoNotice]=useState('');
     const journalRef=useRef(journal);journalRef.current=journal;
     const restored=useRef(false);
     const document=journal?.document;
@@ -125,29 +127,60 @@ export default function JourneyReview({ctx,nav,params}) {
         // 从详情进入的修改：保存后回到原详情；新建与未完成草稿则进入新的详情页
         if(params.journeyId)nav.backTo('detail',detail);else nav.replace('detail',detail);
     });
+    // 离开时如实说明保存到了哪里：已同步、只存在本机，或都没能保存（此时先确认）
     const back=async()=>{
         if(busy)return;
-        if(!drafts.isSynced()&&!(await confirm(t('journey:review.confirmLeave'))))return;
-        if(dirty&&drafts.currentId())tip(t('journey:review.draftSaved'));
+        if(!drafts.isSynced()){
+            if(!drafts.hasPendingSave()&&await drafts.saveLocalNow()){tip(t('journey:review.savedLocally'));nav.pop();return;}
+            if(!(await confirm(t('journey:review.confirmLeave'))))return;
+        }else if(dirty&&drafts.currentId())tip(t('journey:review.draftSaved'));
         nav.pop();
     };
     useEffect(()=>{nav.setBack(back);return()=>nav.setBack(null);});
-    const addEntryPhotos=()=>perform(async()=>{
-        const list=journalRef.current.document.entry_media_ids||[];
-        if(list.length>=60)throw new Error(t('journey:review.maxPhotos'));
-        const source=hasActionSheetHost()?await requestActionSheet({title:t('common:action.addImage'),actions:[{value:'library',label:t('common:action.chooseFromAlbum')},{value:'camera',label:t('common:action.takePhoto')}]}):'library';
-        if(!source)return;
-        let files;
-        try{files=await pickImages({multiple:source==='library',source,limit:Math.min(12,60-list.length)});}
-        catch(e){throw new Error(e instanceof MediaError?e.message:t('journey:review.openFailed'));}
-        const ids=[];
-        for(const file of files){
-            const prepared=await prepareImageForUpload(file,UPLOAD_LIMITS.journeyMedia);
-            const form=new FormData();form.append('image',prepared);
-            ids.push((await api('/media',{method:'POST',body:form})).id);
-            edit(d=>({entry_media_ids:[...(d.entry_media_ids||[]),...ids.slice(-1)]}));
-        }
+    // 从本机添加照片：加入本篇照片；指定站点时同时归到这一站（每站最多 12 张，超出的部分明确提示，不静默丢弃）
+    const uploadPhotos=stopId=>perform(async()=>{
+        const notify=stopId?setPhotoNotice:setError;
+        try{
+            const doc=journalRef.current.document,list=doc.entry_media_ids||[];
+            const stop=stopId?doc.stops.find(s=>s.id===stopId):null;
+            if(list.length>=60)throw new Error(t('journey:review.maxPhotos'));
+            const room=Math.min(12,60-list.length,stop?STOP_PHOTO_LIMIT-stop.media_ids.length:12);
+            if(room<=0)throw new Error(t('journey:review.maxStopPhotos', { max: STOP_PHOTO_LIMIT }));
+            const source=hasActionSheetHost()?await requestActionSheet({title:t('common:action.addImage'),actions:[{value:'library',label:t('common:action.chooseFromAlbum')},{value:'camera',label:t('common:action.takePhoto')}]}):'library';
+            if(!source)return;
+            let files;
+            try{files=await pickImages({multiple:source==='library',source,limit:room});}
+            catch(e){throw new Error(e instanceof MediaError?e.message:t('journey:review.openFailed'));}
+            const skipped=Math.max(0,files.length-room);
+            for(const file of files.slice(0,room)){
+                const prepared=await prepareImageForUpload(file,UPLOAD_LIMITS.journeyMedia);
+                const form=new FormData();form.append('image',prepared);
+                const id=(await api('/media',{method:'POST',body:form})).id;
+                edit(d=>({entry_media_ids:[...(d.entry_media_ids||[]),id],stops:stopId?d.stops.map(s=>s.id===stopId?{...s,media_ids:[...s.media_ids,id]}:s):d.stops}));
+            }
+            if(skipped)notify(t('journey:review.photosSkipped', { count: skipped }));
+        }catch(e){if(stopId){setPhotoNotice(e.message);return;}throw e;}
     });
+    const toggleStopPhoto=(stopId,id)=>{
+        setPhotoNotice('');
+        const d=journalRef.current.document,stop=d.stops.find(s=>s.id===stopId);
+        if(!stop)return;
+        if(stop.media_ids.includes(id)){editStop(stopId,{media_ids:stop.media_ids.filter(m=>m!==id)});return;}
+        if(stop.media_ids.length>=STOP_PHOTO_LIMIT){setPhotoNotice(t('journey:review.maxStopPhotos', { max: STOP_PHOTO_LIMIT }));return;}
+        const entry=d.entry_media_ids||[];
+        if(!entry.includes(id)&&entry.length>=60){setPhotoNotice(t('journey:review.maxPhotos'));return;}
+        edit(doc=>({entry_media_ids:(doc.entry_media_ids||[]).includes(id)?doc.entry_media_ids:[...(doc.entry_media_ids||[]),id],
+            stops:doc.stops.map(s=>s.id===stopId?{...s,media_ids:[...s.media_ids,id]}:s)}));
+    };
+    // 批量归站：超出每站上限时整批不归，并说明多了几张
+    const assignPhotos=(ids,stopId)=>{
+        const stop=journalRef.current.document.stops.find(s=>s.id===stopId);
+        if(!stop)return false;
+        const merged=[...new Set([...stop.media_ids,...ids])];
+        if(merged.length>STOP_PHOTO_LIMIT){setError(t('journey:review.assignOverLimit', { name: stop.name, max: STOP_PHOTO_LIMIT, count: merged.length-STOP_PHOTO_LIMIT }));return false;}
+        editStop(stopId,{media_ids:merged});
+        return true;
+    };
     const center=document?.source_input?.center||null;
     // 全屏地图选点（与地图首页相同的标记与搜索）：选中站内标记或搜索结果，或用图钉选择任意位置
     const pickedPatch=result=>result.kind==='place'?placeToStop(result.place,{amapAllowed:!!cap.amap_search}):pointToStop(result.point);
@@ -185,9 +218,11 @@ export default function JourneyReview({ctx,nav,params}) {
     const primaryLabel=visibility==='public'?(wasPublic?t('journey:review.save.updatePublic'):t('journey:review.save.publish')):t('journey:review.save.private');
     const total=stops.reduce((n,s)=>n+s.expenses.reduce((a,e)=>a+(Number(e.amount)||0),0),0);
     const counts=preview?.visibility==='public'?preview.counts:null;
+    // 上次同步之后又有修改时不显示“已同步”：等这些修改真正写到服务器后才显示
+    const syncKind=drafts.state.kind==='saved'&&!drafts.isSynced()?'waiting':drafts.state.kind;
     const stopShop=stops.find(s=>s.id===shopFor);
     return <div className="jw-page">
-        <PageHeader title={editingSaved?t('journey:review.editTitle'):t('journey:review.title')} onBack={back} subtitle={SYNC_TEXT[drafts.state.kind]&&dirty?SYNC_TEXT[drafts.state.kind]:''}/>
+        <PageHeader title={editingSaved?t('journey:review.editTitle'):t('journey:review.title')} onBack={back} subtitle={SYNC_TEXT[syncKind]&&dirty?SYNC_TEXT[syncKind]:''}/>
         <div className="jw-scroll"><div className="jw-content jw-stack">
             {message&&<Notice onClose={()=>setMessage('')}>{message}</Notice>}
             {error&&<Notice tone="error" onClose={()=>setError('')}>{error}</Notice>}
@@ -215,23 +250,23 @@ export default function JourneyReview({ctx,nav,params}) {
                             <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.startDate')}</span><input type="date" value={document.start_date} onChange={e=>edit(d=>({start_date:e.target.value,end_date:d.end_date<e.target.value?e.target.value:d.end_date}))}/></label>
                             <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.endDate')}</span><input type="date" min={document.start_date} value={document.end_date} onChange={e=>edit({end_date:e.target.value})}/></label>
                         </div>
-                        <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.summary')}</span><textarea rows={3} maxLength={5000} value={document.summary} onChange={e=>edit({summary:e.target.value})}/></label>
+                        <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.summary')}</span><MarkdownField rows={3} maxLength={5000} value={document.summary} onChange={e=>edit({summary:e.target.value})}/></label>
                     </div>
                 </details>
             </section>
-            {stops.map((s,i)=><JourneyStopCard key={s.id} stop={s} index={i} total={stops.length} document={document} expanded={expanded===s.id}
+            {stops.map((s,i)=><JourneyStopCard key={s.id} stop={s} index={i} total={stops.length} dates={[document.start_date,document.end_date]} expanded={expanded===s.id}
                 onToggle={open=>setExpanded(open?s.id:null)} editStop={patch=>editStop(s.id,patch)} editingSaved={editingSaved}
                 removeStop={async()=>{if(await confirm(t('journey:review.confirmRemoveStop', { name: s.name })))edit(d=>({stops:d.stops.filter(x=>x.id!==s.id)}));}}
                 moveStop={delta=>edit(d=>{const list=[...d.stops],k=list.findIndex(x=>x.id===s.id);if(k+delta<0||k+delta>=list.length)return {};[list[k],list[k+delta]]=[list[k+delta],list[k]];return {stops:list};})}
                 addBelow={()=>addBelow(i)} link={links.get(s.id)} visibility={visibility} ctx={ctx}
-                center={center} onPickPoint={()=>pickFor(s.id)} onChooseShop={()=>setShopFor(s.id)}/>)}
+                center={center} onChooseShop={()=>s.candidates?.length?setShopFor(s.id):pickFor(s.id)} onAddPhotos={()=>{setPhotoNotice('');setPhotosFor(s.id);}}/>)}
             {!stops.length&&<section className="jw-card jw-stack" aria-label={t('journey:review.noStopsLabel')}>
                 <p className="jw-muted">{t('journey:review.noStopsHint')}</p>
                 <div className="jw-actions"><button type="button" onClick={()=>addBelow(-1)}>{t('journey:review.addOnMap')}</button></div>
             </section>}
-            <EntryPhotos document={document} base={base} token={token} busy={busy} onAdd={addEntryPhotos}
+            <EntryPhotos document={document} base={base} token={token} busy={busy} onAdd={()=>uploadPhotos(null)}
                 onRemove={id=>edit(d=>({entry_media_ids:(d.entry_media_ids||[]).filter(m=>m!==id),public_media_ids:(d.public_media_ids||[]).filter(m=>m!==id),stops:d.stops.map(s=>({...s,media_ids:s.media_ids.filter(m=>m!==id)}))}))}
-                onAssign={(ids,stopId)=>edit(d=>({stops:d.stops.map(s=>s.id===stopId?{...s,media_ids:[...new Set([...s.media_ids,...ids])].slice(0,12)}:s)}))}/>
+                onAssign={assignPhotos}/>
             {!!unassigned.length&&<details className="jw-card jw-more">
                 <summary>{tx('journey:review.unassignedTitle', { count: unassigned.length })}</summary>
                 <p className="jw-muted">{t('journey:review.unassignedHint')}</p>
@@ -255,7 +290,7 @@ export default function JourneyReview({ctx,nav,params}) {
                     <p role="status">{counts?t('journey:review.publicCounts', { link: counts.link, create: counts.create, conflicts: counts.conflict?t('journey:review.publicConflicts', { conflict: counts.conflict }):'' }):previewState==='loading'||previewState==='stale'?t('journey:review.previewUpdating'):t('journey:review.previewOnSave')}</p>
                     {counts&&<p className="jw-muted">{tx('journey:review.publicScope', { public_stops: counts.public_stops, public_photos: counts.public_photos, private_photos: counts.private_photos })}</p>}
                     <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.publicText')}</span>
-                        <textarea rows={4} maxLength={5000} value={document.public_text||''} placeholder={t('journey:review.field.publicTextPlaceholder')} onChange={e=>edit({public_text:e.target.value})}/></label>
+                        <MarkdownField rows={4} maxLength={5000} value={document.public_text||''} placeholder={t('journey:review.field.publicTextPlaceholder')} onChange={e=>edit({public_text:e.target.value})}/></label>
                     {!!document.source_input?.text&&!document.public_text&&<button type="button" onClick={()=>edit({public_text:document.source_input.text.slice(0,5000)})}>{t('journey:review.useOriginalText')}</button>}
                     {!!(document.entry_media_ids||[]).length&&<div className="jw-field"><span className="jw-field__label">{t('journey:review.publicPhotosLabel')}</span>
                         <div className="jw-photo-choice">{document.entry_media_ids.map(id=>{const on=(document.public_media_ids||[]).includes(id);return <button type="button" key={id} aria-pressed={on} aria-label={on?t('journey:review.unpublishPhoto'):t('journey:review.publishPhoto')}
@@ -287,6 +322,8 @@ export default function JourneyReview({ctx,nav,params}) {
                 <div className="jw-actions"><button type="button" onClick={()=>{const id=stopShop.id;setShopFor(null);pickFor(id);}}>{t('journey:review.noneOfThese')}</button><button type="button" onClick={()=>setShopFor(null)}>{t('common:action.cancel')}</button></div>
             </div>}
         </ResponsivePanel>
+        <JourneyStopPhotos open={!!photosFor} stop={stops.find(s=>s.id===photosFor)} document={document} ctx={ctx} busy={busy} notice={photoNotice} onNoticeClose={()=>setPhotoNotice('')}
+            onToggle={id=>toggleStopPhoto(photosFor,id)} onUpload={()=>uploadPhotos(photosFor)} onClose={()=>setPhotosFor(null)}/>
     </div>;
 }
 function EntryPhotos({document,base,token,busy,onAdd,onRemove,onAssign}) {
@@ -311,7 +348,7 @@ function EntryPhotos({document,base,token,busy,onAdd,onRemove,onAssign}) {
                 <button type="button" className="jw-entry-photo__remove" aria-label={t('journey:review.photos.removeFromEntry')} onClick={()=>onRemove(id)}>×</button>
             </figure>)}</div>:<p className="jw-muted">{t('journey:review.photos.empty')}</p>}
         {picking&&<label className="jw-field"><span className="jw-field__label">{tx('journey:review.photos.assignSelected', { count: picking.length })}</span>
-            <select aria-label={t('journey:review.photos.assignSelectLabel')} value="" disabled={!picking.length} onChange={e=>{if(e.target.value){onAssign(picking,e.target.value);setPicking(null);}}}>
+            <select aria-label={t('journey:review.photos.assignSelectLabel')} value="" disabled={!picking.length} onChange={e=>{if(e.target.value&&onAssign(picking,e.target.value)!==false)setPicking(null);}}>
                 <option value="">{t('journey:review.photos.chooseStop')}</option>{document.stops.map((s,i)=><option key={s.id} value={s.id}>{i+1}. {s.name}</option>)}
             </select></label>}
         {!picking&&ids.some(id=>!used.has(id))&&<p className="jw-muted">{t('journey:review.photos.unassignedHint')}</p>}
@@ -320,12 +357,12 @@ function EntryPhotos({document,base,token,busy,onAdd,onRemove,onAssign}) {
 function PublicPreview({body,links}) {
     return <div className="jw-public-preview">
         <strong>{body.title}</strong>
-        {body.summary&&<p>{body.summary}</p>}
-        {body.text&&<p>{body.text}</p>}
+        {body.summary&&<MarkdownText text={body.summary}/>}
+        {body.text&&<MarkdownText text={body.text}/>}
         {!!body.entry_media_ids?.length&&<small className="jw-muted">{tx('journey:review.preview.morePhotos', { count: body.entry_media_ids.length })}</small>}
         {body.stops.map(s=><div key={s.id} className="jw-public-preview__stop">
             <span>{s.index+1}. {s.name}</span>
-            {s.excerpt.length?s.excerpt.map((e,i)=><blockquote key={i} className={`jw-excerpt${e.kind==='edited'?' is-edited':''}`}>{e.text}<small>{e.kind==='edited'?t('journey:common.label.authorEdited'):t('journey:common.label.originalExcerpt')}</small></blockquote>):<small className="jw-muted">{t('journey:review.preview.noText')}</small>}
+            {s.excerpt.length?s.excerpt.map((e,i)=><blockquote key={i} className={`jw-excerpt${e.kind==='edited'?' is-edited':''}`}><MarkdownText text={e.text}/><small>{e.kind==='edited'?t('journey:common.label.authorEdited'):t('journey:common.label.originalExcerpt')}</small></blockquote>):<small className="jw-muted">{t('journey:review.preview.noText')}</small>}
             <small className="jw-muted">{tx('journey:review.preview.stopMeta', { count: s.media_ids.length, mapAction: ({link:t('journey:review.preview.mapLink'),create:t('journey:review.preview.mapCreate')})[links.get(s.id)?.action]||t('journey:review.preview.mapNone') })}</small>
         </div>)}
         {!body.stops.length&&<p className="jw-muted">{t('journey:review.preview.noStops')}</p>}

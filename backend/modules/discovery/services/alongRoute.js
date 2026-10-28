@@ -1,4 +1,8 @@
-const AMAP_HOST_PATTERN = /(^|\.)amap\.com$/i;
+// 高德自己的两个域名：分享短链（surl.amap.com）有时会跳到 gaode.com 上的落地页（如 static5.gaode.com）
+const AMAP_HOST_PATTERN = /(^|\.)(amap|gaode)\.com$/i;
+// 落地页把 App 链接放在 schema 等参数里（amapuri://busnavi/...?slat=...&dlat=...）：只读取其中的参数，不访问它
+const NESTED_SCHEMA_PARAMS = ['schema', 'amapuri', 'scheme'];
+const NESTED_SCHEMA_PATTERN = /^(amapuri|iosamap|androidamap):\/\//i;
 
 function isAllowedAmapUrl(value) {
     try {
@@ -51,7 +55,21 @@ function parsePosition(value) {
     return normalizeCoordinate(parts[0], parts[1], parts.slice(2).join(','));
 }
 
-function detectMode(url) {
+/** 落地页参数里内嵌的高德 App 链接；没有时为 null */
+function nestedSchemaUrl(url) {
+    for (const key of NESTED_SCHEMA_PARAMS) {
+        const value = url.searchParams.get(key);
+        if (!value || !NESTED_SCHEMA_PATTERN.test(value)) continue;
+        try {
+            return new URL(value);
+        } catch (error) {
+            continue;
+        }
+    }
+    return null;
+}
+
+function detectMode(url, nested = null) {
     const directMode = String(url.searchParams.get('mode') || '').toLowerCase();
     if (['car', 'drive', 'driving'].includes(directMode)) return 'driving';
     if (['bus', 'transit'].includes(directMode)) return 'transit';
@@ -59,7 +77,10 @@ function detectMode(url) {
     if (['ride', 'riding', 'bike', 'cycling'].includes(directMode)) return 'riding';
 
     const commonBiz = decodeJsonParam(url.searchParams.get('commonBizInfo')) || {};
-    const source = String(commonBiz.share_from || commonBiz.shareFrom || '').toLowerCase();
+    const source = [
+        commonBiz.share_from, commonBiz.shareFrom, url.searchParams.get('share_from'),
+        nested ? `${nested.hostname}${nested.pathname}` : ''
+    ].map((value) => String(value || '')).join(' ').toLowerCase();
     if (source.includes('bus')) return 'transit';
     if (source.includes('walk') || source.includes('foot')) return 'walking';
     if (source.includes('ride') || source.includes('bike')) return 'riding';
@@ -114,6 +135,13 @@ function parseAmapRouteUrl(value) {
         );
     }
 
+    // 落地页（static*.gaode.com 等）：起终点在内嵌的 App 链接里
+    const nested = nestedSchemaUrl(url);
+    if ((!origin || !destination) && nested) {
+        origin = normalizeCoordinate(nested.searchParams.get('slon'), nested.searchParams.get('slat'), nested.searchParams.get('sname'));
+        destination = normalizeCoordinate(nested.searchParams.get('dlon'), nested.searchParams.get('dlat'), nested.searchParams.get('dname'));
+    }
+
     if (!origin || !destination) {
         const routeParts = String(url.searchParams.get('r') || '').split(',');
         if (routeParts.length >= 6) {
@@ -127,7 +155,7 @@ function parseAmapRouteUrl(value) {
     return {
         origin,
         destination,
-        mode: detectMode(url),
+        mode: detectMode(url, nested),
         waypoints: parseWaypoints(url)
     };
 }

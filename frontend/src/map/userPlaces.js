@@ -69,11 +69,11 @@ export function userPlacesChipText(filter) {
         : t('map:userPlaces.chip', { name: filter.user.name, count: filter.total });
 }
 
-/** 列表一行的次要信息：（审核中 · ）分类 · 人均 · 创建日期 */
+/** 列表一行的次要信息：（审核中 · ）分类 · 人均 · 创建日期；未通过审核的另有行尾小标识（userPlaceBadge） */
 export function userPlaceDetail(place) {
     const created = formatPlaceDay(place.created_time);
     return [
-        isHiddenPlace(place) ? t('map:userPlaces.reviewing') : null,
+        isHiddenPlace(place) && !isRejectedPlace(place) ? t('map:userPlaces.reviewing') : null,
         place.category || t('common:label.uncategorized'),
         place.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: place.per_person_cost }) : null,
         created ? t('map:userPlaces.created', { date: created }) : null
@@ -82,6 +82,14 @@ export function userPlaceDetail(place) {
 
 /** 自己创建、还在审核中（或未通过）的地点：只有自己看得到 */
 export const isHiddenPlace = (place) => !!place.moderation_status && place.moderation_status !== 'visible';
+
+/** 未通过审核（被驳回）的地点：列表行尾的小标识，头像与“我创建的地点”上的小红点 */
+export const isRejectedPlace = (place) => place?.moderation_status === 'rejected';
+
+/** 行尾小标识的文字；不是被驳回的地点时为空 */
+export function userPlaceBadge(place) {
+    return isRejectedPlace(place) ? t('map:userPlaces.rejectedBadge') : '';
+}
 
 const ROW_PREFIX = 'place-';
 export const userPlaceRowId = (place) => `${ROW_PREFIX}${place.id}`;
@@ -93,16 +101,16 @@ export function userPlaceFromRowId(filter, rowId) {
 
 /**
  * 列表的操作（网页按钮与原生面板行共用 id，网页与 iOS 原生同时出现）：
- * 已登录、看的不是自己时，“屏蔽并举报”或“解除屏蔽”（按 filter.relation），以及退出筛选。
+ * “查看主页”（屏蔽与举报在住民主页里）；已屏蔽 Ta 时多一个“解除屏蔽”；以及退出筛选。
  */
 export function userPlacesActions(filter) {
     if (!filter) return [];
     const relation = filter.status === 'ready' ? filter.relation : null;
-    const block = !relation?.can_block ? null : relation.blocked
-        ? { id: 'unblock', title: t('map:userPlaces.unblock'), symbol: 'person.crop.circle.badge.checkmark', icon: 'how_to_reg' }
-        : { id: 'block', title: t('map:userPlaces.block'), symbol: 'hand.raised', icon: 'block', tone: 'danger' };
     return [
-        block,
+        { id: 'profile', title: relation?.self ? t('map:userPlaces.profileSelf') : t('map:userPlaces.profile'), symbol: 'person.crop.circle', icon: 'account_circle' },
+        relation?.can_block && relation.blocked
+            ? { id: 'unblock', title: t('map:userPlaces.unblock'), symbol: 'person.crop.circle.badge.checkmark', icon: 'how_to_reg' }
+            : null,
         { id: 'exit', title: t('map:userPlaces.exit'), symbol: 'xmark.circle', icon: 'filter_alt_off' }
     ].filter(Boolean);
 }
@@ -133,7 +141,8 @@ export function userPlacesChromeSheet(filter) {
                     title: place.name || t('common:label.unnamedPlace'),
                     subtitle: userPlaceDetail(place),
                     symbol: 'mappin.circle.fill',
-                    tone: isAvoidedPlace(place) ? 'danger' : (isHiddenPlace(place) ? 'warning' : undefined)
+                    tone: isAvoidedPlace(place) ? 'danger' : (isHiddenPlace(place) ? 'warning' : undefined),
+                    badge: userPlaceBadge(place) || undefined
                 }))
             }
         ].filter(Boolean)

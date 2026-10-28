@@ -17,6 +17,9 @@ function initUserLocationSchema(database) {
         updated_at TEXT NOT NULL
       );
     `);
+    // 住民主页显示的城市：保存位置后在后台逆地理编码得到（境外或失败时为空）
+    const columns = database.prepare("PRAGMA table_info('UserLastLocation')").all().map((row) => row.name);
+    if (!columns.includes('city')) database.exec('ALTER TABLE UserLastLocation ADD COLUMN city TEXT');
 }
 
 function coordinate(value, bound) {
@@ -41,7 +44,19 @@ function saveUserLocation(userId, { lat, lng, label = '', source }, now = new Da
         ON CONFLICT(user_id) DO UPDATE SET latitude = excluded.latitude, longitude = excluded.longitude,
             label = excluded.label, source = excluded.source, updated_at = excluded.updated_at`)
         .run(userId, location.lat, location.lng, String(label || '').trim().slice(0, 120) || null, source, now.toISOString());
-    return true;
+    return { ...location, updatedAt: now.toISOString() };
+}
+
+/** 位置保存后补上城市；期间位置又变了（updated_at 不同）就不写，留给新位置自己的那次查询 */
+function setUserLocationCity(userId, updatedAt, city) {
+    db._raw.prepare('UPDATE UserLastLocation SET city = ? WHERE user_id = ? AND updated_at = ?')
+        .run(city ? String(city).slice(0, 60) : null, userId, updatedAt);
+}
+
+function getUserCity(userId) {
+    if (!userId) return null;
+    const row = db._raw.prepare('SELECT city FROM UserLastLocation WHERE user_id = ?').get(userId);
+    return row && row.city ? row.city : null;
 }
 
 function getUserLocation(userId) {
@@ -50,4 +65,4 @@ function getUserLocation(userId) {
     return row ? { lat: row.latitude, lng: row.longitude, label: row.label || '', source: row.source, updatedAt: row.updated_at } : null;
 }
 
-module.exports = { initUserLocationSchema, normalizeLocation, saveUserLocation, getUserLocation };
+module.exports = { initUserLocationSchema, normalizeLocation, saveUserLocation, setUserLocationCity, getUserCity, getUserLocation };

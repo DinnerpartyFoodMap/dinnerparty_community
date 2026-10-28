@@ -90,7 +90,8 @@ function normalizeDocument(input, userId) {
             return { id: string(e.id, 80) || randomUUID(), amount: Math.round(amount * 100) / 100, currency: 'CNY', note: string(e.note, 100) };
         });
         const at = string(s.at, 30);
-        if (at && (!/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(at) || !Number.isFinite(Date.parse(at)) || at.slice(0, 10) < start_date || at.slice(0, 10) > end_date)) fail('途经点时间须在行程日期内');
+        // A stop may know only its day (YYYY-MM-DD) or the day and time; an unknown date stays empty instead of becoming the first day.
+        if (at && (!/^\d{4}-\d{2}-\d{2}(T([01]\d|2[0-3]):[0-5]\d)?$/.test(at) || !Number.isFinite(Date.parse(at)) || at.slice(0, 10) < start_date || at.slice(0, 10) > end_date)) fail('途经点时间须在行程日期内');
         if (at) date(at.slice(0,10));
         const candidates = (Array.isArray(s.candidates) ? s.candidates : []).slice(0, 5).filter(c=>c && ['local','amap'].includes(c.source)).map(c=> {
             if(c.source === 'amap' && process.env.AMAP_JOURNAL_STORAGE_ALLOWED !== 'true') return null;
@@ -116,6 +117,8 @@ function normalizeDocument(input, userId) {
         // Only explicit author choices are stored; absence means the default for the stop's visit status.
         if (typeof s.public === 'boolean') stop.public = s.public;
         if (typeof s.map_link === 'boolean') stop.map_link = s.map_link;
+        // 'model': the time was filled in by the model and not yet checked by the author (journeyAI.reconstruct).
+        if (s.at_source === 'model' && at) stop.at_source = 'model';
         return stop;
     });
     if (stops.some(s => s.source === 'amap') && process.env.AMAP_JOURNAL_STORAGE_ALLOWED !== 'true') fail('尚未配置高德数据存储授权，请使用站内地点或手动标记');

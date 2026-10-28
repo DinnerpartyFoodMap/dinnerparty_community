@@ -93,7 +93,8 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
         setEntryOpen(true);onOpen?.();
         loadUnfinished(api,getTokenUserId(token)).then(r=>setCounts({count:r.total,material:r.material})).catch(()=>{});
     },[authed,onRequireAuth,onOpen,api,token]);
-    const openPublic=useCallback((publicId,stopId)=>{setEntryOpen(false);setMapView(null);setStack(s=>[...s,entryOf('public',{publicId,stopId})]);},[]);
+    // 同一篇已在最上层时不再叠一层（地址里保留着 ?diary=，重复处理同一链接也只打开一次）
+    const openPublic=useCallback((publicId,stopId)=>{setEntryOpen(false);setMapView(null);setStack(s=>{const top=s[s.length-1];return top?.page==='public'&&top.params.publicId===publicId?s:[...s,entryOf('public',{publicId,stopId})];});},[]);
     React.useImperativeHandle(ref,()=>({open:openEntry,openPublic}),[openEntry,openPublic]);
     useEffect(()=>{if(initialPublic?.publicId)openPublic(initialPublic.publicId,initialPublic.stopId);},[initialPublic,openPublic]);
     // 地图上的地点详情等模块通过事件进入日记，避免层层传递回调

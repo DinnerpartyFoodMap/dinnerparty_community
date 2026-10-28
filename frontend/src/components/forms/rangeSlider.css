@@ -1,0 +1,76 @@
+/* 双滑块范围拉杆（RangeSlider.jsx）：两个透明的 range 叠在同一条轨道上，只有滑块接收指针 */
+.fm-range {
+    --fm-range-accent: var(--color-primary, #e2789f);
+    position: relative;
+    height: 36px;
+    touch-action: none;
+}
+.fm-range__track {
+    position: absolute;
+    left: 11px;
+    right: 11px;
+    top: 50%;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: 3px;
+    background: var(--color-border);
+}
+.fm-range__fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 3px;
+    background: var(--fm-range-accent);
+}
+.fm-range__input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    background: transparent;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+.fm-range__input:focus {
+    outline: none;
+}
+.fm-range__input::-webkit-slider-runnable-track {
+    background: transparent;
+    border: 0;
+}
+.fm-range__input::-moz-range-track {
+    background: transparent;
+    border: 0;
+}
+.fm-range__input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--color-bg-surface, #fff);
+    border: 2px solid var(--fm-range-accent);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    cursor: grab;
+}
+.fm-range__input::-moz-range-thumb {
+    pointer-events: auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--color-bg-surface, #fff);
+    border: 2px solid var(--fm-range-accent);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    cursor: grab;
+}
+.fm-range__input:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--fm-range-accent);
+    outline-offset: 2px;
+}
+.fm-range__input:focus-visible::-moz-range-thumb {
+    outline: 2px solid var(--fm-range-accent);
+    outline-offset: 2px;
+}

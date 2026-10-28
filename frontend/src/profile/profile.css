@@ -1,0 +1,290 @@
+/* 住民主页（UserProfilePage.jsx） */
+.fm-profile-page {
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: 20px 16px calc(24px + var(--safe-bottom, 0px));
+    background: var(--color-bg-base);
+    color: var(--color-text-primary);
+}
+.fm-profile {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.fm-profile__message {
+    padding: 24px 0;
+    text-align: center;
+    color: var(--color-text-secondary);
+}
+.fm-profile__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+}
+.fm-profile__identity {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.fm-profile__avatar {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--color-border);
+    background: var(--color-bg-overlay);
+}
+.fm-profile__name {
+    margin: 4px 0 0;
+    font-size: 20px;
+    overflow-wrap: anywhere;
+}
+.fm-profile__city {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+.fm-profile__city .material-symbols-outlined {
+    font-size: 16px;
+}
+.fm-profile__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+.fm-profile__radar {
+    flex: 0 1 300px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.fm-profile__radar svg {
+    width: 100%;
+    height: auto;
+}
+.fm-profile__radar-hint {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    text-align: center;
+}
+/* 手机宽度放不下头像旁的雷达（字会缩到 8px 左右）：头像和名字并排，雷达放下面 */
+@media (max-width: 480px) {
+    .fm-profile__header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .fm-profile__identity {
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr);
+        column-gap: 12px;
+        row-gap: 4px;
+        align-items: center;
+    }
+    .fm-profile__avatar {
+        grid-row: 1 / span 2;
+        width: 64px;
+        height: 64px;
+    }
+    .fm-profile__name {
+        margin: 0;
+        align-self: end;
+    }
+    .fm-profile__city {
+        align-self: start;
+    }
+    .fm-profile__actions {
+        grid-column: 1 / -1;
+    }
+    .fm-profile__radar {
+        flex: none;
+        width: min(320px, 100%);
+        align-self: center;
+    }
+    .fm-profile__widget-select {
+        flex: 1 1 100%;
+        justify-content: space-between;
+    }
+    .fm-profile__widget-select select {
+        flex: 1;
+        max-width: 240px;
+    }
+}
+.fm-profile__axis {
+    padding: 14px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+}
+.fm-profile__axis-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.fm-profile__axis-tag {
+    font-size: 11px;
+    padding: 0 6px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+}
+.fm-profile__axis-text {
+    margin: 6px 0;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+.fm-profile__axis-places {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+}
+.fm-profile__axis-places li {
+    display: flex;
+    gap: 8px;
+}
+.fm-profile__axis-places a,
+.fm-profile__places a {
+    color: inherit;
+}
+.fm-profile__axis-places span {
+    color: var(--color-text-muted);
+}
+.fm-profile__self {
+    margin-top: 10px;
+}
+.fm-profile__self-label {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+}
+.fm-profile__self-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.fm-profile__chip {
+    min-height: 32px;
+    padding: 4px 12px;
+    border-radius: 16px;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.fm-profile__chip.is-selected {
+    border-color: var(--theme-primary, var(--color-primary));
+    color: var(--theme-primary, var(--color-primary));
+    font-weight: 700;
+}
+.fm-profile__widgets-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.fm-profile__widget-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.fm-profile__widget-select select {
+    min-height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-overlay);
+    color: var(--color-text-primary);
+}
+.fm-profile__widget {
+    padding: 14px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+    min-width: 0;
+}
+.fm-profile__widget h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+}
+.fm-profile__empty {
+    font-size: 13px;
+    color: var(--color-text-muted);
+}
+.fm-profile__collection + .fm-profile__collection {
+    margin-top: 10px;
+}
+.fm-profile__collection-title {
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: var(--color-text-secondary);
+}
+/* 小组件里的地点横向排开，窄屏可横滑 */
+.fm-profile__places {
+    margin: 0;
+    padding: 0 0 4px;
+    list-style: none;
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+}
+.fm-profile__places li {
+    flex: 0 0 112px;
+    min-width: 0;
+    scroll-snap-align: start;
+}
+.fm-profile__places a {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-decoration: none;
+}
+.fm-profile__place-image {
+    width: 112px;
+    height: 84px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--color-bg-overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-muted);
+}
+.fm-profile__place-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.fm-profile__place-name {
+    font-size: 13px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.fm-profile__place-meta {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

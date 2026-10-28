@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import * as MapUtils from "./utils";
 import * as Api from "../api/client";
+import { EMPTY_PLACE_FILTER, isPlaceFilterActive, matchesPlaceFilter, placeFilterFromAi } from "../places/placeFilter";
 import { MarkerLayerController } from "./MarkerLayerController";
 import { installPinchGuard } from "./pinchGuard";
 import { OverseasTileLayer } from "./overseasTileLayer";
@@ -12,6 +13,8 @@ import { readViewBounds, getMapZoomRange, getMapSafeInsets, centerForScreenTarge
 import MapUI from "./MapUI";
 import { createLocationReporter } from "./locationReport";
 import MotionSurface from "../components/overlay/MotionSurface";
+import { useLayoutPolicy } from "../motion/MotionProvider";
+import "./addingPin.css";
 import FullScreenMapContent from "../components/layout/FullScreenMapContent";
 const JourneyWorkspace = React.lazy(() => import("../journey/JourneyWorkspace"));
 import { useMapFeedback } from "../journey/feedback";
@@ -69,6 +72,9 @@ export default function MapView({
     onOpenFeedback,
     desktopHeaderMenu = null,
     randomFoodRequestId = 0,
+    myPlacesRequestId = 0,
+    onOpenPlaceList,
+    onOpenProfile,
     onboardingRequestId = 0,
     exhibition = null,
     exhibitionOpen = false,
@@ -116,12 +122,26 @@ export default function MapView({
     const [searching, setSearching] = useState(false);
     const [aiThinking, setAiThinking] = useState(false);
     const [aiRecommendations, setAiRecommendations] = useState([]);
+    // 地图筛选（标签 / 人均，places/placeFilter.js）：手动打开筛选面板设置，或由 AI 搜索读出后主动设置（source = 'ai'）
+    const [placeFilter, setPlaceFilterState] = useState(EMPTY_PLACE_FILTER);
+    const [placeFilterSource, setPlaceFilterSource] = useState(null);
+    const setPlaceFilter = useCallback((next, source = 'manual') => {
+        setPlaceFilterState(next || EMPTY_PLACE_FILTER);
+        setPlaceFilterSource(next && isPlaceFilterActive(next) ? source : null);
+    }, []);
     const [searchResetKey, setSearchResetKey] = useState(0);
     const showTip = useTips();
     const confirm = useConfirm();
     const [locating, setLocating] = useState(false);
     const [locationError, setLocationError] = useState("");
     const [currentUser, setCurrentUser] = useState(null);
+    const layout = useLayoutPolicy();
+    // 最近一次定位到的位置（列表模式距离筛选的默认中心）
+    const [locatedCenter, setLocatedCenter] = useState(null);
+    // 列表模式自选距离中心：全屏地图选点（与修改地点位置同一个界面），选好后交给 resolve
+    const [listCenterPicker, setListCenterPicker] = useState(null);
+    // 展会地点：复用高德临时地点的标记与卡片（见 showExhibitionVenue）
+    const [venuePlace, setVenuePlace] = useState(null);
     const { setUser: setAuthUser } = useAuth();
     const [fetchingUser, setFetchingUser] = useState(false);
     const [selectedPlace, setSelectedPlace] = useState(null);
@@ -415,6 +435,30 @@ export default function MapView({
                 : canWrite
                     ? (addMode ? t('map:main.addTooltip.cancel') : t('map:main.addTooltip.start'))
                     : t('map:main.addTooltip.loginRequired');
+
+    // 添加地点：在选中的位置放一个标记。窄屏表单先只露出下方三分之一，把这个位置移到上方露出的地图中间
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!mapReady || !map || !window.AMap || !addingPos || pickerMode) return undefined;
+        const pin = document.createElement('div');
+        pin.className = 'fm-adding-pin';
+        pin.setAttribute('aria-hidden', 'true');
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.textContent = 'location_on';
+        pin.append(icon);
+        const marker = new window.AMap.Marker({ position: addingPos, content: pin, anchor: 'bottom-center', bubble: true, zIndex: 3100 });
+        marker.setMap(map);
+        if (layout.sheet) {
+            try {
+                const pixel = map.lngLatToContainer(new window.AMap.LngLat(addingPos[0], addingPos[1]));
+                const size = map.getSize();
+                const height = size && typeof size.getHeight === 'function' ? size.getHeight() : (containerRef.current?.clientHeight || window.innerHeight);
+                map.panTo(map.containerToLngLat(new window.AMap.Pixel(pixel.x, pixel.y + height / 6)));
+            } catch (error) { /* 尽力而为 */ }
+        }
+        return () => marker.setMap(null);
+    }, [mapReady, addingPos, pickerMode]);
 
     // 同步 ref，以便地图上的 click handler 总能读取到最新的 addMode
     useEffect(() => {
@@ -944,11 +988,17 @@ export default function MapView({
     const markerSource = alongRouteResults != null ? alongRouteResults : (searchResults != null ? searchResults : (userPlaces || places));
     useEffect(() => {
         if (!mapReady || !markerLayerRef.current) return;
-        const visibleMapPlaces = (markerSource || []).filter((place) => place.isMarked !== false || place.showOnMap === true);
+        // 筛选只作用于站内地点；当前选中的地点即使不符合也保留，卡片不会失去锚点
+        const selectedKey = selectedPlaceRef.current ? placeKey(selectedPlaceRef.current) : null;
+        const filtered = (markerSource || []).filter((place) => (place.isMarked !== false || place.showOnMap === true)
+            && (matchesPlaceFilter(place, placeFilter) || (selectedKey && placeKey(place) === selectedKey)));
+        const visibleMapPlaces = venuePlace && !filtered.some((place) => placeKey(place) === placeKey(venuePlace))
+            ? [...filtered, venuePlace]
+            : filtered;
         markerLayerRef.current.update({ places: visibleMapPlaces, queryMode: markerQueryMode });
         // 离开附近模式时，未完成的附近请求作废
         if (markerQueryMode !== 'nearby') nearbyGateRef.current.invalidate();
-    }, [mapReady, markerSource, markerQueryMode]);
+    }, [mapReady, markerSource, markerQueryMode, placeFilter, venuePlace]);
 
     useEffect(() => {
         markerLayerRef.current?.setSelectedKey(selectedPlace ? placeKey(selectedPlace) : null);
@@ -1020,6 +1070,52 @@ export default function MapView({
         showPopup(place);
     };
 
+    // 展会地点（展会面板点地址）：复用高德临时地点的标记与卡片，卡片只有导航；
+    // 卡片关掉或选了别的地点后标记随之消失（venuePlace 状态在组件顶部声明，标记层的 effect 要用）
+    const showExhibitionVenue = (venue) => {
+        if (!venue) return;
+        const place = {
+            id: `amap_${venue.key}`,
+            isMarked: false,
+            showOnMap: true,
+            exhibitionVenue: true,
+            name: venue.label,
+            category: '',
+            longitude: venue.lng,
+            latitude: venue.lat
+        };
+        setVenuePlace(place);
+        handleSelectAlongRoutePlace(place);
+    };
+    useEffect(() => {
+        if (venuePlace && (!selectedPlace || placeKey(selectedPlace) !== placeKey(venuePlace))) setVenuePlace(null);
+    }, [selectedPlace, venuePlace]);
+
+    // 列表模式里点了一个地点：退出搜索、沿途与住民筛选，地图移到这个地点并打开卡片，附近地点随之重新加载
+    const focusPlaceFromList = (placeId) => {
+        clearSearchState({ reloadPlaces: false });
+        setAlongRouteResults(null);
+        exitUserFilter();
+        searchResultsRef.current = null;
+        alongRouteResultsRef.current = null;
+        armSkipAutoSearch();
+        focusPlaceById(placeId).then(() => loadPlacesRef.current?.(true));
+    };
+    const currentMapCenter = () => {
+        const center = mapRef.current?.getCenter?.();
+        if (!center) return null;
+        const lng = Number(typeof center.getLng === 'function' ? center.getLng() : center.lng);
+        const lat = Number(typeof center.getLat === 'function' ? center.getLat() : center.lat);
+        return Number.isFinite(lng) && Number.isFinite(lat) ? { lng, lat } : null;
+    };
+    const pickListCenter = (center, resolve) => setListCenterPicker({ center, resolve });
+    const selectListCenter = (point) => {
+        const lng = Number(point?.lng ?? point?.longitude);
+        const lat = Number(point?.lat ?? point?.latitude);
+        if (Number.isFinite(lng) && Number.isFinite(lat)) listCenterPicker?.resolve({ lng, lat });
+        setListCenterPicker(null);
+    };
+
     const handleSelectRandomPlace = (place) => {
         if (!place || !mapRef.current) return;
         clearSearchState({ reloadPlaces: false });
@@ -1035,14 +1131,15 @@ export default function MapView({
     };
 
     // onCreated：地点已建好（表单用它删除本机草稿），之后刷新地图失败也不影响
-    const submitPlace = async (payload, { onCreated } = {}) => {
+    // 返回 { ok, message }：iOS 原生表单据此显示结果；silent 时失败不弹网页提示（原生表单自己显示）
+    const submitPlace = async (payload, { onCreated, silent = false } = {}) => {
         if (!token) {
             onRequireAuth && onRequireAuth();
-            return;
+            return { ok: false, message: '' };
         }
         if (isBanned) {
-            showTip(t('map:main.submitBanned'));
-            return;
+            if (!silent) showTip(t('map:main.submitBanned'));
+            return { ok: false, message: t('map:main.submitBanned') };
         }
 
         try {
@@ -1059,9 +1156,12 @@ export default function MapView({
             setAiRecommendations([]);
             await refreshNearby();
             setAddMode(false);
+            return { ok: true };
         } catch (e) {
             console.error("提交地点失败", e);
-            showTip(t('map:main.submitFailed', { message: e.message || e }));
+            const message = t('map:main.submitFailed', { message: e.message || e });
+            if (!silent) showTip(message);
+            return { ok: false, message };
         }
     };
 
@@ -1177,6 +1277,9 @@ export default function MapView({
                     : (result?.recommendation?.place ? [result.recommendation] : []);
                 setAiRecommendations(resolvedRecommendations);
                 if (fastSettled && resolvedRecommendations.length) publishResults(baseData, resolvedRecommendations);
+                // AI 从原话里读出了筛选（只看某些标签 / 人均范围）：直接作用到地图，筛选按钮随之高亮，可在面板里改或清除
+                const aiFilter = placeFilterFromAi(result?.filter);
+                if (aiFilter) setPlaceFilter(aiFilter, 'ai');
             })
             .catch((error) => {
                 if (error?.name !== 'AbortError' && requestId === searchRequestIdRef.current) {
@@ -1238,6 +1341,13 @@ export default function MapView({
         };
     };
 
+    // 看的是自己的地点时，顺便更新头像上“有被驳回的地点”的小红点（列表不全时以 /users/me 为准）
+    const syncRejectedCount = (filter) => {
+        if (!filter?.relation?.self || filter.total > filter.places.length) return;
+        const count = filter.places.filter((place) => place.moderation_status === 'rejected').length;
+        setCurrentUser((user) => (user && user.rejected_place_count !== count ? { ...user, rejected_place_count: count } : user));
+    };
+
     // 按住民筛选：退出搜索与沿途、收起卡片，读取这位住民创建的地点后视野调整到全部地点
     const openUserPlaces = async (user) => {
         if (!user?.id) return;
@@ -1253,6 +1363,7 @@ export default function MapView({
             if (requestId !== userFilterRequestRef.current) return;
             const next = readyUserFilter(data, user);
             commitUserFilter(next);
+            syncRejectedCount(next);
             fitMapToPlaces(next.places);
         } catch (e) {
             if (requestId !== userFilterRequestRef.current) return;
@@ -1275,7 +1386,10 @@ export default function MapView({
         const requestId = ++userFilterRequestRef.current;
         try {
             const data = await Api.fetchUserPlaces(backendUrl, current.user.id, { token });
-            if (requestId === userFilterRequestRef.current) commitUserFilter(readyUserFilter(data, current.user));
+            if (requestId !== userFilterRequestRef.current) return;
+            const next = readyUserFilter(data, current.user);
+            commitUserFilter(next);
+            syncRejectedCount(next);
         } catch (e) {
             console.warn('刷新住民的地点失败', e);
         }
@@ -1301,13 +1415,14 @@ export default function MapView({
         if (blocked) onOpenFeedback?.(userReportPrefill({ username: name, id }));
     };
 
-    // 公开日记链接 ?diary=<公开 ID>&stop=<站点>：未登录也可阅读；一次性参数，处理后从地址中移除
+    // 公开日记链接 ?diary=<公开 ID>&stop=<站点>：未登录也可阅读。这里读取后移除，日记页打开期间会重新写入地址
+    // （PublicJourneyView），刷新、收藏或转发当前地址都能回到这篇；QQ 等在末尾追加的参数用 shareParamValue 去掉
     const [initialDiary, setInitialDiary] = useState(null);
     useEffect(() => {
         const params = getQueryParams();
-        const publicId = params.get('diary');
+        const publicId = shareParamValue(params.get('diary'));
         if (!publicId || !/^[A-Za-z0-9_-]{8,64}$/.test(publicId)) return;
-        const stop = params.get('stop');
+        const stop = shareParamValue(params.get('stop'));
         removeQueryParams(['diary', 'stop']);
         setInitialDiary({ publicId, stopId: stop && /^[A-Za-z0-9_-]{1,80}$/.test(stop) ? stop : null });
     }, [routeSearch]);
@@ -1448,6 +1563,7 @@ export default function MapView({
             if (controller.signal.aborted || mapRef.current !== map) return;
             ensureUserLocationMarker([next.lng, next.lat]);
             locationReporterRef.current.located(next);
+            setLocatedCenter({ lat: next.lat, lng: next.lng });
             if (!follow || selectedPlaceRef.current) return;
             if (typeof map.panTo === "function") map.panTo([next.lng, next.lat]);
             else map.setCenter([next.lng, next.lat]);
@@ -1460,6 +1576,7 @@ export default function MapView({
 
             ensureUserLocationMarker([position.lng, position.lat]);
             locationReporterRef.current.located(position);
+            setLocatedCenter({ lat: position.lat, lng: position.lng });
 
             if (auto) {
                 const center = mapRef.current.getCenter?.();
@@ -1569,17 +1686,17 @@ export default function MapView({
         setManagePositionOpen(false);
     };
 
-    const buildManagePayload = () => ({
-        name: (manageEdit.name || "").trim(),
-        category: (manageEdit.category || "").trim(),
-        description: (manageEdit.description || "").trim(),
-        per_person_cost: manageEdit.per_person_cost,
-        exterior_images: (manageEdit.exterior_images || []).filter(Boolean),
-        menu_images: (manageEdit.menu_images || []).filter(Boolean),
+    const buildManagePayload = (edit = manageEdit) => ({
+        name: (edit.name || "").trim(),
+        category: (edit.category || "").trim(),
+        description: (edit.description || "").trim(),
+        per_person_cost: edit.per_person_cost,
+        exterior_images: (edit.exterior_images || []).filter(Boolean),
+        menu_images: (edit.menu_images || []).filter(Boolean),
         // 未调整位置时不提交旧坐标，避免覆盖其他人刚修正的位置。
-        ...(Number(manageEdit.longitude) !== Number(selectedPlace.longitude)
-            || Number(manageEdit.latitude) !== Number(selectedPlace.latitude)
-            ? { longitude: manageEdit.longitude, latitude: manageEdit.latitude } : {})
+        ...(Number(edit.longitude) !== Number(selectedPlace.longitude)
+            || Number(edit.latitude) !== Number(selectedPlace.latitude)
+            ? { longitude: edit.longitude, latitude: edit.latitude } : {})
     });
 
     // 判断当前用户是否可直接管理
@@ -1590,12 +1707,12 @@ export default function MapView({
         return isCreator || isAdmin;
     };
 
-    // 直接删除
-    const handleDirectDelete = async () => {
-        if (!selectedPlace) return;
-        if (!token) { onRequireAuth && onRequireAuth(); return; }
-        if (isBanned) { showTip(t('map:main.deleteBanned')); return; }
-        if (!(await confirm(t('map:main.confirmDelete')))) return;
+    // 直接删除。confirmed：已在 iOS 原生表单里确认过；返回 { ok, message }
+    const handleDirectDelete = async ({ confirmed = false } = {}) => {
+        if (!selectedPlace) return { ok: false, message: '' };
+        if (!token) { onRequireAuth && onRequireAuth(); return { ok: false, message: '' }; }
+        if (isBanned) { showTip(t('map:main.deleteBanned')); return { ok: false, message: t('map:main.deleteBanned') }; }
+        if (confirmed !== true && !(await confirm(t('map:main.confirmDelete')))) return { ok: false, message: '' };
         setManageSubmitting(true);
         try {
             await Api.deletePlace(backendUrl, token, selectedPlace.id);
@@ -1605,65 +1722,77 @@ export default function MapView({
             closePopup();
             await refreshNearby();
             refreshUserFilter();
+            return { ok: true };
         } catch (e) {
             console.error("删除失败", e);
-            setManageMessage(t('common:error.deleteFailedWithMessage', { message: e.message || e }));
+            const message = t('common:error.deleteFailedWithMessage', { message: e.message || e });
+            setManageMessage(message);
+            return { ok: false, message };
         } finally {
             setManageSubmitting(false);
         }
     };
 
-    // 直接更新
-    const handleDirectUpdate = async () => {
-        if (!selectedPlace) return;
-        if (!token) { onRequireAuth && onRequireAuth(); return; }
-        if (isBanned) { showTip(t('map:main.updateBanned')); return; }
+    // 直接更新。edit 缺省为网页表单的草稿（iOS 原生表单传入自己的内容）；返回 { ok, message }
+    const updatePlaceWith = async (edit = manageEdit) => {
+        if (!selectedPlace) return { ok: false, message: '' };
+        if (!token) { onRequireAuth && onRequireAuth(); return { ok: false, message: '' }; }
+        if (isBanned) { showTip(t('map:main.updateBanned')); return { ok: false, message: t('map:main.updateBanned') }; }
         setManageSubmitting(true);
         try {
-            const payload = buildManagePayload();
+            const payload = buildManagePayload(edit);
             const result = await Api.putPlace(backendUrl, token, selectedPlace.id, payload);
             // 改出了明显不合规的内容：这次修改转成修改申请等管理员审核，地点保持原样（backend placeModeration.md）
             if (result && result.pending_review) {
                 setManageOpen(false);
                 showTip(t('map:main.editPendingReview'));
-                return;
+                return { ok: true };
             }
             setManageMessage(t('map:main.updated'));
             setManageOpen(false);
             closePopup();
             await refreshNearby();
             refreshUserFilter();
+            return { ok: true };
         } catch (e) {
             console.error("更新失败", e);
-            setManageMessage(t('map:main.updateFailed', { message: e.message || e }));
+            const message = t('map:main.updateFailed', { message: e.message || e });
+            setManageMessage(message);
+            return { ok: false, message };
         } finally {
             setManageSubmitting(false);
         }
     };
+    const handleDirectUpdate = () => updatePlaceWith();
 
     // 提交修改申请 -> 提交到管理员后台由管理员审核
-    const handleSubmitModifyRequest = async () => {
-        if (!selectedPlace) return;
-        if (!token) { onRequireAuth && onRequireAuth(); return; }
-        if (isBanned) { showTip(t('map:main.requestBanned')); return; }
+    const requestModifyWith = async (edit = manageEdit) => {
+        if (!selectedPlace) return { ok: false, message: '' };
+        if (!token) { onRequireAuth && onRequireAuth(); return { ok: false, message: '' }; }
+        if (isBanned) { showTip(t('map:main.requestBanned')); return { ok: false, message: t('map:main.requestBanned') }; }
         setManageSubmitting(true);
         try {
             const payload = {
                 place_id: selectedPlace.id,
-                proposed: buildManagePayload(),
+                proposed: buildManagePayload(edit),
                 note: t('map:main.requestNote')
             };
             await Api.postPlaceRequest(backendUrl, token, payload);
             feedback.record('correction', 'map', selectedPlace.id, { reason: 'other' });
             setManageMessage(t('map:main.requestSubmitted'));
             setManageOpen(false);
+            showTip(t('map:main.requestSubmitted'));
+            return { ok: true };
         } catch (e) {
             console.error("提交申请失败", e);
-            setManageMessage(t('map:main.requestFailed', { message: e.message || e }));
+            const message = t('map:main.requestFailed', { message: e.message || e });
+            setManageMessage(message);
+            return { ok: false, message };
         } finally {
             setManageSubmitting(false);
         }
     };
+    const handleSubmitModifyRequest = () => requestModifyWith();
 
     const openCommentPanel = async () => {
         if (!selectedPlace) return;
@@ -1797,6 +1926,9 @@ export default function MapView({
                 onExitUserPlaces={() => exitUserFilter({ reload: true })}
                 onRetryUserPlaces={() => userFilterRef.current && openUserPlaces(userFilterRef.current.user)}
                 onSetUserPlacesBlocked={setUserPlacesBlocked}
+                placeFilter={placeFilter}
+                placeFilterSource={placeFilterSource}
+                onPlaceFilterChange={setPlaceFilter}
                 onSelectUserPlace={handleSelectAlongRoutePlace}
                 openManagePanel={openManagePanel}
                 openCreateFromPoi={openCreateFromPoi}
@@ -1810,8 +1942,11 @@ export default function MapView({
                 canDirectManage={canDirectManage}
                 onManageClose={() => { setManageOpen(false); setManageMessage(""); }}
                 onManageSave={handleDirectUpdate}
-                onManageDelete={handleDirectDelete}
+                onManageDelete={() => handleDirectDelete()}
                 onManageSubmitRequest={handleSubmitModifyRequest}
+                onManageSubmitWith={(edit) => (canDirectManage() ? updatePlaceWith(edit) : requestModifyWith(edit))}
+                onManageDeleteConfirmed={() => handleDirectDelete({ confirmed: true })}
+                managePositionOpen={managePositionOpen}
                 onManagePickPosition={() => setManagePositionOpen(true)}
                 addingPos={addingPos}
                 addingPrefill={addingPrefill}
@@ -1834,6 +1969,14 @@ export default function MapView({
                 onOpenFeedback={onOpenFeedback}
                 desktopHeaderMenu={desktopHeaderMenu}
                 randomFoodRequestId={randomFoodRequestId}
+                onOpenPlaceList={onOpenPlaceList}
+                onOpenProfile={onOpenProfile}
+                myPlacesRequestId={myPlacesRequestId}
+                onShowExhibitionVenue={showExhibitionVenue}
+                locatedCenter={locatedCenter}
+                getMapCenter={currentMapCenter}
+                onPickListCenter={pickListCenter}
+                onFocusPlaceFromList={focusPlaceFromList}
                 onboardingRequestId={onboardingRequestId}
                 exhibition={exhibition}
                 exhibitionOpen={exhibitionOpen}
@@ -1862,6 +2005,19 @@ export default function MapView({
                 onPickPlace={selectManagePosition}
                 onPickPoint={selectManagePosition}
                 onClose={() => setManagePositionOpen(false)}
+            />}
+            {!pickerMode && <FullScreenMapPicker
+                open={!!listCenterPicker}
+                title={t('places:list.center.pickTitle')}
+                context="listCenter"
+                center={listCenterPicker?.center || undefined}
+                backendUrl={backendUrl}
+                token={token}
+                isAuthenticated={isAuthenticated}
+                onRequireAuth={onRequireAuth}
+                onPickPlace={selectListCenter}
+                onPickPoint={selectListCenter}
+                onClose={() => setListCenterPicker(null)}
             />}
             {!pickerMode && <React.Suspense fallback={null}><JourneyWorkspace ref={journeyRef} key={`${backendUrl}:${token || 'guest'}`} backendUrl={backendUrl} token={token}
                 isAuthenticated={isAuthenticated} onRequireAuth={onRequireAuth} mapRef={mapRef} mapReady={mapReady}

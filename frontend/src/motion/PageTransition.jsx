@@ -34,6 +34,14 @@ export default function PageTransition({ pageKey, direction, children, onCovered
         if (pageKey === null) coverRef.current && coverRef.current(false);
     }, [pageKey]);
 
+    // 直接打开子页面（例如刷新 /admin）：首屏不播进入动画（initial={false}），不会有 onAnimationComplete，
+    // 直接算已覆盖，否则地图和它的浮动按钮会一直显示在页面上
+    useEffect(() => {
+        if (pageKey !== null) coverRef.current && coverRef.current(true);
+        // 只看首次挂载
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     return (
         <AnimatePresence custom={direction} initial={false}>
             {pageKey !== null && (

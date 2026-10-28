@@ -20,13 +20,15 @@ const SIDE_TOP = 76;
  * @param {{
  *   open: boolean, onClose: Function, title?: React.ReactNode, children: React.ReactNode, footer?: React.ReactNode,
  *   desktop?: 'center'|'side-left'|'side-right', mobile?: 'sheet'|'center'|'full',
- *   width?: string, maxHeight?: string, sheetHeight?: string, snap?: 'half' | null,
+ *   width?: string, maxHeight?: string, sheetHeight?: string, snap?: 'half' | 'third' | null,
  *   modal?: boolean, backdrop?: boolean, dismissOnBackdrop?: boolean, showClose?: boolean, closeLabel?: string,
  *   label?: string, role?: string, kind?: string, suspendNative?: boolean, closeOnEscape?: boolean,
  *   initialFocusRef?: any, bodyStyle?: object, surfaceStyle?: object, surfaceClassName?: string, headerExtra?: React.ReactNode,
  *   bodyProps?: object, onExitComplete?: Function, plain?: boolean, sideInset?: number, sideTop?: number, sideBottom?: number, draggable?: boolean
  * }} props
  * draggable=false 关闭底部/全屏面板的下滑关闭（例如正在输入的创作页，避免误触退出）。
+ * snap：底部面板先停在较低的位置，用户自己往上拉到完整高度。'half' 往下让出约三分之一屏；
+ * 'third' 只露出屏幕下方三分之一（面板本身应为满高，sheetHeight 传 'calc(100% - 24px)'）。
  */
 export default function ResponsivePanel({
     open,
@@ -102,8 +104,8 @@ function PanelChrome({ mode, onClose, title, children, footer, showClose = true,
     const sheetRef = useRef(null);
     const iosFull = mode === 'full' && getPlatform() === 'ios';
     const isSheet = (mode === 'sheet' || (mode === 'full' && !iosFull)) && draggable;
-    const snapOffsets = mode === 'sheet' && snap === 'half' && typeof window !== 'undefined'
-        ? [0, Math.round(window.innerHeight * 0.32)]
+    const snapOffsets = mode === 'sheet' && (snap === 'half' || snap === 'third') && typeof window !== 'undefined'
+        ? [0, snap === 'third' ? Math.max(0, Math.round(window.innerHeight * 2 / 3) - 24) : Math.round(window.innerHeight * 0.32)]
         : null;
     const y = useSheetDrag({
         enabled: isSheet,

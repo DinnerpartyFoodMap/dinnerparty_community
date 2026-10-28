@@ -10,8 +10,6 @@
     "location": "展会地点",
     "showVenue": "查看位置",
     "showVenueLabel": "在地图上查看展会地点：{{location}}",
-    "venuePin": "展会地点：{{location}}",
-    "hideVenue": "取消查看展会地点",
     "randomNearby": "展会附近随机美食",
     "randomHint": "以展会地点为中心，在 5km 内随机挑一家。"
   },
@@ -383,7 +381,10 @@
     "pickedLabel": "已选择地点",
     "pickedEmpty": "点地图上的标记，再选择此地点",
     "removePicked": "移除{{name}}",
-    "thisPlaceShort": "此地点"
+    "thisPlaceShort": "此地点",
+    "myPlaces": "我创建的地点",
+    "myPlacesRejected": "我创建的地点（{{count}} 个未通过审核）",
+    "myProfile": "我的主页"
   },
   "marker": {
     "clusterLabel": "{{count}} 家店的聚合，点击展开",
@@ -415,8 +416,13 @@
     "tooLarge": "图片过大，最大支持 20MB",
     "uploadFailed": "图片上传失败",
     "uploading": "上传中...",
-    "addImage": "+ 传图 / 拍照",
-    "retryUpload": "重试上传"
+    "retryUpload": "重试上传",
+    "addImages": "+ 传图 / 拍照（可多选）",
+    "uploadingProgress": "上传中 {{done}}/{{total}}",
+    "uploadFailedCount": "{{count}} 张图片上传失败，可以重试",
+    "retryUploadCount": "重试上传 {{count}} 张",
+    "previewAlt": "第 {{index}} 张图片",
+    "removeImage": "删除第 {{index}} 张图片"
   },
   "randomFood": {
     "title": "今天吃什么？",
@@ -610,13 +616,23 @@
       "native": {
         "account": "底部工具栏最右边的头像",
         "search": "底部工具栏右数第二个「搜索」",
-        "locate": "工具栏右上方的圆形按钮",
+        "locate": "工具栏右上方圆角按钮组的最下面",
         "favorites": "底部工具栏最左边的「收藏」",
         "add": "底部工具栏正中间的「添加」",
-        "journey": "底部工具栏左数第二个「日记 · 同好」",
+        "journey": "工具栏上滑 › 更多功能 › 日记 · 同好",
         "more": "按住底部工具栏，往上滑",
-        "alongRoute": "工具栏上滑 › 更多功能 › 顺路吃"
+        "alongRoute": "工具栏上滑 › 更多功能 › 顺路吃",
+        "filter": "工具栏右上方圆角按钮组的中间",
+        "listView": "工具栏右上方圆角按钮组的最上面"
       }
+    },
+    "filter": {
+      "title": "筛选",
+      "body": "只看某些标签、某个人均范围的地点。搜索时说“人均 50 以内的烧烤”，也会自动帮你筛好。"
+    },
+    "listView": {
+      "title": "列表 / 地图",
+      "body": "把地图换成地点列表，按评价排好，还能按距离筛选；点列表里的地点回到地图。"
     }
   },
   "userPlaces": {
@@ -639,13 +655,41 @@
     "open": "查看 {{name}} 创建的地点",
     "cardRow": "{{date}} · 查看 TA 创建的地点",
     "deletedUser": "已注销的住民",
-    "block": "屏蔽并举报",
     "unblock": "解除屏蔽",
     "blockConfirm": "屏蔽 {{name}}？屏蔽后，TA 创建的地点、地点下 TA 的公开日记和同好名片都不会再显示给你，可以随时在这里解除。接下来会打开举报表单，写下原因后提交给管理员。",
     "blocked": "已屏蔽 {{name}}",
     "unblocked": "已解除对 {{name}} 的屏蔽",
     "blockedMessage": "你已屏蔽 {{name}}，TA 创建的地点、地点下 TA 的公开日记和同好名片不会显示给你。",
     "chipBlocked": "已屏蔽 {{name}}",
-    "blockFailed": "操作失败：{{message}}"
+    "blockFailed": "操作失败：{{message}}",
+    "profile": "查看主页",
+    "profileSelf": "我的主页",
+    "rejectedBadge": "未通过"
+  },
+  "placeForm": {
+    "titleCreate": "添加地点",
+    "titleEdit": "修改地点",
+    "name": "店名",
+    "category": "分类",
+    "categoryNone": "未选择",
+    "categorySearch": "搜索或添加分类",
+    "categoryAdd": "添加新分类：",
+    "categoryInvalid": "分类最多 8 个汉字或 16 个英文字符，且不能包含逗号",
+    "descriptionPlaceholder": "写点简介：招牌菜、营业时间、怎么找到……",
+    "markdownHint": "支持基础 Markdown（加粗、列表、链接），最多 1000 字",
+    "cost": "人均",
+    "chooseFromAlbum": "从相册选择（可多选）",
+    "removeImage": "移除图片",
+    "imageUnreadable": "有图片无法读取",
+    "address": "地址",
+    "position": "位置",
+    "delete": "删除地点",
+    "submitting": "提交中...",
+    "discardTitle": "放弃这次修改？",
+    "discard": "放弃",
+    "keepEditing": "继续编辑",
+    "ok": "好",
+    "timeout": "请求超时，请稍后重试",
+    "failed": "提交失败，请稍后重试"
   }
 }

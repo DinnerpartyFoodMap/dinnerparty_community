@@ -31,6 +31,8 @@ function externalKey(stop) {
 function mappedPlace(externalId) {
     return externalId?sql.prepare('SELECT place_id FROM PlaceExternalIdentity WHERE provider=? AND external_id=?').get('amap',externalId)?.place_id||null:null;
 }
+// A stop is public unless the author hid it (older drafts) or it was only mentioned/planned.
+function stopIsPublic(stop) {return typeof stop.public==='boolean'?stop.public:stop.visit_status!=='planned';}
 function mapReason(stop) {
     if(stop.map_link===false)return {reason:'unlinked',message:'已取消地图关联'};
     if(stop.visit_status==='planned')return {reason:'not_visited',message:'只是提到或计划，不加入地图'};
@@ -48,6 +50,8 @@ function planStop(stop,visibility) {
     const external=externalKey(stop),mapped=mappedPlace(external);
     if(mapped)return {action:'link',place_id:mapped,external_id:external};
     if(visibility!=='public')return {action:'none',reason:'private',message:'私密日记不创建公共标记，地点保留在日记中'};
+    // The hidden-stop rule covers the map as well as the text: a stop left out of the public body never creates a public marker.
+    if(!stopIsPublic(stop))return {action:'none',reason:'hidden',message:'这一站不公开，不创建公共标记'};
     if(PLACEHOLDER_NAMES.has(String(stop.name||'').trim())||!normalizeName(stop.name))return {action:'none',reason:'unnamed',message:'请先填写店名，再创建标记'};
     const acknowledged=new Set(stop.duplicate_ack||[]);
     const duplicates=findDuplicates(stop);
@@ -93,4 +97,4 @@ function createPlace(userId,stop,link) {
     }
     return {place_id:id,created:true};
 }
-module.exports={normalizeName,similarName,findDuplicates,planLinks,createPlace,located,mapReason};
+module.exports={normalizeName,similarName,findDuplicates,planLinks,createPlace,located,mapReason,stopIsPublic};

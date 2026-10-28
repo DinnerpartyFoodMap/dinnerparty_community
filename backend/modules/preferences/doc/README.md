@@ -1,6 +1,6 @@
 # 偏好、收藏与向量
 
-入口：routes/preferences.js（`/api/preferences`）、routes/favorites.js（`/api/favorites`）。userPreferenceService 记录有效行为并构建用户画像；placeVectorService 同步地点 Embedding、哈希与重试；userPreferenceSchema 建表迁移。模型协议在 infrastructure/aiClients。评分 ≥3 作为兴趣信号，≤2 不作为正向来源；具体权重见现有 [偏好专题](PREFERENCES.md)。
+入口：routes/preferences.js（`/api/preferences`）、routes/favorites.js（`/api/favorites`）。userPreferenceService 记录有效行为并构建用户画像；placeVectorService 同步地点 Embedding、哈希与重试；userPreferenceSchema 建表迁移。模型协议在 infrastructure/aiClients。评分 ≥3 作为兴趣信号，≤2 不作为正向来源；具体权重见现有 [偏好专题](PREFERENCES.md)。住民主页的六类餐饮偏好雷达（店铺分类、证据与收缩规则）见 [六类餐饮偏好](TASTE_AXES.md)。
 
 ```mermaid
 flowchart TD

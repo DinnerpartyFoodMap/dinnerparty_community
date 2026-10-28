@@ -80,7 +80,8 @@ async function main(){
     await top.getByRole('button',{name:'＋ 在地图上添加地点'}).click();
     await picker.getByText('添加地点').waitFor();
     await picker.getByRole('button',{name:'选择测试面馆'}).click();
-    await top.getByRole('button',{name:'✓ 已核对'}).waitFor();
+    await top.locator('.jw-stop').first().getByText('已核对',{exact:true}).waitFor();
+    for(const gone of ['确认地点无误','稍后补充','地图选点'])assert.equal(await top.locator('.jw-stop').first().getByRole('button',{name:gone,exact:true}).count(),0,`${gone} is no longer offered`);
     await top.locator('summary',{hasText:'补充信息'}).first().click();
     await top.getByLabel('第 1 站的文字').fill('和朋友吃了一碗面，聊了很多。');
     await top.getByRole('button',{name:'＋ 记一笔'}).click();
@@ -129,11 +130,19 @@ async function main(){
 
     // --- Share export stays separate from public reading and excludes private money. ---
     await top.getByRole('button',{name:'生成分享图文'}).click();
-    await top.getByRole('button',{name:'生成贴文与首图'}).click();
-    await top.getByAltText('行程分享首图预览').waitFor();
+    await top.getByRole('button',{name:'生成贴文与图片'}).click();
+    await top.getByRole('list',{name:'图片页面'}).locator('img').first().waitFor();
     assert.ok(!(await top.getByLabel('贴文（可以直接修改）').inputValue()).includes('28.5'));
     await top.getByLabel('首图风格').selectOption('夜色');
-    await top.getByRole('button',{name:'更新首图预览'}).click();
+    await top.getByText('共 1 张图片',{exact:true}).waitFor();
+    assert.equal(await top.getByRole('button',{name:'复制贴文'}).isDisabled(),false);
+    // Narrowing the scope after generating stops every export of the old post and images.
+    await top.getByRole('checkbox',{name:'测试面馆'}).uncheck();
+    await top.getByText('你缩小了分享范围',{exact:false}).waitFor();
+    assert.equal(await top.getByRole('button',{name:'复制贴文'}).isDisabled(),true);
+    assert.equal(await top.getByRole('button',{name:/^保存全部图片/}).isDisabled(),true);
+    await top.getByRole('checkbox',{name:'测试面馆'}).check();
+    assert.equal(await top.getByRole('button',{name:'复制贴文'}).isDisabled(),false);
     await top.getByRole('button',{name:'返回',exact:true}).click();
 
     // --- Publish an existing private diary through the edit flow; the preview shows the map action. ---
@@ -184,8 +193,8 @@ async function main(){
             options:[{ref:'first-expense',title:'周末的面食散步',place:'测试面馆',amount:28.5},{ref:'second-expense',title:'午后补记',place:'测试面馆',amount:38.5}]}]},options?.expense_resolutions));
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();
     await top.getByRole('button',{name:'管理',exact:true}).click();
-    await top.getByLabel('选择 周末的面食散步 以合并',{exact:true}).check();
-    await top.getByLabel('选择 午后补记 以合并',{exact:true}).check();
+    await top.getByLabel('选择 周末的面食散步',{exact:true}).check();
+    await top.getByLabel('选择 午后补记',{exact:true}).check();
     await top.getByRole('button',{name:'预览合并',exact:true}).click();
     await top.getByRole('combobox',{name:/^这笔支出如何保留/}).waitFor();
     assert.equal(await top.getByRole('button',{name:'确认合并',exact:true}).isDisabled(),true);
@@ -293,7 +302,7 @@ async function main(){
     assert.equal(await top.getByText('尚未定位',{exact:false}).count(),1);
     await top.getByRole('button',{name:'选择店铺',exact:true}).click();
     await page.getByRole('list',{name:'候选店铺'}).getByRole('button',{name:/测试面馆/}).click();
-    await top.getByRole('button',{name:'✓ 已核对'}).waitFor();
+    await top.locator('.jw-stop').first().getByText('已核对',{exact:true}).waitFor();
     await top.getByText('公开 · 关联 1 个已有标记，创建 0 个新标记').waitFor();
     await page.getByRole('button',{name:'保存并公开'}).click();
     await top.getByText('已公开 · 已关联 1 个地点').first().waitFor();
@@ -318,14 +327,24 @@ async function main(){
     assert.equal(await card.getByText('在公开日记中显示这一站',{exact:false}).count(),0);
     assert.equal(await card.getByText('经历描述',{exact:false}).count(),0);
     // An AMap result without storage permission is refused and changes nothing.
-    await card.getByRole('button',{name:'地图选点'}).click();
+    await card.getByRole('button',{name:'选择店铺',exact:true}).click();
+    await page.getByRole('button',{name:'都不是，在地图上选点'}).click();
     await picker.getByText('为「同名面馆」选择地点').waitFor();
     await picker.getByRole('button',{name:'选择高德地点'}).click();
-    await top.getByText('高德地点尚未配置存储授权',{exact:false}).waitFor();
+    await top.getByText('暂不能直接使用高德地点',{exact:false}).waitFor();
     assert.deepEqual(await stopNames(),['同名面馆','固定锚点']);
-    await card.getByRole('button',{name:'地图选点'}).click();
+    await card.getByRole('button',{name:'选择店铺',exact:true}).click();
+    await page.getByRole('button',{name:'都不是，在地图上选点'}).click();
     await picker.getByRole('button',{name:'选择测试面馆'}).click();
-    await top.locator('.jw-stop').first().getByRole('button',{name:'✓ 已核对'}).waitFor();
+    await top.locator('.jw-stop').first().getByText('已核对',{exact:true}).waitFor();
+    // Photos for one stop: from this diary, from earlier uploads, or new ones; the panel says how many are chosen.
+    await top.locator('.jw-stop').first().getByRole('button',{name:'＋ 添加图片'}).click();
+    const stopPhotos=page.getByRole('dialog',{name:'为「测试面馆」添加图片'});
+    await stopPhotos.getByText('这一站已选 0 / 12 张').waitFor();
+    await stopPhotos.getByRole('region',{name:'之前上传的图片'}).getByRole('button',{name:'把这张照片用于这一站'}).first().click();
+    await stopPhotos.getByText('这一站已选 1 / 12 张').waitFor();
+    await stopPhotos.getByRole('button',{name:'完成'}).click();
+    await top.locator('.jw-stop').first().getByRole('button',{name:'照片 · 1 张'}).waitFor();
     // Adding below the anchor opens the picker at the anchor; the pin's address arrives later and is attached.
     await top.locator('.jw-stop').nth(1).getByRole('button',{name:'在下方添加地点'}).click();
     await picker.getByText('中心：120.01,30').waitFor();

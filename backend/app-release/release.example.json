@@ -1,0 +1,14 @@
+{
+    "android": {
+        "build": 1,
+        "version": "2.2.3",
+        "notes": "更新说明，一行一条",
+        "file": "dinnerparty-2.2.3.apk"
+    },
+    "ios": {
+        "build": 1,
+        "version": "2.2.3",
+        "notes": "更新说明，一行一条",
+        "url": "https://testflight.apple.com/join/9wshzYCG"
+    }
+}

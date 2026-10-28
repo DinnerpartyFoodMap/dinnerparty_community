@@ -22,6 +22,9 @@ yUYUko_food_MAP.code-workspace
 /backend/uploads
 /backend/logs
 /backend/backups/
+# 发版信息与安卓安装包只放在服务器上（release.example.json 是格式示例）
+/backend/app-release/*
+!/backend/app-release/release.example.json
 CLAUDE.md
 AGENTS.md
 /.vscode

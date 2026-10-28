@@ -57,5 +57,12 @@
     "httpsRequired": "{{name}} 必须使用 HTTPS：{{value}}",
     "localAddress": "{{name}} 不能指向本机地址：{{value}}",
     "amapProxyName": "高德代理地址"
+  },
+  "appUpdate": {
+    "title": "有新版本",
+    "version": "新版本 {{version}}",
+    "versionUnknown": "新版本已发布",
+    "later": "稍后",
+    "update": "去更新"
   }
 }

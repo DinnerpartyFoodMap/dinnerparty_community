@@ -293,7 +293,7 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 11);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 12);
     // Swift 插件的协议版本与面板 / 动作白名单必须与网页一致：网页新增面板忘了改 Swift 时，原生会静默丢掉它
     const swift = readFileSync(new URL('../../../ios/App/App/NativeMapChromePlugin.swift', import.meta.url), 'utf8');
     const swiftSet = (name) => [...swift.split(`static let ${name}: Set<String> = [`)[1].split(']')[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();

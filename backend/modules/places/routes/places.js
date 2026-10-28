@@ -22,6 +22,7 @@ const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
 const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
+const { listPlaces } = require('../services/placeList');
 
 // 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
 // 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者；
@@ -53,6 +54,17 @@ router.get("/nearby", attachViewer, (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
+});
+
+// 地点列表页（services/placeList.js）：可按标签、人均筛选，按综合评价与口味加权评价排序；不返回经纬度和地址
+router.get("/list", attachViewer, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+        res.json(listPlaces(req.query, req.viewer?.id ?? null));
+    } catch (error) {
+        res.locals.unhandledError = error;
+        res.status(500).json({ error: '地点列表加载失败，请稍后重试' });
+    }
 });
 
 // Random discovery queries the full 5 km circle, independently of map zoom.

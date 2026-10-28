@@ -10,14 +10,40 @@ import AdminNotices from "./AdminNotices";
 import AdminExhibitions from "./AdminExhibitions";
 import AdminSkinCodes from "./AdminSkinCodes";
 import AdminFeedback from "./AdminFeedback";
+import AdminTasteAxes from "./AdminTasteAxes";
 import ScrollableView from "../components/layout/ScrollableView";
 import { t } from "../i18n/index.js";
+import "./admin.css";
 
 const PERMISSIONS = {
     YUYUKO: ["用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "皮肤兑换码", "住民反馈"],
     YOUMU: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "住民反馈"],
     KOMACHI: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "住民反馈"]
 };
+
+// 后台的每个模块默认收起：点标题展开。第一次展开时才挂载（这时才请求数据），之后收起只是隐藏，保留填写的内容
+function AdminSection({ title, style, children }) {
+    const [open, setOpen] = useState(false);
+    const [mounted, setMounted] = useState(false);
+    return (
+        <section style={style}>
+            <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => { setOpen((value) => !value); setMounted(true); }}
+                style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                    padding: '6px 4px', border: 0, background: 'transparent', color: 'var(--color-text-primary)',
+                    fontSize: 16, fontWeight: 700, cursor: 'pointer', textAlign: 'left'
+                }}
+            >
+                <span>{title}</span>
+                <span className="material-symbols-outlined" aria-hidden="true">{open ? 'expand_less' : 'expand_more'}</span>
+            </button>
+            {mounted && <div className="fm-admin-section__body" hidden={!open} style={{ marginTop: 8 }}>{children}</div>}
+        </section>
+    );
+}
 
 export default function AdminDashboard({ user, token, backendUrl, onBackHome, onOpenPlace, onLogout, onRequireAuth }) {
     const level = user && user.admin_level ? user.admin_level : null;
@@ -68,55 +94,61 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
 
                 {/* 用户管理面板 */}
                 {canManageUsers && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.users')} style={panelStyle}>
                         <AdminUsers backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} />
-                    </div>
+                    </AdminSection>
                 )}
 
                 {/* 普通用户管理面板 */}
                 {canManageGeneralUsers && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.generalUsers')} style={panelStyle}>
                         <AdminGeneralUsers backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} />
-                    </div>
+                    </AdminSection>
                 )}
 
                 {/* 标记点管理面板 */}
                 {canManagePlaces && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.places')} style={panelStyle}>
                         <AdminPlaces backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} onOpenPlace={onOpenPlace} />
-                    </div>
+                    </AdminSection>
+                )}
+
+                {canManagePlaces && (
+                    <AdminSection title={t('admin:dashboard.sections.tasteAxes')} style={panelStyle}>
+                        <AdminTasteAxes backendUrl={backendUrl} />
+                    </AdminSection>
                 )}
 
                 {/* QQ白名单管理面板 */}
                 {canManageQQWhitelist && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.qqWhitelist')} style={panelStyle}>
                         <AdminQQWhitelist backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} />
-                    </div>
+                    </AdminSection>
                 )}
 
                 {/* 公告发布面板 */}
                 {canManageAnnouncements && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.notices')} style={panelStyle}>
                         <AdminNotices backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} />
-                    </div>
+                    </AdminSection>
                 )}
 
                 {canManageAnnouncements && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.exhibitions')} style={panelStyle}>
                         <AdminExhibitions backendUrl={backendUrl} />
-                    </div>
+                    </AdminSection>
                 )}
 
                 {canManageSkinCodes && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.skinCodes')} style={panelStyle}>
                         <AdminSkinCodes backendUrl={backendUrl} />
-                    </div>
+                    </AdminSection>
                 )}
 
                 {canManageFeedback && (
-                    <div style={panelStyle}>
+                    <AdminSection title={t('admin:dashboard.sections.feedback')} style={panelStyle}>
                         <AdminFeedback backendUrl={backendUrl} />
-                    </div>
+                    </AdminSection>
                 )}
 
                 {/* 评论管理面板（评论功能暂不开放） */}

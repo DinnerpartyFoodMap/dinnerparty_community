@@ -15,7 +15,7 @@
         "android:open": "cap open android",
         "test:platform": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-platform.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-geolocation.mjs",
         "test:map": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-map-motion.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-location-report.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-exhibition-layout.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-exhibition-sheet.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-onboarding.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-user-places.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/map/test-amap-navigation.mjs",
-        "test": "npm run test:privacy && npm run test:platform && npm run test:map && npm run test:overlay && npm run test:rating && npm run test:place-draft && npm run test:share-card && npm run test:native-chrome && npm run test:journey-text && npm run test:i18n && npm run test:structure && npm run test:search && npm run test:skins && npm run test:markdown",
+        "test": "npm run test:privacy && npm run test:platform && npm run test:map && npm run test:overlay && npm run test:rating && npm run test:place-draft && npm run test:place-filter && npm run test:share-card && npm run test:native-chrome && npm run test:journey-text && npm run test:i18n && npm run test:structure && npm run test:search && npm run test:skins && npm run test:markdown",
         "test:privacy": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-privacy-consent.mjs",
         "test:structure": "node tests/unit/structure/test-structure.mjs",
         "test:ui": "npm --prefix ../backend run test:ui",
@@ -23,12 +23,13 @@
         "test:rating": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-rating.mjs",
         "test:place-draft": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-add-place-draft.mjs",
         "test:share-card": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-share-card.mjs",
-        "test:native-chrome": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-chrome.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-settings.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-feedback.mjs",
+        "test:native-chrome": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-chrome.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-settings.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-feedback.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-place-form.mjs",
         "test:journey-text": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/journey/test-journey-text.mjs",
         "test:i18n": "node tests/unit/i18n/test-i18n.mjs",
         "test:skins": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/skins/test-skins.mjs",
         "test:markdown": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/components/test-markdown.mjs",
-        "test:search": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/discovery/test-external-search.mjs"
+        "test:search": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/discovery/test-external-search.mjs",
+        "test:place-filter": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-place-filter.mjs"
     },
     "dependencies": {
         "@aparajita/capacitor-secure-storage": "8.0.1",

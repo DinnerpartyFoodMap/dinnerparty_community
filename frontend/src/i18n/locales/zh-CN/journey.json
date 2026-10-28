@@ -1,7 +1,28 @@
 {
   "cover": {
     "mapNote": "连线表示先后顺序",
-    "renderFailed": "图片生成失败"
+    "renderFailed": "图片生成失败",
+    "page": {
+      "cover": "封面",
+      "stop": "第 {{index}} 站 · {{name}}",
+      "route": "路线总览",
+      "collage": "照片拼图",
+      "text": "文字卡",
+      "more": "{{label}}（续）"
+    },
+    "meta": "{{range}} · {{count}} 站",
+    "continued": "{{name}}（续）",
+    "routeContinued": "路线（续）",
+    "textContinued": "{{title}}（续）",
+    "unlocated": "（未定位）",
+    "warn": {
+      "caption": "简短介绍超过 3 行，超出部分没有显示。",
+      "title": "标题太长，已用省略号结尾。",
+      "photo": "有照片读取失败，这一页没有用上它。",
+      "paged": "文字较长，已自动分成多张。",
+      "tooLong": "文字太长，超出部分没有放进图片。",
+      "overlap": "有几站位置相同或很近，编号已错开排列。"
+    }
   },
   "feedback": {
     "requestFailed": "请求失败 ({{status}})"
@@ -30,15 +51,27 @@
     "draft": "草稿",
     "listTitle": "{{range}}的日记",
     "monthShort": "{{m}}月",
-    "mergeHint": "选择两篇日期连续或重叠的日记可以合并",
-    "selectForMerge": "选择 {{title}} 以合并",
     "entryMeta": "{{range}} · {{stop_count}} 站{{extra}}",
     "emptyDayTitle": "记录这一天",
     "createManually": "手动新建",
     "emptyMonthTitle": "这个月还没有日记",
     "emptyMonthHint": "从一张照片或一句话开始",
     "previewMerge": "预览合并",
-    "merged": "已合并为新的私密日记"
+    "merged": "已合并为新的私密日记",
+    "searchLabel": "搜索日记",
+    "searchPlaceholder": "搜索店名、城市或关键词",
+    "filterLabel": "公开状态",
+    "filterAll": "全部",
+    "searchTitle": "搜索结果 · {{count}} 篇",
+    "searchEmpty": "没有找到符合的日记",
+    "manageHint": "可多选删除；选两篇日期连续或重叠的日记可以合并",
+    "selectEntry": "选择 {{title}}",
+    "confirmDelete": "删除所选的 {{count}} 篇日记及其历史版本？删除后无法恢复。{{publicCount}}由它们创建的地图标记会保留。",
+    "confirmDeletePublic": "其中公开的日记会一并撤下。",
+    "deleted": "已删除 {{count}} 篇日记",
+    "deleteFailed": "以下日记没有删除：{{items}}",
+    "deleting": "正在删除…",
+    "deleteSelected": "删除所选（{{count}}）"
   },
   "common": {
     "feature": {
@@ -189,7 +222,9 @@
     "privacyNote": "草稿不会公开。点「保存并公开」后，才会公开你确认过的内容；私密日记只有自己能看到。",
     "noAiNote": "日记 AI 未开启，可以手动整理并保存。",
     "textOnlyNote": "当前模型不能识别图片，只会根据文字生成，照片仍会保存在日记中。",
-    "multiDay": "展开为多日范围"
+    "multiDay": "展开为多日范围",
+    "confirmLeaveUnsaved": "素材还没能存到本机或服务器，离开可能会丢失。确定离开？",
+    "leftSavedNoPhotos": "文字已存本机；还没上传的图片没能一起存下，下次需要重新添加。"
   },
   "detail": {
     "history": "历史版本",
@@ -291,6 +326,7 @@
     "aiAssisted": "这份草稿由 AI 根据你的素材整理，标题、摘要和站点可能有误，请核对后再保存。公开后会标注“AI 辅助整理”。",
     "sync": {
       "saved": "草稿已同步",
+      "waiting": "有修改待同步…",
       "saving": "正在同步…",
       "offline": "同步失败，将自动重试",
       "conflict": "草稿冲突待处理",
@@ -326,7 +362,7 @@
     "forkDraft": "另存为新草稿",
     "issuesLabel": "需要处理",
     "issueItem": "{{issueOf}}：{{name}}",
-    "morePending": "另有 {{count}} 站待核对，可以稍后补充。",
+    "morePending": "另有 {{count}} 站还没选店铺，可以之后再选。",
     "titleSectionLabel": "标题与日期",
     "field": {
       "title": "标题",
@@ -398,13 +434,17 @@
       "mapCreate": "创建新标记",
       "mapNone": "不加入地图",
       "noStops": "没有公开的站点。"
-    }
+    },
+    "savedLocally": "修改已存在本机，还没同步到服务器；可在「日历 · 未完成」中恢复。",
+    "maxStopPhotos": "每站最多 {{max}} 张照片",
+    "photosSkipped": "另有 {{count}} 张超出上限，没有加入。",
+    "assignOverLimit": "「{{name}}」最多 {{max}} 张照片，这次多了 {{count}} 张，请少选几张。"
   },
   "share": {
     "coverFailed": "地图首图生成失败",
     "selectStops": "只分享你选中的片段",
     "noVisited": "还没有核对过的地点，请先在「修改」中核对。",
-    "platform": "平台",
+    "platform": "文案用途",
     "platformOption": {
       "xiaohongshu": "小红书",
       "moments": "朋友圈",
@@ -420,9 +460,9 @@
     },
     "minChars": "最少字数",
     "maxChars": "最多字数",
-    "includeNotes": "将所选站点的文字片段提供给 AI",
+    "includeNotes": "分享所选站点的文字（提供给 AI，也会放进图片）",
     "includeExpenses": "包含所选站点的实际支出",
-    "generate": "生成贴文与首图",
+    "generate": "生成贴文与图片",
     "postLabel": "贴文（可以直接修改）",
     "lengthInfo": "{{length}} 字 · 目标 {{min}}–{{max}} 字{{rangeHint}}。{{aiNote}}",
     "lengthOutOfRange": "，请编辑至目标范围",
@@ -437,22 +477,75 @@
     "caption": "简短介绍",
     "useAmapBase": "使用高德地图底图{{pendingNote}}",
     "amapPending": "（待管理员配置导出授权）",
-    "refreshCover": "更新首图预览",
-    "coverAlt": "行程分享首图预览",
-    "exportHint": "导出前请检查贴文、地点和首图。",
     "aiExportNote": "这段贴文由 AI 生成；复制、保存或分享时会在末尾附上“（本文由 AI 辅助生成）”。",
     "copyFailed": "复制失败，请长按文字手动复制。",
     "postCopied": "贴文已复制",
     "copyPost": "复制贴文",
-    "coverFilename": "行程首图.png",
-    "coverSaveFailed": "首图保存失败，请重试。",
-    "saveCover": "保存首图",
+    "coverSaveFailed": "图片保存失败，请重试。",
     "postFilename": "行程贴文.txt",
     "postSaveFailed": "文字保存失败，请重试。",
     "savePost": "保存文字",
     "shareUnsupported": "此浏览器不支持分享图片，请保存首图并复制文字。",
     "shareFailed": "分享失败，请重试。",
-    "systemShare": "系统分享"
+    "systemShare": "系统分享",
+    "platformHint": "用途只影响贴文的写法，不会替你发布到这个平台。",
+    "regenerate": "按当前设置重新生成",
+    "scopeSection": "分享范围",
+    "postSection": "贴文",
+    "imageSection": "图片",
+    "deliverSection": "预览与导出",
+    "blockedOutdated": "日记在生成之后修改过，这份贴文和图片可能与现在的内容不符，请重新生成后再导出。",
+    "blockedNarrowed": "你缩小了分享范围（少了站点、文字或支出），旧贴文和图片可能含有不再分享的内容，已停止导出，请重新生成。",
+    "textStale": "用途、文风或字数已改动，下面仍是按旧设置生成的贴文（待更新）。",
+    "editedNote": " · 已手动修改（自动保存在本机）",
+    "confirmReplaceEdited": "重新生成会替换你手动修改过的贴文，要继续吗？",
+    "unsupportedTitle": "这些内容在你选择分享的记录里找不到依据：",
+    "unsupportedHint": "可能是 AI 补出来的细节，请核对，没有依据的请删除。",
+    "removeUnsupported": "删除含这些内容的句子",
+    "template": "图片模板",
+    "templateAuto": "自动（{{name}}）",
+    "templateOption": {
+      "single": "单店：照片封面＋店名＋一句感受",
+      "multi": "多站：封面＋逐站图文卡＋路线",
+      "collage": "照片拼图",
+      "text": "文字卡"
+    },
+    "templateFallback": "所选站点没有照片，已改用文字卡。",
+    "captionSingle": "一句感受（显示在封面）",
+    "coverPhoto": "封面照片",
+    "coverPhotoCurrent": "当前的封面照片",
+    "coverPhotoUse": "用这张作封面",
+    "routePage": "加上路线总览页",
+    "basemapFallback": "高德底图暂不可用（{{message}}），已改用顺序示意图。",
+    "rendering": "正在生成图片…",
+    "pageCount": "共 {{count}} 张图片",
+    "pagesLabel": "图片页面",
+    "previewPage": "放大预览：{{label}}",
+    "mainPhoto": "这一页的主图",
+    "photoN": "第 {{n}} 张",
+    "crop": "裁切位置",
+    "moveUp": "往前移",
+    "moveDown": "往后移",
+    "removePage": "删除这页",
+    "removedPages": "已删除：",
+    "restorePage": "恢复「{{label}}」",
+    "step": {
+      "preview": "预览全部图文",
+      "copy": "复制文案",
+      "images": "保存图片或打开系统分享",
+      "publish": "到目标平台选好图片、粘贴文案后发布（回到这里不代表已经发布）"
+    },
+    "previewAll": "预览全部",
+    "status": {
+      "copied": "文案已复制",
+      "downloaded": "已交给浏览器下载 {{count}} 张",
+      "savedPanel": "已打开保存面板",
+      "sharePanel": "已打开分享面板"
+    },
+    "saveImages": "保存全部图片（{{count}} 张）",
+    "imageFilename": "行程分享-{{index}}.png",
+    "shareFallback": "这个浏览器不能直接分享图片：请保存图片，再复制文案到目标平台。",
+    "shareNote": "部分应用收到图片时会丢掉文字；点「系统分享」会先复制文案，可在目标应用里直接粘贴。"
   },
   "stopCard": {
     "mapAction": {
@@ -463,9 +556,9 @@
     "excerptSeparator": " …… ",
     "badge": {
       "confirmed": "已核对",
-      "later": "稍后补充",
       "pending": "待核对",
-      "unlocated": "待定位"
+      "unlocated": "待定位",
+      "timeGuessed": "时间待核对"
     },
     "ariaLabel": "第 {{index}} 站 {{name}}",
     "pendingShop": "待选店",
@@ -479,11 +572,7 @@
     "localMarker": "站内地图标记",
     "located": "已定位",
     "distanceFromCenter": " · 距搜索中心 {{distance}}",
-    "unlocatedHint": "尚未定位：可以选择店铺、在地图上选点，或稍后补充。",
-    "pickPoint": "地图选点",
-    "continueReview": "继续核对",
-    "confirmed": "✓ 已核对",
-    "confirmLocation": "确认地点无误",
+    "unlocatedHint": "尚未定位：点「选择店铺」，从候选店铺或地图上选择。",
     "duplicateLabel": "疑似重复的地图标记",
     "duplicateHint": "附近已有名称相似的标记，请确认是否为同一家：",
     "localMarkerShort": "站内标记",
@@ -504,11 +593,13 @@
     "moreInfo": "补充信息",
     "field": {
       "name": "店名 / 地点名称",
-      "time": "时间（可留空）",
+      "time": "到访时间（可留空）",
       "mood": "心情",
       "category": "分类（新建标记时使用，可留空）",
       "expenses": "实际支出（人民币，仅自己可见）",
-      "correction": "修正原因（选填）"
+      "correction": "修正原因（选填）",
+      "day": "到访日期",
+      "clock": "具体时间"
     },
     "mood": {
       "none": "不记录"
@@ -516,9 +607,6 @@
     "expenseAmount": "第 {{index}} 站支出 {{i}} 金额",
     "expenseNote": "第 {{index}} 站支出 {{i}} 说明",
     "addExpense": "＋ 记一笔",
-    "photosLabel": "这一站使用的照片（从本篇照片中选择）",
-    "removePhoto": "从这一站移出照片",
-    "usePhoto": "把照片用于这一站",
     "correction": {
       "none": "未指定",
       "wrongBranch": "分店错误",
@@ -526,7 +614,14 @@
       "notVisited": "实际未到访",
       "privacy": "隐私调整",
       "other": "其他"
-    }
+    },
+    "addPhotos": "＋ 添加图片",
+    "photosCount": "照片 · {{count}} 张",
+    "dishesSource": "AI 识别",
+    "dayUnknown": "不确定是哪一天可以留空，不会被算作第一天。",
+    "timeGuessed": "AI 推测",
+    "timeGuessedHint": "这个时间是 AI 从描述里推测的，请核对。",
+    "timeLooksRight": "时间无误"
   },
   "unfinished": {
     "serverUnreachable": "暂时无法连接服务器",
@@ -627,17 +722,17 @@
     "viewMarker": "查看地图标记",
     "report": "举报",
     "reportLabel": "举报日记{{title}}",
-    "aiAssisted": "作者使用 AI 整理了这篇日记，标题和摘要可能由 AI 生成。"
+    "aiAssisted": "作者使用 AI 整理了这篇日记，标题和摘要可能由 AI 生成。",
+    "entryPhoto": "整篇照片",
+    "enlarge": "放大查看：{{caption}}",
+    "unverified": "地点未核实",
+    "unverifiedHint": "标着“地点未核实”的站点，作者没有在地图上选定具体店铺，店名或位置可能不准确。"
   },
   "resolution": {
     "stale": "地点或顺序已变化，请重新选择候选。"
   },
   "reviewUtils": {
     "defaultTitle": "我的一天",
-    "issue": {
-      "confirmLocation": "确认位置",
-      "checkPlace": "核对地点"
-    },
     "excerptSeparator": " …… ",
     "amapNotAllowed": "暂不能直接使用高德地点，请选择站内标记或用图钉选点。",
     "meters": "{{m}} 米",
@@ -660,7 +755,13 @@
     "photoLoading": "图片载入中",
     "publicPhotoAlt": "日记照片",
     "closeNotice": "关闭提示",
-    "publicOutdated": "公开版本待更新"
+    "publicOutdated": "公开版本待更新",
+    "photoRetry": "图片加载失败，点按重试",
+    "photoRetryShort": "加载失败，点按重试",
+    "viewerTitle": "查看照片",
+    "viewerPrev": "上一张",
+    "viewerNext": "下一张",
+    "viewerCaption": "{{index}} / {{total}} · {{caption}}"
   },
   "composeDraft": {
     "photoNotSaved": "这张图片没能保存在本机，请重新添加",
@@ -703,5 +804,19 @@
     "mapUnavailable": "地图暂时无法加载",
     "noLocated": "还没有已定位的地点",
     "previewNote": "虚线表示先后顺序。"
+  },
+  "stopPhotos": {
+    "title": "为「{{name}}」添加图片",
+    "count": "这一站已选 {{count}} / {{max}} 张",
+    "uploading": "正在上传…",
+    "fromDevice": "从本机添加",
+    "entrySection": "本篇照片",
+    "entryEmpty": "本篇还没有照片。",
+    "librarySection": "之前上传的图片",
+    "libraryEmpty": "私人图片空间里没有其他图片。",
+    "libraryHint": "来自私人图片空间（其他日记或素材里上传过的图片），选中后会一并加入本篇照片。",
+    "done": "完成",
+    "select": "把这张照片用于这一站",
+    "deselect": "从这一站移出这张照片"
   }
 }

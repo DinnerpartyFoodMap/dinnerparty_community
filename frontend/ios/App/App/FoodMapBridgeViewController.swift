@@ -31,6 +31,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(plugin)
         bridge?.registerPluginInstance(NativeSettingsPlugin())
         bridge?.registerPluginInstance(NativeFeedbackPlugin())
+        bridge?.registerPluginInstance(NativePlaceFormPlugin())
         chromePlugin = plugin
     }
 

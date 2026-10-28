@@ -262,7 +262,18 @@
     "adminLevel": "管理员等级：",
     "regularUser": "普通用户",
     "viewAudit": "查看操作日志",
-    "notAdmin": "当前住民身份不是管理员，无法访问后台功能。"
+    "notAdmin": "当前住民身份不是管理员，无法访问后台功能。",
+    "sections": {
+      "users": "用户管理",
+      "generalUsers": "普通用户管理",
+      "places": "地点修改申请",
+      "tasteAxes": "店铺口味分类",
+      "qqWhitelist": "QQ 白名单",
+      "notices": "公告",
+      "exhibitions": "展会",
+      "skinCodes": "皮肤兑换码",
+      "feedback": "住民反馈"
+    }
   },
   "noticeColors": {
     "blue": "隙间蓝",
@@ -354,5 +365,35 @@
     "prevPage": "上一页",
     "nextPage": "下一页",
     "pageInfo": "第 {{page}} / {{total}} 页"
+  },
+  "tasteAxes": {
+    "title": "店铺口味分类",
+    "intro": "住民主页的“餐饮偏好”按六类统计。规则分不出的店由模型补分类，拿不准的留作未知；在这里勾选它属于哪几类，人工结果优先，可以撤销。",
+    "filter": {
+      "unknown": "未知",
+      "llm": "模型分类",
+      "manual": "已人工纠正"
+    },
+    "source": {
+      "unknown": "未知",
+      "llm": "模型分类",
+      "manual": "人工",
+      "rule": "规则"
+    },
+    "searchPlaceholder": "店名或分类",
+    "search": "搜索",
+    "loading": "加载中…",
+    "empty": "没有需要处理的店铺",
+    "noCategory": "无分类",
+    "axesFor": "{{name}} 的类别",
+    "save": "保存",
+    "saveNone": "保存为“不属于任何一类”",
+    "undo": "撤销人工分类",
+    "saved": "已保存",
+    "reset": "已撤销，回到自动分类",
+    "requestFailed": "请求失败，请稍后重试",
+    "prev": "上一页",
+    "next": "下一页",
+    "page": "第 {{page}} / {{total}} 页"
   }
 }

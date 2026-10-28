@@ -135,7 +135,9 @@ struct MapChromeView: View {
                         // 不放在占位的 overlay 里靠 alignmentGuide 上移：那样在真机上没有生效，面板盖住了工具栏
                         MapChromeMenuPanel(model: model, sheet: panel, maxHeight: panelMaxHeight, glassNamespace: glassNamespace)
                     } else if !model.floatingItems.isEmpty {
-                        HStack(spacing: 12) {
+                        // v12：列表 / 地图切换、筛选与定位共用一个竖向圆角矩形（只有一个按钮时就是圆形）。
+                        // 占位逐个记录位置（地图安全区、操作指引都按按钮算），玻璃画在整组上
+                        VStack(spacing: 0) {
                             ForEach(model.floatingItems) { item in
                                 Color.clear
                                     .frame(width: 50, height: 50)
@@ -144,12 +146,18 @@ struct MapChromeView: View {
                                     }, action: { rect in
                                         model.setFrame(item.id, rect)
                                     })
-                                    .overlay {
-                                        // 搜索展开时让位给网页搜索结果
-                                        if showing && !searching {
-                                            floatingButton(item)
-                                        }
+                            }
+                        }
+                        .overlay {
+                            // 搜索展开时让位给网页搜索结果
+                            if showing && !searching {
+                                VStack(spacing: 0) {
+                                    ForEach(model.floatingItems) { item in
+                                        floatingButton(item)
                                     }
+                                }
+                                .glassEffect(Glass.regular.interactive(), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+                                .glassEffectID("floating", in: glassNamespace)
                             }
                         }
                         // 上滑更多功能时随抽屉顶边一起上移，始终停在抽屉上方。
@@ -728,6 +736,13 @@ struct MapChromeView: View {
                 .matchedGeometryEffect(id: "accountAvatar", in: morphNamespace)
                 .frame(width: 52, height: 52)
                 .contentShape(Circle())
+                // v12：有被驳回的地点时右上角小红点
+                .overlay(alignment: .topTrailing) {
+                    if let badge = item.badge, !badge.isEmpty {
+                        MapChromeBadgeDot()
+                            .offset(x: -3, y: 3)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .disabled(item.disabled)
@@ -768,14 +783,18 @@ struct MapChromeView: View {
                 }
             }
             .frame(width: 50, height: 50)
+            // 共用的圆角矩形里，选中（筛选生效中）用一圈主题色底区分
+            .background {
+                if item.selected {
+                    Circle().fill(accent.opacity(0.22)).padding(4)
+                }
+            }
             .contentShape(Circle())
             .foregroundStyle(foreground(for: item))
             .opacity((item.disabled ? 0.45 : 1) * tourDim(model.isTourTarget(item: item.id)))
         }
         .buttonStyle(.plain)
         .disabled(item.disabled)
-        .glassEffect(item.selected ? Glass.regular.tint(accent.opacity(0.35)).interactive() : Glass.regular.interactive(), in: .circle)
-        .glassEffectID(item.id, in: glassNamespace)
         .tourMark(model.isTourTarget(item: item.id), shape: Circle(), color: accent, model: model)
         .accessibilityLabel(Text(item.title))
         .accessibilityAddTraits(item.selected ? .isSelected : [])
@@ -891,5 +910,16 @@ struct MapChromeSwipeHint: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// v12：小红点（头像、面板行）
+struct MapChromeBadgeDot: View {
+    var body: some View {
+        Circle()
+            .fill(Color.red)
+            .frame(width: 10, height: 10)
+            .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+            .accessibilityHidden(true)
     }
 }

@@ -5,6 +5,7 @@ const { randomUUID } = require('crypto');
 const { requireAuth } = require('../../accounts/middleware/auth');
 const { sql, now, fail, string, getJourney, saveJourney, mergeJourneys, mediaReferences } = require('../services/journeyStore');
 const ai = require('../services/journeyAI');
+const { unsupportedClaims } = require('../services/journeyShareCheck');
 const router = express.Router();
 router.use(requireAuth, (_req,res,next)=>{res.set('Cache-Control','no-store');next();});
 const run = fn => (req,res,next)=>Promise.resolve().then(()=>fn(req,res)).catch(next);
@@ -14,6 +15,7 @@ router.get('/',run((req,res)=>res.json(sql.prepare(`SELECT j.id,j.revision,j.doc
 const compose=require('../services/journeyCompose');
 const publication=require('../services/journeyPublication');
 router.get('/calendar',run((req,res)=>res.json(compose.calendar(req.user.id,String(req.query.from||''),String(req.query.to||'')))));
+router.get('/search',run((req,res)=>res.json(compose.search(req.user.id,{q:String(req.query.q||'').slice(0,100),visibility:String(req.query.visibility||'')}))));
 router.get('/unfinished',run((req,res)=>res.json(compose.unfinished(req.user.id))));
 router.get('/compose-drafts',run((req,res)=>res.json(compose.unfinished(req.user.id).material)));
 router.get('/compose-drafts/:id',run((req,res)=>res.json(compose.getCompose(req.user.id,req.params.id))));
@@ -145,7 +147,8 @@ router.post('/:id/share',run(async(req,res)=>{
     const includeNotes=req.body.include_notes===true, includeExpenses=req.body.include_expenses===true;
     // The stop text is the author's own words: an edited excerpt, the quoted source sentences, or an older private note.
     const stopText=s=>s.excerpt_edited||(s.excerpts||[]).map(e=>e.text).join(' …… ')||s.note||'';
-    const facts=stops.map(s=>({name:s.name,note:includeNotes?stopText(s):'',mood:s.mood,expenses:includeExpenses?s.expenses:[]}));
+    // Visit times travel with the stop text: both are shared only when the author ticks it.
+    const facts=stops.map(s=>({name:s.name,note:includeNotes?stopText(s):'',mood:s.mood,at:includeNotes?s.at||'':'',expenses:includeExpenses?s.expenses:[]}));
     let text=facts.map(s=>`${s.name}${s.note?`：${s.note}`:''} ${s.mood}`).join('\n');
     let generated=false;
     if((await ai.capabilities()).text_ai) {
@@ -159,9 +162,15 @@ router.post('/:id/share',run(async(req,res)=>{
     }
     // Do not silently truncate a generated sentence. Return range compliance for editing.
     // generated: the frontend labels the post "AI 生成" and appends the AI label on export.
+    // unsupported: concrete claims (prices, times, queues…) the shared facts do not back, flagged for the author.
     const length=Array.from(text).length;
-    res.json({text,length,min,max,in_range:length>=min&&length<=max,generated,revision:journey.revision,stop_ids:stops.map(s=>s.id),
-        cover:{title:journey.document.title,stops:stops.map(s=>({name:s.name,lng:s.lng,lat:s.lat,source:s.source})),caption:`${stops.length} 站 · 我的生活片段`}});
+    const unsupported=generated?unsupportedClaims(text,facts):[];
+    // The share images are built from the author's own photos of these stops; stop text only when it was shared.
+    res.json({text,length,min,max,in_range:length>=min&&length<=max,generated,unsupported,revision:journey.revision,stop_ids:stops.map(s=>s.id),
+        options:{platform,style,min,max,include_notes:includeNotes,include_expenses:includeExpenses,stop_ids:stops.map(s=>s.id)},
+        cover:{title:journey.document.title,start_date:journey.document.start_date,end_date:journey.document.end_date,
+            stops:stops.map(s=>({id:s.id,name:s.name,lng:s.lng,lat:s.lat,source:s.source,at:includeNotes?s.at||'':'',media_ids:[...s.media_ids],text:includeNotes?stopText(s):''})),
+            caption:`${stops.length} 站 · 我的生活片段`}});
 }));
 router.use((err,_req,res,_next)=>res.status(err.status|| (err instanceof multer.MulterError?413:500)).json({error:err.status?err.message:err instanceof multer.MulterError?'图片超过 5 MB 限制':'日记服务暂时不可用',
     ...(err.status&&err.code?{code:err.code}:{}),...(err.status&&err.details?{details:err.details}:{})}));

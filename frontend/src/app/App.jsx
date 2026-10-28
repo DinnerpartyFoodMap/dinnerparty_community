@@ -27,6 +27,9 @@ import { applyDarkMode, applyThemeColors, resolveThemePrimary, resolveThemeSecon
 import useDarkMode from "../theme/useDarkMode";
 import { DinnerCreatePage, DinnerDetailPage, DinnerListPage, isDinnerPath, parseDinnerIdFromPath } from "../dinners/DinnerPages";
 import PosterExportPage from "../poster/PosterExportPage";
+import PlaceListPage from "../places/PlaceListPage";
+import UserProfilePage from "../profile/UserProfilePage";
+import AppUpdatePrompt from "./components/AppUpdatePrompt";
 import FeedbackHost from "../feedback/FeedbackHost";
 import { normalizeFeedbackPrefill } from "../feedback/feedbackTypes";
 import { getNoticeColorOption } from "../components/feedback/noticeColors";
@@ -50,6 +53,12 @@ function AppFrame({ style, children }) {
 
 // API 地址统一由 platform/runtimeConfig 解析（网页保持原有回退逻辑，App 必须显式配置 HTTPS 地址）
 const BACKEND_URL = getApiBaseUrl();
+
+// 住民主页 /users/<id>（id 是 UUID，旧数据也可能是数字）
+function parseProfileIdFromPath(pathname) {
+    const match = /^\/users\/([A-Za-z0-9-]{1,64})$/.exec(String(pathname || ''));
+    return match ? match[1] : null;
+}
 
 function currentPathname() {
     return getCurrentPath();
@@ -81,6 +90,8 @@ export default function App() {
     const [authPanelDisabled, setAuthPanelDisabled] = useState(false);
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
     const [randomFoodRequestId, setRandomFoodRequestId] = useState(0);
+    // 顶栏“我创建的地点”：交给地图打开自己的地点（与随机美食同样用递增的请求号）
+    const [myPlacesRequestId, setMyPlacesRequestId] = useState(0);
     const [onboardingRequestId, setOnboardingRequestId] = useState(0);
     const [feedbackOpen, setFeedbackOpen] = useState(false);
     const [feedbackPrefill, setFeedbackPrefill] = useState(null);
@@ -493,8 +504,14 @@ export default function App() {
     }, [token, user]);
 
     useEffect(() => {
-        // 限定页面路径（允许 /, /admin, /settings/*, /dinners*, /posters/new）
-        if (pathname !== "/" && pathname !== "/admin" && !pathname.startsWith("/settings") && !isDinnerPath(pathname) && pathname !== '/posters/new') {
+        // 下载页 /home 是独立的静态页面（frontend/home/）：服务器把 /home 交给了地图页时整页跳过去
+        if (pathname === '/home' && typeof window !== 'undefined') {
+            window.location.replace('/home/');
+            return;
+        }
+        // 限定页面路径（允许 /, /admin, /settings/*, /dinners*, /posters/new, /places, /users/:id）
+        if (pathname !== "/" && pathname !== "/admin" && !pathname.startsWith("/settings") && !isDinnerPath(pathname) && pathname !== '/posters/new'
+            && pathname !== '/places' && !parseProfileIdFromPath(pathname)) {
             goPath("/");
         }
     }, [pathname, goPath]);
@@ -539,7 +556,12 @@ export default function App() {
     const showDinnerDetail = Number.isFinite(dinnerId) && dinnerId > 0;
     const showAnyDinnerPage = showDinnerList || showDinnerCreate || showDinnerDetail;
     const showPosterExport = pathname === '/posters/new';
-    const showMapPage = !showAdminPage && !showSettingsAny && !showAnyDinnerPage && !showPosterExport;
+    // 地点列表与住民主页
+    const showPlaceList = pathname === '/places';
+    const profileUserId = parseProfileIdFromPath(pathname);
+    const showMapPage = !showAdminPage && !showSettingsAny && !showAnyDinnerPage && !showPosterExport && !showPlaceList && !profileUserId;
+    const openPlaceOnMap = useCallback((placeId) => goPath(`/?place=${encodeURIComponent(placeId)}`), [goPath]);
+    const openProfile = useCallback((userId) => { if (userId) goPath(`/users/${encodeURIComponent(userId)}`); }, [goPath]);
     const siteNoticeVisible = !!(siteNotice && String(siteNotice.id) !== String(dismissedNoticeId || ''));
     // 展会：入口在这里（避让公告），面板由地图渲染（iOS 原生控件接管时为原生面板，随机美食以展会地点为中心）
     const { exhibitions, exhibition: stackExhibition } = useExhibitions(BACKEND_URL, showMapPage);
@@ -700,6 +722,24 @@ export default function App() {
                 isAdmin={isAdmin}
                 onBackList={() => goPath('/dinners')}
                 onGoHome={() => goPath('/')}
+            />
+        );
+
+        if (showPlaceList) return (
+            <PlaceListPage backendUrl={BACKEND_URL} token={token} onOpenPlace={openPlaceOnMap} onBack={() => goPath('/')} />
+        );
+
+        if (profileUserId) return (
+            <UserProfilePage
+                key={profileUserId}
+                backendUrl={BACKEND_URL}
+                token={token}
+                userId={profileUserId}
+                currentUser={user}
+                onOpenPlace={openPlaceOnMap}
+                onOpenFeedback={openFeedback}
+                onRequireAuth={() => setShowAuth(true)}
+                onBack={() => goPath('/')}
             />
         );
 
@@ -904,6 +944,7 @@ export default function App() {
                             </Notice>
                         )}
                         {showMapPage && <MapExhibition exhibition={stackExhibition} exhibitions={exhibitions} open={exhibitionOpen}
+                            selectedId={selectedExhibitionId} onSwitch={item => setSelectedExhibitionId(item.id)}
                             onOpen={item => { setSelectedExhibitionId(item.id); setExhibitionOpen(true); }}
                             backendUrl={BACKEND_URL} noticeRef={siteNoticeRef} noticeVisible={siteNoticeVisible} noticeTop={noticeLayout.top + 55} />}
                         <div style={{ display: mapHidden ? 'none' : 'block', width: '100%', height: '100%' }} aria-hidden={showMapPage ? undefined : true} inert={showMapPage ? undefined : 'true'}>
@@ -932,8 +973,11 @@ export default function App() {
                                 }}
                                 onLogout={handleLogout}
                                 onOpenFeedback={openFeedback}
+                                onOpenPlaceList={() => goPath('/places')}
+                                onOpenProfile={openProfile}
                                 desktopHeaderMenu={desktopHeaderMenu}
                                 randomFoodRequestId={randomFoodRequestId}
+                                myPlacesRequestId={myPlacesRequestId}
                                 onboardingRequestId={onboardingRequestId}
                                 exhibition={exhibition}
                                 exhibitionOpen={exhibitionOpen}
@@ -982,6 +1026,9 @@ export default function App() {
                             onOpenRandomFood={showMapPage ? () => setRandomFoodRequestId((id) => id + 1) : undefined}
                             onOpenGuide={showMapPage ? () => setOnboardingRequestId((id) => id + 1) : undefined}
                             onOpenFeedback={openFeedback}
+                            onOpenPlaceList={() => goPath('/places')}
+                            onOpenProfile={user ? () => openProfile(user.id) : undefined}
+                            onOpenMyPlaces={user ? () => { if (!showMapPage) goPath('/'); setMyPlacesRequestId((id) => id + 1); } : undefined}
                             pathname={pathname}
                             backendUrl={BACKEND_URL}
                             interactionDisabled={authPanelDisabled}
@@ -995,6 +1042,9 @@ export default function App() {
                             token={token}
                             onRequireAuth={() => setShowAuth(true)}
                         />
+
+                        {/* App 启动时检查更新（只在 Android / iOS App 内） */}
+                        <AppUpdatePrompt backendUrl={BACKEND_URL} />
 
                         <AuthModal
                             open={showAuth}

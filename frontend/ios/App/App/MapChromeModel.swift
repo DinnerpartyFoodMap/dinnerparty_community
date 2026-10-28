@@ -13,7 +13,7 @@ struct MapChromeItem: Identifiable, Equatable {
     var busy: Bool
     var badge: String?
     var avatarURL: String?
-    /// "toolbar"（底部工具栏）、"floating"（定位）或 "account"（右下独立头像）
+    /// "toolbar"（底部工具栏）、"floating"（列表 / 地图切换、筛选、定位，共用一个竖向圆角矩形）或 "account"（右下独立头像）
     var placement: String
     /// "accent" / "danger" / nil
     var tone: String?
@@ -57,6 +57,8 @@ struct MapChromeSheetRow: Identifiable, Equatable {
     /// 皮肤图标（v8，地点卡片的操作按钮、评价表情、更多功能）
     var image: String? = nil
     var imageTemplate = false
+    /// v12：行尾的小红点（"dot"）或小标签（如“未通过”）
+    var badge: String? = nil
 }
 
 struct MapChromeSheetSection: Identifiable, Equatable {

@@ -7,12 +7,10 @@ export const newStop=(patch={})=>({id:eventId(),name:'待选店',note:'',lng:nul
     visit_status:'visited',at:'',mood:'',media_ids:[],expenses:[],excerpts:[],excerpt_edited:'',...patch});
 export const newDocument=(date=today())=>({title:t('journey:reviewUtils.defaultTitle'),start_date:date,end_date:date,summary:'',stops:[],entry_media_ids:[],media_meta:{},intended_visibility:'public'});
 export const located=s=>Number.isFinite(s?.lng)&&Number.isFinite(s?.lat);
-/** 需要处理的站点：未核对，也没有选择“稍后补充”。 */
-export const needsReview=s=>!s.confirmed&&s.location_resolution!=='deferred';
+/** 需要处理的站点：还没有亲自选定店铺或位置（旧草稿里“稍后补充”的站点同样算待处理）。 */
+export const needsReview=s=>!s.confirmed;
 export function issueOf(stop) {
-    if(!needsReview(stop))return null;
-    if(stop.name==='待选店'||!located(stop))return stop.candidates?.length?t('journey:common.action.chooseShop'):t('journey:reviewUtils.issue.confirmLocation');
-    return t('journey:reviewUtils.issue.checkPlace');
+    return needsReview(stop)?t('journey:common.action.chooseShop'):null;
 }
 // 公开展示的文字：作者编辑优先；否则为原文摘录（多段之间用省略号分隔，不伪装成连续引用）。
 export function excerptText(stop) {

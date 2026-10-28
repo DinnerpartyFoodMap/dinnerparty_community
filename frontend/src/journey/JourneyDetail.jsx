@@ -2,7 +2,7 @@ import React,{useCallback,useEffect,useState} from 'react';
 import {requestActionSheet} from '../components/overlay/ActionSheet';
 import {copyText} from '../platform/share';
 import {buildPublicUrl} from '../platform/runtimeConfig';
-import {PageHeader,Notice,PrivatePhoto,Badge,formatRange} from './shared';
+import {PageHeader,Notice,PrivatePhoto,Badge,MarkdownText,formatRange} from './shared';
 import {excerptText,located} from './reviewUtils';
 import { t, tx } from '../i18n/index.js';
 
@@ -54,7 +54,7 @@ export default function JourneyDetail({ctx,nav,params,active}) {
                 {pub?.outdated&&<Notice tone="warn">{t('journey:detail.outdated')}
                     <span className="jw-inline-actions"><button type="button" onClick={()=>nav.push('review',{mode:'edit',journeyId:journey.id,visibility:'public'})}>{t('journey:detail.updatePublic')}</button></span></Notice>}
             </header>
-            {d.summary&&<p className="jw-detail-summary">{d.summary}</p>}
+            {d.summary&&<MarkdownText className="jw-detail-summary" text={d.summary}/>}
             <div className="jw-actions">
                 <button type="button" className="jw-primary" onClick={()=>nav.push('review',{mode:'edit',journeyId:journey.id})}>{t('journey:detail.edit')}</button>
                 <button type="button" disabled={!d.stops.some(located)} onClick={()=>showJourneyOnMap(journey)}>{t('journey:detail.viewOnMap')}</button>
@@ -73,8 +73,8 @@ export default function JourneyDetail({ctx,nav,params,active}) {
             {!!d.sources?.length&&<p className="jw-muted">{tx('journey:detail.mergedFrom', { count: d.sources.length })}</p>}
             <ol className="jw-detail-stops">{d.stops.map((s,i)=><li key={s.id}>
                 <div className="jw-row-between"><strong>{i+1}. {s.name}</strong><span>{!located(s)&&<Badge>{t('journey:detail.pendingLocation')}</Badge>}</span></div>
-                {excerptText(s)&&<blockquote className="jw-excerpt">{excerptText(s)}</blockquote>}
-                {s.note&&s.note.trim()!==excerptText(s).trim()&&<p>{s.note}</p>}
+                {excerptText(s)&&<blockquote className="jw-excerpt"><MarkdownText text={excerptText(s)}/></blockquote>}
+                {s.note&&s.note.trim()!==excerptText(s).trim()&&<MarkdownText text={s.note}/>}
                 {!!s.media_ids.length&&<div className="jw-strip">{s.media_ids.map(id=><PrivatePhoto key={id} id={id} base={base} token={token} className="jw-strip__img"/>)}</div>}
                 {s.place_id&&<button type="button" className="jw-link" onClick={()=>showPlace(s.place_id)}>{t('journey:detail.viewMarker')}</button>}
             </li>)}</ol>

@@ -10,13 +10,14 @@ assert.equal(parseOnboardingSeen(null), false);
 assert.equal(parseOnboardingSeen('{broken'), false);
 
 // 步骤：先是看得见的按钮，然后是“更多”，最后是收在“更多”里的功能；欢迎页居中，收在“更多”里的步骤指向“更多”按钮
+// 筛选与列表 / 地图切换紧跟定位（同一组浮动按钮）；iOS 原生工具栏上日记收进了更多功能（与随机美食互换）
 const ORDER = {
-    desktop: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'alongRoute', 'journey', 'more'],
-    mobile: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'alongRoute', 'more', 'journey'],
-    ios: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'more', 'alongRoute', 'journey'],
-    native: ['welcome', 'account', 'search', 'locate', 'favorites', 'add', 'journey', 'more', 'alongRoute']
+    desktop: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'alongRoute', 'journey', 'more'],
+    mobile: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'alongRoute', 'more', 'journey'],
+    ios: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'more', 'alongRoute', 'journey'],
+    native: ['welcome', 'account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add', 'more', 'alongRoute', 'journey']
 };
-const inMore = { desktop: [], mobile: ['journey'], ios: ['alongRoute', 'journey'], native: ['alongRoute'] };
+const inMore = { desktop: [], mobile: ['journey'], ios: ['alongRoute', 'journey'], native: ['alongRoute', 'journey'] };
 for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
     const steps = buildOnboardingSteps({ variant });
     assert.deepEqual(steps.map((step) => step.id), ORDER[variant], `${variant} order`);
@@ -34,9 +35,10 @@ for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
 // 原生工具栏：网页指不到原生按钮，由原生高亮；“更多功能”一步示意并练习上滑，顺路吃在展开的更多功能里
 const nativeSteps = Object.fromEntries(buildOnboardingSteps({ variant: 'native' }).map((step) => [step.id, step]));
 assert.deepEqual(nativeSteps.welcome.native, { target: null, drawer: false });
-for (const id of ['account', 'search', 'locate', 'favorites', 'add', 'journey']) {
+for (const id of ['account', 'search', 'locate', 'filter', 'listView', 'favorites', 'add']) {
     assert.deepEqual(nativeSteps[id].native, { target: id, drawer: false }, `native ${id}`);
 }
+assert.deepEqual(nativeSteps.journey.native, { target: 'journey', drawer: true }, 'native journey is in the drawer');
 assert.deepEqual(nativeSteps.more.native, { target: 'drawer', drawer: false });
 assert.equal(nativeSteps.more.practice, 'drawer');
 assert.ok(nativeSteps.more.hint, 'More asks the user to try swiping up');

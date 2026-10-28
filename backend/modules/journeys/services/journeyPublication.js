@@ -11,7 +11,7 @@ const {notBlockedSql}=require('../../accounts/services/userRelations');
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const REQUEST=/^[A-Za-z0-9_-]{16,80}$/;
 function failWith(message,status,extra) {throw Object.assign(new Error(message),{status,...extra});}
-function stopIsPublic(stop) {return typeof stop.public==='boolean'?stop.public:stop.visit_status!=='planned';}
+const {stopIsPublic}=links;
 // Author edits replace quotes for display; original quotes remain private source material.
 function publicExcerpt(stop) {
     if(stop.excerpt_edited)return [{kind:'edited',text:stop.excerpt_edited}];
@@ -25,7 +25,9 @@ function publicBody(document,plan) {
         return {id:stop.id,index,name:stop.name,visit_status:stop.visit_status,at:stop.at||'',excerpt:publicExcerpt(stop),media_ids:[...stop.media_ids],
             place_id:mapped&&link.action==='link'?link.place_id:null,map_action:mapped?link.action:'none',
             // Coordinates are published only for stops that appear on the map.
-            lng:mapped?stop.lng:null,lat:mapped?stop.lat:null,address:mapped?stop.address||'':''};
+            lng:mapped?stop.lng:null,lat:mapped?stop.lat:null,address:mapped?stop.address||'':'',
+            // Readers are told when the author never picked the place; only set then, so other snapshots stay unchanged.
+            ...(stop.confirmed?{}:{unverified:true})};
     });
     const entryPhotos=(document.public_media_ids||[]).filter(id=>(document.entry_media_ids||[]).includes(id));
     // ai_assisted only when set, so snapshots and preview hashes of other diaries stay unchanged.
@@ -214,9 +216,14 @@ function placeDiaries(placeId,{cursor,limit,viewerId=null}={}) {
     const items=page.map(g=>{
         const pub=sql.prepare('SELECT p.id,p.user_id,p.snapshot,u.username,(u.avatar_blob IS NOT NULL) AS has_avatar FROM JourneyPublication p JOIN User u ON u.id=p.user_id WHERE p.id=?').get(g.publication_id);
         const snapshot=JSON.parse(pub.snapshot);
+        // record_date falls back to the first day for ordering. A multi-day diary whose stop has no date reports '' so
+        // readers see the whole range instead of a made-up first-day visit.
+        const multiDay=snapshot.start_date!==snapshot.end_date,atOf=new Map((snapshot.stops||[]).map(s=>[s.id,s.at||'']));
+        const known=e=>!multiDay||!!atOf.get(e.stop_id);
         const excerpts=sql.prepare('SELECT stop_id,stop_index,record_date,excerpt,media_ids FROM PlaceDiaryExcerpt WHERE publication_id=? AND place_id=? ORDER BY stop_index').all(g.publication_id,id)
-            .map(e=>({stop_id:e.stop_id,record_date:e.record_date,excerpt:JSON.parse(e.excerpt),media_ids:JSON.parse(e.media_ids)}));
-        return {public_id:pub.id,title:snapshot.title,start_date:snapshot.start_date,end_date:snapshot.end_date,record_date:g.record_date,author:author(pub),
+            .map(e=>({stop_id:e.stop_id,record_date:known(e)?e.record_date:'',excerpt:JSON.parse(e.excerpt),media_ids:JSON.parse(e.media_ids)}));
+        const recordDate=excerpts.map(e=>e.record_date).filter(Boolean).sort().pop()||'';
+        return {public_id:pub.id,title:snapshot.title,start_date:snapshot.start_date,end_date:snapshot.end_date,record_date:recordDate,author:author(pub),
             stops:excerpts,media_ids:[...new Set(excerpts.flatMap(e=>e.media_ids))].slice(0,3)};
     });
     const last=page.at(-1);

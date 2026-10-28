@@ -5,7 +5,8 @@ import { t } from '../i18n/index.js';
 
 // 指引内容有大的变化（例如新增主要按钮）时加一，看过旧版的人会再看到一次。
 // 2：iOS 原生工具栏的指引改为指出真实按钮、演示并练习上滑展开更多功能
-export const ONBOARDING_VERSION = 2;
+// 3：新增地图筛选与列表 / 地图切换按钮；iOS 原生工具栏的随机美食与日记互换位置
+export const ONBOARDING_VERSION = 3;
 export const ONBOARDING_KEY = 'foodmap.onboarding';
 let seenThisSession = false;
 
@@ -40,7 +41,7 @@ export function rememberOnboardingSeen() {
  * - desktop：顶栏（入乡/住民、更多）、居中搜索框、右侧圆钮列、左下角日记入口；
  * - mobile：网页与安卓 App 的底部工具栏（更多、收藏、添加、顺路吃、入乡）与搜索框；
  * - ios：iOS App 的网页工具栏（顺路吃在“更多”里，搜索是工具栏按钮，头像在右上角）；
- * - native：iOS 原生玻璃工具栏（收藏、日记 · 同好、添加、搜索、头像，右上方定位圆钮；上滑展开更多功能）。
+ * - native：iOS 原生玻璃工具栏（收藏、随机美食、添加、搜索、头像，右上方筛选与定位；上滑展开更多功能，日记 · 同好在里面）。
  *   网页指不到原生按钮：步骤带 native（{ target, drawer }，见 nativeMapChrome.js 的 sanitizeTour），由原生画高亮圈并回传位置，
  *   指引打开时原生控件不收起。“更多功能”一步（practice: 'drawer'）播放上滑示意，用户真的上滑展开后自动进入下一步。
  * 各布局步骤的相对顺序相同：先是看得见的按钮，然后是“更多”，最后是收在“更多”里的功能（先学会打开“更多”，再看里面的功能）。
@@ -51,7 +52,7 @@ const IN_MORE = {
     desktop: [],
     mobile: ['journey'],
     ios: ['alongRoute', 'journey'],
-    native: ['alongRoute']
+    native: ['alongRoute', 'journey']
 };
 
 const NATIVE_TOUR = {
@@ -59,9 +60,11 @@ const NATIVE_TOUR = {
     account: { target: 'account', drawer: false },
     search: { target: 'search', drawer: false },
     locate: { target: 'locate', drawer: false },
+    filter: { target: 'filter', drawer: false },
+    listView: { target: 'listView', drawer: false },
     favorites: { target: 'favorites', drawer: false },
     add: { target: 'add', drawer: false },
-    journey: { target: 'journey', drawer: false },
+    journey: { target: 'journey', drawer: true },
     more: { target: 'drawer', drawer: false },
     alongRoute: { target: 'alongRoute', drawer: true }
 };
@@ -73,6 +76,8 @@ export function buildOnboardingSteps({ variant = 'desktop', isAuthenticated = fa
         account: t('map:onboarding.where.native.account'),
         search: t('map:onboarding.where.native.search'),
         locate: t('map:onboarding.where.native.locate'),
+        filter: t('map:onboarding.where.native.filter'),
+        listView: t('map:onboarding.where.native.listView'),
         favorites: t('map:onboarding.where.native.favorites'),
         add: t('map:onboarding.where.native.add'),
         journey: t('map:onboarding.where.native.journey'),
@@ -106,6 +111,8 @@ export function buildOnboardingSteps({ variant = 'desktop', isAuthenticated = fa
             : step('account', 'login', t('map:onboarding.account.loginTitle'), t('map:onboarding.account.loginBody')),
         step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body')),
         step('locate', 'my_location', t('map:onboarding.locate.title'), t('map:onboarding.locate.body')),
+        step('filter', 'filter_list', t('map:onboarding.filter.title'), t('map:onboarding.filter.body')),
+        step('listView', 'view_list', t('map:onboarding.listView.title'), t('map:onboarding.listView.body')),
         step('favorites', 'favorite', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body')),
         step('add', 'add_location_alt', t('map:onboarding.add.title'), t('map:onboarding.add.body')),
         step('alongRoute', 'route', t('map:onboarding.alongRoute.title'), t('map:onboarding.alongRoute.body')),

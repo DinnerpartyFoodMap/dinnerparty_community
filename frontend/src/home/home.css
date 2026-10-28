@@ -1,0 +1,206 @@
+/* /home 下载页：宽屏左右两栏（介绍 / 下载按钮），窄屏上下排列；跟随系统浅色 / 深色。
+   图标字体用随站点发布的 /fonts/material-symbols.css（home/index.html），不请求第三方 CDN */
+
+:root {
+    color-scheme: light dark;
+    --home-bg: #f9f8fa;
+    --home-surface: rgba(255, 255, 255, 0.94);
+    --home-border: #e6dceb;
+    --home-text: #2b2533;
+    --home-muted: #6e6578;
+    --home-primary: #e2789f;
+    --home-on-primary: #ffffff;
+    --home-soft: #faf0f5;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --home-bg: #1c1a20;
+        --home-surface: rgba(40, 36, 46, 0.94);
+        --home-border: #3a3342;
+        --home-text: #f1ecf4;
+        --home-muted: #b5abbe;
+        --home-soft: #2e2834;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+}
+
+body {
+    background: radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--home-primary) 18%, transparent), transparent 45%), var(--home-bg);
+    color: var(--home-text);
+    font: 16px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.home {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: max(24px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+}
+
+.home__card {
+    width: min(960px, 100%);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+    padding: 48px;
+    border: 1px solid var(--home-border);
+    border-radius: 28px;
+    background: var(--home-surface);
+    box-shadow: 0 18px 50px rgba(83, 58, 92, 0.12);
+}
+
+.home__logo {
+    width: 96px;
+    height: 96px;
+    border-radius: 24px;
+}
+
+.home__eyebrow {
+    margin: 18px 0 4px;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--home-muted);
+}
+
+.home__title {
+    margin: 0;
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.25;
+}
+
+.home__lead {
+    margin: 12px 0 0;
+    color: var(--home-muted);
+}
+
+.home__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.home__notice {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--home-soft);
+    font-size: 14px;
+}
+
+.home__button {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 68px;
+    padding: 12px 18px;
+    border: 1px solid var(--home-border);
+    border-radius: 18px;
+    background: var(--home-bg);
+    color: var(--home-text);
+    text-decoration: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.home__button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(83, 58, 92, 0.12);
+}
+
+.home__button:focus-visible {
+    outline: 3px solid var(--home-primary);
+    outline-offset: 2px;
+}
+
+.home__button--primary {
+    background: var(--home-primary);
+    border-color: var(--home-primary);
+    color: var(--home-on-primary);
+}
+
+.home__button--disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.home__button--disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.home__icon {
+    font-size: 30px;
+}
+
+.home__button-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.home__button-title {
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.home__button-detail {
+    font-size: 13px;
+    opacity: 0.8;
+}
+
+.home__notes {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    font-size: 13px;
+    color: var(--home-muted);
+}
+
+.home__footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 16px;
+    font-size: 12px;
+    color: var(--home-muted);
+}
+
+.home__footer a {
+    color: inherit;
+    text-decoration: none;
+}
+
+@media (max-width: 720px) {
+    .home {
+        justify-content: flex-start;
+    }
+
+    .home__card {
+        grid-template-columns: 1fr;
+        gap: 28px;
+        padding: 28px 20px;
+        border-radius: 22px;
+    }
+
+    .home__intro {
+        text-align: center;
+    }
+
+    .home__logo {
+        width: 80px;
+        height: 80px;
+    }
+}

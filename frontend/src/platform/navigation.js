@@ -104,6 +104,18 @@ export function removeQueryParams(names) {
     if (changed) window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
+/** 用 replaceState 写入查询参数（值为空则移除），不新增历史记录；用于让当前打开的内容（如公开日记）可刷新、收藏与转发。 */
+export function replaceQueryParams(values) {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    Object.entries(values).forEach(([name, value]) => {
+        if (value === null || value === undefined || value === '') url.searchParams.delete(name);
+        else url.searchParams.set(name, String(value));
+    });
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(window.history.state, '', next);
+}
+
 export function goBack() {
     if (typeof window !== 'undefined') window.history.back();
 }

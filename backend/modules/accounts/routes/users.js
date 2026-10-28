@@ -12,7 +12,10 @@ const { getQQBot } = require('../../qqbot/runtime/index');
 const botConfig = require('../../qqbot/runtime/config');
 const { sendPrivateText } = require('../../qqbot/runtime/directMessage');
 const { normalizeQQ } = require('../../qqbot/runtime/qqIdentity');
-const { normalizeLocation, saveUserLocation } = require('../services/userLocation');
+const { normalizeLocation, saveUserLocation, setUserLocationCity } = require('../services/userLocation');
+const { reverseGeocodeCity } = require('../../maps/services/amapRegeo');
+const { getUserProfile, saveProfileWidgets, rejectedPlaceCount } = require('../services/userProfile');
+const { setSelfLevel, userTasteAxes } = require('../../preferences/services/tasteAxes');
 const { viewerRelation, setBlocked } = require('../services/userRelations');
 const { CREATOR_PLACES_LIMIT, listCreatorPlaces } = require('../../places/services/creatorPlaces');
 const logger = require('../../../infrastructure/logger');
@@ -383,8 +386,18 @@ router.post('/password-reset', async (req, res) => {
 });
 
 // 获取当前用户信息（JWT + Redis session 一致性校验）
+// rejected_place_count：自己被驳回的地点数（头像与“我创建的地点”上的小红点）
 router.get('/me', requireAuth, (req, res) => {
-    res.json({ user: req.user });
+    let rejected = 0;
+    try { rejected = rejectedPlaceCount(req.user.id); } catch (error) { res.locals.unhandledError = error; }
+    res.json({ user: { ...req.user, rejected_place_count: rejected } });
+});
+
+// 住民主页的两个小组件（公开收藏夹 / 最近创建 / 最喜欢），见 services/userProfile.js
+router.put('/me/profile', requireAuth, (req, res) => {
+    const widgets = saveProfileWidgets(req.user.id, req.body && req.body.widgets);
+    if (!widgets) return res.status(400).json({ error: '小组件设置无效' });
+    res.json({ widgets });
 });
 
 // 更新当前用户信息（允许修改 username）
@@ -502,8 +515,15 @@ router.put('/me/location', requireAuth, (req, res) => {
     const { lat, lng } = req.body || {};
     if (!normalizeLocation(lat, lng)) return res.status(400).json({ error: '定位坐标无效' });
     try {
-        saveUserLocation(req.user.id, { lat, lng, source: 'web' });
-        return res.json({ success: true });
+        const saved = saveUserLocation(req.user.id, { lat, lng, source: 'web' });
+        res.json({ success: true });
+        // 住民主页的“上次定位在”：后台逆地理编码到城市，失败时留空
+        if (saved) {
+            reverseGeocodeCity(saved.lat, saved.lng)
+                .then((city) => setUserLocationCity(req.user.id, saved.updatedAt, city))
+                .catch(() => { });
+        }
+        return undefined;
     } catch (e) {
         res.locals.unhandledError = e;
         return res.status(500).json({ error: '记录定位失败' });
@@ -545,6 +565,26 @@ router.get('/:id/avatar', (req, res) => {
         res.set('Cache-Control', 'public, max-age=86400'); // 缓存一天
         res.send(row.avatar_blob);
     });
+});
+
+// 自己填某一类餐饮的喜好（1–4，null 回到自动推断），返回新的六轴
+router.put('/me/taste', requireAuth, (req, res) => {
+    const { axis, level } = req.body || {};
+    if (!setSelfLevel(req.user.id, axis, level === null ? null : level)) return res.status(400).json({ error: '喜好设置无效' });
+    res.json({ taste: userTasteAxes(req.user.id) });
+});
+
+// 住民主页：头像、六类餐饮偏好、上次定位的城市与两个小组件；relation 决定是否显示屏蔽 / 解除屏蔽
+router.get('/:id/profile', attachViewer, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+        const profile = getUserProfile(req.params.id, req.viewer || null);
+        if (!profile) return res.status(404).json({ error: '住民不存在' });
+        res.json(profile);
+    } catch (error) {
+        res.locals.unhandledError = error;
+        res.status(500).json({ error: '住民主页加载失败，请稍后重试' });
+    }
 });
 
 // 某位住民创建的地点（地点卡片点“最近修改”的名字后筛选地图）：最近创建的在前，最多 limit 个，total 是全部可见数量。

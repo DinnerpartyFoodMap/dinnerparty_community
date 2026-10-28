@@ -1,0 +1,29 @@
+/* 添加地点时选中位置的标记：主题色图钉，锚点在底边中点（尖角落在选中的位置） */
+.fm-adding-pin {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 40px;
+    height: 44px;
+    pointer-events: none;
+    animation: fm-adding-pin-drop 0.32s cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+
+.fm-adding-pin .material-symbols-outlined {
+    font-size: 44px;
+    line-height: 1;
+    color: var(--theme-primary, #e2789f);
+    font-variation-settings: 'FILL' 1;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+}
+
+@keyframes fm-adding-pin-drop {
+    from { transform: translateY(-14px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fm-adding-pin {
+        animation: none;
+    }
+}

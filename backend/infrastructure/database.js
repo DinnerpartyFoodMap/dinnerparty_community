@@ -481,6 +481,8 @@ function init() {
         addIfMissing('map_settings TEXT');
         addIfMissing('qq TEXT');
         addIfMissing('avatar_blob BLOB');
+        // 住民主页的两个小组件（accounts/services/userProfile.js），JSON 数组
+        addIfMissing('profile_widgets TEXT');
 
         try {
             rawDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_qq ON User(qq);`);
@@ -744,6 +746,7 @@ function init() {
         require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
         require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);
+        require('../modules/preferences/services/tasteAxes').initTasteAxesSchema(rawDb);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_sitenotice_active_created_time ON SiteNotice(is_active, created_time DESC);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_request_id ON AdminAudit(request_id);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_admin_time ON AdminAudit(admin_id, time DESC);`);

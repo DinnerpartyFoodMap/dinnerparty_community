@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import Tooltip from "../components/primitives/Tooltip";
 import Button from "../components/primitives/Button";
@@ -46,9 +46,9 @@ import { ExhibitionPanel } from './MapExhibition';
 import { exhibitionChromeSheet, exhibitionRandomOrigin, exhibitionVenue } from './exhibition';
 import {
     lastModifierOf, lastModifierText, userPlacesTitle, userPlacesSummary, userPlacesMessage, userPlacesChipText,
-    userPlaceDetail, isHiddenPlace, userPlaceRowId, userPlaceFromRowId, userPlacesActions, userPlacesChromeSheet
+    userPlaceDetail, isHiddenPlace, userPlaceBadge, userPlaceRowId, userPlaceFromRowId, userPlacesActions, userPlacesChromeSheet
 } from './userPlaces';
-import useExhibitionVenuePin from './useExhibitionVenuePin';
+import './badges.css';
 import { exhibitionIconSource } from '../components/primitives/ExhibitionIcon';
 import SkinIcon from '../skins/SkinIcon';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../skins/SkinAvatar';
@@ -61,6 +61,12 @@ import { AiTag } from '../components/primitives/AiLabel';
 import LegalLinks from '../auth/components/LegalLinks.jsx';
 import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
 import { t, tx } from '../i18n/index.js';
+import PlaceFilterPanel from '../places/components/PlaceFilterPanel';
+import MapListMode from './MapListMode';
+import useNativePlaceForm from '../places/hooks/useNativePlaceForm';
+import { emptyPlaceContent, placeDraftSource, openPlaceDraft, persistPlaceDraft, discardPlaceDraft } from '../places/addPlaceDraft';
+import { defaultCreationScore } from '../places/rating';
+import { EMPTY_PLACE_FILTER, isPlaceFilterActive } from '../places/placeFilter';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
 // 窄屏底部元素需要避开底部安全区（iPhone 主屏指示条、Android 手势条）；桌面与多数浏览器场景下为 0
@@ -245,6 +251,9 @@ export default function MapUI(props) {
         onRetryUserPlaces,
         onSetUserPlacesBlocked,
         onSelectUserPlace,
+        placeFilter = EMPTY_PLACE_FILTER,
+        placeFilterSource = null,
+        onPlaceFilterChange,
         openManagePanel,
         openCreateFromPoi,
         openCommentPanel,
@@ -394,12 +403,28 @@ export default function MapUI(props) {
         setUserPlacesOpen(true);
         onOpenUserPlaces({ id: user.id, name: user.name });
     };
+    // 桌面顶栏的“我创建的地点”（App 递增请求号）
+    const handledMyPlacesRequest = useRef(props.myPlacesRequestId || 0);
+    useEffect(() => {
+        if (!props.myPlacesRequestId || props.myPlacesRequestId === handledMyPlacesRequest.current || !currentUser?.id) return;
+        handledMyPlacesRequest.current = props.myPlacesRequestId;
+        openMyPlaces();
+    }, [props.myPlacesRequestId, currentUser]);
+    const toggleFilter = () => {
+        if (!filterOpen) {
+            setFavPageOpen(false);
+            setUserPlacesOpen(false);
+            setAlongRouteOpen(false);
+        }
+        setFilterOpen(!filterOpen);
+    };
     // 列表的一行（网页按钮与原生面板行共用 id）：地点（窄屏收起列表、让位给地点卡片）、重试，以及操作
-    // （userPlacesActions：屏蔽并举报 / 解除屏蔽、退出筛选）
+    // （userPlacesActions：查看主页（屏蔽与举报在主页里）/ 解除屏蔽、退出筛选）
     const runUserPlacesRow = (rowId) => {
         if (rowId === 'retry') { onRetryUserPlaces?.(); return; }
         if (rowId === 'exit') { setUserPlacesOpen(false); onExitUserPlaces?.(); return; }
-        if (rowId === 'block' || rowId === 'unblock') { onSetUserPlacesBlocked?.(rowId === 'block'); return; }
+        if (rowId === 'profile') { setUserPlacesOpen(false); props.onOpenProfile?.(userFilter?.user.id); return; }
+        if (rowId === 'unblock') { onSetUserPlacesBlocked?.(false); return; }
         const place = userPlaceFromRowId(userFilter, rowId);
         if (!place) return;
         if (layout.sheet) setUserPlacesOpen(false);
@@ -442,9 +467,31 @@ export default function MapUI(props) {
     };
     const [alongRouteOpen, setAlongRouteOpen] = useState(false);
     const [randomFoodOpen, setRandomFoodOpen] = useState(false);
+    // 地图筛选面板（标签 / 人均）：改动立即作用到地图，面板不挡地图
+    const [filterOpen, setFilterOpen] = useState(false);
+    // 列表模式：地图换成地点列表（MapListMode），切换按钮的图标变成地图；选中地点、开始添加地点时回到地图
+    const [listMode, setListMode] = useState(false);
+    useEffect(() => {
+        if (selectedPlace || addMode) setListMode(false);
+    }, [selectedPlace, addMode]);
+    // 离开地图页（住民主页、设置等）时收起筛选面板：地图常驻，面板不能盖在别的页面上
+    useEffect(() => {
+        if (!chromeOwner) setFilterOpen(false);
+    }, [chromeOwner]);
+    // 筛选面板与收藏、住民地点列表、顺路吃在同一侧：一个打开时另一个让位，不叠在一起
+    useEffect(() => {
+        if (favPageOpen || userPlacesOpen || alongRouteOpen) setFilterOpen(false);
+    }, [favPageOpen, userPlacesOpen, alongRouteOpen]);
+    const filterActive = isPlaceFilterActive(placeFilter);
     // 随机美食的固定中心（展会地点）；null 表示按地图中心
     const [randomFoodOrigin, setRandomFoodOrigin] = useState(null);
     const handledRandomFoodRequest = useRef(0);
+    const lastAiFilterRef = useRef(null);
+    useEffect(() => {
+        if (placeFilterSource !== 'ai' || placeFilter === lastAiFilterRef.current) return;
+        lastAiFilterRef.current = placeFilter;
+        showTip?.(t('places:filter.aiApplied'));
+    }, [placeFilter, placeFilterSource]);
     // 布局策略集中判断（640px 窄屏基线）
     const layout = useLayoutPolicy();
     const motionFlags = useMotionFlags();
@@ -478,6 +525,12 @@ export default function MapUI(props) {
     const nativeIcon = (slot) => (iosApp ? nativeSkinIcon(slot) : {});
     // 底栏选中按钮的图标与文字颜色（皮肤可换）
     const toolbarSelectedColor = customThemeColor ? `var(--skin-toolbar-selected-color, ${customThemeColor})` : 'var(--skin-toolbar-selected-color)';
+    // 自己有被驳回的地点：头像与“我创建的地点”上的小红点（GET /users/me 的 rejected_place_count）
+    const rejectedCount = isAuthenticated ? (Number(currentUser?.rejected_place_count) || 0) : 0;
+    // 与地点卡片“最近修改”相同：地图只显示这些地点，同时打开列表（被驳回的地点在列表里有“未通过”标识）
+    const openMyPlaces = () => {
+        if (currentUser?.id) openUserPlacesFor({ id: currentUser.id, name: currentUser.username || '', clickable: true });
+    };
     const accountAvatarSrc = isAuthenticated && currentUser
         ? (currentUser.has_avatar ? `${backendUrl}/users/${currentUser.id}/avatar` : (currentUser.avatar || accountDefaultAvatar))
         : accountDefaultAvatar;
@@ -583,14 +636,12 @@ export default function MapUI(props) {
 
     // 展会面板的地址：收起展会面板与地点卡片，地图移到展会地点并插上图钉。
     // 图钉点关闭钮或地图空白处取消；添加地点、地点卡片打开时地图点按留给它们
-    const showExhibitionVenuePin = useExhibitionVenuePin({ mapRef, mapReady, exhibition, keepOnMapClick: !!addMode || !!selectedPlace });
+    // 展会地点：收起展会面板，地图移到展会地点，复用高德临时地点的标记与卡片（卡片只有导航）
     const showExhibitionVenue = () => {
         const venue = exhibitionVenue(exhibition);
         if (!venue) return;
         onCloseExhibition?.();
-        closePopup?.();
-        showExhibitionVenuePin(venue);
-        navigateToPlace(venue.lng, venue.lat);
+        props.onShowExhibitionVenue?.(venue);
     };
 
     // 打开展会面板时收起菜单类浮层（原生模式下它们与展会面板共用同一个系统面板位置）
@@ -757,9 +808,99 @@ export default function MapUI(props) {
 
     // ---- iOS 原生玻璃控件：按钮快照与动作白名单（网页工具栏的同一组操作） ----
     // sheetWhenNative：原生模式下打开系统面板（未登录时仍是网页登录浮层）。“更多”不在工具栏里：原生工具栏上滑展开（drawer）
+    // ---- iOS 原生地点表单（NativePlaceFormPlugin.swift）：添加地点与修改地点，提交走 MapView 的同一组流程 ----
+    // 添加地点的草稿与网页表单相同（addPlaceDraft.js）：同一来源直接恢复；关掉时把填写内容存回草稿
+    const addDraft = useMemo(() => {
+        if (!addingPos) return null;
+        const baseline = emptyPlaceContent({ name: addingPrefill?.name || '', category: addingPrefill?.category || '', description: addingPrefill?.description || '' });
+        const source = placeDraftSource({ name: addingPrefill?.name || '', address: addingPrefill?.address || '' });
+        return { baseline, source, opening: openPlaceDraft(currentUser?.id, baseline, source) };
+    }, [addingPos, addingPrefill, currentUser?.id]);
+    const draftFromFormValues = (values) => ({
+        name: values.name, category: values.category, description: values.description, perPersonCost: values.perPersonCost,
+        chosenRating: values.rating, exteriorImages: values.exteriorImages, menuImages: values.menuImages
+    });
+    const editFromFormValues = (values) => ({
+        ...manageEdit,
+        name: values.name,
+        category: values.category,
+        description: values.description,
+        per_person_cost: values.perPersonCost ? parseInt(values.perPersonCost, 10) : null,
+        exterior_images: values.exteriorImages,
+        menu_images: values.menuImages
+    });
+    const coordinateText = (longitude, latitude) => t('map:manage.coordinates', {
+        longitude: Number(longitude).toFixed(6), latitude: Number(latitude).toFixed(6)
+    });
+    let nativeFormSpec = null;
+    if (addingPos && addDraft && !pickerMode && !hideNonSearchButtons) {
+        const content = addDraft.opening.content;
+        nativeFormSpec = {
+            mode: 'create',
+            key: addingPos.join(','),
+            values: { ...content, rating: content.chosenRating },
+            address: addingPrefill?.address || '',
+            position: coordinateText(addingPos[0], addingPos[1])
+        };
+    } else if (manageOpen && selectedPlace && manageEdit && !pickerMode && !props.managePositionOpen) {
+        const direct = canDirectManage();
+        nativeFormSpec = {
+            mode: 'edit',
+            key: `${selectedPlace.id}@${manageEdit.longitude},${manageEdit.latitude}`,
+            values: {
+                name: manageEdit.name, category: manageEdit.category, description: manageEdit.description,
+                perPersonCost: manageEdit.per_person_cost, exteriorImages: manageEdit.exterior_images, menuImages: manageEdit.menu_images
+            },
+            position: coordinateText(manageEdit.longitude, manageEdit.latitude),
+            canDirect: direct,
+            canDelete: direct,
+            canPickPosition: true
+        };
+    }
+    const nativePlaceFormActive = useNativePlaceForm({
+        open: !!nativeFormSpec,
+        form: nativeFormSpec,
+        backendUrl,
+        token,
+        onSubmit: (values) => {
+            if (nativeFormSpec?.mode === 'create') {
+                const payload = {
+                    name: values.name,
+                    category: values.category,
+                    description: values.description,
+                    ...(addingPrefill?.address ? { address: addingPrefill.address } : {}),
+                    per_person_cost: values.perPersonCost ? parseInt(values.perPersonCost, 10) : null,
+                    rating: values.rating ?? defaultCreationScore(values.category),
+                    exterior_images: values.exteriorImages,
+                    menu_images: values.menuImages,
+                    longitude: addingPos[0],
+                    latitude: addingPos[1]
+                };
+                return onAddSubmit(payload, { onCreated: () => discardPlaceDraft(currentUser?.id), silent: true });
+            }
+            return props.onManageSubmitWith(editFromFormValues(values));
+        },
+        onDelete: () => props.onManageDeleteConfirmed?.(),
+        onFinish: (action, values) => {
+            if (nativeFormSpec?.mode === 'create') {
+                if (action === 'submitted') return;
+                if (values && currentUser?.id && addDraft) persistPlaceDraft(currentUser.id, draftFromFormValues(values), addDraft.baseline, addDraft.source);
+                onAddCancel?.();
+                return;
+            }
+            if (action === 'pickPosition') {
+                if (values) setManageEdit(editFromFormValues(values));
+                onManagePickPosition?.();
+                return;
+            }
+            onManageClose?.();
+        }
+    }) && !!nativeFormSpec;
+
     const chromeItems = [
         { id: 'favorites', title: t('map:ui.favorites'), symbol: favPageOpen ? 'heart.fill' : 'heart', ...nativeIcon('toolbar.icons.favorites'), selected: favPageOpen, opensOverlay: true, sheetWhenNative: isAuthenticated },
-        { id: 'journey', title: t('map:ui.diaryCommunity'), symbol: 'book.closed', ...nativeIcon('toolbar.icons.journey'), opensOverlay: true },
+        // iOS：随机美食在工具栏，日记 · 同好收进上滑的更多功能（二者互换了位置）
+        { id: 'random', title: t('map:ui.randomFood'), symbol: 'dice', ...nativeIcon('expanded.panel.icons.random'), disabled: !mapReady, opensOverlay: true },
         {
             id: 'add',
             title: addMode ? t('map:ui.cancelAdd') : t('map:ui.add'),
@@ -778,10 +919,14 @@ export default function MapUI(props) {
             // 默认头像（含皮肤的默认头像）交给原生时按原生能读的格式准备；住民上传的头像原样
             avatarURL: iosApp && accountAvatarSrc === accountDefaultAvatar ? (nativeImageSource(accountDefaultAvatar) || defaultAvatar) : accountAvatarSrc,
             placement: 'account',
+            badge: rejectedCount ? 'dot' : undefined,
             selected: mobileAccountOpen,
             opensOverlay: true,
             sheetWhenNative: isAuthenticated
         },
+        // 列表 / 地图切换、筛选与定位在原生侧共用一个竖向圆角矩形（从上到下）
+        { id: 'listView', title: listMode ? t('places:list.toMap') : t('places:list.toList'), symbol: listMode ? 'map' : 'list.bullet', placement: 'floating', selected: false, disabled: !mapReady, opensOverlay: false },
+        { id: 'filter', title: filterActive ? t('places:filter.buttonActive') : t('places:filter.button'), symbol: filterActive ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle', placement: 'floating', selected: filterActive || filterOpen, disabled: !mapReady, opensOverlay: true },
         { id: 'locate', title: locating ? t('map:ui.locating') : t('map:ui.locate'), symbol: locating ? 'location.fill' : 'location', ...nativeIcon('toolbar.icons.locate'), placement: 'floating', busy: locating, disabled: !mapReady || locating, opensOverlay: false }
     ];
     const handleChromeAction = (actionId) => {
@@ -791,6 +936,10 @@ export default function MapUI(props) {
             case 'journey':
                 setFavPageOpen(false);
                 runMobileMoreAction(props.onOpenJourney);
+                return true;
+            case 'random':
+                setFavPageOpen(false);
+                runMobileMoreAction(openRandomFood);
                 return true;
             case 'add':
                 handleToggleAddMode();
@@ -814,6 +963,8 @@ export default function MapUI(props) {
                 }
                 return true;
             case 'locate': handleLocateMe(); return true;
+            case 'filter': toggleFilter(); return true;
+            case 'listView': setListMode((value) => !value); return true;
             default: return false;
         }
     };
@@ -821,9 +972,8 @@ export default function MapUI(props) {
     // ---- 原生面板（iOS 26 系统 sheet）：与网页面板同一组操作。原生只拿到展示字段，点按回传行 id，这里查表执行 ----
     const moreMenuEntries = [
         iosApp && { id: 'alongRoute', title: t('map:ui.alongRoute'), symbol: 'point.topleft.down.to.point.bottomright.curvepath', ...nativeIcon('expanded.panel.icons.alongRoute'), disabled: !mapReady, run: openAlongRoute },
-        { id: 'random', title: t('map:ui.randomFood'), symbol: 'dice', ...nativeIcon('expanded.panel.icons.random'), disabled: !mapReady, run: openRandomFood },
-        isAuthenticated && { id: 'dinners', title: t('map:ui.dinners'), symbol: 'fork.knife', ...nativeIcon('expanded.panel.icons.dinners'), run: onOpenDinners },
-        isAuthenticated && { id: 'poster', title: t('map:ui.posterExport'), symbol: 'photo.on.rectangle', ...nativeIcon('expanded.panel.icons.poster'), run: onOpenPosterExport },
+        // 随机美食在原生工具栏上，这里放日记 · 同好；iOS 不提供聚餐活动与导出海报
+        { id: 'journey', title: t('map:ui.diaryCommunity'), symbol: 'book.closed', ...nativeIcon('expanded.panel.icons.journey'), run: props.onOpenJourney },
         isAdmin && { id: 'admin', title: t('map:ui.admin'), symbol: 'gearshape.2', ...nativeIcon('expanded.panel.icons.admin'), run: onOpenAdmin },
         { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: 'questionmark.circle', ...nativeIcon('expanded.panel.icons.guide'), run: openOnboarding },
         onOpenFeedback && { id: 'feedback', title: t('feedback:menuEntry'), symbol: 'exclamationmark.bubble', ...nativeIcon('expanded.panel.icons.feedback'), run: onOpenFeedback }
@@ -835,9 +985,12 @@ export default function MapUI(props) {
         GONGAN_BEIAN && { id: 'gongan', title: GONGAN_BEIAN.text, symbol: 'checkmark.shield', url: GONGAN_BEIAN.url }
     ].filter(Boolean);
     const accountMenuEntries = [
+        // 我创建的地点：地图只显示自己的地点（含审核中、未通过的）；有被驳回的地点时右侧小红点
+        { id: 'myPlaces', title: t('map:ui.myPlaces'), symbol: 'mappin.and.ellipse', badge: rejectedCount ? 'dot' : undefined, run: openMyPlaces },
+        props.onOpenProfile && { id: 'profile', title: t('map:ui.myProfile'), symbol: 'person.text.rectangle', run: () => props.onOpenProfile(currentUser?.id) },
         { id: 'settings', title: t('map:ui.accountSettings'), symbol: 'person.crop.circle', run: onOpenMine },
         { id: 'logout', title: t('map:ui.logout'), symbol: 'rectangle.portrait.and.arrow.right', tone: 'danger', run: onLogout }
-    ];
+    ].filter(Boolean);
     const toSheetRows = (entries) => entries.map(({ run, url, ...row }) => row);
     const favoriteRowId = (item) => `place-${item.place_id}`;
 
@@ -892,6 +1045,8 @@ export default function MapUI(props) {
         // 上滑到全屏，显示完整简介、地址、相关日记与图片。操作按钮不收起面板：
         // 打开的网页浮层（分享、导航选择、编辑、日记）与原生反馈页（举报）期间原生面板暂时让位，关闭后回来。
         const unmarked = selectedPlace.isMarked === false;
+        // 高德临时地点的卡片只留“创建地点”；展会地点复用同一种卡片，只留“导航”
+        const venueCard = unmarked && !!selectedPlace.exhibitionVenue;
         const favorited = !!(favoriteIds && favoriteIds.has(selectedPlace.id));
         // 评价：摘要高度只显示标题行与按钮，所以评价汇总放在副标题最前面；全屏详情里另有一行可点开评价面板
         const ratingTier = tierForAverage(ratingSummary.average);
@@ -914,13 +1069,13 @@ export default function MapUI(props) {
             title: selectedPlace.name || t('common:label.unnamedPlace'),
             subtitle: [moderationShort, ratingCompact, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
             size: 'card',
-            leading: { id: 'share', title: t('map:ui.share.title'), symbol: 'square.and.arrow.up', ...nativeIcon('cardActions.share'), keepsOpen: true },
+            leading: unmarked ? undefined : { id: 'share', title: t('map:ui.share.title'), symbol: 'square.and.arrow.up', ...nativeIcon('cardActions.share'), keepsOpen: true },
             // 简介支持基础 Markdown：detail 是去掉标记的纯文本（旧版 App 只认它），detailMarkdown 是原生可显示的行内格式
             detail: markdownToPlainText(selectedPlace.description) || undefined,
             detailMarkdown: markdownToNativeInline(selectedPlace.description) || undefined,
             caption: String(selectedPlace.address || '').trim() || undefined,
             actions: [
-                { id: 'navigate', title: t('map:ui.nav.title'), symbol: 'arrow.triangle.turn.up.right.diamond.fill', ...nativeIcon('cardActions.navigate'), tone: 'accent', disabled: !hasNavigationTarget, keepsOpen: true },
+                (!unmarked || venueCard) && { id: 'navigate', title: t('map:ui.nav.title'), symbol: 'arrow.triangle.turn.up.right.diamond.fill', ...nativeIcon('cardActions.navigate'), tone: 'accent', disabled: !hasNavigationTarget, keepsOpen: true },
                 // 高德临时地点还没有收录，不能收藏
                 !unmarked && {
                     id: 'favorite',
@@ -939,10 +1094,10 @@ export default function MapUI(props) {
                     keepsOpen: true
                 },
                 unmarked
-                    ? { id: 'create', title: t('map:ui.createPlace'), symbol: 'plus.circle', ...nativeIcon('cardActions.create'), keepsOpen: true }
+                    ? (venueCard ? null : { id: 'create', title: t('map:ui.createPlace'), symbol: 'plus.circle', ...nativeIcon('cardActions.create'), keepsOpen: true })
                     : { id: 'edit', title: t('map:ui.edit'), symbol: 'pencil', ...nativeIcon('cardActions.edit'), keepsOpen: true },
                 // 举报占了原来“详情”按钮的位置，全屏详情靠上滑展开
-                canReportPlace && { id: 'report', title: t('map:ui.report'), symbol: 'flag', ...nativeIcon('cardActions.report'), keepsOpen: true }
+                !unmarked && canReportPlace && { id: 'report', title: t('map:ui.report'), symbol: 'flag', ...nativeIcon('cardActions.report'), keepsOpen: true }
             ].filter(Boolean),
             sections: [
                 ratingRow && { id: 'rating', title: t('map:rating.panel.title'), rows: [ratingRow] },
@@ -981,6 +1136,55 @@ export default function MapUI(props) {
             { id: 'about', style: 'footnote', rows: toSheetRows(moreFootnoteEntries), footer: t('map:ui.versionFooter', { version: APP_VERSION }) }
         ]
     };
+
+
+    // 列表 / 地图切换：宽屏在筛选按钮下方，窄屏在筛选按钮上方；列表模式时图标是地图
+    const listToggleButton = (size) => (
+        <Tooltip text={listMode ? t('places:list.toMap') : t('places:list.toList')} placement={isNarrow ? 'top' : undefined}>
+            <div style={{ display: 'inline-block' }}>
+                <Button
+                    data-tour="listView"
+                    onClick={() => setListMode((value) => !value)}
+                    disabled={!mapReady}
+                    aria-label={listMode ? t('places:list.toMap') : t('places:list.toList')}
+                    aria-pressed={listMode}
+                    style={{
+                        width: 44, height: 44, padding: 0, borderRadius: '50%',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        // 颜色不随状态变化，只换图标（列表 / 地图）
+                        background: customThemeColor,
+                        color: '#FFFFFF', border: 'none', boxShadow: '0 4px 12px var(--color-glow)', opacity: mapReady ? 1 : 0.6
+                    }}
+                >
+                    <span className="material-symbols-outlined" style={{ fontSize: size }}>{listMode ? 'map' : 'view_list'}</span>
+                </Button>
+            </div>
+        </Tooltip>
+    );
+
+    // 筛选按钮：宽屏在定位按钮下方，窄屏在定位按钮上方；有筛选时高亮并带小点
+    const filterButton = (size) => (
+        <Tooltip text={filterActive ? t('places:filter.buttonActive') : t('places:filter.button')} placement={isNarrow ? 'top' : undefined}>
+            <div style={{ display: 'inline-block' }}>
+                <Button
+                    data-tour="filter"
+                    onClick={toggleFilter}
+                    disabled={!mapReady}
+                    aria-label={filterActive ? t('places:filter.buttonActive') : t('places:filter.button')}
+                    aria-pressed={filterOpen}
+                    style={{
+                        width: 44, height: 44, padding: 0, borderRadius: '50%', position: 'relative',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        background: filterActive || filterOpen ? 'var(--color-primary-active)' : customThemeColor,
+                        color: '#FFFFFF', border: 'none', boxShadow: '0 4px 12px var(--color-glow)', opacity: mapReady ? 1 : 0.6
+                    }}
+                >
+                    <span className="material-symbols-outlined" style={{ fontSize: size }}>filter_list</span>
+                    {filterActive && <span aria-hidden="true" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: '50%', background: 'var(--color-bg-surface)' }} />}
+                </Button>
+            </div>
+        </Tooltip>
+    );
 
     const handleNativeDrawer = ({ rowId }) => {
         const entry = [...moreMenuEntries, ...moreFootnoteEntries].find((item) => item.id === rowId);
@@ -1552,10 +1756,13 @@ export default function MapUI(props) {
                     );
                 })()}
             </div>
-            <div style={{ marginTop: 6, color: 'var(--color-text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span>{tx('map:ui.card.category', { category: selectedPlace.category || "-" })}</span>
-                {selectedPlace.per_person_cost != null && <span>{tx('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost })}</span>}
-            </div>
+            {/* 展会地点没有分类和人均，不显示这一行 */}
+            {!selectedPlace.exhibitionVenue && (
+                <div style={{ marginTop: 6, color: 'var(--color-text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span>{tx('map:ui.card.category', { category: selectedPlace.category || "-" })}</span>
+                    {selectedPlace.per_person_cost != null && <span>{tx('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost })}</span>}
+                </div>
+            )}
 
             {ratingPlaceId != null && renderRatingRow()}
 
@@ -1612,7 +1819,26 @@ export default function MapUI(props) {
                     )}
                 </div>
             ) : (
-                !hideNonSearchButtons && (
+                !hideNonSearchButtons && selectedPlace.isMarked === false ? (
+                    // 高德临时地点只留“创建地点”；展会地点复用这种卡片，只留“导航”
+                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
+                        {selectedPlace.exhibitionVenue ? (
+                            <Button onClick={handleNavigate} disabled={!hasNavigationTarget} aria-label={t('map:ui.card.navigateLabel')} style={popupActionButtonStyle}>
+                                <SkinIcon slot="cardActions.navigate" size={20}>
+                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>near_me</span>
+                                </SkinIcon>
+                                <span style={popupActionLabelStyle}>{t('map:ui.nav.title')}</span>
+                            </Button>
+                        ) : (
+                            <Button onClick={openCreateFromPoi} aria-label={t('map:ui.card.create')} style={popupActionButtonStyle}>
+                                <SkinIcon slot="cardActions.create" size={20}>
+                                    <span className="material-symbols-outlined" style={popupActionIconStyle}>add_circle</span>
+                                </SkinIcon>
+                                <span style={popupActionLabelStyle}>{t('map:ui.createPlace')}</span>
+                            </Button>
+                        )}
+                    </div>
+                ) : !hideNonSearchButtons && (
                     <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <Tooltip text={hasNavigationTarget ? t('map:ui.card.navigateTooltip') : t('map:ui.card.noCoordinates')}>
                             <Button
@@ -2047,6 +2273,13 @@ export default function MapUI(props) {
             />}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
+                <div style={{ position: 'absolute', right: 12, bottom: aboveBottomInset((compactSearch ? 78 : 130) + 52), zIndex: 2000, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {listToggleButton(26)}
+                    {filterButton(26)}
+                </div>
+            )}
+
+            {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
                 <div style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(compactSearch ? 78 : 130), zIndex: 2000 }}>
                     <Tooltip text={locating ? t('map:ui.locating') : t('map:ui.locateTooltip')} placement="top">
                         <div style={{ display: 'inline-block' }}>
@@ -2128,7 +2361,7 @@ export default function MapUI(props) {
 
             {!hideNonSearchButtons && pickerMode && !iosApp && (
                 <div ref={dinnerBtnRef} style={{ position: "absolute", left: 16, bottom: isNarrow ? 68 : 12, zIndex: 2000 }}>
-                    <Tooltip text={isPosterPicker ? t('map:ui.picker.backToPoster') : pickerContext === 'manage' ? t('map:manage.backToEdit') : pickerContext === 'journey' ? t('map:ui.picker.backToDiary') : pickerContext === 'exhibition' ? t('map:ui.picker.backToExhibition') : t('map:ui.picker.backToDinner')} placement="top">
+                    <Tooltip text={isPosterPicker ? t('map:ui.picker.backToPoster') : pickerContext === 'manage' ? t('map:manage.backToEdit') : pickerContext === 'journey' ? t('map:ui.picker.backToDiary') : pickerContext === 'exhibition' ? t('map:ui.picker.backToExhibition') : pickerContext === 'listCenter' ? t('places:list.center.backToList') : t('map:ui.picker.backToDinner')} placement="top">
                         <div style={{ display: "inline-block" }}>
                             <Button
                                 onClick={onPickerClose}
@@ -2346,6 +2579,9 @@ export default function MapUI(props) {
                                 </div>
                             </Tooltip>
                         )}
+
+                        {!pickerMode && filterButton(28)}
+                        {!pickerMode && listToggleButton(28)}
                     </div>
                 </div>
             )}
@@ -2375,13 +2611,14 @@ export default function MapUI(props) {
                                 <SkinIcon slot="expanded.panel.icons.journey" size={22} style={panelIconStyle} />
                                 {t('map:ui.diaryCommunity')}
                             </Button>
-                            {isAuthenticated && (
+                            {/* iOS 不提供聚餐活动与导出海报 */}
+                            {isAuthenticated && !iosApp && (
                                 <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenDinners)}>
                                     <SkinIcon slot="expanded.panel.icons.dinners" size={22} style={panelIconStyle} />
                                     {t('map:ui.dinners')}
                                 </Button>
                             )}
-                            {isAuthenticated && (
+                            {isAuthenticated && !iosApp && (
                                 <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenPosterExport)}>
                                     <SkinIcon slot="expanded.panel.icons.poster" size={22} style={panelIconStyle} />
                                     {t('map:ui.posterExport')}
@@ -2447,6 +2684,18 @@ export default function MapUI(props) {
                     >
                         <div role="menu" aria-label={t('map:ui.userMenu')} className="fm-menu" style={{ display: 'flex', flexDirection: 'column', padding: '4px 0 8px' }}>
                             <div style={{ padding: '4px 16px 10px', fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:ui.verified')}</div>
+                            <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }} onClick={() => runMobileAccountAction(openMyPlaces)}
+                                aria-label={rejectedCount ? t('map:ui.myPlacesRejected', { count: rejectedCount }) : undefined}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                    {t('map:ui.myPlaces')}
+                                    {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot" />}
+                                </span>
+                            </Button>
+                            {props.onOpenProfile && (
+                                <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }} onClick={() => runMobileAccountAction(() => props.onOpenProfile(currentUser?.id))}>
+                                    {t('map:ui.myProfile')}
+                                </Button>
+                            )}
                             <Button themeAware variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }} onClick={() => runMobileAccountAction(onOpenMine)}>
                                 {t('map:ui.accountSettings')}
                             </Button>
@@ -2545,13 +2794,16 @@ export default function MapUI(props) {
                             style={{ ...mobileNavButtonStyle, color: mobileAccountOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}
                         >
                             {isAuthenticated && currentUser ? (
-                                <SkinAvatarFrame size={25}>
-                                    <img
-                                        src={accountAvatarSrc}
-                                        alt={currentUser.username || t('map:ui.avatarAlt')}
-                                        style={{ width: 25, height: 25, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${customThemeColor}` }}
-                                    />
-                                </SkinAvatarFrame>
+                                <span style={{ position: 'relative', display: 'inline-flex' }}>
+                                    <SkinAvatarFrame size={25}>
+                                        <img
+                                            src={accountAvatarSrc}
+                                            alt={currentUser.username || t('map:ui.avatarAlt')}
+                                            style={{ width: 25, height: 25, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${customThemeColor}` }}
+                                        />
+                                    </SkinAvatarFrame>
+                                    {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot fm-red-dot--corner" />}
+                                </span>
                             ) : isAuthenticated ? (
                                 <span className="material-symbols-outlined" style={{ fontSize: 24 }}>person</span>
                             ) : (
@@ -2591,6 +2843,7 @@ export default function MapUI(props) {
                                 onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = defaultAvatar; }}
                             />
                         </SkinAvatarFrame>
+                        {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot fm-red-dot--corner" />}
                     </button>}
                 </>
             )}
@@ -2677,7 +2930,7 @@ export default function MapUI(props) {
 
             {!hideNonSearchButtons && !pickerMode && (
                 <ManagePanel
-                    open={manageOpen && !!selectedPlace}
+                    open={manageOpen && !!selectedPlace && !nativePlaceFormActive}
                     backendUrl={backendUrl}
                     token={token}
                     selectedPlace={selectedPlace}
@@ -2857,13 +3110,60 @@ export default function MapUI(props) {
                 </div>
             </ResponsivePanel>
 
+            {/* 列表模式：盖住地图，工具栏与浮动按钮仍在上面 */}
+            {listMode && !pickerMode && !hideNonSearchButtons && (
+                <MapListMode
+                    backendUrl={backendUrl}
+                    token={isAuthenticated ? token : null}
+                    filter={placeFilter}
+                    locatedCenter={props.locatedCenter}
+                    getMapCenter={props.getMapCenter}
+                    onPickCenter={props.onPickListCenter}
+                    onOpenPlace={(placeId) => {
+                        setListMode(false);
+                        props.onFocusPlaceFromList?.(placeId);
+                    }}
+                    insets={{
+                        top: isNarrow ? 16 : 76,
+                        bottom: nativeChrome ? chrome.bottomOccupied + 24 : (isNarrow ? 240 : 24)
+                    }}
+                />
+            )}
+
+            {/* 地图筛选：不挡地图（改动立即作用到标记）；宽屏为右侧侧板，窄屏为底部面板 */}
             <ResponsivePanel
-                open={!hideNonSearchButtons && !pickerMode && !!addingPos}
+                open={filterOpen && !hideNonSearchButtons && !pickerMode}
+                onClose={() => setFilterOpen(false)}
+                title={t('places:filter.title')}
+                kind="place-filter"
+                desktop={desktopHeaderMenu === 'more' ? 'side-left' : 'side-right'}
+                mobile="sheet"
+                modal={false}
+                backdrop={false}
+                // 宽屏让开同侧的圆钮列（筛选、列表按钮本身也在那一列）
+                sideInset={68}
+                width="min(360px, calc(100vw - 96px))"
+                bodyStyle={{ padding: 14 }}
+            >
+                <PlaceFilterPanel
+                    backendUrl={backendUrl}
+                    value={placeFilter}
+                    source={placeFilterSource}
+                    onChange={(next) => onPlaceFilterChange?.(next, 'manual')}
+                />
+            </ResponsivePanel>
+
+            {/* 添加地点：窄屏先只露出下方三分之一（地图上能看到选中位置的标记），用户自己往上拉开完整表单 */}
+            <ResponsivePanel
+                open={!hideNonSearchButtons && !pickerMode && !!addingPos && !nativePlaceFormActive}
                 onClose={onAddCancel}
                 title={t('map:ui.addPlace')}
                 kind="add-place"
                 desktop="center"
                 mobile="sheet"
+                snap="third"
+                sheetHeight={layout.sheet ? 'calc(100% - 24px)' : undefined}
+                backdrop={layout.sheet ? false : undefined}
                 width="min(520px, calc(100vw - 24px))"
                 bodyStyle={{ padding: 12 }}
             >
@@ -3022,14 +3322,18 @@ export default function MapUI(props) {
                                             onClick={() => runUserPlacesRow(userPlaceRowId(place))}
                                             aria-current={current ? 'true' : undefined}
                                             style={{
-                                                display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%',
+                                                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
                                                 padding: '10px 16px', minHeight: 48, border: 0, borderBottom: '1px solid var(--color-border)',
                                                 background: current ? 'var(--color-bg-overlay)' : 'transparent',
                                                 color: 'var(--color-text-primary)', textAlign: 'left', cursor: 'pointer'
                                             }}
                                         >
-                                            <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere', color: isAvoidedPlace(place) ? 'var(--color-danger)' : undefined }}>{place.name || t('common:label.unnamedPlace')}</span>
-                                            <span style={{ fontSize: 12, color: isHiddenPlace(place) ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>{userPlaceDetail(place)}</span>
+                                            <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                                                <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere', color: isAvoidedPlace(place) ? 'var(--color-danger)' : undefined }}>{place.name || t('common:label.unnamedPlace')}</span>
+                                                <span style={{ fontSize: 12, color: isHiddenPlace(place) ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>{userPlaceDetail(place)}</span>
+                                            </span>
+                                            {/* 被驳回的地点：右侧小标识 */}
+                                            {userPlaceBadge(place) && <span className="fm-rejected-badge">{userPlaceBadge(place)}</span>}
                                         </button>
                                     );
                                 })}

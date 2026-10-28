@@ -25,6 +25,12 @@ export default function useJourneyDraft(base,token,journal,dirty) {
         localWrite.current=saveLocalDraft(userId,LOCAL_SLOT,{journal:snapshot,serverDraftId:meta?.id||null,serverRevision:meta?.revision||0,synced:false});
     },[userId]);
     const clearLocal=useCallback(()=>{if(userId){deleteLocalDraft(userId,LOCAL_SLOT);}setLocalDraft(null);},[userId]);
+    // 立即写入本机并等待结果：离开页面前据此如实提示“已存本机”，写入失败时不提示
+    const saveLocalNow=useCallback(async()=>{
+        const snapshot=latest.current.journal,meta=active.current;
+        if(!userId||!snapshot)return false;
+        try{return !!(await saveLocalDraft(userId,LOCAL_SLOT,{journal:snapshot,serverDraftId:meta?.id||null,serverRevision:meta?.revision||0,synced:false}));}catch{return false;}
+    },[userId]);
     const report=useCallback((kind,message)=>{if(mounted.current)setState({kind,message});},[]);
     const start=useCallback(draft=>{
         generation.current++;paused.current=false;pendingPublish.current=null;pendingWrite.current=null;
@@ -173,5 +179,5 @@ export default function useJourneyDraft(base,token,journal,dirty) {
     },[localDraft,report]);
     const prepare=async()=>{await persist();await flush();return {id:active.current?.id,revision:active.current?.revision};};
     return {state,start,isSynced,flush,prepare,publish,commit,hasPendingSave:()=>!!pendingPublish.current,fork,currentId:()=>active.current?.id,currentRevision:()=>active.current?.revision,
-        localDraft,restoreLocal,discardLocal:clearLocal};
+        localDraft,restoreLocal,discardLocal:clearLocal,saveLocalNow};
 }

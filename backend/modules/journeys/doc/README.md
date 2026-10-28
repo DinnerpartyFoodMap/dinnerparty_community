@@ -34,4 +34,6 @@ flowchart TD
 | 澄清 | basis 约束的位置补丁，保留备注等字段 | 整篇替换会覆盖等待期间用户编辑 |
 | 任务 | SQLite 持久化 + worker + 取消检查 | 只在 HTTP 内等待会失去重启恢复；当前多实例需专项验证 |
 
+补充约束：作者隐藏的站点（`public:false`）既不进公开正文也不创建公开标记（journeyMapLinks `hidden`）；未选定店铺的公开站点带 `unverified`；合并保留两篇的整篇公开正文与公开照片（超长时在 warnings 里说明）；`GET /search` 按词搜索自己的日记并可按公开状态筛选；reconstruct 后 `checkModelTimes` 去掉描述里没有依据的时刻/日期并标 `at_source`；分享接口用 journeyShareCheck 列出贴文中没有依据的具体内容（`unsupported`），到访时间与各站文字只在作者勾选分享文字时才提供。
+
 案例见 [TEST_CASES.md](TEST_CASES.md)。历史：`582e5e3` 初始生成、`cc11a4f` / `01e11a4` 发布与交互完善；待办 JRN-01 / JRN-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。生成、私有保存、旧 draft publish 与公开 publication commit 的语义不同，修改前必须追踪实际服务，不能仅按接口名字推断公开行为。

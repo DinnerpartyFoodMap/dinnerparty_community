@@ -1,0 +1,15 @@
+/* 管理员后台（AdminDashboard.jsx） */
+
+/* 折叠区的按钮已经写了模块名：模块自己的第一个标题只留给读屏（aria-labelledby 仍然指向它） */
+.fm-admin-section__body > * > :is(h2, h3):first-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.fm-admin-section__body > * {
+    margin-top: 0 !important;
+}

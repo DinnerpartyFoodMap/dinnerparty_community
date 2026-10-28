@@ -350,3 +350,55 @@ export async function createCategory(backendUrl, token, name, { allowSimilar = f
     }
     return data;
 }
+
+// -------- 地点列表 / 住民主页 / 发版信息 --------
+
+// 地点列表页：按标签、人均筛选，按综合评价与口味加权评价排序；条目不带坐标，只链接 /p/:id
+export async function fetchPlaceList(backendUrl, { query, offset = 0, limit = 20, token, signal } = {}) {
+    const params = new URLSearchParams(query || '');
+    params.set('offset', String(offset));
+    params.set('limit', String(limit));
+    const res = await fetch(`${backendUrl}/places/list?${params}`, { signal, cache: 'no-store', ...authHeaders(token) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('places:list.loadFailed')), { status: res.status });
+    return data;
+}
+
+// 住民主页：头像、六类餐饮偏好、上次定位的城市、两个小组件与观看者关系
+export async function fetchUserProfile(backendUrl, userId, { token, signal } = {}) {
+    const res = await fetch(`${backendUrl}/users/${encodeURIComponent(userId)}/profile`, { signal, cache: 'no-store', ...authHeaders(token) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('profile:loadFailed')), { status: res.status });
+    return data;
+}
+
+export async function saveProfileWidgets(backendUrl, token, widgets) {
+    const res = await fetch(`${backendUrl}/users/me/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ widgets })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || t('profile:widgets.saveFailed'));
+    return data;
+}
+
+// 自己填某一类餐饮的喜好（1–4；null 回到自动推断），返回新的六轴
+export async function saveTasteLevel(backendUrl, token, axis, level) {
+    const res = await fetch(`${backendUrl}/users/me/taste`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ axis, level })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || t('profile:taste.saveFailed'));
+    return data;
+}
+
+// 两端最新构建号与更新说明（App 启动检查更新、/home 下载页）
+export async function fetchAppRelease(backendUrl, { signal } = {}) {
+    const res = await fetch(`${backendUrl}/api/app/release`, { signal, cache: 'no-cache' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || String(res.status));
+    return data;
+}

@@ -3,7 +3,7 @@ import {eventId} from './feedback';
 import useComposeDraft from './useComposeDraft';
 import JourneyPhotoPicker from './JourneyPhotoPicker';
 import {LocationPicker} from './maps';
-import {PageHeader,SettingRow,Notice,centerLabel,formatRange,today} from './shared';
+import {PageHeader,SettingRow,Notice,MarkdownField,centerLabel,formatRange,today} from './shared';
 import { t, tx } from '../i18n/index.js';
 
 const TEXT_LIMIT=12000;
@@ -51,8 +51,17 @@ export default function JourneyComposer({ctx,nav,params}) {
             entry_media_ids:content.media_ids,media_meta,source_input:{text:payload.text,start_date:payload.start_date,end_date:payload.end_date||payload.start_date,center:payload.center},
             intended_visibility:payload.intended_visibility}}});
     });
-    const leave=()=>{
-        if(draft.hasContent){draft.flush().catch(()=>{});tip(t('journey:composer.leftSaved'));}
+    // 离开时先等本机写入完成，再按实际结果提示：已同步 / 已存本机（未上传的图片是否一起存下）/ 都没能保存（先确认）
+    const leave=async()=>{
+        if(draft.hasContent){
+            if(draft.isSynced())tip(t('journey:composer.draftSaved'));
+            else{
+                const local=await draft.saveLocalNow();
+                if(!local.saved&&!(await ctx.confirm(t('journey:composer.confirmLeaveUnsaved'))))return;
+                if(local.saved)tip(local.blobs||!draft.pendingPhotos?t('journey:composer.leftSaved'):t('journey:composer.leftSavedNoPhotos'));
+            }
+            draft.flush().catch(()=>{});
+        }
         nav.pop();
     };
     // 系统返回与 Esc 走同一出口：先落盘再返回
@@ -93,7 +102,7 @@ export default function JourneyComposer({ctx,nav,params}) {
                 <JourneyPhotoPicker draft={draft} base={base} token={token} onError={setError}/>
                 <label className="jw-field">
                     <span className="jw-field__label">{t('journey:composer.textLabel')}</span>
-                    <textarea rows={6} maxLength={TEXT_LIMIT} value={payload.text} onChange={e=>setPayload({text:e.target.value})}
+                    <MarkdownField rows={6} maxLength={TEXT_LIMIT} value={payload.text} onChange={e=>setPayload({text:e.target.value})}
                         placeholder={t('journey:composer.textPlaceholder')}/>
                     <small className="jw-muted">{tx('journey:composer.textHint', { counter: payload.text.length>TEXT_LIMIT-1000?t('journey:composer.textCounter', { count: payload.text.length, TEXT_LIMIT }):'' })}</small>
                 </label>

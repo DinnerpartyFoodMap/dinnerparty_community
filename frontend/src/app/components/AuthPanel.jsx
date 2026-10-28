@@ -1,4 +1,5 @@
 import React, { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import '../../map/badges.css';
 import Button from "../../components/primitives/Button";
 import defaultAvatar from "../../img/default.png";
 import { DEFAULT_DARK_PRIMARY, DEFAULT_PRIMARY, isDarkMode, pickContrastTextColor } from "../../theme/theme";
@@ -9,7 +10,9 @@ import { t } from "../../i18n/index.js";
 import LegalLinks from '../../auth/components/LegalLinks.jsx';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
 
-const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onOpenFeedback, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
+const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onOpenMyPlaces, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
+    // 自己有被驳回的地点：头像与“我创建的地点”上的小红点
+    const rejectedCount = Number(user?.rejected_place_count) || 0;
     const [userOpen, setUserOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const [showUsername, setShowUsername] = useState(true);
@@ -187,9 +190,12 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                                 gap: 7
                             }}
                         >
-                            <SkinAvatarFrame size={32}>
-                                <img src={user.has_avatar ? `${backendUrl}/users/${user.id}/avatar?t=${Date.now()}` : (user.avatar || accountDefaultAvatar)} alt={user.username || t('common:label.avatar')} style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', objectFit: 'cover' }} />
-                            </SkinAvatarFrame>
+                            <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+                                <SkinAvatarFrame size={32}>
+                                    <img src={user.has_avatar ? `${backendUrl}/users/${user.id}/avatar?t=${Date.now()}` : (user.avatar || accountDefaultAvatar)} alt={user.username || t('common:label.avatar')} style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', objectFit: 'cover' }} />
+                                </SkinAvatarFrame>
+                                {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot fm-red-dot--corner" />}
+                            </span>
                             {showUsername && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 700 }}>{user.username}</span>}
                         </Button>
 
@@ -206,6 +212,18 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                                     <div style={{ marginTop: 3, fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('auth:panel.verified')}</div>
                                 </div>
                                 {divider}
+                                {onOpenMyPlaces && (
+                                    <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenMyPlaces(); }}
+                                        aria-label={rejectedCount ? t('map:ui.myPlacesRejected', { count: rejectedCount }) : undefined}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                            {t('map:ui.myPlaces')}
+                                            {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot" />}
+                                        </span>
+                                    </Button>
+                                )}
+                                {onOpenProfile && (
+                                    <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenProfile(); }}>{t('map:ui.myProfile')}</Button>
+                                )}
                                 <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); isOnSettings ? onGoHome?.() : onOpenSettings?.(); }}>{isOnSettings ? t('common:action.backToMap') : t('auth:panel.settings')}</Button>
                                 {divider}
                                 <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onLogout?.(); }} style={{ color: 'var(--color-danger)' }}>{t('auth:panel.logout')}</Button>

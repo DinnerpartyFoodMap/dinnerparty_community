@@ -1,0 +1,28 @@
+/* 小红点与“未通过”小标识：头像（有被驳回的地点）、账号菜单里的“我创建的地点”、住民地点列表的行尾 */
+.fm-red-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--color-danger, #d9534f);
+    box-shadow: 0 0 0 1.5px var(--color-bg-surface, #fff);
+}
+
+.fm-red-dot--corner {
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    pointer-events: none;
+}
+
+.fm-rejected-badge {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--color-danger, #d9534f) 60%, transparent);
+    color: var(--color-danger, #d9534f);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}

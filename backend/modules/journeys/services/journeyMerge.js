@@ -13,7 +13,22 @@ async function planMerge(a, b, options = {}) {
     if (hash !== preview.preview_hash || preview.order_policy !== calculationOptions.order_policy) fail('日记算法返回的合并预览无效', 502);
     // The AI-assisted label (journeyStore.normalizeDocument) survives a merge; it is not part of the sealed preview hash.
     if (a.document.ai_assisted || b.document.ai_assisted) preview.document.ai_assisted = true;
+    keepPublicChoices(preview, [a, b]);
     return preview;
+}
+// The merged diary is private, but the authors' whole-entry public text and public photo picks are kept for a later publish.
+// Like ai_assisted they are applied after the sealed preview check; an over-long text is reported, never cut silently.
+const PUBLIC_TEXT_LIMIT = 5000;
+function keepPublicChoices(preview, pair) {
+    const texts = pair.map(j => j.document.public_text || '').filter(Boolean);
+    const text = texts.join('\n\n');
+    if (text) {
+        preview.document.public_text = Array.from(text).slice(0, PUBLIC_TEXT_LIMIT).join('');
+        if (Array.from(text).length > PUBLIC_TEXT_LIMIT) preview.warnings = [...(preview.warnings || []), `两篇的整篇公开正文合计超过 ${PUBLIC_TEXT_LIMIT} 字，合并后只保留前 ${PUBLIC_TEXT_LIMIT} 字，请在合并后检查结尾。`];
+    }
+    const entry = new Set(preview.document.entry_media_ids || []);
+    const photos = [...new Set(pair.flatMap(j => j.document.public_media_ids || []))].filter(id => entry.has(id));
+    if (photos.length) preview.document.public_media_ids = photos;
 }
 function sources(userId, aId, bId, revisions) {
     const a = getJourney(userId, aId), b = getJourney(userId, bId);

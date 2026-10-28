@@ -14,7 +14,7 @@ export const RATING_TIERS = Object.freeze([
 export const FEW_RATINGS = 3;
 // 综合评价落在“均线之下 / 强烈拒绝”时按避雷显示；没人评价时沿用“避雷”标签
 export const AVOID_BELOW_AVERAGE = 2.5;
-const AVOID_TAG = '避雷';
+export const AVOID_TAG = '避雷';
 
 export function ratingTierFor(score) {
     return RATING_TIERS.find((tier) => tier.score === score) || null;

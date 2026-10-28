@@ -262,6 +262,74 @@ async function main(){
     assert.deepEqual(merged.document.entry_media_ids,[drink,extra]);assert.equal(merged.document.source_input.text,'早上喝豆浆。\n\n下午吃了烧饼。');
     assert.deepEqual(merged.document.stops.map(s=>s.excerpts[0].text),['早上喝豆浆。','下午吃了烧饼。']);
     assert.equal((await call('GET',`/api/journeys/${merged.id}`)).visibility,'private','merging never creates public content');
+    // The whole-entry public text and public photo choice survive a merge (applied after the sealed preview check).
+    const p1=store.saveJourney(a,{title:'公开上午',start_date:'2026-10-09',end_date:'2026-10-09',summary:'',entry_media_ids:[drink],public_text:'上午的公开正文',public_media_ids:[drink],
+        stops:[{id:randomUUID(),name:'豆浆铺',note:'',at:'',mood:'',media_ids:[],expenses:[]}]});
+    const p2=store.saveJourney(a,{title:'公开下午',start_date:'2026-10-09',end_date:'2026-10-09',summary:'',entry_media_ids:[extra],public_text:'下午的公开正文',
+        stops:[{id:randomUUID(),name:'烧饼摊',note:'',at:'',mood:'',media_ids:[],expenses:[]}]});
+    algorithm.result('merge',sealMergeSample({document:{title:'合并公开正文',start_date:'2026-10-09',end_date:'2026-10-09',summary:'',entry_media_ids:[drink,extra],
+        stops:[{...p1.document.stops[0],id:'merged-public-1'},{...p2.document.stops[0],id:'merged-public-2'}]},
+        sources:[{id:p1.id,revision:1},{id:p2.id,revision:1}],conflicts:[],warnings:[],total_minor:0,order_policy:'constraints'}));
+    const pp=await call('POST','/api/journeys/merge/preview',{first_id:p1.id,second_id:p2.id,revisions:[1,1]});
+    assert.equal(pp.document.public_text,'上午的公开正文\n\n下午的公开正文','the merge preview shows both whole-entry public texts');
+    const pm=await call('POST','/api/journeys/merge',{first_id:p1.id,second_id:p2.id,revisions:[1,1],preview_hash:pp.preview_hash},a,201);
+    assert.equal(pm.document.public_text,'上午的公开正文\n\n下午的公开正文','the merged diary keeps both whole-entry public texts');
+    assert.deepEqual(pm.document.public_media_ids,[drink],'and the public photo choice');
+
+    // --- Hidden stops stay out of the public text and the map; unpicked places are flagged; a stop may know only its day. ---
+    const hidden={id:randomUUID(),name:'只想自己记的店',note:'',at:'',mood:'',media_ids:[],expenses:[],visit_status:'visited',confirmed:true,lng:122,lat:33,source:'manual',
+        excerpts:[],excerpt_edited:'不公开的一站',public:false};
+    const unpicked={id:randomUUID(),name:'记不清的面馆',note:'',at:'2026-10-12',mood:'',media_ids:[],expenses:[],visit_status:'visited',confirmed:false,lng:null,lat:null,source:'manual',
+        excerpts:[],excerpt_edited:'大概在学校东门。'};
+    const again={id:randomUUID(),name:'阿明牛肉面',note:'',at:'',mood:'',media_ids:[],expenses:[],visit_status:'visited',confirmed:true,place_id:noodle,source:'local',lng:120.1,lat:30.2,
+        excerpts:[],excerpt_edited:'**又来了**，还是那碗面。'};
+    const twoDays=await saveDraft(randomUUID(),0,{title:'两日小记',start_date:'2026-10-11',end_date:'2026-10-12',summary:'',intended_visibility:'public',stops:[hidden,unpicked,again]});
+    const hiddenPreview=await call('POST',`/api/journeys/drafts/${twoDays.id}/map-preview`,{draft_revision:twoDays.revision,visibility:'public'});
+    assert.deepEqual([hiddenPreview.links[0].action,hiddenPreview.links[0].reason],['none','hidden'],'a hidden stop never creates a public marker');
+    assert.equal(hiddenPreview.counts.create,0);
+    assert.deepEqual(hiddenPreview.body.stops.map(s=>s.name),['记不清的面馆','阿明牛肉面']);
+    assert.equal(hiddenPreview.body.stops[0].unverified,true,'readers are told the author never picked this place');
+    assert.equal('unverified' in hiddenPreview.body.stops[1],false,'picked places keep the old snapshot shape');
+    assert.equal(hiddenPreview.body.stops[0].at,'2026-10-12','a date-only visit is kept as a date');
+    const placesBeforeHidden=sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n;
+    const twoDaysSaved=await call('POST',`/api/journeys/drafts/${twoDays.id}/commit`,{draft_revision:twoDays.revision,visibility:'public',preview_hash:hiddenPreview.preview_hash,request_id:randomUUID()});
+    assert.equal(twoDaysSaved.created_place_ids.length,0);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n,placesBeforeHidden);
+    const noodleCard=(await call('GET',`/places/${noodle}/diaries?limit=20`,undefined,null)).items.find(i=>i.public_id===twoDaysSaved.public_id);
+    assert.equal(noodleCard.record_date,'','a multi-day visit without a date is not shown as the first day');
+    assert.deepEqual([noodleCard.start_date,noodleCard.end_date],['2026-10-11','2026-10-12']);
+    await call('PUT',`/api/journeys/${twoDaysSaved.journey_id}`,{document:{title:'坏时间',start_date:'2026-10-11',end_date:'2026-10-11',summary:'',stops:[{...unpicked,at:'2026-10-11T25:00'}]},base_revision:twoDaysSaved.revision},a,400);
+
+    // --- Finding diaries again: words across titles, shop names, addresses and texts, plus the public filter. ---
+    const found=await call('GET',`/api/journeys/search?q=${encodeURIComponent('东门 面馆')}`);
+    assert.deepEqual(found.map(j=>j.id),[twoDaysSaved.journey_id],'every word has to match');
+    assert.ok((await call('GET','/api/journeys/search?visibility=public')).every(j=>j.visibility==='public'));
+    assert.ok((await call('GET','/api/journeys/search?visibility=private')).some(j=>j.id===merged.id));
+    assert.equal((await call('GET',`/api/journeys/search?q=${encodeURIComponent('两日小记')}`,undefined,b)).length,0,'only the author\'s own diaries');
+    await call('GET','/api/journeys/search',undefined,a,400);
+
+    // --- Generated share posts: concrete claims the shared facts do not back are listed for the author. ---
+    algorithm.result('share',{text:'阿明牛肉面花了88元，排队半小时，还送了甜品。牛肉面很香。',length:28,min:30,max:500,in_range:false,generated:true});
+    const shareCheck=await call('POST',`/api/journeys/${twoDaysSaved.journey_id}/share`,{base_revision:twoDaysSaved.revision,stop_ids:[again.id],include_notes:true});
+    assert.equal(shareCheck.generated,true);
+    assert.deepEqual(shareCheck.unsupported.map(c=>c.text),['88元','排队','半小时','送了'],'invented price, queue, wait and freebie are flagged');
+    assert.deepEqual(shareCheck.cover.stops.map(s=>s.text),['**又来了**，还是那碗面。'],'shared stop text reaches the share images');
+    const noNotes=await call('POST',`/api/journeys/${twoDaysSaved.journey_id}/share`,{base_revision:twoDaysSaved.revision,stop_ids:[again.id]});
+    assert.deepEqual(noNotes.cover.stops.map(s=>[s.text,s.at]),[['','']],'without the stop-text choice no text or time is shared');
+    assert.deepEqual(noNotes.options.stop_ids,[again.id]);
+
+    // --- Model-filled times need a time word in the author's text; kept ones are marked for checking. ---
+    const {checkModelTimes}=require('../../modules/journeys/services/journeyAI');
+    const timed=(start,end,at)=>({start_date:start,end_date:end,stops:[{at}]});
+    let timedDoc=timed('2026-10-01','2026-10-01','2026-10-01T12:00');checkModelTimes(timedDoc,{text:'吃了一碗面'});
+    assert.deepEqual(timedDoc.stops[0],{at:''},'a clock time the author never mentioned is dropped');
+    timedDoc=timed('2026-10-01','2026-10-01','2026-10-01T12:00');checkModelTimes(timedDoc,{text:'中午吃了一碗面'});
+    assert.deepEqual(timedDoc.stops[0],{at:'2026-10-01T12:00',at_source:'model'});
+    timedDoc=timed('2026-10-01','2026-10-02','2026-10-02T12:00');checkModelTimes(timedDoc,{text:'第二天去吃了面'});
+    assert.deepEqual(timedDoc.stops[0],{at:'2026-10-02',at_source:'model'},'a day word keeps the day, not the made-up clock time');
+    timedDoc=timed('2026-10-01','2026-10-02','2026-10-02T12:00');checkModelTimes(timedDoc,{text:'去吃了面'});
+    assert.deepEqual(timedDoc.stops[0],{at:''},'without any day word the date stays unknown');
+    const marked=store.normalizeDocument({title:'标记',start_date:'2026-10-01',end_date:'2026-10-01',summary:'',stops:[{id:randomUUID(),name:'面馆',at:'2026-10-01T12:00',at_source:'model'},{id:randomUUID(),name:'茶铺',at:'',at_source:'model'}]},a);
+    assert.deepEqual(marked.stops.map(s=>s.at_source),['model',undefined],'the mark is kept only while a time is set');
 
     // Source revisions are checked again after remote planning, outside a write transaction.
     let releaseMerge,enterMerge;

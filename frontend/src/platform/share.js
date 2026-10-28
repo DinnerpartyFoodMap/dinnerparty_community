@@ -159,6 +159,36 @@ export function saveImageBlob(blob, filename, { title } = {}) {
     return saveBlob(blob, filename || 'image.png', { title, dialogTitle: t('platform:share.saveImageDialog') });
 }
 
+/**
+ * 一次保存多张图片：网页逐张交给浏览器下载；App 写入临时文件后只打开一次系统面板（可一次“存储 N 张图像”）。
+ * @param {{blob: Blob, filename: string}[]} items
+ * @returns {Promise<'downloaded'|'shared'|'cancelled'|'failed'>}
+ */
+export async function saveImageBlobs(items, { title } = {}) {
+    if (!items.length) return 'failed';
+    if (!isNativePlatform()) {
+        try {
+            for (const { blob, filename } of items) {
+                downloadBlob(blob, safeFileName(filename, 'image.png'));
+                // 连续触发下载时部分浏览器只保留最后一个，稍作间隔
+                await new Promise((resolve) => window.setTimeout(resolve, 300));
+            }
+            return 'downloaded';
+        } catch (e) {
+            return 'failed';
+        }
+    }
+    try {
+        const { Share } = await import('@capacitor/share');
+        const files = [];
+        for (const { blob, filename } of items) files.push(await writeTempFile(blob, filename));
+        await Share.share({ title, files, dialogTitle: t('platform:share.saveImageDialog') });
+        return 'shared';
+    } catch (error) {
+        return isCancel(error) ? 'cancelled' : 'failed';
+    }
+}
+
 /** 分享图片文件；网页端浏览器不支持文件分享时返回 'unsupported'，由调用方决定是否改为下载。 */
 export async function shareImageBlob(blob, filename, { title, text } = {}) {
     const name = safeFileName(filename, 'image.png');

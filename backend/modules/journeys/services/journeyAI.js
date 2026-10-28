@@ -24,8 +24,26 @@ async function reconstruct(userId, input, options = {}) {
     // Validate ownership and canonical fields without dropping review-only fields
     // such as suggested_id/needs_choice expected by the unchanged frontend.
     normalizeDocument(result.document, userId);
+    checkModelTimes(result.document, input);
     result.document.ai_assisted = true;
     return result;
+}
+// A clock time or a day the author never mentioned is not filled in: without a time word in the text the stop keeps only
+// its day (multi-day trips need a day word too, otherwise the date stays unknown). Kept times are marked as model-filled
+// (at_source) so the review page asks the author to check them; editing the time clears the mark.
+const TIME_WORDS=/\d{1,2}\s*[:：点时]|[早中晚]上|[上中下]午|中午|傍晚|凌晨|半夜|深夜|夜宵|宵夜|[早午晚]饭|[早午晚]餐|早茶|下午茶|brunch/i;
+const DAY_WORDS=/第\s*[一二三四五六七八九十\d]+\s*天|\d{1,2}\s*[月\/.-]\s*\d{1,2}|\d{1,2}\s*[日号]|[周礼拜]\s*[一二三四五六日天末]|星期|今天|昨天|前天|次日|隔天|翌日|当天|首日|最后一天|头一天|第二天/;
+function checkModelTimes(document,input) {
+    const text=String(input.text||''),multiDay=document.start_date!==document.end_date;
+    for(const stop of document.stops){
+        if(!stop.at)continue;
+        let at=stop.at;
+        if(!TIME_WORDS.test(text))at=at.slice(0,10);
+        if(multiDay&&!DAY_WORDS.test(text))at='';
+        if(!multiDay&&at.length===10)at='';
+        stop.at=at;
+        if(at)stop.at_source='model';else delete stop.at_source;
+    }
 }
 function searchCandidates(name,city,center) { return algorithms.compute('search',{name,city,center,amap_storage_allowed:process.env.AMAP_JOURNAL_STORAGE_ALLOWED==='true'}); }
 function share(input) { return algorithms.compute('share',input); }
@@ -104,4 +122,4 @@ function startJourneyWorker() {
     const timer=setInterval(tick,1000); timer.unref();
     return ()=>{stopped=true;clearInterval(timer);activeController?.abort();};
 }
-module.exports={capabilities,searchCandidates,reconstruct,share,enqueue,reserveJob,startJourneyWorker};
+module.exports={capabilities,searchCandidates,reconstruct,checkModelTimes,share,enqueue,reserveJob,startJourneyWorker};

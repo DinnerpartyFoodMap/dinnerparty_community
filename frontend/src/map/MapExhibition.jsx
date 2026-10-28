@@ -16,7 +16,7 @@ import './exhibition-stack.css';
 const HOME_TOP = 30;
 
 /** 地图右上角（宽屏右下角）的展会入口；面板由地图（MapUI）渲染，iOS 原生控件接管时为原生面板。 */
-export default function MapExhibition({ exhibition, exhibitions = [], open = false, onOpen, noticeRef, noticeVisible, noticeTop, backendUrl }) {
+export default function MapExhibition({ exhibition, exhibitions = [], open = false, selectedId = null, onOpen, onSwitch, noticeRef, noticeVisible, noticeTop, backendUrl }) {
     const { narrow } = useLayoutPolicy();
     const [top, setTop] = useState(HOME_TOP);
     const entryRef = useRef(null);
@@ -93,7 +93,13 @@ export default function MapExhibition({ exhibition, exhibitions = [], open = fal
         </div>}
         <ExhibitionSpread show={expanded && multiple} origin={spreadOrigin} getOrigin={readDeckOrigin} items={exhibitions} activeId={exhibition?.id}
             backendUrl={backendUrl} onClose={() => setExpanded(false)} onExitComplete={finishGathering}
-            onSelect={item => { pendingSelection.current = item.id; setExpanded(false); }} />
+            onSelect={item => {
+                pendingSelection.current = item.id;
+                // 展会卡片开着时换成另一个展会：立即换掉卡片内容。否则列表收拢、浮层退场时 iOS 原生控件恢复，
+                // 会先把旧展会的卡片弹出来，等收拢动画结束才换成新选的展会
+                if (open && item.id !== selectedId) onSwitch?.(item);
+                setExpanded(false);
+            }} />
     </>;
 }
 

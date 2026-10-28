@@ -158,6 +158,48 @@ function personalizedSummary(placeId, viewerId, { readViewerPreference = getUser
     return { average, tier: ratingTier(average), matched_raters: matched, rater_count: raters.length };
 }
 
+/**
+ * personalizedSummary for every place at once (the place list sorts by it): each
+ * rater's taste similarity is computed once instead of once per place. Same
+ * rules as personalizedSummary; places that would get null are left out of the map.
+ */
+function personalizedAverages(viewerId, { readViewerPreference = getUserPreference } = {}) {
+    const result = new Map();
+    const viewer = readViewerPreference(viewerId);
+    if (!compatibleProfile(viewer) || !viewer.vector) return result;
+    const mean = placeMeanVector();
+    const viewerVector = prepareTasteProfile(viewer, mean);
+    if (!viewerVector) return result;
+
+    const similarity = new Map();
+    for (const row of db._raw.prepare(`SELECT up.user_id, up.vector, up.status, up.model, up.dimensions,
+            up.algorithm_version, up.vector_place_count
+        FROM UserPreference up
+        WHERE up.user_id <> ? AND up.user_id IN (SELECT DISTINCT user_id FROM PlaceRating)`).iterate(viewerId)) {
+        const raterVector = prepareTasteProfile(row, mean);
+        if (raterVector) similarity.set(row.user_id, tasteSimilarity(viewerVector, raterVector));
+    }
+
+    const totals = new Map();
+    for (const rating of db._raw.prepare(`SELECT r.place_id, r.user_id, r.score, r.weight
+        FROM PlaceRating r JOIN User u ON u.id = r.user_id
+        WHERE r.user_id <> ? AND COALESCE(u.is_banned, 0) = 0`).iterate(viewerId)) {
+        const entry = totals.get(rating.place_id) || { weighted: 0, weight: 0, raters: 0, matched: 0 };
+        const matched = similarity.has(rating.user_id);
+        const weight = rating.weight * Math.exp(SIMILARITY_SHARPNESS * (matched ? similarity.get(rating.user_id) : 0));
+        entry.weighted += weight * rating.score;
+        entry.weight += weight;
+        entry.raters += 1;
+        if (matched) entry.matched += 1;
+        totals.set(rating.place_id, entry);
+    }
+    for (const [placeId, entry] of totals) {
+        if (entry.raters < MIN_PERSONALIZED_RATERS || !entry.matched || entry.weight <= 0) continue;
+        result.set(placeId, Math.round(entry.weighted / entry.weight * 10000) / 10000);
+    }
+    return result;
+}
+
 function ownRating(placeId, userId) {
     const row = db._raw.prepare('SELECT score, source, updated_at FROM PlaceRating WHERE place_id = ? AND user_id = ?')
         .get(placeId, userId);
@@ -244,6 +286,7 @@ module.exports = {
     ratingQuota,
     ratingSummary,
     personalizedSummary,
+    personalizedAverages,
     ratingState,
     ratePlace,
     withdrawRating,

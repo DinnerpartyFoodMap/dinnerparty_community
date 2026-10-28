@@ -130,7 +130,7 @@ function unfinished(userId) {
         const doc=JSON.parse(d.document);
         const item={id:d.id,revision:d.revision,journey_id:d.journey_id,base_revision:d.base_revision,compose_draft_id:d.compose_draft_id||null,
             title:doc.title||'未命名草稿',start_date:doc.start_date||'',end_date:doc.end_date||'',stop_count:doc.stops?.length||0,
-            pending:(doc.stops||[]).filter(s=>!s.confirmed&&s.location_resolution!=='deferred').length,
+            pending:(doc.stops||[]).filter(s=>!s.confirmed).length,
             cover_media_id:doc.entry_media_ids?.[0]||doc.stops?.find(s=>s.media_ids?.length)?.media_ids[0]||null,updated_at:d.updated_at};
         if(d.compose_draft_id&&!d.journey_id)review.push({...item,kind:'review'});
         else editing.push({...item,kind:'editing'});
@@ -161,4 +161,24 @@ function calendar(userId,from,to) {
         .map(item=>item.start_date).filter(d=>d&&d>=from&&d<=to);
     return {from,to,entries:rows.map(summarize),unfinished_count:pending.count,draft_dates};
 }
-module.exports={normalizePayload,getCompose,putCompose,discardCompose,generate,attachGeneratedDraft,unfinished,calendar,summarize};
+// Finding a diary again: every word must appear in the title, texts, shop names, addresses, dishes or the search
+// center (city). Only the author's own diaries, at most 500 scanned and 100 returned, newest record date first.
+function search(userId,{q='',visibility=''}={}) {
+    const terms=String(q).toLowerCase().split(/\s+/).filter(Boolean).slice(0,5);
+    const filter=['public','private'].includes(visibility)?visibility:'';
+    if(!terms.length&&!filter)fail('请输入关键词或选择公开状态');
+    const rows=sql.prepare(`SELECT j.id,j.revision,j.document,j.updated_at,p.id AS public_id,p.status AS publication_status,p.source_revision
+        FROM Journey j LEFT JOIN JourneyPublication p ON p.journey_id=j.id WHERE j.user_id=?
+        ORDER BY json_extract(j.document,'$.start_date') DESC,j.updated_at DESC LIMIT 500`).all(userId);
+    return rows.filter(row=>{
+        const isPublic=row.publication_status==='active';
+        if((filter==='public'&&!isPublic)||(filter==='private'&&isPublic))return false;
+        if(!terms.length)return true;
+        const d=JSON.parse(row.document),center=d.source_input?.center;
+        const text=[d.title,d.summary,d.public_text,d.source_input?.text,center?.name,center?.city,
+            ...(d.stops||[]).flatMap(s=>[s.name,s.address,s.category,s.note,s.excerpt_edited,...(s.dishes||[]),...(s.excerpts||[]).map(e=>e.text)])]
+            .filter(Boolean).join('\n').toLowerCase();
+        return terms.every(term=>text.includes(term));
+    }).slice(0,100).map(summarize);
+}
+module.exports={normalizePayload,getCompose,putCompose,discardCompose,generate,attachGeneratedDraft,unfinished,calendar,search,summarize};

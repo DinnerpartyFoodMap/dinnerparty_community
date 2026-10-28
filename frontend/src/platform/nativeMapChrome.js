@@ -24,11 +24,13 @@ import { t } from '../i18n/index.js';
 // v10 操作指引（tour）：指引打开时原生控件不收起，按下发的目标画高亮圈、其余变暗、触摸交给网页，
 // 目标位置随布局回传（"tour" slot 与 tour.step）；“更多功能”一步播放上滑示意并允许拖动工具栏练习（tour.drawerOpen）。
 // v11 住民的地点列表面板（userPlaces，list 样式）：地点卡片点“最近修改”的住民后打开，关闭只收起列表、筛选保留。
+// v12 列表 / 地图切换（listView）与地图筛选（filter）：浮动按钮，与定位共用一个竖向圆角矩形；工具栏的随机美食（random，与日记互换位置）；
+// 头像按钮与面板行的小红点（badge 为 "dot"，其他文字为小标签：被驳回的地点）。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
-export const NATIVE_CHROME_PROTOCOL = 11;
-export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'add', 'search', 'alongRoute', 'account', 'locate']);
+export const NATIVE_CHROME_PROTOCOL = 12;
+export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
 export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces']);
@@ -407,6 +409,7 @@ function sanitizeSheetRows(list, budget) {
         if (!id || seen.has(id) || budget.rows <= 0) continue;
         seen.add(id);
         budget.rows -= 1;
+        const badge = clipText(row.badge, 8);
         rows.push({
             id,
             title: clipText(row.title, 60) || id,
@@ -416,7 +419,9 @@ function sanitizeSheetRows(list, budget) {
             tone: SHEET_TONES.includes(row.tone) ? row.tone : undefined,
             disabled: !!row.disabled,
             keepsOpen: !!row.keepsOpen,
-            expands: !!row.expands
+            expands: !!row.expands,
+            // v12：小红点（"dot"）或小标签
+            ...(badge ? { badge } : null)
         });
     }
     return rows;

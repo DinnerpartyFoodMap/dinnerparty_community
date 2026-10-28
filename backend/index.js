@@ -275,6 +275,7 @@ app.use("/api/admin/notices", requireAuth, adminNoticesRouter);
 app.use(["/admin/exhibitions", "/api/admin/exhibitions"], requireAuth, require('./modules/admin/routes/adminExhibitions'));
 app.use("/admin/skin-codes", requireAuth, require('./modules/admin/routes/adminSkinCodes'));
 app.use("/admin/feedback", requireAuth, require('./modules/admin/routes/adminFeedback'));
+app.use("/admin/taste-axes", requireAuth, require('./modules/admin/routes/adminTasteAxes'));
 
 
 init();
@@ -286,12 +287,15 @@ startVectorRetryWorker();
 require('./modules/places/services/placeModeration').resumeModeration();
 const stopUserVectorWorker = startUserVectorWorker();
 const stopJourneyWorker = require('./modules/journeys/services/journeyAI').startJourneyWorker();
+// 住民主页六类餐饮偏好：规则分不了类的店铺交给模型后台补分类（modules/preferences/doc/TASTE_AXES.md）
+const stopTasteClassificationWorker = require('./modules/preferences/services/tasteAxes').startTasteClassificationWorker();
 // QQ Bot (NapCat/OneBot). Disabled unless QQ_BOT_ENABLED=true; connection problems never block the website.
 const qqBot = require('./modules/qqbot/runtime/index').startQQBot();
 
 app.use('/api', searchRouter);
 app.use('/api/along-route', alongRouteRouter);
 app.use('/api/amap', require('./modules/maps/routes/amap'));
+app.use('/api/app', require('./modules/appRelease/routes/appRelease'));
 app.use("/places", placesRouter);
 app.use("/p", require("./modules/places/routes/placeShare"));
 app.use("/comments", commentsRouter);
@@ -349,6 +353,7 @@ function gracefulShutdown(signal) {
     stopRatingReputationWorker();
     stopUserVectorWorker();
     stopJourneyWorker();
+    stopTasteClassificationWorker();
     if (qqBot) qqBot.stop();
     logger.notice('Backend shutdown started', { event: 'server.shutdown', signal });
     const forceExit = setTimeout(() => process.exit(1), 5000);

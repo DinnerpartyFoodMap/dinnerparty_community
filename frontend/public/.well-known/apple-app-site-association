@@ -12,6 +12,7 @@
           { "/": "/privacy*", "exclude": true },
           { "/": "/terms*", "exclude": true },
           { "/": "/beian*", "exclude": true },
+          { "/": "/home*", "exclude": true },
           { "/": "/p/*/card-*", "exclude": true },
           { "/": "/*" }
         ]

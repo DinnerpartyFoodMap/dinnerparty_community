@@ -22,7 +22,7 @@ const DATA_STRINGS = {
     'src/admin/AdminPlaces.jsx': ['未登录'],
     'src/admin/AdminUsers.jsx': ['未登录'],
     // 首图风格、分享平台与文风的取值（会提交给日记 AI）
-    'src/journey/cover.js': ['主站'],
+    'src/journey/cover.js': ['主站', '奶油', '薄荷', '夜色'],
     'src/journey/JourneyShare.jsx': ['小红书', '朋友圈', '手账', '日记', '自然', '活泼', '简洁', '文艺', '主站', '奶油', '薄荷', '夜色'],
     // 未选店站点的占位名，存在草稿数据里
     'src/journey/JourneyStopCard.jsx': ['待选店'],

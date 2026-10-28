@@ -402,6 +402,19 @@ struct MapChromeMenuPanel: View {
                     }
                 }
                 Spacer(minLength: 0)
+                // v12：行尾小红点（"dot"）或小标签（被驳回的地点）
+                if let badge = row.badge {
+                    if badge == "dot" {
+                        MapChromeBadgeDot()
+                    } else {
+                        Text(badge)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .foregroundStyle(Color.red)
+                            .background(Capsule().stroke(Color.red.opacity(0.6), lineWidth: 1))
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -639,7 +652,8 @@ struct MapChromePlaceCard: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 64)
-            .foregroundStyle(prominent ? Color(uiColor: model.theme.onPrimary) : accent)
+            // 实心按钮（导航、展会附近随机）一律白字白图标，与网页主题色按钮一致
+            .foregroundStyle(prominent ? Color.white : accent)
             .background(prominent ? accent : accent.opacity(0.14), in: shape)
             .contentShape(shape)
         }

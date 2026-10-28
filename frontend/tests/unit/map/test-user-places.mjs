@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
     formatPlaceDay, lastModifierOf, lastModifierText, userPlacesTitle, userPlacesSummary, userPlacesMessage, userPlacesChipText,
-    userPlaceDetail, userPlaceRowId, userPlaceFromRowId, userPlacesActions, userPlacesChromeSheet
+    userPlaceDetail, userPlaceBadge, userPlaceRowId, userPlaceFromRowId, userPlacesActions, userPlacesChromeSheet
 } from '../../../src/map/userPlaces.js';
 import { sanitizeSheet } from '../../../src/platform/nativeMapChrome.js';
 
@@ -51,20 +51,27 @@ assert.equal(userPlacesMessage({ ...ready, places: [], total: 0, relation: { sel
 assert.equal(userPlaceDetail(places[0]), `面馆 · 人均 ¥25 · 创建于 ${formatPlaceDay(places[0].created_time)}`);
 assert.equal(userPlaceDetail(places[1]), `审核中 · 未分类 · 创建于 ${formatPlaceDay(places[1].created_time)}`);
 
-// 行 id 往返；操作：游客和自己只有退出筛选，已登录看别人时多一个屏蔽并举报（已屏蔽时为解除屏蔽）
+// 行 id 往返；操作：查看主页（屏蔽与举报在主页里）、退出筛选；已屏蔽 Ta 时多一个解除屏蔽
 assert.equal(userPlaceRowId(places[0]), 'place-3');
 assert.equal(userPlaceFromRowId(ready, 'place-3'), places[0]);
 for (const bad of ['place-99', 'exit', 'block', 'place-', null]) assert.equal(userPlaceFromRowId(ready, bad), null, String(bad));
 assert.equal(userPlaceFromRowId(loading, 'place-3'), null);
-assert.deepEqual(userPlacesActions(ready).map((action) => action.id), ['exit']);
-assert.deepEqual(userPlacesActions({ ...ready, relation: { self: true, blocked: false, can_block: false } }).map((action) => action.id), ['exit']);
+assert.deepEqual(userPlacesActions(ready).map((action) => action.id), ['profile', 'exit']);
+assert.deepEqual(userPlacesActions({ ...ready, relation: { self: true, blocked: false, can_block: false } }).map((action) => [action.id, action.title]),
+    [['profile', '我的主页'], ['exit', '显示全部地点']]);
 assert.deepEqual(userPlacesActions(null), []);
 const viewing = { ...ready, relation: { self: false, blocked: false, can_block: true } };
 assert.deepEqual(userPlacesActions(viewing).map((action) => [action.id, action.title, action.tone]),
-    [['block', '屏蔽并举报', 'danger'], ['exit', '显示全部地点', undefined]]);
-assert.deepEqual(userPlacesActions({ ...viewing, status: 'loading', places: null }).map((action) => action.id), ['exit'], '加载完才知道是否已屏蔽');
+    [['profile', '查看主页', undefined], ['exit', '显示全部地点', undefined]]);
+assert.deepEqual(userPlacesActions({ ...viewing, status: 'loading', places: null }).map((action) => action.id), ['profile', 'exit'], '加载完才知道是否已屏蔽');
 const blockedFilter = { ...ready, places: [], total: 0, relation: { self: false, blocked: true, can_block: true } };
-assert.deepEqual(userPlacesActions(blockedFilter).map((action) => [action.id, action.title]), [['unblock', '解除屏蔽'], ['exit', '显示全部地点']]);
+assert.deepEqual(userPlacesActions(blockedFilter).map((action) => [action.id, action.title]), [['profile', '查看主页'], ['unblock', '解除屏蔽'], ['exit', '显示全部地点']]);
+// 被驳回的地点：行尾“未通过”小标识，次要信息里不再写“审核中”
+const rejected = { id: 9, name: '驳回的店', category: '面馆', moderation_status: 'rejected', created_time: places[0].created_time };
+assert.equal(userPlaceBadge(rejected), '未通过');
+assert.equal(userPlaceBadge(places[0]), '');
+assert.equal(userPlaceBadge(places[1]), '', '审核中的不是被驳回');
+assert.equal(userPlaceDetail(rejected), `面馆 · 创建于 ${formatPlaceDay(rejected.created_time)}`);
 assert.equal(userPlacesMessage(blockedFilter), '你已屏蔽 九日缤，TA 创建的地点、地点下 TA 的公开日记和同好名片不会显示给你。');
 assert.equal(userPlacesChipText(blockedFilter), '已屏蔽 九日缤');
 assert.equal(userPlacesSummary(blockedFilter), '');
@@ -77,7 +84,7 @@ assert.equal(sheet.title, '九日缤 创建的地点');
 assert.equal(sheet.subtitle, '共 3 个，最近创建的在前');
 assert.equal(sheet.message, undefined);
 assert.deepEqual(sheet.sections.map((section) => section.id), ['actions', 'places']);
-assert.deepEqual(sheet.sections[0].rows.map((row) => [row.id, row.symbol]), [['exit', 'xmark.circle']]);
+assert.deepEqual(sheet.sections[0].rows.map((row) => [row.id, row.symbol]), [['profile', 'person.crop.circle'], ['exit', 'xmark.circle']]);
 assert.deepEqual(sheet.sections[1].rows.map((row) => [row.id, row.tone]), [['place-3', undefined], ['place-2', 'warning'], ['place-1', 'danger']]);
 assert.equal(sheet.sections[1].rows[0].keepsOpen, false, '选中地点后列表收起，让位给地点卡片');
 const loadingSheet = sanitizeSheet({ ...userPlacesChromeSheet(loading), token: 5 });
@@ -85,15 +92,18 @@ assert.deepEqual([loadingSheet.message, loadingSheet.messageTone, loadingSheet.s
 assert.deepEqual(loadingSheet.sections.map((section) => section.id), ['actions']);
 const errorSheet = sanitizeSheet({ ...userPlacesChromeSheet({ ...loading, status: 'error', error: 'x' }), token: 6 });
 assert.equal(errorSheet.messageTone, 'danger');
-assert.deepEqual(errorSheet.sections[0].rows.map((row) => row.id), ['retry', 'exit']);
-// iOS 原生面板同样出现屏蔽并举报（红色）/ 解除屏蔽；已屏蔽时没有地点分组，只显示说明
+assert.deepEqual(errorSheet.sections[0].rows.map((row) => row.id), ['retry', 'profile', 'exit']);
+// iOS 原生面板同样是查看主页 / 解除屏蔽；已屏蔽时没有地点分组，只显示说明
 const viewingSheet = sanitizeSheet({ ...userPlacesChromeSheet(viewing), token: 7 });
 assert.deepEqual(viewingSheet.sections[0].rows.map((row) => [row.id, row.symbol, row.tone]),
-    [['block', 'hand.raised', 'danger'], ['exit', 'xmark.circle', undefined]]);
+    [['profile', 'person.crop.circle', undefined], ['exit', 'xmark.circle', undefined]]);
+// 自己的列表里被驳回的地点带“未通过”小标识（v12 行尾 badge）
+const ownSheet = sanitizeSheet({ ...userPlacesChromeSheet({ ...ready, places: [rejected, places[0]], total: 2, relation: { self: true } }), token: 9 });
+assert.deepEqual(ownSheet.sections[1].rows.map((row) => row.badge), ['未通过', undefined]);
 const blockedSheet = sanitizeSheet({ ...userPlacesChromeSheet(blockedFilter), token: 8 });
 assert.deepEqual(blockedSheet.sections.map((section) => section.id), ['actions']);
 assert.deepEqual(blockedSheet.sections[0].rows.map((row) => [row.id, row.symbol]),
-    [['unblock', 'person.crop.circle.badge.checkmark'], ['exit', 'xmark.circle']]);
+    [['profile', 'person.crop.circle'], ['unblock', 'person.crop.circle.badge.checkmark'], ['exit', 'xmark.circle']]);
 assert.equal(blockedSheet.message, userPlacesMessage(blockedFilter));
 
 console.log('user places tests passed');
