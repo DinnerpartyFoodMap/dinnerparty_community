@@ -53,7 +53,8 @@ try {
     assert.equal(requests[1][1].headers.Authorization, 'Bearer tk');
     await savePlaceRating('https://example.test', 'tk', 7, 3);
     assert.equal(requests[2][1].method, 'PUT');
-    assert.deepEqual(JSON.parse(requests[2][1].body), { score: 3 });
+    const submitted=JSON.parse(requests[2][1].body);
+    assert.equal(submitted.score,3);assert.equal(submitted.confirm,true);assert.match(submitted.request_id,/^[A-Za-z0-9_-]{16,80}$/);
     await withdrawPlaceRating('https://example.test', 'tk', 7);
     assert.equal(requests[3][1].method, 'DELETE');
     reply = { ok: false, status: 429, json: async () => ({ error: '今天已经评价了 10 家店，明天再来吧' }) };

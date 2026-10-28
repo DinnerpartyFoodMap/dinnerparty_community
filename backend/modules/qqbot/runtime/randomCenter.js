@@ -52,7 +52,7 @@ function clearGroupCenter(groupId) {
  * exhibition's venue) or a keyword matched against marked places (first !查询 result).
  * Returns { lat, lng, label, source, placeId? } or { error }.
  */
-function resolveCenterArgument(value) {
+async function resolveCenterArgument(value) {
     const text = String(value || '').trim();
     const coordinates = text.match(COORDINATE_ARGUMENT);
     if (coordinates) {
@@ -66,7 +66,7 @@ function resolveCenterArgument(value) {
         if (!location) return { error: exhibition ? `当前展会「${cleanLabel(exhibition.name)}」没有设置地点。` : '当前没有进行中的展会。' };
         return { ...location, label: cleanLabel(exhibition.location_name) || cleanLabel(exhibition.name), source: 'exhibition' };
     }
-    const place = fastSearch(text, 1)[0];
+    const place = (await fastSearch(text, 1))[0];
     const location = place && normalizeLocation(place.latitude, place.longitude);
     if (!location) {
         return { error: `没有找到与「${cleanLabel(text)}」相关的已收录地点。换个关键词，或发送 !随机中心 纬度,经度 名称。` };

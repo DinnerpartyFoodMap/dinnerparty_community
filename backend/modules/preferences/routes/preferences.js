@@ -19,9 +19,9 @@ router.post('/events', (req, res, next) => {
     }
 });
 
-router.get('/me', (req, res, next) => {
+router.get('/me', async (req, res, next) => {
     try {
-        return res.json(getUserPreference(req.user.id));
+        return res.json(await getUserPreference(req.user.id));
     } catch (error) { next(error); }
 });
 

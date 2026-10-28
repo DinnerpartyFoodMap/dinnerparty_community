@@ -871,6 +871,7 @@ export default function MapUI(props) {
                     ...(addingPrefill?.address ? { address: addingPrefill.address } : {}),
                     per_person_cost: values.perPersonCost ? parseInt(values.perPersonCost, 10) : null,
                     rating: values.rating ?? defaultCreationScore(values.category),
+                    rating_input_kind:values.ratingInputKind||'unknown',
                     exterior_images: values.exteriorImages,
                     menu_images: values.menuImages,
                     longitude: addingPos[0],
@@ -1924,6 +1925,7 @@ export default function MapUI(props) {
             <ScrollableView
                 key="search-results"
                 className="fm-search-results"
+                data-native-cluster-occluder=""
                 as={motion.div}
                 initial={searchDropdownPreset.initial}
                 animate={searchDropdownPreset.animate}
@@ -2095,12 +2097,12 @@ export default function MapUI(props) {
                 </Notice>
             )}
             {canPickPoint && (
-                <span aria-hidden="true" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -100%)', zIndex: 1500, pointerEvents: 'none', fontSize: 34, lineHeight: 1, filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.35))' }}>📍</span>
+                <span data-native-cluster-occluder="" aria-hidden="true" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -100%)', zIndex: 1500, pointerEvents: 'none', fontSize: 34, lineHeight: 1, filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.35))' }}>📍</span>
             )}
 
             {compactSearch && renderCompactSearch()}
 
-            {!compactSearch && <div ref={searchBarRef} data-map-search-bar data-tour="search" className="fm-map-search" style={(() => {
+            {!compactSearch && <div ref={searchBarRef} data-map-search-bar data-native-cluster-occluder="" data-tour="search" className="fm-map-search" style={(() => {
                 const base = { position: "absolute", zIndex: 2000 };
                 if (isNarrow) {
                     return {
@@ -2273,14 +2275,14 @@ export default function MapUI(props) {
             />}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
-                <div style={{ position: 'absolute', right: 12, bottom: aboveBottomInset((compactSearch ? 78 : 130) + 52), zIndex: 2000, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset((compactSearch ? 78 : 130) + 52), zIndex: 2000, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {listToggleButton(26)}
                     {filterButton(26)}
                 </div>
             )}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
-                <div style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(compactSearch ? 78 : 130), zIndex: 2000 }}>
+                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(compactSearch ? 78 : 130), zIndex: 2000 }}>
                     <Tooltip text={locating ? t('map:ui.locating') : t('map:ui.locateTooltip')} placement="top">
                         <div style={{ display: 'inline-block' }}>
                             <Button
@@ -2360,7 +2362,7 @@ export default function MapUI(props) {
             )}
 
             {!hideNonSearchButtons && pickerMode && !iosApp && (
-                <div ref={dinnerBtnRef} style={{ position: "absolute", left: 16, bottom: isNarrow ? 68 : 12, zIndex: 2000 }}>
+                <div data-native-cluster-occluder="" ref={dinnerBtnRef} style={{ position: "absolute", left: 16, bottom: isNarrow ? 68 : 12, zIndex: 2000 }}>
                     <Tooltip text={isPosterPicker ? t('map:ui.picker.backToPoster') : pickerContext === 'manage' ? t('map:manage.backToEdit') : pickerContext === 'journey' ? t('map:ui.picker.backToDiary') : pickerContext === 'exhibition' ? t('map:ui.picker.backToExhibition') : pickerContext === 'listCenter' ? t('places:list.center.backToList') : t('map:ui.picker.backToDinner')} placement="top">
                         <div style={{ display: "inline-block" }}>
                             <Button
@@ -2392,7 +2394,7 @@ export default function MapUI(props) {
             )}
 
             {!hideNonSearchButtons && (!isNarrow || pickerMode) && (
-                <div style={{
+                <div data-native-cluster-occluder="" style={{
                     position: "absolute",
                     ...(desktopHeaderMenu === 'more' ? { left: 8 } : { right: 8 }),
                     top: canPickPoint && isNarrow ? 128 : 72,
@@ -2850,6 +2852,7 @@ export default function MapUI(props) {
 
             {!isNarrow && !pickerMode && (ICP_BEIAN || GONGAN_BEIAN) && (
                 <div
+                    data-native-cluster-occluder=""
                     style={{
                         position: 'absolute',
                         left: '50%',

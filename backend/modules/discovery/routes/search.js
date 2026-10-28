@@ -21,16 +21,18 @@ function parseLimit(rawValue, fallback = 50, max = 100) {
     return Math.min(parsed, max);
 }
 
-function sendFastSearch(req, res) {
+async function sendFastSearch(req, res, next) {
+    try {
     const query = String(req.query.q || '').trim().slice(0, AI_QUERY_MAX_LENGTH);
     if (!query) return res.json([]);
     const startedAt = performance.now();
     const center = { lat: req.query.lat, lng: req.query.lng };
-    const rows = fastSearch(query, parseLimit(req.query.limit), { center, viewerId: req.viewer?.id ?? null });
+    const rows = await fastSearch(query, parseLimit(req.query.limit), { center, viewerId: req.viewer?.id ?? null });
     const duration = performance.now() - startedAt;
     res.set('Server-Timing', `sqlite;dur=${duration.toFixed(1)}`);
     res.set('Cache-Control', 'no-store');
     return res.json(rows);
+    }catch(e){next(e);}
 }
 
 function consumeAiRateLimit(req) {

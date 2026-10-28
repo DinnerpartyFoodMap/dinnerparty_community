@@ -4,7 +4,7 @@ const {requireAuth}=require('../../accounts/middleware/auth');
 const {sql,now,fail,string}=require('../../journeys/services/journeyStore');
 const router=express.Router();
 router.use(requireAuth,(_req,res,next)=>{res.set('Cache-Control','no-store');next();});
-const run=fn=>(req,res,next)=>{try{fn(req,res);}catch(e){next(e);}};
+const run=fn=>(req,res,next)=>Promise.resolve().then(()=>fn(req,res)).catch(next);
 const {consent,neighbors}=require('../services/communityPreferences');
 router.get('/consent',run((req,res)=>res.json(consent(req.user.id))));
 router.put('/consent',run((req,res)=>{
@@ -16,6 +16,8 @@ router.put('/consent',run((req,res)=>{
         sql.prepare(`INSERT INTO MapConsent(user_id,feedback,research,discovery,tags,version,updated_at) VALUES(?,?,?,?,?,?,?)
           ON CONFLICT(user_id) DO UPDATE SET feedback=excluded.feedback,research=excluded.research,discovery=excluded.discovery,tags=excluded.tags,version=excluded.version,updated_at=excluded.updated_at`)
             .run(req.user.id,+feedback,+research,+discovery,JSON.stringify(tags),old.version+1,now());
+        const evidence=require('../../ratings/services/ratingEvidence');
+        if(req.body.research_choice===true||!research&&old.research)evidence.recordResearchChoice(req.user.id,research);
         if(!feedback) {
             sql.prepare('DELETE FROM MapInteraction WHERE user_id=?').run(req.user.id);
             sql.prepare('DELETE FROM MapDecision WHERE user_id=?').run(req.user.id);
@@ -47,7 +49,7 @@ router.put('/collections/:id',run((req,res)=>{
     res.json(collection(sql.prepare('SELECT * FROM PublicCollection WHERE id=?').get(req.params.id),req.user.id));
 }));
 router.delete('/collections/:id',run((req,res)=>{sql.prepare('DELETE FROM PublicCollection WHERE id=? AND user_id=?').run(req.params.id,req.user.id);res.status(204).end();}));
-router.get('/neighbors',run((req,res)=>res.json(neighbors(req.user.id))));
+router.get('/neighbors',run(async(req,res)=>res.json(await neighbors(req.user.id))));
 router.get('/users/:id/collections',run((req,res)=>{
     if(!consent(req.params.id).discovery) fail('用户未开启同好发现',404);
     const user=sql.prepare('SELECT id,username FROM User WHERE id=? AND COALESCE(is_banned,0)=0').get(req.params.id);
@@ -70,10 +72,10 @@ router.post('/observations',run((req,res)=>{
     if(old){if(old.user_id!==req.user.id||old.request_hash!==hash)fail('展示快照 ID 冲突',409);res.status(201).json({id});return;}
     if(sql.prepare('SELECT COUNT(*) AS n FROM MapDecision WHERE user_id=? AND created_at>?').get(req.user.id,new Date(Date.now()-60000).toISOString()).n>=60) fail('展示快照过于频繁',429);
     const snapshot={candidates,algorithm:'search-observed-client-v2',propensity:null,surface:'search',search_session_id:query,render_revision:render};
-    sql.prepare('INSERT INTO MapDecision VALUES(?,?,?,?,?,?)').run(id,req.user.id,hash,JSON.stringify(snapshot),'{}',now());
+    sql.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(id,req.user.id,hash,JSON.stringify({...snapshot,policy_version:'search-observed-client-v2',feature_snapshot_version:1,display_version:'rating-summary-v1'}),'{}',now());
     res.status(201).json({id});
 }));
-router.post('/draw',run((req,res)=>{
+router.post('/draw',run(async(req,res)=>{
     const c=consent(req.user.id);
     if(!c.feedback||req.body.consent_version!==c.version) fail('交互设置已改变，请重新抽取',409);
     const {draw_id,center}=req.body;
@@ -88,13 +90,18 @@ router.post('/draw',run((req,res)=>{
     const {getUserPreference}=require('../../preferences/services/userPreferenceService');
     const {isVectorSearchAvailable}=require('../../../infrastructure/database');
     let snapshot={candidates:[],eligible_count:0,algorithm:'random-mixture-v1'};
-    const result=drawRecommendation(nearbyCandidates(sql,center),excluded,Math.random,candidates=>{
-        try { if(isVectorSearchAvailable()) return personalizeCandidates(sql,candidates,getUserPreference(req.user.id)); } catch {}
+    let preference=null;try{if(isVectorSearchAvailable())preference=await getUserPreference(req.user.id);}catch{}
+    const candidates=await nearbyCandidates(sql,center);
+    if(consent(req.user.id).version!==c.version)fail('交互设置已改变，请重新抽取',409);
+    const concurrent=sql.prepare('SELECT * FROM MapDecision WHERE id=?').get(draw_id);
+    if(concurrent){if(concurrent.user_id!==req.user.id||concurrent.request_hash!==hash)fail('抽取 ID 已用于另一请求',409);res.json(JSON.parse(concurrent.result));return;}
+    const result=drawRecommendation(candidates,excluded,Math.random,candidates=>{
+        try { if(preference) return personalizeCandidates(sql,candidates,preference); } catch {}
         return {candidates,personalized:false};
     },data=>{snapshot=data;});
     result.decision_id=draw_id;
     // Only probabilities and local POI IDs are retained. No raw center coordinates.
-    sql.prepare('INSERT INTO MapDecision VALUES(?,?,?,?,?,?)').run(draw_id,req.user.id,hash,JSON.stringify(snapshot),JSON.stringify(result),now());
+    sql.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(draw_id,req.user.id,hash,JSON.stringify({...snapshot,policy_version:snapshot.algorithm,feature_snapshot_version:1,display_version:'rating-summary-v1'}),JSON.stringify(result),now());
     res.json(result);
 }));
 router.post('/feedback',run((req,res)=>{
@@ -122,19 +129,24 @@ router.post('/feedback',run((req,res)=>{
             if(snapshot?.surface==='search'&&placeId&&!snapshot.candidates.some(p=>p.place_id===placeId&&p.rank===rank))fail('搜索结果顺序不匹配');
             const reason=['wrong_branch','wrong_place','not_visited','privacy','other'].includes(e.reason)?e.reason:null;
             // Null place events only measure funnel activity. They are never training labels.
-            sql.prepare('INSERT INTO MapInteraction VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(e.id,req.user.id,e.session_id,e.kind,e.surface,e.decision_id||null,placeId,rank,reason,+(c.research&&!!placeId),now());accepted++;
+            sql.prepare('INSERT INTO MapInteraction(id,user_id,session_id,kind,surface,decision_id,place_id,rank,reason,research_allowed,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(e.id,req.user.id,e.session_id,e.kind,e.surface,e.decision_id||null,placeId,rank,reason,+(c.research&&!!placeId),now());accepted++;
+            require('../../ratings/services/ratingEvidence').captureEvent('MapInteraction',req.user.id,e.id,{trigger:e.trigger,surface:e.surface,decisionId:e.decision_id||null,impressionId:e.impression_id||null});
             if(snapshot?.surface==='search')sql.prepare('INSERT INTO MapInteractionContext VALUES(?,?)').run(e.id,JSON.stringify({search_session_id:snapshot.search_session_id,render_revision:snapshot.render_revision,impression_id:string(e.impression_id,80),impression_status:['threshold_met','clicked_before_threshold'].includes(e.impression_status)?e.impression_status:null}));
         }
     })();
     res.json({accepted});
+    require('../../ratings/services/ratingEvidence').queueEvidence(req.user.id);
 }));
 router.get('/feedback',run((req,res)=>res.json({retention_days:30,counts:sql.prepare('SELECT kind,COUNT(*) AS count FROM MapInteraction WHERE user_id=? GROUP BY kind').all(req.user.id)})));
 router.delete('/feedback',run((req,res)=>{
     sql.transaction(()=>{
+        require('../../ratings/services/ratingEvidence').invalidateUserBundles(req.user.id);
+        sql.prepare('UPDATE AlgorithmEventContext SET research_allowed=0 WHERE user_id=?').run(req.user.id);
         sql.prepare('DELETE FROM MapInteraction WHERE user_id=?').run(req.user.id);
         sql.prepare('DELETE FROM MapDecision WHERE user_id=?').run(req.user.id);
         sql.prepare('UPDATE MapConsent SET version=version+1,updated_at=? WHERE user_id=?').run(now(),req.user.id);
     })();
+    require('../../ratings/services/ratingEvidence').queueEvidence(req.user.id);
     res.json(consent(req.user.id));
 }));
 router.use((err,_req,res,_next)=>res.status(err.status||500).json({error:err.status?err.message:'同好与反馈服务暂不可用'}));

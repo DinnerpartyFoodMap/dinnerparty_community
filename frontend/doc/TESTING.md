@@ -22,6 +22,7 @@
 | npm run test:structure | 解析全部受检 JS/JSX/MJS；相对导入含图片/CSS，模块文档与链接，前后端 harness 入口 |
 | npm run test:platform | 配置、坐标、返回、凭证辅助与平台纯逻辑；不是所有原生能力的端到端覆盖 |
 | npm run test:map | 聚合、快照、转场、范围缓存、请求闸门、底图等纯逻辑 |
+| npm run test:native-clusters-browser | 真实标记控制器与 Web Animations，替换高德/原生边界；聚合玻璃帧采样、遮挡、回退与中断；不执行 SwiftUI |
 | npm run test:overlay | backdropPress 点击/触摸守卫；不代表每个弹层均有浏览器覆盖 |
 | npm run test:rating | 评分展示规则与请求封装；组件生命周期另需交互测试 |
 | npm run test:native-chrome | JS 地图与设置桥接会话、清洗和请求响应；实际顺序包含两个测试文件 |

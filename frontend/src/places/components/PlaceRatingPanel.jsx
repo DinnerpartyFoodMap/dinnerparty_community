@@ -53,12 +53,12 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
             onRequireAuth && onRequireAuth();
             return;
         }
-        if (banned || rating.saving || (mine && mine.score === score)) return;
+        if (banned || rating.saving) return;
         try {
             await rating.submit(score);
             showTip && showTip(t('map:rating.panel.saved', { tier: tierLabel(ratingTierFor(score)) }));
         } catch (error) {
-            showTip && showTip(t('map:rating.panel.saveFailed', { message: error.message || error }));
+            showTip && showTip(error.committed?error.message:t('map:rating.panel.saveFailed', { message: error.message || error }));
             if (error && error.status === 429) rating.reload();
         }
     };
@@ -69,7 +69,7 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
             await rating.withdraw();
             showTip && showTip(t('map:rating.panel.withdrawn'));
         } catch (error) {
-            showTip && showTip(t('map:rating.panel.saveFailed', { message: error.message || error }));
+            showTip && showTip(error.committed?error.message:t('map:rating.panel.saveFailed', { message: error.message || error }));
         }
     };
 

@@ -23,6 +23,7 @@ const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 const { listPlaces } = require('../services/placeList');
+router.use((req,res,next)=>req.method==='GET'&&!req.path.endsWith('/diaries')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
 
 // 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
 // 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者；
@@ -57,10 +58,10 @@ router.get("/nearby", attachViewer, (req, res) => {
 });
 
 // 地点列表页（services/placeList.js）：可按标签、人均筛选，按综合评价与口味加权评价排序；不返回经纬度和地址
-router.get("/list", attachViewer, (req, res) => {
+router.get("/list", attachViewer, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
-        res.json(listPlaces(req.query, req.viewer?.id ?? null));
+        res.json(await listPlaces(req.query, req.viewer?.id ?? null));
     } catch (error) {
         res.locals.unhandledError = error;
         res.status(500).json({ error: '地点列表加载失败，请稍后重试' });
@@ -74,7 +75,7 @@ router.get("/random", (req, res, next) => {
     // same JWT/session checks as favorites. Never accept a user ID in the query.
     if (req.get('Authorization')) return requireAuth(req, res, next);
     next();
-}, (req, res) => {
+}, async (req, res) => {
     const coordinate = (value, limit) => typeof value === 'string' && value.trim() !== ''
         && Number.isFinite(Number(value)) && Math.abs(Number(value)) <= limit;
     if (!coordinate(req.query.lat, 90) || !coordinate(req.query.lng, 180)) {
@@ -91,17 +92,18 @@ router.get("/random", (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     try {
         const center = { lat: Number(req.query.lat), lng: Number(req.query.lng) };
+        let preference=null;try{if(req.user&&isVectorSearchAvailable())preference=await getUserPreference(req.user.id);}catch{}
         const personalize = (candidates) => {
             if (req.user && isVectorSearchAvailable()) {
                 try {
-                    return personalizeCandidates(db._raw, candidates, getUserPreference(req.user.id));
+                    return personalizeCandidates(db._raw, candidates, preference);
                 } catch (error) {
                     console.warn('随机推荐偏好暂不可用，使用基础权重:', error.message);
                 }
             }
             return { candidates, personalized: false };
         };
-        res.json(drawRecommendation(nearbyCandidates(db._raw, center), excludedIds, Math.random, personalize));
+        res.json(drawRecommendation(await nearbyCandidates(db._raw, center), excludedIds, Math.random, personalize));
     } catch (error) {
         console.error('随机推荐失败', error);
         res.status(500).json({ error: '随机推荐加载失败，请稍后重试' });
@@ -138,11 +140,11 @@ router.get("/:id", attachViewer, (req, res) => {
 });
 
 // 添加地点（网页/App；校验、分类同步、创建者评价与新地点通知在 placeService 的同一事务内完成）
-router.post("/", requireAuth, (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
     const { name, description, latitude, longitude, category, exterior_images, menu_images, per_person_cost, address, rating } = req.body || {};
     try {
-        const row = createPlace({
-            name, description, latitude, longitude, category, exterior_images, menu_images, per_person_cost, address, rating
+        const row = await createPlace({
+            name, description, latitude, longitude, category, exterior_images, menu_images, per_person_cost, address, rating,rating_input_kind:req.body?.rating_input_kind
         }, req.user.id, { source: 'web' });
         res.json(row);
     } catch (error) {
@@ -186,6 +188,13 @@ router.put("/:id", requireAuth, (req, res) => {
         const isCreator = String(place.creator_id) === String(req.user.id);
         const canManagePlaces = hasPermission(req.user, "manage_places");
         if (!isCreator && !canManagePlaces) return res.status(403).json({ error: "没有权限编辑" });
+        const checkCurrentEditor=()=>{
+            const editor=require('../../accounts/services/userAccess').requireWritableUser(req.user.id);
+            const current=db._raw.prepare('SELECT * FROM Place WHERE id=?').get(id);
+            if(!current||!canViewPlace(current,editor))throw Object.assign(new Error('地点不存在'),{status:404});
+            if((String(current.creator_id)!==String(editor.id)||canManagePlaces)&&!hasPermission(editor,'manage_places'))throw Object.assign(new Error('没有权限编辑'),{status:403});
+            return current;
+        };
 
         // 要写入 Place 的列值（图片为 JSON 字符串）
         const updates = {};
@@ -241,6 +250,7 @@ router.put("/:id", requireAuth, (req, res) => {
                     ['exterior_images', 'menu_images'].includes(key) ? [key, value ? JSON.parse(value) : []] : [key, value]
                 )));
                 try {
+                    checkCurrentEditor();
                     const request = createPlaceRequest({
                         placeId: place.id, requesterId: req.user.id, proposed,
                         note: `创建者的修改未通过 AI 初筛：${reviewNote(verdict.report)}`, moderation: verdict.report
@@ -268,12 +278,16 @@ router.put("/:id", requireAuth, (req, res) => {
         values.push(req.user.id);
         values.push(id);
         try {
-            syncCategoryRegistry(normalizedCategoryNames, req.user.id);
-        } catch (categoryError) {
-            return res.status(500).json({ error: `分类目录同步失败：${categoryError.message}` });
-        }
-        db.run(sql, values, function (e) {
-            if (e) return res.status(500).json({ error: e.message });
+            await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
+            db._raw.transaction(()=>{
+                const current=checkCurrentEditor();
+                if(['name','description','category','per_person_cost'].some(key=>current[key]!==place[key]))throw Object.assign(new Error('地点已被修改，请重新打开'),{status:409});
+                syncCategoryRegistry(normalizedCategoryNames,req.user.id);
+                db._raw.prepare(sql).run(...values);
+                require('../services/placeRevisions').recordPlaceRevision({placeId:Number(id),authorId:req.user.id,path:isCreator?'owner_edit':'admin_edit',before:current});
+            }).immediate();
+        }catch(e){return res.status(e.status||500).json({error:e.publicMessage||e.message});}
+        {
             // 创建者改了复核中的地点：重新初筛；改了被驳回的地点：重新提交人工复核
             if (isCreator && place.moderation_status !== 'visible') {
                 try { afterOwnerEdit(id); } catch (moderationError) { res.locals.unhandledError = moderationError; }
@@ -288,7 +302,7 @@ router.put("/:id", requireAuth, (req, res) => {
                 res.json(row);
                 if (semanticChanged) setImmediate(() => queuePlaceVectorSync(id));
             });
-        });
+        }
     });
 });
 

@@ -9,7 +9,7 @@ export function recordPlaceBehavior(backendUrl, token, placeId, eventType, chann
         return fetch(`${backendUrl}/api/preferences/events`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ event_id: eventId, place_id: Number(placeId), event_type: eventType, channel }),
+            body: JSON.stringify({ event_id: eventId, place_id: Number(placeId), event_type: eventType, channel,trigger:'user',surface:'place_card',contract_version:1 }),
             keepalive: true
         }).then((response) => response.ok).catch(() => false);
     } catch (_) {

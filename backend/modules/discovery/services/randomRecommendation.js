@@ -69,7 +69,8 @@ function recommendationWeight(place, distanceKm) {
         + 0.3 * completeness + 0.4 * favorites / (favorites + 5);
 }
 
-function nearbyCandidates(database, center) {
+async function nearbyCandidates(database, center) {
+    await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     // A spherical bounding box first, then exact great-circle distance. At the
     // poles or across the date line, latitude alone is a safe coarse filter.
     const angularRadius = RADIUS_KM / 6371.0088;

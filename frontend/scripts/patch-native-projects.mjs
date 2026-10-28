@@ -319,6 +319,7 @@ function patchIos() {
 // iOS 原生地图控件（SwiftUI Liquid Glass）：源码直接维护在 ios/App/App/，这里只校验存在并补齐工程引用，
 // 从不覆盖手写的 Swift 逻辑；重复执行不会产生改动。
 const IOS_NATIVE_SOURCES = [
+    ['NativeClusterMarkers.swift', 'A7F1C0DE0000000000000019', 'A7F1C0DE0000000000000029'],
     ['NativeSettingsPlugin.swift', 'A7F1C0DE0000000000000016', 'A7F1C0DE0000000000000026'],
     ['NativeFeedbackPlugin.swift', 'A7F1C0DE0000000000000017', 'A7F1C0DE0000000000000027'],
     ['NativePlaceFormPlugin.swift', 'A7F1C0DE0000000000000018', 'A7F1C0DE0000000000000028'],
@@ -341,8 +342,8 @@ function patchIosNativeChrome() {
         const anchors = {
             buildFile: /(\t\t\S+ \/\* SceneDelegate\.swift in Sources \*\/ = \{isa = PBXBuildFile;[^\n]*\n)/,
             fileRef: /(\t\t\S+ \/\* SceneDelegate\.swift \*\/ = \{isa = PBXFileReference;[^\n]*\n)/,
-            groupChild: /(\t\t\t\t\S+ \/\* SceneDelegate\.swift \*\/,\n)/,
-            source: /(\t\t\t\t\S+ \/\* SceneDelegate\.swift in Sources \*\/,\n)/
+            groupChild: /(\t\t\t\t\S+ \/\* SceneDelegate\.swift \*\/,\r?\n)/,
+            source: /(\t\t\t\t\S+ \/\* SceneDelegate\.swift in Sources \*\/,\r?\n)/
         };
         let next = text;
         for (const [name, fileRefId, buildFileId] of IOS_NATIVE_SOURCES) {

@@ -434,7 +434,10 @@ final class NativePlaceFormModel: ObservableObject {
             return
         }
         var values = self.values
-        if isCreate { values["rating"] = NSNumber(value: effectiveRating) }
+        if isCreate {
+            values["rating_input_kind"] = rating == nil ? "default" : "explicit"
+            values["rating"] = NSNumber(value: effectiveRating)
+        }
         startRequest(kind: "submit", payload: ["values": values])
     }
 

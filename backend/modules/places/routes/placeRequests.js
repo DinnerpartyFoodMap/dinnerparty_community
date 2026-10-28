@@ -103,11 +103,13 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
         }
         return proposed[key];
     });
+    const beforePlace=db._raw.prepare('SELECT * FROM Place WHERE id=?').get(reqRow.place_id);
     const placeUpdate = db._raw.prepare(`UPDATE Place SET ${sets} WHERE id = ?`)
         .run(...values, reqRow.place_id);
     if (placeUpdate.changes !== 1) {
         throw reviewFailure(409, 'PLACE_REQUEST_TARGET_MISSING', '申请对应的地点已不存在');
     }
+    require('../services/placeRevisions').recordPlaceRevision({placeId:reqRow.place_id,authorId:reqRow.requester_id,executorId:adminId,path:'request_approved',before:beforePlace,requestId:id,recordedAt:reqRow.submitted_at_ms||require('../../ratings/services/placeRatingSchema').creationTimestamp(reqRow.created_time,Date.now()),researchConsentId:reqRow.research_consent_id||null});
 
     const reviewed = db._raw.prepare(
         `UPDATE PlaceRequest
@@ -128,7 +130,7 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
 
 // 管理员获取所有申请（需 manage_places 权限）。新增复核申请（request_type = 'create'）
 // 另带地点当前内容 place 和 AI 报告 moderation
-router.get("/", requireAuth, requireAdmin("manage_places"), (req, res) => {
+router.get("/", requireAuth, requireAdmin("manage_places"), require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware, (req, res) => {
     db.all("SELECT * FROM PlaceRequest ORDER BY created_time DESC", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         const selectPlace = db._raw.prepare(`SELECT p.*, u.username AS creator_name,${RATING_COLUMNS_SQL}

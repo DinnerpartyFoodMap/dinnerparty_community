@@ -1,82 +1,35 @@
-# 用户行为采集与用户向量
+# 用户偏好数据与私有计算
 
-启动后自动迁移，使用现有 SQLite 和地点向量，不需要新增依赖或模型调用。
-用户向量已接入“随机美食”与地点评价的“按口味加权”；具体见 [随机美食说明](../../discovery/doc/randomRecommendation.md) 与 [地点评价](../../ratings/doc/placeRatings.md)。语义搜索仍按当前搜索需求检索。
+UserPreference 的合成计算已迁入私有服务。公开侧收集业务输入、保存版本和结果；算法实现与参数测试归私有仓库。部署见 [评分与向量服务](../../ratings/doc/ALGORITHM_SERVICE.md)。
 
-## 采集口径
+## 数据与业务行为
 
-- 仅登录用户在已入库地点上的主动操作；用户身份来自现有 `requireAuth`。
-- 收藏/取消收藏：复用 `/api/favorites/:placeId`，状态发生变化时在同一个事务中写入事件。重复请求不重复记录。
-- 地点评价：直接读取当前 `PlaceRating`（见 [地点评价](../../ratings/doc/placeRatings.md)），包括添加地点时的创建者评价与上线迁移生成的评价。
-- 导航：用户选定具体地图应用时记录 `navigation`，表示点击意图，不表示已打开应用或到店。
-- 原生分享：`navigator.share()` 成功返回后记录 `share`，表示内容交给系统/应用，不表示收件人收到。
-- 复制分享链接/地点信息：剪贴板操作成功后记录 `share_copy`。取消分享、复制失败、仅打开面板不计入。
-- 接收分享链接、分享预览爬虫和自动导航跳转不归入主动操作；不会归因给分享者。
-- 前端以带 Bearer token 的 `fetch(..., { keepalive: true })` 尽力上报，不阻塞导航/分享，也不因采集失败弹出登录或错误提示。离线、浏览器终止请求时可能丢失这些事件；不保存跨账号的待发送队列。
+- 当前评分与收藏状态是画像的现有输入。低分排除对应店铺的正向兴趣；当前规则和参数保持迁移前基线。
+- 导航记录用户发起导航的意图，不证明地图应用打开或到店。
+- 原生分享成功交给系统/应用后记录 share，不证明收件人收到；复制成功后记录 share_copy。
+- 收藏增删在本地事务中写 Favorite 与 UserBehaviorEvent；相同状态不重复写行为。
+- 点击写 MapInteraction，暂不进入当前画像。新理由与确认也只作下一阶段证据。
 
-`UserBehaviorEvent` 保存服务端毫秒时间、用户、地点、事件 ID、类型、渠道及 `contributes`。
-同一用户与事件 ID 幂等；相同 ID 用于不同操作返回 409。不同 ID 的同一用户/地点/类型在 30 分钟内仍保留原始事件，但 `contributes = 0`，不再影响偏好。导航渠道共用冷却期，冷却期以最近一次有效事件为起点。每用户每分钟最多接受 60 个客户端事件（收藏事件也占用该统计窗口）。
+UserBehaviorEvent 使用服务端 UTC 毫秒时间。同一用户/event_id 幂等；相同 ID 不同操作冲突。同用户/店/类型在 30 分钟内保留后续事件但 contributes=0；渠道不绕过去重。原每分钟频率限制保留。
 
-## API
+## 接口与状态
 
-`POST /api/preferences/events`，需要登录：
+POST /api/preferences/events 需要登录，字段为 event_id、place_id、event_type、channel；新客户端可附 trigger/surface/contract_version，不改变原功能。
 
-```json
-{
-  "event_id": "a-unique-client-event-id",
-  "place_id": 123,
-  "event_type": "navigation",
-  "channel": "amap"
-}
-```
+GET /api/preferences/me 返回 status、vector、model、dimensions、algorithm_version、source_place_count、vector_place_count、total_weight、updated_at。状态继续为 ready/pending/empty/unavailable；向量维度 1024，算法版本保留为 2。没有有效结果时不能制造零向量。
 
-允许的类型与渠道：
+公开 getUserPreference 已改为 Promise；所有消费者需 await。随机推荐先取得普通画像对象，再交给同步抽样回调；不能把 async 回调塞入原同步 drawRecommendation。
 
-| 类型 | 渠道 |
-| --- | --- |
-| `navigation` | `system-default`, `apple-maps`, `amap`, `tencent`, `google` |
-| `share` | `place`, `amap` |
-| `share_copy` | `place`, `amap`, `place_info` |
+## 更新与一致性
 
-事件 ID 为 16–80 个字母、数字、下划线或连字符。客户端不能提交收藏事件、指定用户、权重或时间。
-新事件返回 201 和 `{ recorded: true, counted: true/false }`；冷却期内含 `reason: "cooldown"`；重复 ID 返回 200 和 `{ recorded: false, reason: "duplicate" }`。
+userVectorAdapter 收集固定快照，事务外调用 preference，写回前复核 input_revision。computed_input_revision 对齐后才清 dirty；同用户在途计算合并。输入连续变化时最多重取一次，随后保留 dirty 等待后台重试。
 
-`GET /api/preferences/me` 仅返回当前登录用户的向量和计算信息，响应不缓存。
+既有兼容、未过期的干净画像保持原刷新周期；升级时不强制重新计算。来源变化、地点向量变化和删除通过原触发链递增输入版本。worker 停止会取消发布；迟到的旧结果不能覆盖新的收藏或改评。
 
-- `status`: `ready`（至少一个有效地点向量）、`empty`（没有有效兴趣来源）、`pending`（有来源但没有可用合成向量）、`unavailable`（sqlite-vec 未加载）。
-- `vector`: 1024 维归一化数组，尚不可用时为 `null`，不以全零向量冒充画像。
-- `model`, `dimensions`, `algorithm_version`: 向量模型与计算版本。
-- `source_place_count`, `vector_place_count`: 有兴趣的地点数与实际参与计算的地点数；两者不同表示地点向量覆盖不完整。
-- `total_weight`: 实际参与合成的地点权重之和。
-- `updated_at`: 服务端 Unix 毫秒时间。
+## 行为用途与保留
 
-## 算法 v2
+地图点击/决策原 30 天清理规则不变；画像的 180 天读取窗口不等于存储期限。AlgorithmEventContext 记录采集时的来源、用途凭据和触发方式，随原事件删除。
 
-只使用最近 180 天 `contributes = 1` 的导航/分享/复制事件。每个事件先按 30 天半衰期衰减，然后按店铺和行为类型求和：
+研究开关默认值不是明确选择凭据。仅操作既有研究设置开关时记录 ResearchConsentEvent；研究样本同时检查采集时依据、当前允许和撤回。撤回后的旧样本不会因重新开启而自动恢复。
 
-```text
-有效次数(type, place) = Σ 2 ^ (-事件距今天数 / 30)
-评价权重 = 5（强烈推荐） | 2（均线之上） | 0（未评价）
-店铺权重 = 0，如果评价为均线之下或强烈拒绝（明确不喜欢，即使收藏或导航过）
-         否则 min(12,
-    5 × 当前是否收藏
-    + 评价权重
-    + 3 × ln(1 + 有效导航次数)
-    + 2 × ln(1 + 有效分享次数)
-    + 1 × ln(1 + 有效复制次数))
-用户向量 = normalize(Σ 店铺权重 × normalize(地点向量))
-```
-
-权重为 0 的店铺不算兴趣来源（不计入 `source_place_count`）。v1 没有评价项；版本号变化后既有画像会由后台自动重算。
-收藏与评价都依赖当前状态（`Favorite`、`PlaceRating`）；历史收藏增删事件只留作记录，不重复加权。既有收藏会直接参与计算，不补造历史事件。取消收藏撤销该店的收藏权重，其他有效行为仍然保留。
-仅使用仍存在且 `has_vector = 1` 的地点向量；缺失、待更新、零或无效向量跳过。
-模型沿用现有地点索引的配置，默认 `Qwen/Qwen3-Embedding-4B`。现有地点索引没有逐条模型版本标记，因此更换 Embedding 模型时必须先全量重建地点索引，再重算用户向量，不能仅凭维度相同混用。
-
-## 更新与维护
-
-`UserPreference` 保存 Float32 BLOB、计算信息和 `dirty` 标记。
-行为/收藏/评价变化后在后续事件循环中自动重算。数据库触发器也会在评价增删改、相关地点向量或语义字段更新、地点删除时将用户向量标记为待更新。
-后台每分钟处理最多 20 个待更新或超过 6 小时的画像，启动后会处理既有收藏。读取自己的画像时也会检查版本、时效与待更新标记。时间衰减因此不要求用户再发生新操作。
-sqlite-vec 不可用时仍可采集；地点向量补齐后自动重新参与计算。删除用户会级联删除其行为和向量；删除地点会删除相关行为并使画像失效。
-
-验证：在 `backend/` 执行 `npm run test:preferences`，使用独立临时数据库、合成地点向量及本地 HTTP 服务，不访问模型服务、生产数据库或真实 Redis。
+收藏反馈还会镜像到 MapInteraction，统一证据以 UserBehaviorEvent 为主，按 user/event_id 去重。导出默认关闭并先 dry-run，不能靠导出绕过保留期限。更多见评分服务接入中的研究包章节。

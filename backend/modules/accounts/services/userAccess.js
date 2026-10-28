@@ -49,4 +49,11 @@ function refreshBanState(user, now = new Date()) {
     return true;
 }
 
-module.exports = { isBanExpired, isBanActive, refreshBanState };
+// Call again inside a write transaction after any external await.
+function requireWritableUser(userId) {
+    const user=db._raw.prepare('SELECT * FROM User WHERE id=?').get(userId);
+    if(!user)throw Object.assign(new Error('住民不存在'),{status:404,publicMessage:'住民不存在'});
+    if(isBanActive(user))throw Object.assign(new Error('通行凭证已受限，仅允许查看内容'),{status:403,publicMessage:'通行凭证已受限，仅允许查看内容'});
+    return user;
+}
+module.exports = { isBanExpired, isBanActive, refreshBanState, requireWritableUser };

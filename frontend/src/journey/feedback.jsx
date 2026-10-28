@@ -46,7 +46,7 @@ export function useMapFeedback(base,token) {
         }
         // Attribution is supplied only by this rendered search or the explicit random draw.
         const {card_id,...attributes}=extra;
-        queue.current.push({event:{id:eventId(),session_id:session.current,kind,surface,place_id,...attributes,...context},snapshot});
+        queue.current.push({event:{id:eventId(),session_id:session.current,kind,surface,place_id,trigger:kind==='click'?'user':'unknown',contract_version:1,...attributes,...context},snapshot});
         if(queue.current.length>100)queue.current.shift();
     },[token,consent,present]);
     const expose=useCallback((surface,placeId,rank,decisionId,cardId)=>record('exposure',surface,placeId,{decision_id:decisionId||null,rank,card_id:cardId}),[record]);

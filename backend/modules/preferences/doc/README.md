@@ -1,6 +1,6 @@
 # 偏好、收藏与向量
 
-入口：routes/preferences.js（`/api/preferences`）、routes/favorites.js（`/api/favorites`）。userPreferenceService 记录有效行为并构建用户画像；placeVectorService 同步地点 Embedding、哈希与重试；userPreferenceSchema 建表迁移。模型协议在 infrastructure/aiClients。评分 ≥3 作为兴趣信号，≤2 不作为正向来源；具体权重见现有 [偏好专题](PREFERENCES.md)。住民主页的六类餐饮偏好雷达（店铺分类、证据与收缩规则）见 [六类餐饮偏好](TASTE_AXES.md)。
+入口：routes/preferences.js（`/api/preferences`）、routes/favorites.js（`/api/favorites`）。userPreferenceService 记录行为，userVectorAdapter 收集版本快照并调用私有服务合成画像；placeVectorService 保留地点 Embedding 同步、哈希与重试；userPreferenceSchema/algorithmSchema 负责增量迁移。业务、状态和用途见 [偏好专题](PREFERENCES.md)，部署见 [数值服务接入](../../ratings/doc/ALGORITHM_SERVICE.md)。六类餐饮偏好雷达仍见 [六类餐饮偏好](TASTE_AXES.md)。
 
 ```mermaid
 flowchart TD
@@ -15,15 +15,15 @@ flowchart TD
     Validate --> Event[存有效行为或收藏状态]
     Event --> Queue[排队刷新用户向量]
     Save --> Queue
-    Queue --> Sources[收集当前有效正向来源及地点向量]
-    Sources --> Compatible[检查模型 / 维度 / 算法版本]
-    Compatible --> Profile[归一化合成画像并保存覆盖数量与状态]
+    Queue --> Sources[冻结当前来源 / 地点向量 / 输入版本]
+    Sources --> Compatible[私有服务按旧规则合成画像]
+    Compatible --> Profile[校验模型 / 数值 / 输入版本后原子发布]
     Profile --> Consumers[随机 / 同好 / 口味评分只读使用]
 ```
 
 | 选择 | 当前实现 | 对照 |
 | --- | --- | --- |
-| 用户向量 | 本地合成已有地点向量 | 每次个人推荐调用模型会增加外部延迟与调用量 |
+| 用户向量 | 主后端提供版本快照，私有服务合成已有地点向量 | 不增加 embedding/LLM 调用；远程结果核对版本后发布 |
 | 更新 | 内容哈希与状态机 + 后台重试 | 无条件重算浪费，失败后不留状态则无法补偿 |
 | 不完整画像 | 输出状态与覆盖数，消费者按规则退回基础行为 | 把缺失向量当有效零向量会混淆语义 |
 

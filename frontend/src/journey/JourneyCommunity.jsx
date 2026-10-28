@@ -16,6 +16,7 @@ export default function JourneyCommunity({ctx,nav}) {
     const [section,setSection]=useState('neighbors'),[view,setView]=useState('list');
     const [settings,setSettings]=useState(null),[collections,setCollections]=useState([]),[favorites,setFavorites]=useState([]),[neighbors,setNeighbors]=useState(null),[person,setPerson]=useState(null),[stats,setStats]=useState(null);
     const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState('');
+    const [researchChoice,setResearchChoice]=useState(false);
     const load=async()=>{
         const [c,l,f,n,s]=await Promise.all([api('/consent'),api('/collections'),request(base,token,'/api/favorites'),api('/neighbors'),api('/feedback')]);
         setSettings(c);setCollections(l);setFavorites(f);setNeighbors(n);setStats(s);feedback?.updateConsent(c);
@@ -25,7 +26,7 @@ export default function JourneyCommunity({ctx,nav}) {
     },[base,token]);
     const perform=async fn=>{setBusy(true);setError('');setSaved('');try{await fn();}catch(e){setError(e.message);}finally{setBusy(false);}};
     const openPerson=p=>perform(async()=>setPerson({...await api(`/users/${p.id}/collections`),similarity:p.similarity,shared:p.shared}));
-    const saveSettings=()=>perform(async()=>{const next=await api('/consent',{method:'PUT',body:JSON.stringify(settings)});setSettings(next);feedback?.updateConsent(next);setNeighbors(await api('/neighbors'));setPerson(null);setStats(await api('/feedback'));setSaved(t('journey:community.settingsSaved'));});
+    const saveSettings=()=>perform(async()=>{const next=await api('/consent',{method:'PUT',body:JSON.stringify({...settings,research_choice:researchChoice})});setSettings(next);setResearchChoice(false);feedback?.updateConsent(next);setNeighbors(await api('/neighbors'));setPerson(null);setStats(await api('/feedback'));setSaved(t('journey:community.settingsSaved'));});
     const saveCollection=c=>perform(async()=>{await api(`/collections/${c.id}`,{method:'PUT',body:JSON.stringify({...c,place_ids:c.places.map(p=>p.id)})});await load();setSaved(t('journey:community.collectionSaved'));});
     const editCollection=(id,patch)=>setCollections(list=>list.map(c=>c.id===id?{...c,...patch}:c));
     const list=neighbors?.neighbors||[];
@@ -87,7 +88,7 @@ export default function JourneyCommunity({ctx,nav}) {
                 <label className="jw-field"><span className="jw-field__label">{t('journey:community.tagsLabel')}</span><input value={settings.tags.join(t('journey:community.tagSeparator'))} maxLength={500} onChange={e=>setSettings({...settings,tags:e.target.value.split(/[,，]/)})}/></label>
                 <label className="jw-check"><input type="checkbox" checked={settings.discovery} onChange={e=>setSettings({...settings,discovery:e.target.checked})}/><span>{t('journey:community.consent.discovery')}</span></label>
                 <label className="jw-check"><input type="checkbox" checked={settings.feedback} onChange={e=>setSettings({...settings,feedback:e.target.checked,research:e.target.checked?settings.research:false})}/><span>{t('journey:community.consent.feedback')}</span></label>
-                <label className="jw-check"><input type="checkbox" disabled={!settings.feedback} checked={settings.research} onChange={e=>setSettings({...settings,research:e.target.checked})}/><span>{t('journey:community.consent.research')}</span></label>
+                <label className="jw-check"><input type="checkbox" disabled={!settings.feedback} checked={settings.research} onChange={e=>{setSettings({...settings,research:e.target.checked});setResearchChoice(true);}}/><span>{t('journey:community.consent.research')}</span></label>
                 <button type="button" className="jw-primary" disabled={busy} onClick={saveSettings}>{t('journey:community.saveSettings')}</button>
                 <p className="jw-muted">{stats?.counts.map(s=>`${KIND_LABEL[s.kind]||s.kind} ${s.count}`).join(' · ')||t('journey:community.noInteractions')}</p>
                 <button type="button" disabled={busy} onClick={()=>perform(async()=>{const c=await api('/feedback',{method:'DELETE'});setSettings(c);feedback?.updateConsent(c);setStats(await api('/feedback'));setSaved(t('journey:community.interactionsCleared'));})}>{t('journey:community.clearInteractions')}</button>

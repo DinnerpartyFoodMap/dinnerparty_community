@@ -167,6 +167,7 @@ function validateNewPlace(input = {}) {
             categoryNames: categoryList.names,
             per_person_cost: cost.value,
             rating,
+            rating_input_kind:['explicit','default'].includes(input.rating_input_kind)?input.rating_input_kind:input.rating==null?'default':'unknown',
             exterior_images: input.exterior_images ? JSON.stringify(normalizeImageUrls(input.exterior_images)) : null,
             menu_images: input.menu_images ? JSON.stringify(normalizeImageUrls(input.menu_images)) : null
         }
@@ -209,7 +210,8 @@ function insertPlaceSync(place, creatorId, { source }) {
     const placeId = Number(info.lastInsertRowid);
     // Non-admin places start hidden from others until the moderation check passes.
     registerNewPlaceSync(placeId, creatorId, source);
-    insertCreationRating(placeId, creatorId, place.rating ?? defaultCreationScore(place.categoryNames));
+    insertCreationRating(placeId, creatorId, place.rating ?? defaultCreationScore(place.categoryNames),Date.now(),place.rating_input_kind==='explicit'?'creation_explicit':place.rating_input_kind==='default'?'creation_default':'unknown');
+    require('./placeRevisions').recordPlaceRevision({placeId,authorId:creatorId,path:source||'create'});
     enqueuePlaceCreatedNotifications([placeId], { source });
     return placeId;
 }
@@ -233,12 +235,27 @@ function getPlaceWithNames(placeId) {
 }
 
 /** Validates and creates a place in its own transaction. Throws { status, publicMessage } on invalid input. */
-function createPlace(input, creatorId, { source }) {
+async function createPlace(input, creatorId, { source }) {
     const validated = validateNewPlace(input);
     if (validated.error) {
         throw Object.assign(new Error(validated.error), { status: 400, publicMessage: validated.error });
     }
-    const placeId = db._raw.transaction(() => insertPlaceSync(validated.value, creatorId, { source })).immediate();
+    let placeId;
+    for(let attempt=0;attempt<2;attempt++){
+        if(creatorId)require('../../accounts/services/userAccess').requireWritableUser(creatorId);
+        const {context,same}=require('../../ratings/services/ratingSnapshot');
+        const snapshot=context(),score=validated.value.rating,weight=require('../../ratings/services/ratingReputation').userRatingWeight(creatorId);
+        const result=await require('../../../infrastructure/numericAlgorithmClient').compute('ratingsummary',{...snapshot,place_ids:[1],ratings:creatorId?[{place_id:1,user_id:creatorId,score,weight}]:[]});
+        placeId=db._raw.transaction(()=>{
+            if(creatorId)require('../../accounts/services/userAccess').requireWritableUser(creatorId);
+            if(!same(snapshot.input_revision))return null;
+            const id=insertPlaceSync(validated.value,creatorId,{source});
+            require('../../ratings/services/ratingSummaryAdapter').writeSummary(id,result.summaries[0]);
+            return id;
+        }).immediate();
+        if(placeId)break;
+    }
+    if(!placeId)throw require('../../../infrastructure/numericAlgorithmClient').failure(409,'stale_input');
     afterPlacesCreated([placeId]);
     return getPlaceWithNames(placeId);
 }

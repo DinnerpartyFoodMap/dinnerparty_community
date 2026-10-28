@@ -741,6 +741,7 @@ function init() {
         require('../modules/ratings/services/placeRatingSchema').initPlaceRatingSchema(rawDb);
         require('../modules/preferences/services/userPreferenceSchema').initUserPreferenceSchema(rawDb);
         require('../modules/journeys/services/journeySchema').initJourneySchema(rawDb);
+        require('../modules/ratings/services/algorithmSchema').initAlgorithmSchema(rawDb);
         require('../modules/qqbot/services/qqBotSchema').initQQBotSchema(rawDb);
         require('../modules/accounts/services/userLocation').initUserLocationSchema(rawDb);
         require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);

@@ -6,7 +6,8 @@ const { viewerPlaceSql } = require('./placeVisibility');
 // 可见性与附近地点一致：公开的，加上观看者自己创建、还在审核中的。字段与 /places/nearby 相同，前端可直接交给标记层。
 const CREATOR_PLACES_LIMIT = 200;
 
-function listCreatorPlaces(creatorId, viewerId = null, database = db._raw) {
+async function listCreatorPlaces(creatorId, viewerId = null, database = db._raw) {
+    await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     const places = database.prepare(`SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
         FROM Place p
         LEFT JOIN User u ON p.creator_id = u.id

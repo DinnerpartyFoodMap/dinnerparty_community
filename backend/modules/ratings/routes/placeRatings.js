@@ -16,11 +16,11 @@ function optionalAuth(req, res, next) {
 }
 
 function handle(fn) {
-    return (req, res) => {
+    return async (req, res) => {
         try {
-            res.json(fn(req));
+            res.json(await fn(req));
         } catch (error) {
-            if (error && error.publicMessage) return res.status(error.status || 400).json({ error: error.publicMessage });
+            if (error && error.publicMessage) return res.status(error.status || 400).json({ error: error.publicMessage,...(error.committed?{committed:true,request_id:error.request_id}:{}) });
             res.locals.unhandledError = error;
             res.status(500).json({ error: '评价服务暂不可用，请稍后重试' });
         }
@@ -31,9 +31,9 @@ function handle(fn) {
 router.get('/places/:placeId', optionalAuth, handle((req) => ratingState(req.params.placeId, req.user || null)));
 
 // PUT /api/ratings/places/:placeId { score: 1–4 } — rate or change; counts toward the daily limit
-router.put('/places/:placeId', requireAuth, handle((req) => ratePlace(req.user, req.params.placeId, req.body && req.body.score)));
+router.put('/places/:placeId', requireAuth, handle((req) => ratePlace(req.user, req.params.placeId, req.body && req.body.score,{requestId:req.body?.request_id,confirm:req.body?.confirm===true,surface:'rating_panel'})));
 
 // DELETE /api/ratings/places/:placeId — withdraw own rating (used quota is not returned)
-router.delete('/places/:placeId', requireAuth, handle((req) => withdrawRating(req.user, req.params.placeId)));
+router.delete('/places/:placeId', requireAuth, handle((req) => withdrawRating(req.user, req.params.placeId,{requestId:req.body?.request_id})));
 
 module.exports = router;

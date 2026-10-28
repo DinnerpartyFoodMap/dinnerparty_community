@@ -40,8 +40,8 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
     };
     // moderation：创建者的修改被 AI 初筛拦下时附上的报告（placeModeration.checkOwnerEdit），管理页显示拦截原因
     const info = db._raw.prepare(
-        'INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, moderation) VALUES (?, ?, ?, ?, ?)'
-    ).run(placeId, requesterId, JSON.stringify(normalizedProposed), note || '', moderation ? JSON.stringify(moderation) : null);
+        'INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, moderation,submitted_at_ms,research_consent_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(placeId, requesterId, JSON.stringify(normalizedProposed), note || '', moderation ? JSON.stringify(moderation) : null,Date.now(),require('../../ratings/services/ratingEvidence').researchConsent(requesterId)?.id||null);
     const row = db._raw.prepare('SELECT * FROM PlaceRequest WHERE id = ?').get(info.lastInsertRowid);
     insertAdminAction(
         requesterId,

@@ -114,11 +114,11 @@ function formatSearchResults(query, rows) {
     return lines.join('\n');
 }
 
-function search(ctx, args) {
+async function search(ctx, args) {
     const query = String(args || '').trim().slice(0, SEARCH_QUERY_MAX_LENGTH);
     if (!query) return [{ text: '用法：!查询 关键词（按店名、标签、描述匹配，最多 5 条）' }];
     if (!consumeQueryQuota(ctx)) return ctx.isGroup ? [] : [{ text: '查询太频繁了，请稍后再试。' }];
-    const rows = fastSearch(query, SEARCH_LIMIT);
+    const rows = await fastSearch(query, SEARCH_LIMIT);
     const replies = [{ text: formatSearchResults(query, rows) }];
     // The first result also goes out as a link card.
     if (rows.length) replies.push({ card: { placeId: rows[0].id } });
@@ -157,9 +157,9 @@ function formatRandomPick(result) {
     return lines.join('\n');
 }
 
-function randomPick(ctx) {
+async function randomPick(ctx) {
     if (!consumeQueryQuota(ctx)) return ctx.isGroup ? [] : [{ text: '太频繁了，请稍后再试。' }];
-    const result = pickRandomPlace(ctx);
+    const result = await pickRandomPlace(ctx);
     const replies = [{ text: formatRandomPick(result) }];
     if (result.place) replies.push({ card: { placeId: result.place.id } });
     return replies;
@@ -180,7 +180,7 @@ function describeCenter(center) {
     return `「${center.label}」（${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}）`;
 }
 
-function groupRandomCenter(ctx, args) {
+async function groupRandomCenter(ctx, args) {
     if (!ctx.isGroup) return [{ text: '随机中心按群设置，请在群里发送 !随机中心。私聊里的 !随机 以你最近一次定位为中心。' }];
     const value = String(args || '').trim();
     if (!value) {
@@ -202,7 +202,7 @@ function groupRandomCenter(ctx, args) {
             ? '已清除本群随机中心，!随机 恢复为以发送者的定位为中心。'
             : '本群没有设置随机中心。' }];
     }
-    const resolved = randomCenter.resolveCenterArgument(value);
+    const resolved = await randomCenter.resolveCenterArgument(value);
     if (resolved.error) return [{ text: resolved.error }];
     const saved = randomCenter.setGroupCenter(ctx.chatId, resolved, ctx.senderQq, ctx.now);
     logger.info('QQ bot group random centre set', { event: 'qqbot.random_center.set', groupId: ctx.chatId, source: saved.source });
@@ -318,7 +318,7 @@ async function interpretUnknown(ctx, interpret) {
     if (result.command === 'add') {
         return draft ? conversation.startDraft(ctx) : conversation.startDraft(ctx, { prefill: result.place });
     }
-    const replies = dispatch(ctx, { name: result.command, args: result.args || '', word: rest });
+    const replies = await dispatch(ctx, { name: result.command, args: result.args || '', word: rest });
     // Say how the message was understood, so the exact command is learnt along the way.
     const word = COMMAND_WORDS[result.command];
     if (word && replies[0] && replies[0].text) {

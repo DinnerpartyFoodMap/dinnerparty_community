@@ -568,17 +568,17 @@ router.get('/:id/avatar', (req, res) => {
 });
 
 // 自己填某一类餐饮的喜好（1–4，null 回到自动推断），返回新的六轴
-router.put('/me/taste', requireAuth, (req, res) => {
+router.put('/me/taste', requireAuth, async (req, res, next) => {
     const { axis, level } = req.body || {};
     if (!setSelfLevel(req.user.id, axis, level === null ? null : level)) return res.status(400).json({ error: '喜好设置无效' });
-    res.json({ taste: userTasteAxes(req.user.id) });
+    try{res.json({ taste: await userTasteAxes(req.user.id) });}catch(e){next(e);}
 });
 
 // 住民主页：头像、六类餐饮偏好、上次定位的城市与两个小组件；relation 决定是否显示屏蔽 / 解除屏蔽
-router.get('/:id/profile', attachViewer, (req, res) => {
+router.get('/:id/profile', attachViewer, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
-        const profile = getUserProfile(req.params.id, req.viewer || null);
+        const profile = await getUserProfile(req.params.id, req.viewer || null);
         if (!profile) return res.status(404).json({ error: '住民不存在' });
         res.json(profile);
     } catch (error) {
@@ -590,13 +590,17 @@ router.get('/:id/profile', attachViewer, (req, res) => {
 // 某位住民创建的地点（地点卡片点“最近修改”的名字后筛选地图）：最近创建的在前，最多 limit 个，total 是全部可见数量。
 // relation 是观看者与这位住民的关系（self / blocked / can_block，见 services/userRelations.js）；
 // 屏蔽了 Ta 时列表仍可打开（用来解除屏蔽），但不列出地点
-router.get('/:id/places', attachViewer, (req, res) => {
+router.get('/:id/places', attachViewer, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
-        const user = db._raw.prepare('SELECT id, username FROM User WHERE id = ?').get(req.params.id);
+        let user = db._raw.prepare('SELECT id, username FROM User WHERE id = ?').get(req.params.id);
         if (!user) return res.status(404).json({ error: '住民不存在' });
-        const relation = viewerRelation(req.viewer, user.id);
-        const { places, total } = relation.blocked ? { places: [], total: 0 } : listCreatorPlaces(user.id, req.viewer?.id ?? null);
+        let relation = viewerRelation(req.viewer, user.id);
+        let { places, total } = relation.blocked ? { places: [], total: 0 } : await listCreatorPlaces(user.id, req.viewer?.id ?? null);
+        user=db._raw.prepare('SELECT id, username FROM User WHERE id=?').get(req.params.id);
+        if(!user)return res.status(404).json({error:'住民不存在'});
+        relation=viewerRelation(req.viewer,user.id);
+        if(relation.blocked){places=[];total=0;}
         res.json({ user, relation, places, total, limit: CREATOR_PLACES_LIMIT });
     } catch (error) {
         res.locals.unhandledError = error;

@@ -15,6 +15,13 @@ export default function usePlaceRating({ backendUrl, token, placeId, onSummary }
     const [state, setState] = useState({ key: null, data: null, loading: false, error: '' });
     const [saving, setSaving] = useState(false);
     const [reloadToken, setReloadToken] = useState(0);
+    const commandRef=useRef(null);
+    const command=(action,score,send)=>{
+        const identity=`${key}|${action}|${score??''}`;
+        if(commandRef.current?.identity!==identity)commandRef.current={identity,id:Api.ratingRequestId()};
+        const current=commandRef.current;
+        return run(()=>send(current.id)).then(data=>{if(commandRef.current===current)commandRef.current=null;return data;});
+    };
 
     useEffect(() => {
         if (placeId == null) {
@@ -58,8 +65,8 @@ export default function usePlaceRating({ backendUrl, token, placeId, onSummary }
         loading: current.loading,
         error: current.error,
         saving,
-        submit: (score) => run(() => Api.savePlaceRating(backendUrl, token, placeId, score)),
-        withdraw: () => run(() => Api.withdrawPlaceRating(backendUrl, token, placeId)),
+        submit: (score) => command('rate',score,(requestId)=>Api.savePlaceRating(backendUrl, token, placeId, score,{requestId,confirm:true})),
+        withdraw: () => command('withdraw',null,(requestId)=>Api.withdrawPlaceRating(backendUrl, token, placeId,{requestId})),
         reload: () => setReloadToken((value) => value + 1)
     };
 }

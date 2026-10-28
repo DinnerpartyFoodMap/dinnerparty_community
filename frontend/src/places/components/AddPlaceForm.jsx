@@ -71,6 +71,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
             ...(defaultAddress ? { address: defaultAddress } : {}),
             per_person_cost: perPersonCost ? parseInt(perPersonCost, 10) : null,
             rating,
+            rating_input_kind:chosenRating==null?'default':'explicit',
             exterior_images: exteriorImages.filter(Boolean),
             menu_images: menuImages.filter(Boolean),
             longitude: defaultPos[0],

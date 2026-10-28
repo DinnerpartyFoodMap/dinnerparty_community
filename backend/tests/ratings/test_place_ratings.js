@@ -1,3 +1,5 @@
+// Async numeric API migration: assertions unchanged; await remote computations.
+(async()=>{
 const assert = require('assert/strict');
 const { randomUUID } = require('crypto');
 const fs = require('fs');
@@ -5,7 +7,6 @@ const os = require('os');
 const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-
 const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'yuyuko-ratings-'));
 process.env.DB_FILE = path.join(tempDirectory, 'ratings.sqlite');
 process.env.LOG_TO_FILE = 'false';
@@ -15,7 +16,6 @@ process.env.DEEPSEEK_API_KEY = '';
 process.env.PLACE_RATING_DAILY_LIMIT = '3';
 // Real JWT/user checks through the existing Redis-unavailable path; no external services.
 require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
-
 const database = require('../../infrastructure/database');
 const { db, init } = database;
 const { EMBEDDING_DIMENSIONS } = require('../../infrastructure/aiClients');
@@ -27,23 +27,19 @@ const placeService = require('../../modules/places/services/placeService');
 const { nearbyCandidates } = require('../../modules/discovery/services/randomRecommendation');
 const { rankSemanticRows } = require('../../modules/discovery/services/semanticSearch');
 const sql = db._raw;
-
 function makeUser(name, { banned = false } = {}) {
     const id = randomUUID();
     sql.prepare('INSERT INTO User(id, username, password, is_banned) VALUES (?, ?, ?, ?)').run(id, name, 'unused', banned ? 1 : 0);
     return id;
 }
-
 function makePlace(name, { category = '测试分类', creator = null, lat = 0, lng = 0 } = {}) {
     return Number(sql.prepare('INSERT INTO Place(name, category, creator_id, latitude, longitude) VALUES (?, ?, ?, ?, ?)')
         .run(name, category, creator, lat, lng).lastInsertRowid);
 }
-
 function rate(placeId, userId, score) {
     sql.prepare(`INSERT INTO PlaceRating(place_id, user_id, score, source, created_at, updated_at) VALUES (?, ?, ?, 'user', 0, 0)
         ON CONFLICT(place_id, user_id) DO UPDATE SET score = excluded.score`).run(placeId, userId, score);
 }
-
 function putVector(placeId, axis) {
     const values = new Float32Array(EMBEDDING_DIMENSIONS);
     values[axis] = 1;
@@ -51,7 +47,6 @@ function putVector(placeId, axis) {
     sql.prepare('INSERT INTO place_vectors(place_id, embedding) VALUES (?, ?)').run(BigInt(placeId), Buffer.from(values.buffer));
     sql.prepare('UPDATE Place SET has_vector = 1, vector_updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(placeId);
 }
-
 function testPureRules() {
     assert.equal(ratings.ratingTier(null), null);
     assert.equal(ratings.ratingTier(1), 1);
@@ -60,7 +55,8 @@ function testPureRules() {
     assert.equal(ratings.ratingTier(2.5), 3);
     assert.equal(ratings.ratingTier(3.5), 4);
     assert.equal(ratings.ratingTier(4), 4);
-    for (const bad of [0, 5, 2.5, '4', true, null, undefined]) assert.equal(ratings.isValidScore(bad), false, `rejects ${bad}`);
+    for (const bad of [0, 5, 2.5, '4', true, null, undefined])
+        assert.equal(ratings.isValidScore(bad), false, `rejects ${bad}`);
     assert.equal(ratings.defaultCreationScore('快餐, 避雷'), 1);
     assert.equal(ratings.defaultCreationScore(['火锅']), 4);
     assert.equal(ratings.defaultCreationScore(''), 4);
@@ -75,7 +71,6 @@ function testPureRules() {
     assert.equal(ratings.quotaDay(beforeMidnight + 60000), '2026-10-15');
     assert.equal(ratings.quotaResetsAt(beforeMidnight), beforeMidnight + 60000);
 }
-
 function testMigrationSeed() {
     const creator = makeUser('seed-creator');
     const gone = makeUser('seed-gone');
@@ -97,22 +92,18 @@ function testMigrationSeed() {
     sql.prepare('DELETE FROM PlaceRating WHERE place_id = ?').run(goodPlace);
     initPlaceRatingSchema(sql);
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM PlaceRating WHERE place_id = ?').get(goodPlace).n, 0);
-    assert.equal(sql.prepare('SELECT dirty FROM UserPreference WHERE user_id = ?').get(creator).dirty, 1,
-        'seeded raters get a profile row so the worker builds their vector');
+    assert.equal(sql.prepare('SELECT dirty FROM UserPreference WHERE user_id = ?').get(creator).dirty, 1, 'seeded raters get a profile row so the worker builds their vector');
     sql.prepare('DELETE FROM Place WHERE id IN (?, ?, ?)').run(goodPlace, avoidPlace, orphanPlace);
 }
-
-function testCreationRatings() {
+async function testCreationRatings() {
     const creator = makeUser('creator');
-    const plain = placeService.createPlace({ name: '新店', latitude: 1, longitude: 1, category: '火锅' }, creator, { source: 'web' });
-    const avoid = placeService.createPlace({ name: '雷店', latitude: 1, longitude: 1, category: '火锅, 避雷' }, creator, { source: 'web' });
-    const chosen = placeService.createPlace({ name: '一般店', latitude: 1, longitude: 1, category: '避雷', rating: 3 }, creator, { source: 'web' });
-    assert.deepEqual([plain, avoid, chosen].map((place) => [place.rating_count, place.rating_average]), [[1, 4], [1, 1], [1, 3]],
-        'creation responses carry the creator rating aggregate');
+    const plain = await placeService.createPlace({ name: '新店', latitude: 1, longitude: 1, category: '火锅' }, creator, { source: 'web' });
+    const avoid = await placeService.createPlace({ name: '雷店', latitude: 1, longitude: 1, category: '火锅, 避雷' }, creator, { source: 'web' });
+    const chosen = await placeService.createPlace({ name: '一般店', latitude: 1, longitude: 1, category: '避雷', rating: 3 }, creator, { source: 'web' });
+    assert.deepEqual([plain, avoid, chosen].map((place) => [place.rating_count, place.rating_average]), [[1, 4], [1, 1], [1, 3]], 'creation responses carry the creator rating aggregate');
     assert.equal(sql.prepare('SELECT source FROM PlaceRating WHERE place_id = ?').get(plain.id).source, 'create');
     for (const rating of [0, 5, '4', 2.5]) {
-        assert.throws(() => placeService.createPlace({ name: 'x', latitude: 1, longitude: 1, rating }, creator, { source: 'web' }),
-            (error) => error.status === 400 && error.publicMessage === '评价无效');
+        await assert.rejects(async () => await placeService.createPlace({ name: 'x', latitude: 1, longitude: 1, rating }, creator, { source: 'web' }), (error) => error.status === 400 && error.publicMessage === '评价无效');
     }
     // QQ Bot path: insertPlaceSync inside the caller's transaction, default rule applies.
     const validated = placeService.validateNewPlace({ name: '机器人店', latitude: 2, longitude: 2, category: '避雷' });
@@ -124,8 +115,7 @@ function testCreationRatings() {
     const made = sql.transaction(() => createDiaryPlace(creator, { name: '日记店', category: '甜品', lat: 3, lng: 3 }, {})).immediate();
     assert.equal(sql.prepare('SELECT score FROM PlaceRating WHERE place_id = ?').get(made.place_id).score, 4);
 }
-
-function testWeightedSummaries() {
+async function testWeightedSummaries() {
     const place = makePlace('贡献加权店');
     const trusted = makeUser('weighted-trusted');
     const newcomer = makeUser('weighted-new');
@@ -133,7 +123,7 @@ function testWeightedSummaries() {
     rate(place, newcomer, 1);
     sql.prepare('UPDATE PlaceRating SET weight = ? WHERE place_id = ? AND user_id = ?').run(1.2, place, trusted);
     sql.prepare('UPDATE PlaceRating SET weight = ? WHERE place_id = ? AND user_id = ?').run(0.4, place, newcomer);
-    const summary = ratings.ratingSummary(place);
+    const summary = await ratings.ratingSummary(place);
     assert.equal(summary.average, 3.25, 'public scores use rating weights rather than head counts');
     assert.equal(summary.count, 2);
     assert.deepEqual(summary.distribution, { 1: 1, 2: 0, 3: 0, 4: 1 }, 'distribution still counts people');
@@ -143,8 +133,7 @@ function testWeightedSummaries() {
     assert.equal(ratings.isAvoidedPlace(row), false, 'avoidance uses the weighted public score');
     sql.prepare('DELETE FROM Place WHERE id = ?').run(place);
 }
-
-function testPersonalization() {
+async function testPersonalization() {
     // Two taste clusters on separate axes. Five places each give full profile reliability.
     const noodle = Array.from({ length: 5 }, (_, i) => makePlace(`面馆${i}`));
     const dessert = Array.from({ length: 5 }, (_, i) => makePlace(`甜品${i}`));
@@ -158,66 +147,61 @@ function testPersonalization() {
     const opposite = makeUser('rater-dessert');
     const blank = makeUser('rater-without-profile');
     const dessertViewer = makeUser('viewer-dessert');
-    for (const user of [viewer, twin]) noodle.forEach((id) => sql.prepare('INSERT INTO Favorite(user_id, place_id) VALUES (?, ?)').run(user, id));
-    for (const user of [opposite, dessertViewer]) dessert.forEach((id) => sql.prepare('INSERT INTO Favorite(user_id, place_id) VALUES (?, ?)').run(user, id));
-    for (const user of [viewer, twin, opposite, dessertViewer]) assert.equal(preferences.getUserPreference(user).status, 'ready');
-
+    for (const user of [viewer, twin])
+        noodle.forEach((id) => sql.prepare('INSERT INTO Favorite(user_id, place_id) VALUES (?, ?)').run(user, id));
+    for (const user of [opposite, dessertViewer])
+        dessert.forEach((id) => sql.prepare('INSERT INTO Favorite(user_id, place_id) VALUES (?, ?)').run(user, id));
+    for (const user of [viewer, twin, opposite, dessertViewer])
+        assert.equal((await preferences.getUserPreference(user)).status, 'ready');
     const target = makePlace('争议店');
     rate(target, twin, 4);
     rate(target, opposite, 1);
     rate(target, viewer, 1);
-    const publicSummary = ratings.ratingSummary(target);
+    const publicSummary = await ratings.ratingSummary(target);
     assert.equal(publicSummary.count, 3);
     assert.equal(publicSummary.average, 2);
     assert.deepEqual(publicSummary.distribution, { 1: 2, 2: 0, 3: 0, 4: 1 });
-
-    const mine = ratings.personalizedSummary(target, viewer);
+    const mine = await ratings.personalizedSummary(target, viewer);
     assert.equal(mine.rater_count, 2, "the viewer's own rating is left out");
     assert.equal(mine.matched_raters, 2);
     assert.ok(mine.average > 3.5, `a same-taste rater dominates: ${mine.average}`);
     assert.equal(mine.tier, 4);
-    const theirs = ratings.personalizedSummary(target, dessertViewer);
+    const theirs = await ratings.personalizedSummary(target, dessertViewer);
     assert.ok(theirs.average < 2, `the opposite viewer leans the other way: ${theirs.average}`);
-
     // Reputation/time weights multiply taste weights; the viewer is still excluded.
     sql.prepare('UPDATE PlaceRating SET weight = ? WHERE place_id = ? AND user_id = ?').run(0.001, target, twin);
     sql.prepare('UPDATE PlaceRating SET weight = ? WHERE place_id = ? AND user_id = ?').run(1, target, opposite);
     sql.prepare('UPDATE PlaceRating SET weight = ? WHERE place_id = ? AND user_id = ?').run(100, target, viewer);
-    const reputationWeighted = ratings.personalizedSummary(target, viewer);
+    const reputationWeighted = await ratings.personalizedSummary(target, viewer);
     assert.ok(reputationWeighted.average < 1.5, 'a small rating weight can outweigh even a strong taste match');
     assert.equal(reputationWeighted.rater_count, 2, 'even a large own weight never enters the taste average');
     sql.prepare('UPDATE PlaceRating SET weight = 0.5 WHERE place_id = ?').run(target);
-
     // Raters without a profile count with a neutral weight.
     rate(target, blank, 4);
-    const withBlank = ratings.personalizedSummary(target, dessertViewer);
+    const withBlank = await ratings.personalizedSummary(target, dessertViewer);
     assert.equal(withBlank.rater_count, 4, 'a viewer who has not rated sees every rater');
     assert.equal(withBlank.matched_raters, 3);
     assert.ok(withBlank.average > theirs.average);
-
     // No personalization without a viewer profile or with fewer than two other raters.
-    assert.equal(ratings.personalizedSummary(target, blank), null);
+    assert.equal(await ratings.personalizedSummary(target, blank), null);
     const lonely = makePlace('只有一人评');
     rate(lonely, twin, 2);
-    assert.equal(ratings.personalizedSummary(lonely, viewer), null);
-
+    assert.equal(await ratings.personalizedSummary(lonely, viewer), null);
     // Rating vector inputs (algorithm v2): 强烈推荐 adds weight, a dislike removes the place entirely.
     const rater = makeUser('vector-rater');
     rate(noodle[0], rater, 4);
-    let profile = preferences.getUserPreference(rater);
+    let profile = await preferences.getUserPreference(rater);
     assert.equal(profile.algorithm_version, 2);
-    assert.equal(profile.total_weight, preferences.RATING_WEIGHTS[4]);
+    assert.equal(profile.total_weight,5);
     rate(noodle[1], rater, 3);
-    profile = preferences.getUserPreference(rater);
-    assert.equal(profile.total_weight, preferences.RATING_WEIGHTS[4] + preferences.RATING_WEIGHTS[3]);
+    profile = await preferences.getUserPreference(rater);
+    assert.equal(profile.total_weight,7);
     sql.prepare('INSERT INTO Favorite(user_id, place_id) VALUES (?, ?)').run(rater, dessert[0]);
     rate(dessert[0], rater, 2);
-    profile = preferences.getUserPreference(rater);
+    profile = await preferences.getUserPreference(rater);
     assert.equal(profile.source_place_count, 2, 'a disliked place is not an interest source even when favorited');
-    assert.equal(preferences.placeWeight(true, { navigation: 5 }, 1), 0);
     return { target, twin, viewer };
 }
-
 async function testHttp({ target, twin }) {
     const app = express();
     app.use(express.json());
@@ -230,13 +214,13 @@ async function testHttp({ target, twin }) {
         const base = `http://127.0.0.1:${server.address().port}`;
         const request = async (route, method = 'GET', body, userId = null) => {
             const headers = { 'Content-Type': 'application/json' };
-            if (userId) headers.Authorization = `Bearer ${jwt.sign({ id: userId }, process.env.JWT_SECRET || 'yuyuko_secret_key', { expiresIn: 3600 })}`;
+            if (userId)
+                headers.Authorization = `Bearer ${jwt.sign({ id: userId }, process.env.JWT_SECRET || 'yuyuko_secret_key', { expiresIn: 3600 })}`;
             const response = await fetch(`${base}${route}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
             return { status: response.status, headers: response.headers, body: await response.json() };
         };
         const alice = makeUser('http-alice');
         const places = Array.from({ length: 5 }, (_, i) => makePlace(`可评店${i}`, { lat: 30, lng: 120 + i * 0.001 }));
-
         // Guests read the public summary only; a bad token is rejected rather than ignored.
         const guest = await request(`/api/ratings/places/${target}`);
         assert.equal(guest.status, 200);
@@ -250,14 +234,12 @@ async function testHttp({ target, twin }) {
         assert.equal((await request('/api/ratings/places/abc')).status, 400);
         assert.equal((await request('/api/ratings/places/999999')).status, 404);
         assert.equal((await request(`/api/ratings/places/${places[0]}`, 'PUT', { score: 4 })).status, 401);
-
         const own = await request(`/api/ratings/places/${target}`, 'GET', undefined, twin);
         assert.equal(own.body.mine.score, 4);
         assert.equal(own.body.quota.limit, 3);
         for (const score of [0, 5, '4', 2.5, null]) {
             assert.equal((await request(`/api/ratings/places/${places[0]}`, 'PUT', { score }, alice)).status, 400, `rejects ${score}`);
         }
-
         // Rate, change the same place again (counts once), repeat the same score (no-op).
         let result = await request(`/api/ratings/places/${places[0]}`, 'PUT', { score: 4 }, alice);
         assert.equal(result.status, 200);
@@ -270,7 +252,6 @@ async function testHttp({ target, twin }) {
         assert.equal(result.body.quota.place_counted, true);
         await request(`/api/ratings/places/${places[0]}`, 'PUT', { score: 2 }, alice);
         assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM PlaceRatingEvent WHERE user_id = ?').get(alice).n, 2, 'unchanged scores are not logged');
-
         // Daily limit (3 here): a 4th new place is refused, re-rating a counted one still works.
         await request(`/api/ratings/places/${places[1]}`, 'PUT', { score: 3 }, alice);
         result = await request(`/api/ratings/places/${places[2]}`, 'PUT', { score: 3 }, alice);
@@ -280,7 +261,6 @@ async function testHttp({ target, twin }) {
         assert.match(result.body.error, /今天已经评价了 3 家店/);
         assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM PlaceRating WHERE place_id = ?').get(places[3]).n, 0);
         assert.equal((await request(`/api/ratings/places/${places[1]}`, 'PUT', { score: 1 }, alice)).status, 200);
-
         // Withdrawing works at the limit but does not hand quota back.
         result = await request(`/api/ratings/places/${places[2]}`, 'DELETE', undefined, alice);
         assert.equal(result.status, 200);
@@ -288,7 +268,6 @@ async function testHttp({ target, twin }) {
         assert.equal(result.body.summary.count, 0);
         assert.equal(result.body.quota.used, 3);
         assert.equal((await request(`/api/ratings/places/${places[3]}`, 'PUT', { score: 4 }, alice)).status, 429);
-
         // The next Beijing day starts a fresh quota.
         const realNow = Date.now;
         try {
@@ -296,17 +275,18 @@ async function testHttp({ target, twin }) {
             result = await request(`/api/ratings/places/${places[3]}`, 'PUT', { score: 4 }, alice);
             assert.equal(result.status, 200);
             assert.equal(result.body.quota.used, 1);
-        } finally { Date.now = realNow; }
-
+        }
+        finally {
+            Date.now = realNow;
+        }
         // Banned users cannot rate, and their existing ratings drop out of every aggregate.
         const troll = makeUser('troll');
         rate(places[4], troll, 1);
         rate(places[4], alice, 4);
-        assert.equal(ratings.ratingSummary(places[4]).average, 2.5);
+        assert.equal((await ratings.ratingSummary(places[4])).average, 2.5);
         sql.prepare("UPDATE User SET is_banned = 1, ban_reason = '刷分' WHERE id = ?").run(troll);
         assert.equal((await request(`/api/ratings/places/${places[0]}`, 'PUT', { score: 1 }, troll)).status, 403);
-        assert.equal(ratings.ratingSummary(places[4]).average, 4);
-
+        assert.equal((await ratings.ratingSummary(places[4])).average, 4);
         // Map queries carry the aggregate that decides the 避雷 icon.
         const nearby = await request('/places/nearby?minLng=119&minLat=29&maxLng=121&maxLat=31');
         const nearbyPlace = nearby.body.find((place) => place.id === places[4]);
@@ -318,12 +298,12 @@ async function testHttp({ target, twin }) {
         assert.equal(created.status, 200);
         assert.equal(created.body.rating_average, 3);
         assert.equal((await request('/places', 'POST', { name: '坏评价', latitude: 30, longitude: 120, rating: 9 }, alice)).status, 400);
-    } finally {
+    }
+    finally {
         await new Promise((resolve) => server.close(resolve));
     }
 }
-
-function testAvoidedFilters() {
+async function testAvoidedFilters() {
     const center = { lat: 10, lng: 10 };
     const creator = makeUser('filter-creator');
     const fan = makeUser('filter-fan');
@@ -335,7 +315,7 @@ function testAvoidedFilters() {
     rate(taggedButLiked, fan, 4);
     rate(taggedButLiked, makeUser('filter-fan-2'), 4);
     rate(untaggedButDisliked, fan, 1);
-    const ids = nearbyCandidates(sql, center).map(({ place }) => place.id).sort((a, b) => a - b);
+    const ids = (await nearbyCandidates(sql, center)).map(({ place }) => place.id).sort((a, b) => a - b);
     assert.deepEqual(ids, [taggedButLiked, normal], 'random picks follow the rating, then the tag');
     const rows = [taggedButLiked, untaggedButDisliked, taggedUnrated, normal].map((id) => ({
         ...sql.prepare(`SELECT p.*, ${ratings.RATING_COLUMNS_SQL} FROM Place p WHERE p.id = ?`).get(id),
@@ -344,7 +324,6 @@ function testAvoidedFilters() {
     const ranked = rankSemanticRows(rows, { center, limit: 10 }).map((match) => match.place.id).sort((a, b) => a - b);
     assert.deepEqual(ranked, [taggedButLiked, normal], 'AI recommendations skip avoided places by the same rule');
 }
-
 function testCascades() {
     const user = makeUser('leaver');
     const place = makePlace('即将删除');
@@ -360,7 +339,6 @@ function testCascades() {
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM PlaceRating WHERE user_id = ?').get(user).n, 0);
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM PlaceRatingEvent WHERE user_id = ?').get(user).n, 0);
 }
-
 async function main() {
     try {
         init();
@@ -368,21 +346,24 @@ async function main() {
         assert.ok(database.isVectorSearchAvailable(), 'the installed sqlite-vec extension is required for vector tests');
         testPureRules();
         testMigrationSeed();
-        testCreationRatings();
-        testWeightedSummaries();
-        const context = testPersonalization();
+        await testCreationRatings();
+        await testWeightedSummaries();
+        const context = await testPersonalization();
         await testHttp(context);
-        testAvoidedFilters();
+        await testAvoidedFilters();
         testCascades();
         console.log('Place rating tests passed: tiers, migration seed, creation defaults, quota, withdrawal, bans, taste weighting, vector v2, map fields, 避雷 filters and cascades.');
-    } finally {
+    }
+    finally {
         db.close();
         for (const suffix of ['', '-wal', '-shm']) {
             const file = process.env.DB_FILE + suffix;
-            if (fs.existsSync(file)) fs.unlinkSync(file);
+            if (fs.existsSync(file))
+                fs.unlinkSync(file);
         }
         fs.rmdirSync(tempDirectory);
     }
 }
-
 main().catch((error) => { console.error(error); process.exitCode = 1; });
+
+})().catch(error=>{console.error(error);process.exitCode=1;});

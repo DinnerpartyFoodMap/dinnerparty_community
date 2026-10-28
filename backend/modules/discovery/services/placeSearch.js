@@ -45,10 +45,11 @@ function searchCenter(point) {
 // See services/placeSearch.md for sources, weights and warning-query rules.
 // viewerId：网页 / App 带登录态时传入，结果包含自己还在复核中的地点、不含自己屏蔽的住民创建的地点；
 // QQ 机器人等不传，只搜公开地点。
-function fastSearch(query, limit = 50, { center, viewerId = null } = {}) {
+async function fastSearch(query, limit = 50, { center, viewerId = null } = {}) {
     const rawQuery = String(query ?? '').trim().slice(0, QUERY_MAX_LENGTH);
     const queryTerms = splitTerms(rawQuery);
     if (!queryTerms.length) return [];
+    await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     const wantsAvoided = queryTerms.includes('避雷');
     const terms = [...new Set(queryTerms.filter(term => term !== '避雷'))];
     const exactName = normalizeText(rawQuery);

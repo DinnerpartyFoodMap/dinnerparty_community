@@ -22,6 +22,7 @@ function vector(id,values=[1,0],patch={}){
     sql.prepare(`INSERT OR REPLACE INTO UserPreference(user_id,vector,model,dimensions,algorithm_version,status,
         source_place_count,vector_place_count,total_weight,updated_at,dirty) VALUES(?,?,?,?,?,'ready',1,1,5,?,0)`)
         .run(id,Buffer.from(floats.buffer),patch.model||EMBEDDING_MODEL,patch.dimensions||EMBEDDING_DIMENSIONS,ALGORITHM_VERSION,Date.now());
+    sql.prepare('UPDATE UserPreference SET computed_input_revision=input_revision WHERE user_id=?').run(id);
 }
 async function main(){
     init();
@@ -92,6 +93,13 @@ async function main(){
     await call('PUT','/consent',{version:0,feedback:false,research:false,discovery:true},fresh);
     changeFavorite(fresh,place,false);
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM MapInteraction WHERE user_id=?').get(fresh).n,0);
+    const evidence=require('../../modules/ratings/services/ratingEvidence');
+    evidence.recordResearchChoice(viewer,true);changeFavorite(viewer,place,true);
+    assert.ok(evidence.buildRatingEvidence({userIds:[viewer]}).events.length>0);
+    const retained=sql.prepare('SELECT COUNT(*) AS n FROM UserBehaviorEvent WHERE user_id=?').get(viewer).n;
+    await call('DELETE','/feedback');
+    assert.equal(evidence.buildRatingEvidence({userIds:[viewer]}).events.length,0,'cleared favorite mirrors must not reappear from original behavior rows in a new export');
+    assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM UserBehaviorEvent WHERE user_id=?').get(viewer).n,retained,'clearing feedback preserves original profile business inputs');
     console.log('Community tests passed: vector-only matching, optional collections, opt-outs, legacy/new defaults, private data boundary, default feedback.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{

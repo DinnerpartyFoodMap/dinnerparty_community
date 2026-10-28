@@ -31,7 +31,7 @@ function remember(qq, placeId, now) {
     recentPicks.set(qq, { ids: recentIds(qq, now).concat(placeId).slice(-2), at: now });
 }
 
-function pickRandomPlace(ctx, { random = Math.random } = {}) {
+async function pickRandomPlace(ctx, { random = Math.random } = {}) {
     const config = botConfig.get();
     const identity = resolveQQUser(ctx.senderQq);
     // A restricted account may still browse; only an unambiguous account counts.
@@ -41,14 +41,15 @@ function pickRandomPlace(ctx, { random = Math.random } = {}) {
     const pinned = group || saved;
     const center = pinned ? { lat: pinned.lat, lng: pinned.lng } : config.random.center;
     const now = ctx.now.getTime();
-    const personalize = user && isVectorSearchAvailable() ? (candidates) => {
+    let preference=null;try{if(user&&isVectorSearchAvailable())preference=await getUserPreference(user.id);}catch{}
+    const personalize = preference ? (candidates) => {
         try {
-            return personalizeCandidates(db._raw, candidates, getUserPreference(user.id));
+            return personalizeCandidates(db._raw, candidates, preference);
         } catch (_) {
             return { candidates, personalized: false };
         }
     } : null;
-    const result = drawRecommendation(nearbyCandidates(db._raw, center), recentIds(ctx.senderQq, now), random, personalize);
+    const result = drawRecommendation(await nearbyCandidates(db._raw, center), recentIds(ctx.senderQq, now), random, personalize);
     if (result.place) remember(ctx.senderQq, result.place.id, now);
     return {
         ...result,

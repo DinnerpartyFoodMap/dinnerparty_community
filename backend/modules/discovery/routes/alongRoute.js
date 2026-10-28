@@ -144,7 +144,7 @@ router.post('/resolve', async (req, res) => {
     }
 });
 
-router.post('/search', (req, res) => {
+router.post('/search', async (req, res) => {
     const paths = normalizePaths(req.body);
     if (!paths) return res.status(400).json({ error: '路线坐标无效、方案过多或轨迹过长' });
 
@@ -168,6 +168,7 @@ router.post('/search', (req, res) => {
         maxLat: Math.max(...latValues) + latPadding
     };
 
+    try{await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();}catch(e){return res.status(e.status||503).json({error:e.publicMessage});}
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id

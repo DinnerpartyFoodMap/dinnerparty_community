@@ -6,7 +6,12 @@ function buildDataset(db,{secret,localDataAllowed=false,now=Date.now()}={}) {
     const hash=value=>createHmac('sha256',secret).update(value).digest('hex').slice(0,32);
     const cutoff=new Date(now-30*86400000).toISOString();
     const rows=db.prepare(`SELECT e.* FROM MapInteraction e JOIN MapConsent c ON c.user_id=e.user_id
-      WHERE c.feedback=1 AND c.research=1 AND e.research_allowed=1 AND e.created_at>=? ORDER BY e.created_at,e.id`).all(cutoff);
+      WHERE c.feedback=1 AND c.research=1 AND e.research_allowed=1 AND e.created_at>=?
+        AND EXISTS(SELECT 1 FROM AlgorithmEventContext ec JOIN ResearchConsentEvent rc ON rc.id=ec.consent_ref
+          WHERE ec.event_id=e.id AND ec.user_id=e.user_id AND ec.research_allowed=1 AND rc.allowed=1 AND rc.revoked_at_ms IS NULL)
+        AND EXISTS(SELECT 1 FROM ResearchConsentEvent latest WHERE latest.user_id=e.user_id AND latest.allowed=1 AND latest.revoked_at_ms IS NULL
+          AND latest.rowid=(SELECT MAX(rowid) FROM ResearchConsentEvent WHERE user_id=e.user_id))
+      ORDER BY e.created_at,e.id`).all(cutoff);
     return rows.map(e=>{
         const decision=e.decision_id?db.prepare('SELECT snapshot,result FROM MapDecision WHERE id=? AND user_id=?').get(e.decision_id,e.user_id):null;
         const snapshot=decision?JSON.parse(decision.snapshot):null;

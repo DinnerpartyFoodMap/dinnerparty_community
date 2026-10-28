@@ -214,10 +214,10 @@ function cosine(left, right) {
 }
 
 /** 六类的典型方向（已去掉平均向量）与可作随机参照的店铺向量；没有向量检索时为 null */
-function axisPrototypes(database = db._raw, now = Date.now()) {
+async function axisPrototypes(database = db._raw, now = Date.now()) {
     if (!isVectorSearchAvailable()) return null;
     if (prototypeCache && now - prototypeCache.at < PROTOTYPE_TTL_MS) return prototypeCache.value;
-    const mean = placeMeanVector(now);
+    const mean = await placeMeanVector(now);
     if (!mean) return null;
     const stored = storedClasses(database);
     const sums = TASTE_AXES.map(() => new Float64Array(mean.length));
@@ -288,8 +288,8 @@ function normalCdf(z) {
  * 每轴的夹角估算：{ cosine, percentile（高于多少比例的随机口味）, value（0.5–1，中性及以上）, placeIds（最接近的证据店铺） }；
  * 没有向量、没有可用证据时整体返回 null
  */
-function embeddingEstimates(evidence, database = db._raw) {
-    const model = axisPrototypes(database);
+async function embeddingEstimates(evidence, database = db._raw) {
+    const model = await axisPrototypes(database);
     if (!model) return null;
     const items = [];
     for (const item of evidence.values()) {
@@ -335,14 +335,14 @@ function embeddingEstimates(evidence, database = db._raw) {
  * store_count（有效店铺数）、positive_count / negative_count（明确好评 / 差评次数）、favorite_count、
  * sources（self / rating / favorite）、places（代表店铺，不带坐标）。
  */
-function userTasteAxes(userId, database = db._raw) {
+async function userTasteAxes(userId, database = db._raw) {
     const evidence = userEvidence(userId, database);
     const classes = placeAxesMap([...evidence.keys()], database);
     const population = populationMeans(database);
     const self = selfLevels(userId, database);
     let embedding = null;
     try {
-        embedding = embeddingEstimates(evidence, database);
+        embedding = await embeddingEstimates(evidence, database);
     } catch (error) {
         console.warn('Taste axis embedding estimate unavailable:', error.message);
     }

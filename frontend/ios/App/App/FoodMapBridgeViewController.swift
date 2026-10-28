@@ -11,6 +11,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
     private let chromeModel = MapChromeModel()
     private var chromePlugin: NativeMapChromePlugin?
     private var chromeHost: PassThroughHostView?
+    private var clusterBridge: NativeClusterMarkerBridge?
     private var loadingObservation: NSKeyValueObservation?
     private var frameObservation: NSKeyValueObservation?
     private var keyboardObservers: [NSObjectProtocol] = []
@@ -42,6 +43,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         loadingObservation = webView?.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
             if webView.isLoading {
                 self?.chromePlugin?.handleWebViewReload()
+                self?.clusterBridge?.reset()
                 // 新页面会重新上报可返回状态，此前先关闭侧滑
                 self?.edgeBackGesture?.isEnabled = false
             }
@@ -57,6 +59,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
     }
 
     deinit {
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: NativeClusterMarkerBridge.channel, contentWorld: .page)
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: Self.edgeBackMessageName)
         loadingObservation?.invalidate()
         frameObservation?.invalidate()
@@ -157,6 +160,9 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         webView.frame = container.bounds
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(webView)
+
+        // 位于网页地图之上、原生工具栏之下；触摸与读屏仍由网页标记处理。
+        clusterBridge = NativeClusterMarkerBridge(parent: self, webView: webView)
 
         let host = PassThroughHostView(model: chromeModel)
         host.translatesAutoresizingMaskIntoConstraints = false

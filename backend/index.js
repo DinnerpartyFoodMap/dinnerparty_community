@@ -286,6 +286,8 @@ startVectorRetryWorker();
 // 新增地点初筛：上次进程退出时还没查完的地点重新排队（modules/places/doc/placeModeration.md）
 require('./modules/places/services/placeModeration').resumeModeration();
 const stopUserVectorWorker = startUserVectorWorker();
+const stopRatingEvidenceWorker=require('./modules/ratings/services/ratingEvidence').startEvidenceWorker();
+const stopRatingBundleWorker=require('./modules/ratings/services/ratingResearchBundles').startBundleWorker();
 const stopJourneyWorker = require('./modules/journeys/services/journeyAI').startJourneyWorker();
 // 住民主页六类餐饮偏好：规则分不了类的店铺交给模型后台补分类（modules/preferences/doc/TASTE_AXES.md）
 const stopTasteClassificationWorker = require('./modules/preferences/services/tasteAxes').startTasteClassificationWorker();
@@ -316,6 +318,7 @@ app.use('/api/skins', require('./modules/skins/routes/skins'));
 app.use('/api/feedback', require('./modules/feedback/routes/feedback'));
 app.use('/api/journeys', require('./modules/journeys/routes/journeys'));
 app.use('/internal/journey-algorithms/places', require('./modules/journeys/routes/algorithmPlaces'));
+app.use('/internal/rating-evidence/bundles',require('./modules/ratings/routes/researchBundles'));
 app.use('/api/public/journeys', require('./modules/journeys/routes/publicJourneys'));
 app.use('/api/community', require('./modules/community/routes/community'));
 
@@ -352,6 +355,7 @@ function gracefulShutdown(signal) {
     shutdownStarted = true;
     stopRatingReputationWorker();
     stopUserVectorWorker();
+    stopRatingEvidenceWorker();stopRatingBundleWorker();
     stopJourneyWorker();
     stopTasteClassificationWorker();
     if (qqBot) qqBot.stop();

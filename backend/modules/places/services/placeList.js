@@ -1,5 +1,7 @@
 const { db, isVectorSearchAvailable } = require('../../../infrastructure/database');
-const { RATING_COLUMNS_SQL, personalizedAverages } = require('../../ratings/services/placeRatings');
+const { RATING_COLUMNS_SQL, personalizedAveragesSnapshot } = require('../../ratings/services/placeRatings');
+const snapshot=require('../../ratings/services/ratingSnapshot');
+const client=require('../../../infrastructure/numericAlgorithmClient');
 const { publicPlaceSql } = require('./placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { parseCategoryNames } = require('./placeService');
@@ -14,8 +16,6 @@ const MAX_COST = 100000;
 const RADIUS_OPTIONS_KM = Object.freeze([1, 3, 5, 10, 20, 50]);
 const EARTH_RADIUS_KM = 6371.0088;
 // 评价少的地点向中性分（均线）收缩：1 个人打的“强烈推荐”不应排在 20 个人的“均线之上”前面
-const NEUTRAL_SCORE = 2.5;
-const PRIOR_WEIGHT = 2;
 // 观看者的口味平均在一段时间内复用：翻页时不必每页重算
 const PERSONAL_CACHE_TTL_MS = 2 * 60 * 1000;
 const personalCache = new Map();
@@ -94,50 +94,42 @@ function matchesFilter(place, { tags, minCost, maxCost, distance = null }) {
     return true;
 }
 
-function shrunkScore(average, count) {
-    const n = Number(count) || 0;
-    const value = Number(average);
-    if (!n || !Number.isFinite(value)) return NEUTRAL_SCORE;
-    return (n * value + PRIOR_WEIGHT * NEUTRAL_SCORE) / (n + PRIOR_WEIGHT);
-}
-
-function viewerAverages(viewerId, now = Date.now()) {
-    if (!viewerId || !isVectorSearchAvailable()) return new Map();
+async function viewerAverages(viewerId, now = Date.now()) {
+    if (!viewerId || !isVectorSearchAvailable()) return {averages:new Map(),input_revision:null};
     const cached = personalCache.get(viewerId);
-    if (cached && now - cached.at < PERSONAL_CACHE_TTL_MS) return cached.value;
-    let value = new Map();
+    if (cached && now - cached.at < PERSONAL_CACHE_TTL_MS && cached.value.input_revision===snapshot.revision()) return cached.value;
+    let value;
     try {
-        value = personalizedAverages(viewerId);
+        value = await personalizedAveragesSnapshot(viewerId);
     } catch (error) {
+        if(error.status===409)throw error;
         console.warn('Place list personalization unavailable:', error.message);
+        return {averages:new Map(),input_revision:null};
     }
     if (personalCache.size > 500) personalCache.clear();
     personalCache.set(viewerId, { at: now, value });
     return value;
 }
 
-/** 综合分：公开评价（向均线收缩），有口味加权平均时与它各占一半 */
-function combinedScore(place, personal) {
-    const publicScore = shrunkScore(place.rating_average, place.rating_count);
-    if (personal === undefined) return publicScore;
-    return (publicScore + personal) / 2;
-}
-
-function listPlaces(query, viewerId = null, database = db._raw) {
+async function listPlaces(query, viewerId = null, database = db._raw) {
     const filter = normalizeListFilter(query);
+    for(let attempt=0;attempt<2;attempt++){
+    let personalResult;
+    try{personalResult=await viewerAverages(viewerId);}catch(e){if(e.status===409)continue;throw e;}
+    const summaryRevision=await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
+    const current=snapshot.context(),personal=personalResult.averages;
+    if(summaryRevision!==current.input_revision)continue;
+    if(personalResult.input_revision!==null&&personalResult.input_revision!==current.input_revision)continue;
     // 经纬度只用于距离筛选，不放进返回的条目
     const rows = database.prepare(`SELECT p.id, p.name, p.description, p.category, p.per_person_cost,
             p.exterior_images, p.menu_images, p.created_time, p.latitude, p.longitude,${RATING_COLUMNS_SQL}
         FROM Place p
         WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId);
-    const personal = viewerAverages(viewerId);
-    const ranked = rows.filter((row) => matchesFilter(row, filter)).map((row) => {
-        const personalized = personal.get(row.id);
-        return { row, personalized, score: combinedScore(row, personalized) };
-    });
-    ranked.sort((a, b) => (b.score - a.score)
-        || ((Number(b.row.rating_count) || 0) - (Number(a.row.rating_count) || 0))
-        || (b.row.id - a.row.id));
+    const filtered=rows.filter(row=>matchesFilter(row,filter)),byId=new Map(filtered.map(row=>[row.id,row]));
+    const result=await client.compute('ratingsort',{...current,places:filtered.map(row=>({id:row.id,rating_count:row.rating_count,rating_average:row.rating_average})),personal:[...personal].map(([place_id,average])=>({place_id,average}))});
+    if(!snapshot.same(current.input_revision))continue;
+    const visible=new Set(database.prepare(`SELECT p.id FROM Place p WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId).map(p=>p.id));
+    const ranked=result.ranked.filter(r=>visible.has(r.place_id)).map(r=>({row:byId.get(r.place_id),score:r.score,personalized:personal.get(r.place_id)}));
     const page = ranked.slice(filter.offset, filter.offset + filter.limit).map(({ row, personalized, score }) => ({
         id: row.id,
         name: row.name,
@@ -157,6 +149,8 @@ function listPlaces(query, viewerId = null, database = db._raw) {
         limit: filter.limit,
         personalized: personal.size > 0
     };
+    }
+    throw client.failure(409,'stale_input');
 }
 
-module.exports = { LIST_PAGE_LIMIT, RADIUS_OPTIONS_KM, normalizeListFilter, matchesFilter, shrunkScore, combinedScore, listPlaces };
+module.exports = { LIST_PAGE_LIMIT, RADIUS_OPTIONS_KM, normalizeListFilter, matchesFilter, listPlaces };

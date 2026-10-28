@@ -86,20 +86,24 @@ function publicCollections(userId, database = db._raw) {
 
 const WIDGET_LOADERS = { collection: publicCollections, recent: recentPlaces, favorite: favoritePlaces };
 
-function getUserProfile(userId, viewer = null, database = db._raw) {
+async function getUserProfile(userId, viewer = null, database = db._raw) {
+    await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     const user = database.prepare(`SELECT id, username, created_time, profile_widgets, (avatar_blob IS NOT NULL) AS has_avatar
         FROM User WHERE id = ?`).get(userId);
     if (!user) return null;
-    const relation = viewerRelation(viewer, user.id);
+    let relation = viewerRelation(viewer, user.id);
     const widgets = normalizeWidgets(user.profile_widgets);
     const profile = {
         user: { id: user.id, username: user.username, has_avatar: !!user.has_avatar, created_time: user.created_time },
         relation,
         city: getUserCity(user.id),
-        taste: userTasteAxes(user.id, database),
+        taste: await userTasteAxes(user.id, database),
         widgets,
         content: {}
     };
+    await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
+    if(!database.prepare('SELECT id FROM User WHERE id=?').get(userId))return null;
+    relation=viewerRelation(viewer,user.id);profile.relation=relation;
     if (relation.blocked) return profile;
     for (const widget of new Set(widgets)) profile.content[widget] = WIDGET_LOADERS[widget](user.id, database);
     return profile;

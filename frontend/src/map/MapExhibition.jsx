@@ -79,7 +79,7 @@ export default function MapExhibition({ exhibition, exhibitions = [], open = fal
     }, [exhibition, noticeVisible, noticeRef, noticeTop, narrow]);
 
     return <>
-        {exhibition && <div ref={stackRef} className="fm-exhibition-stack" style={{ position: 'absolute', ...(narrow ? { top } : { bottom: 42 }),
+        {exhibition && <div ref={stackRef} data-native-cluster-occluder="" className="fm-exhibition-stack" style={{ position: 'absolute', ...(narrow ? { top } : { bottom: 42 }),
             right: 12, zIndex: 1650, width: 88, visibility: spreadOrigin ? 'hidden' : undefined }}>
             <button ref={entryRef} data-exhibition-entry type="button" onClick={() => multiple ? expand() : onOpen?.(exhibition)}
                 aria-label={multiple ? t('map:exhibition.count', { count: exhibitions.length }) : t('map:exhibition.open', { name: exhibition.name })}

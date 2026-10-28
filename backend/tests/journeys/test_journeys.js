@@ -86,7 +86,7 @@ async function main(){
     const disabled=await call('PUT','/api/community/consent',{version:consent0.version,feedback:false,research:false,discovery:false});
     const event={id:randomUUID(),session_id:randomUUID(),kind:'click',surface:'map',place_id:places[0]};
     assert.equal((await call('POST','/api/community/feedback',{events:[event],consent_version:disabled.version})).accepted,0);
-    let consent=await call('PUT','/api/community/consent',{version:disabled.version,feedback:true,research:true,discovery:true,tags:['面食']});
+    let consent=await call('PUT','/api/community/consent',{version:disabled.version,feedback:true,research:true,research_choice:true,discovery:true,tags:['面食']});
     const observation=await call('POST','/api/community/observations',{consent_version:consent.version,place_ids:[places[0],places[1]]},a,201);
     const obsInput={snapshot_id:randomUUID(),search_session_id:randomUUID(),render_revision:randomUUID(),consent_version:consent.version,place_ids:[places[0],places[1]]};
     const obs1=await call('POST','/api/community/observations',obsInput,a,201);

@@ -87,7 +87,8 @@ function createPlace(userId,stop,link) {
     registerNewPlaceSync(id,userId,'diary');
     if(category)sql.prepare('INSERT OR IGNORE INTO Category(name,is_common,sort_order,created_by) VALUES(?,0,1000,?)').run(category,userId);
     // Same creator rating as other creation paths; a duplicate below deletes the place and cascades it away.
-    insertCreationRating(id,userId,defaultCreationScore(category));
+    insertCreationRating(id,userId,defaultCreationScore(category),Date.now(),'creation_default');
+    require('../../places/services/placeRevisions').recordPlaceRevision({placeId:id,authorId:userId,path:'diary'});
     if(external){
         const inserted=sql.prepare('INSERT OR IGNORE INTO PlaceExternalIdentity(provider,external_id,place_id,created_at) VALUES(?,?,?,?)').run('amap',external,id,now());
         if(!inserted.changes){

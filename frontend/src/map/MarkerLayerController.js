@@ -15,6 +15,7 @@ import {
 } from './markerContent.js';
 import { readViewBounds, getMapZoomRange, projectToContainer } from './viewport.js';
 import { getMotionPolicy, startFrameProbe } from '../motion/policy.js';
+import { NativeClusterLayer } from './nativeClusterLayer.js';
 
 // 设计起点，依据真机调节
 export const MARKER_TIMING = Object.freeze({
@@ -124,6 +125,7 @@ export class MarkerLayerController {
         for (const type of ['moveend', 'zoomend']) map.on(type, this._onMoveEnd);
         map.on('resize', this._onResize);
         document.addEventListener('visibilitychange', this._onVisibility);
+        this.nativeClusters = new NativeClusterLayer(this);
         // 开发环境，或在设备上设置 localStorage['debug.mapMetrics'] = '1' 时暴露控制器，便于记录性能数据
         if (typeof window !== 'undefined' && (import.meta.env?.DEV || readDebugFlag())) window.__foodMapMarkers = this;
     }
@@ -164,6 +166,10 @@ export class MarkerLayerController {
         this._scheduleLabels();
     }
 
+    setNativeGlassVisible(visible) {
+        this.nativeClusters?.setVisible(visible);
+    }
+
     /** 皮肤等外观来源变化后重画全部标记（不重建、不打断转场） */
     refreshAppearance() {
         if (this.destroyed) return;
@@ -194,6 +200,7 @@ export class MarkerLayerController {
 
     destroy() {
         if (this.destroyed) return;
+        this.nativeClusters?.destroy();
         this._finishAll();
         this.destroyed = true;
         if (this.commitRaf) cancelAnimationFrame(this.commitRaf);
@@ -287,6 +294,7 @@ export class MarkerLayerController {
             ? Z_INDEX.cluster + Math.min(40, Math.round(Math.log2(entry.node.count) * 4))
             : Z_INDEX.place;
         setMarkerZ(entry.marker, selected ? Z_INDEX.selected : base);
+        this.nativeClusters?.invalidate();
     }
 
     _handleActivate(entry) {
@@ -578,6 +586,7 @@ export class MarkerLayerController {
 
         const txn = { version, animations, ghosts, done: false, probe: animations.length ? startFrameProbe() : null };
         this.txns.add(txn);
+        this.nativeClusters?.invalidate();
         if (!animations.length) {
             this._completeTransaction(txn);
             return;
@@ -639,6 +648,7 @@ export class MarkerLayerController {
         flush();
         if (this.pendingAttach.size) this._scheduleAttach();
         else if (attachedAny) this._scheduleLabels();
+        if (attachedAny) this.nativeClusters?.invalidate();
     }
 
     _ghostCount() {
@@ -653,6 +663,7 @@ export class MarkerLayerController {
         this.txns.delete(txn);
         if (txn.probe) this._pushMetric('frames', txn.probe());
         if (txn.ghosts.length) this._removeMarkers(txn.ghosts.map((entry) => entry.marker));
+        this.nativeClusters?.invalidate();
         if (!this.txns.size) this._scheduleLabels();
     }
 

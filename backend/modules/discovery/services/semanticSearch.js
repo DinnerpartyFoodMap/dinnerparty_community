@@ -258,6 +258,7 @@ async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = 
     const queryProfile = buildEmbeddingQuery(query, intentExpansion);
     const embedding = await createEmbedding(queryProfile.text);
     const candidateLimit = Math.max(100, Math.min(MAX_VECTOR_CANDIDATES, safeLimit * 40));
+    await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     const rows = db._raw.prepare(`WITH nearest AS (
             SELECT place_id, distance
             FROM place_vectors

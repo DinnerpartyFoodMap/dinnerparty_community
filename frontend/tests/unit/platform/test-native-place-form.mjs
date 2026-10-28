@@ -8,7 +8,7 @@ assert.deepEqual(pickPlaceFormValues({
     name: '  店名 ', category: '火锅店, 烧烤', description: 'x'.repeat(1200), perPersonCost: '012', rating: 9,
     exteriorImages: ['https://cdn.example.com/a.jpg', 'javascript:alert(1)', 42], menuImages: 'nope', extra: true
 }), {
-    name: '店名', category: '火锅店, 烧烤', description: 'x'.repeat(1000), perPersonCost: '', rating: null,
+    name: '店名', category: '火锅店, 烧烤', description: 'x'.repeat(1000), perPersonCost: '', rating: null,ratingInputKind:'unknown',
     exteriorImages: ['https://cdn.example.com/a.jpg'], menuImages: []
 });
 assert.equal(pickPlaceFormValues({ perPersonCost: '45', rating: 3 }).perPersonCost, '45');

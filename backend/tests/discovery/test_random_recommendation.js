@@ -1,3 +1,5 @@
+// Async numeric API migration: assertions unchanged; await remote computations.
+(async()=>{
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -5,7 +7,6 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'yuyuko-random-'));
 const databasePath = path.join(directory, 'test.sqlite');
 process.env.DB_FILE = databasePath;
@@ -13,7 +14,7 @@ process.env.LOG_TO_FILE = 'false';
 process.env.LOG_TO_CONSOLE = 'false';
 process.env.SILICONFLOW_API_KEY = '';
 process.env.DEEPSEEK_API_KEY = '';
-require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false, disconnect() {} } };
+require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false, disconnect() { } } };
 const database = require('../../infrastructure/database');
 const { db, init } = database;
 const vectorAvailable = database.isVectorSearchAvailable;
@@ -24,7 +25,6 @@ const { getUserPreference, ALGORITHM_VERSION } = require('../../modules/preferen
 const { EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } = require('../../infrastructure/aiClients');
 const placesRouter = require('../../modules/places/routes/places');
 const redis = require('../../infrastructure/redis');
-
 async function main() {
     let server;
     try {
@@ -38,7 +38,6 @@ async function main() {
         insert.run('避雷店铺', 0, 0, '面食, 避雷');
         insert.run('无效坐标', 0, null, '其他');
         insert.run('无效纬度', 91, 0, '其他');
-
         for (let i = 0; i < 5; i++) {
             db._raw.prepare('INSERT INTO User (id, username) VALUES (?, ?)').run(`u${i}`, `user${i}`);
             db._raw.prepare('INSERT INTO Favorite (user_id, place_id) VALUES (?, ?)').run(`u${i}`, ids[0]);
@@ -50,13 +49,12 @@ async function main() {
         for (const id of ids) {
             db._raw.prepare('UPDATE Place SET creator_id = ?, updated_by = ? WHERE id = ?').run(creatorId, editorId, id);
         }
-        const candidates = nearbyCandidates(db._raw, center);
+        const candidates = await nearbyCandidates(db._raw, center);
         assert.deepEqual(candidates.map(({ place }) => place.id).sort((a, b) => a - b), ids);
         assert.equal(candidates.find(({ place }) => place.id === ids[0]).place.favorite_count, 5);
         assert.ok(Math.abs(recommendationWeight({}, 5) - 9 / 7) < 1e-12);
         assert.equal(recommendationWeight({}, 0), 2, 'missing details and favorites keep the base weight');
         assert.equal(recommendationWeight({ description: '具体描述'.repeat(25), category: '印度菜', per_person_cost: 50, favorite_count: 5 }, 0), 2.5);
-
         const synthetic = [4, 2, 2, 1, 1].map((weight, index) => ({ weight, place: { id: index + 1 }, distanceKm: 1 }));
         const counts = [0, 0, 0, 0, 0];
         for (let i = 0; i < 10000; i++) {
@@ -70,13 +68,11 @@ async function main() {
         assert.equal(drawRecommendation(synthetic, [1, 2], () => 0).candidateCount, 5);
         assert.deepEqual(drawRecommendation(synthetic.slice(0, 4)), { place: null, candidateCount: 4, message: EMPTY_MESSAGE });
         assert.equal(drawRecommendation([]).message, EMPTY_MESSAGE);
-
         // Geographic coarse filtering must also work across the date line and near a pole.
         const datelineId = Number(insert.run('日期变更线附近', 0, -179.99, '其他').lastInsertRowid);
-        assert.ok(nearbyCandidates(db._raw, { lat: 0, lng: 179.99 }).some(({ place }) => place.id === datelineId));
+        assert.ok((await nearbyCandidates(db._raw, { lat: 0, lng: 179.99 })).some(({ place }) => place.id === datelineId));
         const polarId = Number(insert.run('极点附近', 89.99, 120, '其他').lastInsertRowid);
-        assert.ok(nearbyCandidates(db._raw, { lat: 89.99, lng: 0 }).some(({ place }) => place.id === polarId));
-
+        assert.ok((await nearbyCandidates(db._raw, { lat: 89.99, lng: 0 })).some(({ place }) => place.id === polarId));
         assert.ok(vectorAvailable(), 'sqlite-vec is required for personalization integration tests');
         const unit = (axis, sign = 1) => Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => index === axis ? sign : 0);
         const putVector = (id, vector, current = true) => {
@@ -114,16 +110,13 @@ async function main() {
         const filteredTotal = filteredWeights.reduce((sum, candidate) => sum + candidate.weight, 0);
         const expectedCounts = filteredWeights.map((candidate) => candidate.weight / filteredTotal * 3000);
         for (let index = 0; index < 3000; index += 1) {
-            const drawn = drawRecommendation(equalCandidates, [ids[1], ids[2]], () => (index + 0.5) / 3000,
-                (eligible) => personalizeCandidates(db._raw, eligible, profile));
+            const drawn = drawRecommendation(equalCandidates, [ids[1], ids[2]], () => (index + 0.5) / 3000, (eligible) => personalizeCandidates(db._raw, eligible, profile));
             personalizedCounts.set(drawn.place.id, personalizedCounts.get(drawn.place.id) + 1);
         }
-        filteredPool.forEach((candidate, index) => assert.ok(Math.abs(personalizedCounts.get(candidate.place.id) - expectedCounts[index]) <= 1,
-            'personalization must mix after cooldown filtering'));
+        filteredPool.forEach((candidate, index) => assert.ok(Math.abs(personalizedCounts.get(candidate.place.id) - expectedCounts[index]) <= 1, 'personalization must mix after cooldown filtering'));
         assert.equal(personalizedCounts.get(ids[1]), 0);
         assert.equal(personalizedCounts.get(ids[2]), 0);
         assert.ok(personalizedCounts.get(ids[4]) > 0, 'missing vectors retain a chance to be recommended');
-
         const app = express();
         app.use('/places', placesRouter);
         server = await new Promise((resolve) => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
@@ -163,10 +156,9 @@ async function main() {
         // If a source vector becomes stale, the profile is rebuilt before drawing.
         db._raw.prepare('UPDATE Place SET has_vector = 0 WHERE id = ?').run(ids[0]);
         assert.equal((await (await fetch(`${url}?lat=0&lng=0`, { headers })).json()).personalized, false);
-        assert.equal(getUserPreference('u0').status, 'pending');
+        assert.equal((await getUserPreference('u0')).status, 'pending');
         db._raw.prepare('UPDATE Place SET has_vector = 1 WHERE id = ?').run(ids[0]);
         assert.equal((await (await fetch(`${url}?lat=0&lng=0`, { headers })).json()).personalized, true);
-
         // Frontend requests must carry the acting token and preserve cancellation.
         // api.js imports the i18n module, which loads locale JSON the way Vite does.
         require('node:module').register(pathToFileURL(path.join(__dirname, '../../../frontend/scripts/support/json-hooks.mjs')));
@@ -182,27 +174,34 @@ async function main() {
             assert.equal(new URL(frontendRequest[0]).searchParams.get('excludeIds'), ids.slice(1, 3).join(','));
             await fetchRandomPlace('https://example.test', center);
             assert.equal(frontendRequest[1].headers, undefined, 'guest requests must not send an invalid token');
-        } finally { global.fetch = nativeFetch; }
+        }
+        finally {
+            global.fetch = nativeFetch;
+        }
         // Missing user records must not remove an otherwise eligible restaurant.
         db._raw.prepare('DELETE FROM User WHERE id IN (?, ?)').run(creatorId, editorId);
-        const orphaned = nearbyCandidates(db._raw, center);
+        const orphaned = await nearbyCandidates(db._raw, center);
         assert.equal(orphaned.length, 5);
         assert.ok(orphaned.every(({ place }) => place.creator_name === null && place.updated_by_name === null));
         db._raw.prepare('DELETE FROM Place WHERE id = ?').run(ids[4]);
         const sparse = await (await fetch(`${url}?lat=0&lng=0`)).json();
         assert.deepEqual(sparse, { place: null, candidateCount: 4, message: EMPTY_MESSAGE });
         console.log('Random recommendation: base/personalized distributions, exploration, profile refresh, authentication, 5km boundary, exclusions and frontend requests passed.');
-    } finally {
-        if (server) await new Promise((resolve) => server.close(resolve));
+    }
+    finally {
+        if (server)
+            await new Promise((resolve) => server.close(resolve));
         db.close();
         redis.disconnect();
         // Only remove the known files created by this isolated test database.
         for (const suffix of ['', '-wal', '-shm']) {
             const file = databasePath + suffix;
-            if (fs.existsSync(file)) fs.unlinkSync(file);
+            if (fs.existsSync(file))
+                fs.unlinkSync(file);
         }
         fs.rmdirSync(directory);
     }
 }
-
 main().catch((error) => { console.error(error); process.exitCode = 1; });
+
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -25,6 +25,7 @@ export function pickPlaceFormValues(values) {
         description: clip(values.description, 1000).trim(),
         perPersonCost: /^[1-9]\d*$/.test(cost) ? cost : '',
         rating: Number.isInteger(rating) && rating >= 1 && rating <= 4 ? rating : null,
+        ratingInputKind:['explicit','default'].includes(values.rating_input_kind)?values.rating_input_kind:'unknown',
         exteriorImages: imageList(values.exteriorImages),
         menuImages: imageList(values.menuImages)
     };

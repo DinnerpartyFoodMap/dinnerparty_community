@@ -282,24 +282,26 @@ export async function fetchPlaceRating(backendUrl, placeId, { token, signal } = 
     return data;
 }
 
-export async function savePlaceRating(backendUrl, token, placeId, score) {
+export async function savePlaceRating(backendUrl, token, placeId, score, {requestId,confirm=true}={}) {
     const res = await fetch(`${backendUrl}/api/ratings/places/${placeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ score })
+        body: JSON.stringify({ score,request_id:requestId||ratingRequestId(),confirm })
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.rating.saveFailed', { status: res.status })), { status: res.status });
+    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.rating.saveFailed', { status: res.status })), { status: res.status,committed:data.committed===true });
     return data;
 }
 
-export async function withdrawPlaceRating(backendUrl, token, placeId) {
+export const ratingRequestId=()=>globalThis.crypto?.randomUUID?.()||`rating_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+export async function withdrawPlaceRating(backendUrl, token, placeId,{requestId}={}) {
     const res = await fetch(`${backendUrl}/api/ratings/places/${placeId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 'Content-Type':'application/json',Authorization: `Bearer ${token}` },
+        body:JSON.stringify({request_id:requestId||ratingRequestId()})
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.rating.withdrawFailed', { status: res.status })), { status: res.status });
+    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.rating.withdrawFailed', { status: res.status })), { status: res.status,committed:data.committed===true });
     return data;
 }
 

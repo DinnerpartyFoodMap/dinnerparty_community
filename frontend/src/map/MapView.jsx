@@ -113,6 +113,9 @@ export default function MapView({
     const [addingPrefill, setAddingPrefill] = useState(null);
     const [places, setPlaces] = useState([]);
     const [mapReady, setMapReady] = useState(false);
+    useEffect(() => {
+        markerLayerRef.current?.setNativeGlassVisible(mapPageActive || pickerMode);
+    }, [mapPageActive, pickerMode, mapReady]);
     const [amapState, setAmapState] = useState(() => getAmapState());
     useEffect(() => subscribeAmap(setAmapState), []);
     const [addMode, setAddMode] = useState(false);
@@ -622,6 +625,7 @@ export default function MapView({
 
             // 标记层：图标、名称、数量同根渲染；点击回调经 ref 读取最新闭包
             markerLayerRef.current = new MarkerLayerController(mapRef.current, {
+                nativeGlassVisible: mapPageActive || pickerMode,
                 onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
                 onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
             });
