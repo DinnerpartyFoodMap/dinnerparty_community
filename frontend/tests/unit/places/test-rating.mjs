@@ -1,5 +1,6 @@
 // 地点评价纯逻辑与请求封装：npm run test:rating
 import assert from 'node:assert/strict';
+import { localeText } from '../../support/locale-text.mjs';
 import {
     RATING_TIERS, tierForAverage, ratingTierFor, isAvoidedPlace, summaryText, summaryFromPlace, formatAverage
 } from "../../../src/places/rating.js";
@@ -33,8 +34,10 @@ assert.equal(isAvoidedPlace(null), false);
 
 assert.deepEqual(summaryFromPlace({ rating_count: 3, rating_average: 2.6667 }), { count: 3, average: 2.6667 });
 assert.deepEqual(summaryFromPlace({}), { count: 0, average: null });
-assert.match(summaryText({ count: 3, average: 2.6667 }), /均线之上 2\.7 · 3 人评价/);
-assert.equal(summaryText({ count: 0, average: null }), '暂无评价');
+assert.equal(summaryText({ count: 3, average: 2.6667 }), localeText('map:rating.summary.text', {
+    tier: localeText('map:rating.tier.aboveAverage'), average: '2.7', count: 3
+}));
+assert.equal(summaryText({ count: 0, average: null }), localeText('map:rating.summary.none'));
 
 // 请求封装：游客不带凭证；保存/撤回带凭证；失败时保留后端报错与状态码
 const originalFetch = globalThis.fetch;

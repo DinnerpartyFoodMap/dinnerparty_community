@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { localeText } from '../../support/locale-text.mjs';
 import { exhibitionCenter, exhibitionRandomOrigin, exhibitionVenue, exhibitionChromeSheet } from '../../../src/map/exhibition.js';
 import { sanitizeSheet } from '../../../src/platform/nativeMapChrome.js';
 
@@ -32,7 +33,7 @@ assert.equal(plain.id, 'exhibition');
 assert.equal(plain.size, 'card');
 assert.deepEqual(plain.actions.map((a) => a.id), ['details']);
 assert.equal(plain.actions[0].expands, true);
-assert.equal(plain.subtitle, '展会');
+assert.equal(plain.subtitle, localeText('map:exhibition.subtitle'));
 assert.equal(plain.caption, undefined);
 assert.equal(plain.subtitleAction, undefined, '没有坐标时副标题不可点');
 assert.equal(plain.captionAction, undefined);
@@ -40,7 +41,8 @@ const namedOnly = sanitizeSheet({ ...exhibitionChromeSheet({ ...base, location_n
 assert.equal(namedOnly.caption, '待定场馆');
 assert.equal(namedOnly.subtitleAction, undefined, '只有地点名、没有坐标时只是文字');
 assert.equal(namedOnly.captionAction, undefined);
-assert.deepEqual(plain.paragraphs.map((p) => [p.title, p.text]), [['展会信息', base.information], ['展会简介', base.description]]);
+assert.deepEqual(plain.paragraphs.map((p) => [p.title, p.text]),
+    [[localeText('map:exhibition.information'), base.information], [localeText('map:exhibition.description'), base.description]]);
 assert.equal(plain.image, undefined, '没有图标时不下发');
 
 // 简介与信息支持 Markdown：text 是纯文本（旧版 App），markdown 是原生可显示的行内格式；展会名最多 80 字，不截断
@@ -61,12 +63,12 @@ assert.equal(located.subtitle, '保利世贸博览馆');
 assert.equal(located.caption, '保利世贸博览馆');
 for (const action of [located.subtitleAction, located.captionAction]) {
     assert.equal(action.id, 'venue');
-    assert.equal(action.title, '在地图上查看展会地点：保利世贸博览馆', '行标题是读屏标签');
+    assert.equal(action.title, localeText('map:exhibition.showVenueLabel', { location: '保利世贸博览馆' }), '行标题是读屏标签');
     assert.equal(action.keepsOpen, false, '点地址后原生面板收起，露出地图');
 }
 // 有坐标但没填地点名：副标题显示“查看位置”并可点，没有地址行
 const unnamed = sanitizeSheet({ ...exhibitionChromeSheet({ ...base, latitude: 23.1, longitude: 113.3 }), token: 4 });
-assert.equal(unnamed.subtitle, '查看位置');
+assert.equal(unnamed.subtitle, localeText('map:exhibition.showVenue'));
 assert.equal(unnamed.subtitleAction.id, 'venue');
 assert.equal(unnamed.caption, undefined);
 assert.equal(unnamed.captionAction, undefined);

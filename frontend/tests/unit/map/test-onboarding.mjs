@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { localeText } from '../../support/locale-text.mjs';
 import {
     ONBOARDING_VERSION, buildOnboardingSteps, nativeTourRect, parseOnboardingSeen, placeOnboardingCard, spotlightFor, unionBox
 } from '../../../src/map/onboarding.js';
@@ -35,14 +36,14 @@ assert.deepEqual(nativeSteps.card.native, { target: null, drawer: false });
 assert.deepEqual(nativeSteps.more.native, { target: 'drawer', drawer: false }, 'more starts with the drawer closed so users can practise opening it');
 assert.deepEqual(nativeSteps.favorites.native, { target: 'favorites', drawer: false });
 assert.equal(nativeSteps.more.where.icon, 'swipe_up');
-assert.match(nativeSteps.more.body, /往上滑|上滑/, 'native copy explains the available drawer gesture');
-assert.ok(nativeSteps.more.hint, 'native swipe practice explains automatic advancement');
+assert.equal(nativeSteps.more.body, localeText('map:onboarding.more.bodyNative'), 'native copy explains the available drawer gesture');
+assert.equal(nativeSteps.more.hint, localeText('map:onboarding.more.practice'), 'native swipe practice explains automatic advancement');
 
 // iOS 原生工具栏不可用时，网页只有“更多”按钮，不要求上滑练习。
 const iosMore = buildOnboardingSteps({ variant: 'ios' }).find((step) => step.id === 'more');
 assert.equal(iosMore.target, 'more', 'web fallback highlights its actual more button');
-assert.match(iosMore.body, /「更多」/, 'web fallback explains the more button');
-assert.doesNotMatch(iosMore.body, /上滑|往上滑/, 'web fallback does not claim to have the native drawer');
+assert.equal(iosMore.body, localeText('map:onboarding.more.bodyIos'), 'web fallback explains the more button');
+assert.equal(iosMore.practice, undefined, 'web fallback does not request native swipe practice');
 assert.equal(iosMore.hint, undefined, 'web fallback has no native swipe instruction');
 
 // 其他功能第一次用到时提示一句，每个功能只提示一次
