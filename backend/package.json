@@ -44,7 +44,8 @@
         "test:feedback": "node tests/feedback/test_feedback.js",
         "images:repair": "node scripts/images/repair_place_images.js",
         "images:migrate-oss": "node scripts/images/migrate_uploads_to_oss.js",
-        "places:check-coordinates": "node scripts/places/check_place_coordinates.js"
+        "places:check-coordinates": "node scripts/places/check_place_coordinates.js",
+        "places:reassign-owners": "node scripts/places/reassign_place_owners.js"
     },
     "engines": {
         "node": ">=22.12"
