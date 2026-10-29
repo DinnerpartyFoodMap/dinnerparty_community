@@ -40,7 +40,7 @@ const namedOnly = sanitizeSheet({ ...exhibitionChromeSheet({ ...base, location_n
 assert.equal(namedOnly.caption, '待定场馆');
 assert.equal(namedOnly.subtitleAction, undefined, '只有地点名、没有坐标时只是文字');
 assert.equal(namedOnly.captionAction, undefined);
-assert.deepEqual(plain.paragraphs.map((p) => [p.title, p.text]), [['展会简介', base.description], ['展会信息', base.information]]);
+assert.deepEqual(plain.paragraphs.map((p) => [p.title, p.text]), [['展会信息', base.information], ['展会简介', base.description]]);
 assert.equal(plain.image, undefined, '没有图标时不下发');
 
 // 简介与信息支持 Markdown：text 是纯文本（旧版 App），markdown 是原生可显示的行内格式；展会名最多 80 字，不截断
@@ -48,8 +48,8 @@ const formatted = sanitizeSheet({ ...exhibitionChromeSheet({ ...base, name: '展
     description: '**重点** 见 [官网](https://example.com)\n- 一\n- 二', information: '<b>上海</b> · 周六 10:00' }), token: 5 });
 assert.equal(formatted.title, '展'.repeat(80));
 assert.deepEqual(formatted.paragraphs.map((p) => [p.text, p.markdown]), [
-    ['重点 见 官网\n一\n二', '**重点** 见 [官网](https://example.com)\n\n• 一\n• 二'],
-    ['上海 · 周六 10:00', '上海 · 周六 10:00']
+    ['上海 · 周六 10:00', '上海 · 周六 10:00'],
+    ['重点 见 官网\n一\n二', '**重点** 见 [官网](https://example.com)\n\n• 一\n• 二']
 ]);
 
 const located = sanitizeSheet({ ...exhibitionChromeSheet({ ...base, latitude: 23.1, longitude: 113.3, location_name: '  保利世贸博览馆 ' },

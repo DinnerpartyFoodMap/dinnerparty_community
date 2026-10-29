@@ -5,7 +5,7 @@ import PageHeading from '../components/layout/PageHeading';
 import { useTips } from '../components/feedback/Tips';
 import { useConfirm } from '../components/feedback/Confirm';
 import TasteRadar from './TasteRadar';
-import { axisEvidenceText, axisLabel, normalizeTaste, SELF_LEVELS, selfLevelLabel, valueWord } from './tasteAxes';
+import { axisLabel, normalizeTaste, SELF_LEVELS, selfLevelLabel } from './tasteAxes';
 import { fetchUserProfile, saveProfileWidgets, saveTasteLevel, setUserBlocked } from '../api/client';
 import { userReportPrefill } from '../feedback/feedbackTypes';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating';
@@ -130,46 +130,30 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                 </div>
                 <div className="fm-profile__radar">
                     <TasteRadar axes={axes} selected={selectedAxis} onSelect={(key) => setSelectedAxis((current) => (current === key ? null : key))} accent={accent} />
-                    <div className="fm-profile__radar-hint">{t('profile:taste.hint')}</div>
+                    {self && token && <div className="fm-profile__radar-hint">{t('profile:taste.hint')}</div>}
                 </div>
             </header>
 
-            {axis && (
+            {axis && self && token && (
                 <section className="fm-profile__axis" aria-live="polite">
                     <div className="fm-profile__axis-title">
                         <strong>{axisLabel(axis.key)}</strong>
-                        <span style={{ color: accent }}>{valueWord(axis.value)}</span>
-                        {axis.basis === 'embedding' && <span className="fm-profile__axis-tag">{t('profile:taste.estimated')}</span>}
                     </div>
-                    <p className="fm-profile__axis-text">{axisEvidenceText(axis)}</p>
-                    {axis.places.length > 0 && (
-                        <ul className="fm-profile__axis-places">
-                            {axis.places.map((place) => (
-                                <li key={place.id}>
-                                    <a href={`/p/${encodeURIComponent(place.id)}`} onClick={(event) => { event.preventDefault(); onOpenPlace?.(place.id); }}>{place.name}</a>
-                                    {place.rating != null && <span>{tierLabel(ratingTierFor(place.rating))}</span>}
-                                    {place.rating == null && place.favorite && <span>{t('profile:taste.favoriteOnly')}</span>}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                    {self && token && (
-                        <div className="fm-profile__self">
-                            <div className="fm-profile__self-label">{t('profile:taste.self.title')}</div>
-                            <div role="radiogroup" aria-label={t('profile:taste.self.title')} className="fm-profile__self-options">
-                                {SELF_LEVELS.map((level) => (
-                                    <button key={level} type="button" role="radio" aria-checked={axis.selfLevel === level} disabled={busy}
-                                        className={`fm-profile__chip${axis.selfLevel === level ? ' is-selected' : ''}`} onClick={() => setSelfLevel(level)}>
-                                        {selfLevelLabel(level)}
-                                    </button>
-                                ))}
-                                <button type="button" role="radio" aria-checked={axis.selfLevel === null} disabled={busy}
-                                    className={`fm-profile__chip${axis.selfLevel === null ? ' is-selected' : ''}`} onClick={() => setSelfLevel(null)}>
-                                    {t('profile:taste.self.auto')}
+                    <div className="fm-profile__self">
+                        <div className="fm-profile__self-label">{t('profile:taste.self.title')}</div>
+                        <div role="radiogroup" aria-label={t('profile:taste.self.title')} className="fm-profile__self-options">
+                            {SELF_LEVELS.map((level) => (
+                                <button key={level} type="button" role="radio" aria-checked={axis.selfLevel === level} disabled={busy}
+                                    className={`fm-profile__chip${axis.selfLevel === level ? ' is-selected' : ''}`} onClick={() => setSelfLevel(level)}>
+                                    {selfLevelLabel(level)}
                                 </button>
-                            </div>
+                            ))}
+                            <button type="button" role="radio" aria-checked={axis.selfLevel === null} disabled={busy}
+                                className={`fm-profile__chip${axis.selfLevel === null ? ' is-selected' : ''}`} onClick={() => setSelfLevel(null)}>
+                                {t('profile:taste.self.auto')}
+                            </button>
                         </div>
-                    )}
+                    </div>
                 </section>
             )}
 

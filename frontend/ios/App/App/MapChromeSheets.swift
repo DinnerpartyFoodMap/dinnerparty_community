@@ -475,7 +475,7 @@ private struct MapChromeRowButtonStyle: ButtonStyle {
 
 /// 地点卡片：两段停靠。第一段约占屏幕三分之一：摘要——左上角分享、居中标题、右上角关闭，下面一排等宽操作按钮（导航、收藏……），
 /// 再露出简介的开头；上滑（或点“详情”）到全屏后继续显示完整简介、地址、相关日记与图片。
-/// 展会面板用同一张卡片：左上角是展会图标（image），正文按 paragraphs 分段（展会简介、展会信息，行内 Markdown），
+/// 展会面板用同一张卡片：左上角是展会图标（image），正文按 paragraphs 分段（展会信息、展会简介，行内 Markdown），
 /// 地址行显示展会地点；展会名放不下时来回滚动。
 @available(iOS 26.0, *)
 struct MapChromePlaceCard: View {
@@ -728,7 +728,7 @@ struct MapChromePlaceCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             } else {
-                // 展会时间已在摘要显示；详情从地点开始，随后逐段显示简介与信息。
+                // 展会时间已在摘要显示；详情从地点开始，随后按网页下发顺序显示信息与简介。
                 if let caption = sheet.caption {
                     captionLabel(caption)
                         .padding(.horizontal, 4)

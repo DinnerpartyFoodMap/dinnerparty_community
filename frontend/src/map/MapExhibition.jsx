@@ -146,10 +146,10 @@ export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRando
                     </Button>
                     <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:exhibition.randomHint')}</p>
                 </div>}
-                <h3>{t('map:exhibition.description')}</h3>
-                <Markdown text={exhibition.description} style={paragraphStyle} />
                 <h3>{t('map:exhibition.information')}</h3>
                 <Markdown text={exhibition.information} style={paragraphStyle} />
+                <h3>{t('map:exhibition.description')}</h3>
+                <Markdown text={exhibition.description} style={paragraphStyle} />
             </>}
         </ResponsivePanel>
     );

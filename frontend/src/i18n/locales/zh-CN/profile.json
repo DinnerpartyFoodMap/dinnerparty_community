@@ -16,7 +16,7 @@
   "placeRating": "{{tier}} {{average}}",
   "taste": {
     "title": "餐饮偏好",
-    "hint": "点类别名看依据",
+    "hint": "点类别名选择喜好",
     "unknown": "待了解",
     "estimated": "估算",
     "favoriteOnly": "收藏",
