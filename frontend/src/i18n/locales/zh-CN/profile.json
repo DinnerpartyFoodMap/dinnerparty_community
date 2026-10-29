@@ -8,7 +8,7 @@
   "cityUnknown": "还没有定位记录",
   "unblock": "解除屏蔽",
   "blockAndReport": "屏蔽并举报",
-  "blockConfirm": "屏蔽 {{name}}？屏蔽后，TA 创建的地点、地点下 TA 的公开日记和同好名片都不会再显示给你，可以随时在这里解除。接下来会打开举报表单，写下原因后提交给管理员。",
+  "blockConfirm": "屏蔽 {{name}}？屏蔽后，TA 创建的地点、地点下 TA 的公开日记和同好名片都不会再显示给你，可以随时在这里解除。",
   "blocked": "已屏蔽 {{name}}",
   "unblocked": "已解除对 {{name}} 的屏蔽",
   "blockFailed": "操作失败：{{message}}",
@@ -51,7 +51,7 @@
       "negative": "{{count}} 次差评",
       "favorites": "{{count}} 家收藏",
       "separator": "，",
-      "embedding": "还没评价过这类店，按评价和收藏过的 {{count}} 家店的整体口味估算：比 {{percent}}% 的随机口味更偏向这一类",
+      "embedding": "还没评价过这类店，按评价和收藏过的店铺整体口味估算",
       "unknown": "还没有对这类店的评价或收藏"
     }
   },

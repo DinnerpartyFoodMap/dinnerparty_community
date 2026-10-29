@@ -39,7 +39,7 @@
   "editAvatar": {
     "unreadable": "图片无法读取",
     "cropRequired": "请选择图片并调整裁剪区域",
-    "uploadFailedStatus": "上传失败状态码：{{status}}",
+    "uploadFailedStatus": "上传失败，{{status}}",
     "updated": "头像更新成功",
     "badData": "数据格式错误",
     "zoom": "缩放:",
@@ -96,7 +96,7 @@
     },
     "title": "动效",
     "localOnly": "仅保存在本设备。{{reducedMotion}}",
-    "reducedMotion": "系统已开启“减少动态效果”，动效会以短渐变代替。"
+    "reducedMotion": "已开启减少动态效果"
   },
   "personalizeMap": {
     "latLngPair": "请同时填写纬度和经度，或都留空",
@@ -147,7 +147,7 @@
     }
   },
   "skins": {
-    "intro": "输入兑换码解锁新皮肤，可以更换地点卡片、评分表情、底部工具栏、头像框和地图标记的样式。",
+    "intro": "输入兑换码解锁新皮肤",
     "introSwitchOnly": "皮肤可以更换地点卡片、评分表情、底部工具栏、头像框和地图标记的样式。",
     "mine": "我的皮肤",
     "defaultName": "默认样式",

@@ -1,10 +1,10 @@
 {
   "documentTitle": "下载 App · 东方饭联地图",
-  "eyebrow": "TOUHOU FOOD ALLIANCE MAP",
+  "eyebrow": "DINNERPARTY FOOD MAP",
   "title": "东方饭联地图",
   "lead": "发现、收录和评价身边的好味道。下载 App，或直接打开网页版。",
   "actionsLabel": "下载与打开方式",
-  "inAppNotice": "在微信或 QQ 里打开时下载不了安装包，请点右上角，选择在浏览器中打开。",
+  "inAppNotice": "点击右上角选择在浏览器中打开",
   "version": "最新版本 {{version}}",
   "android": {
     "title": "下载 Android 版",
@@ -17,7 +17,7 @@
   },
   "web": {
     "title": "打开网页版",
-    "detail": "不用安装，直接使用"
+    "detail": "无需安装，直接使用"
   },
   "footer": "© 2026 东方饭联地图"
 }

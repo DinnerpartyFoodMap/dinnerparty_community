@@ -109,7 +109,6 @@ function StopTime({stop,dates,editStop}) {
             {multiDay&&<input type="date" aria-label={t('journey:stopCard.field.day')} min={start} max={end} value={day} onChange={e=>setAt(e.target.value,e.target.value?time:'')}/>}
             <input type="time" aria-label={t('journey:stopCard.field.clock')} disabled={multiDay&&!day} value={time} onChange={e=>setAt(day,e.target.value)}/>
         </div>
-        {multiDay&&!day&&<small className="jw-muted">{t('journey:stopCard.dayUnknown')}</small>}
         {stop.at_source==='model'&&<small className="jw-muted">{t('journey:stopCard.timeGuessedHint')} <button type="button" className="jw-link" onClick={()=>editStop({at_source:''})}>{t('journey:stopCard.timeLooksRight')}</button></small>}
     </div>;
 }

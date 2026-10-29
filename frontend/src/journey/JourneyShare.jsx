@@ -163,7 +163,6 @@ export default function JourneyShare({ctx,nav,params}) {
                         <label className="jw-field"><span className="jw-field__label">{t('journey:share.platform')}</span><select value={options.platform} onChange={e=>setOptions({...options,platform:e.target.value})}>{PLATFORMS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
                         <label className="jw-field"><span className="jw-field__label">{t('journey:share.style')}</span><select value={options.style} onChange={e=>setOptions({...options,style:e.target.value})}>{WRITING.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
                     </div>
-                    <small className="jw-muted">{t('journey:share.platformHint')}</small>
                     <div className="jw-actions">
                         <label className="jw-field"><span className="jw-field__label">{t('journey:share.minChars')}</span><input type="number" min="30" max="1000" value={options.min} onChange={e=>setOptions({...options,min:Number(e.target.value)})}/></label>
                         <label className="jw-field"><span className="jw-field__label">{t('journey:share.maxChars')}</span><input type="number" min="30" max="1500" value={options.max} onChange={e=>setOptions({...options,max:Number(e.target.value)})}/></label>
@@ -234,7 +233,6 @@ export default function JourneyShare({ctx,nav,params}) {
                         <li><span>{t('journey:share.step.publish')}</span></li>
                     </ol>
                     {!canShareFiles&&!!pages?.length&&<small className="jw-muted">{t('journey:share.shareFallback')}</small>}
-                    {canShareFiles&&<small className="jw-muted">{t('journey:share.shareNote')}</small>}
                     <button type="button" className="jw-link" disabled={busy||!textReady} onClick={()=>run(async()=>{const r=await saveBlob(new Blob([exportText],{type:'text/plain;charset=utf-8'}),t('journey:share.postFilename'));if(r==='failed')throw new Error(t('journey:share.postSaveFailed'));})}>{t('journey:share.savePost')}</button>
                 </section>}
             </>}
