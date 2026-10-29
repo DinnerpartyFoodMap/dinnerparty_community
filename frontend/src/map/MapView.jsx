@@ -1069,8 +1069,9 @@ export default function MapView({
         const lat = Number(place.latitude);
         if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
         try {
-            mapRef.current.setCenter([lng, lat]);
-            if (Number(mapRef.current.getZoom?.()) < 16) mapRef.current.setZoom(16);
+            // 展会等远距离目标先完成定位再开卡片，避免卡片按旧视口避让并打断地图移动。
+            const zoom = Math.max(16, Number(mapRef.current.getZoom()) || 16);
+            mapRef.current.setZoomAndCenter(zoom, [lng, lat], true);
         } catch (error) { /* best effort */ }
         showPopup(place);
     };

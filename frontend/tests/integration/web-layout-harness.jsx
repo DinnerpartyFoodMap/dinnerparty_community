@@ -51,11 +51,21 @@ class TestMap {
     getZoom() { return this.zoom; }
     getZooms() { return [2, 20]; }
     getBounds() { const [lng, lat] = this.center; return { getSouthWest: () => new LngLat(lng - 0.03, lat - 0.03), getNorthEast: () => new LngLat(lng + 0.03, lat + 0.03) }; }
-    setCenter(center) { this.center = center; this.positionMarkers(); this.emit('moveend'); }
+    setCenter(center, immediately = false) {
+        const apply = () => { this.center = center; this.positionMarkers(); this.emit('moveend'); };
+        if (!this.deferredCamera || immediately) { apply(); return; }
+        const pending = {};
+        this.pendingCamera = pending;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (this.pendingCamera !== pending) return;
+            this.pendingCamera = null;
+            apply();
+        }));
+    }
     setZoom(zoom) { this.zoom = zoom; this.positionMarkers(); this.emit('zoomend'); }
     setZoomAndCenter(zoom, center, immediately = false) {
         this.cameraMoves.push({ zoom, center });
-        const apply = () => { this.zoom = zoom; this.setCenter(center); this.emit('zoomend'); };
+        const apply = () => { this.zoom = zoom; this.setCenter(center, true); this.emit('zoomend'); };
         if (!this.deferredCamera || immediately) { this.pendingCamera = null; apply(); return; }
         // AMap moves asynchronously by default. Keep the old projection until that move completes.
         const pending = {};
@@ -96,7 +106,7 @@ class TestMap {
         this.autoPans.push({ dx, dy, duringCameraMove: !!this.pendingCamera });
         const c = worldPixel(...this.center, this.zoom);
         const next = unprojectWorldPixel(c.x - dx, c.y - dy, this.zoom);
-        this.setCenter([next.lng, next.lat]);
+        this.setCenter([next.lng, next.lat], true);
     }
     resize() {}
     destroy() {}
@@ -108,9 +118,12 @@ function MapHarness() {
     const contentRef = useOverlayContentRef();
     const [alongRouteRequestId, setAlongRouteRequestId] = useState(0);
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
+    const [exhibitionOpen, setExhibitionOpen] = useState(new URLSearchParams(location.search).has('exhibition'));
+    const exhibition = { id: 7, name: '远距离展会', location_name: '广州展会场馆', longitude: 113.36, latitude: 23.1, description: '展会简介', information: '展会信息' };
     return <main ref={contentRef} className="fm-app-root" style={{ position: 'fixed', left: 0, right: 0, top: 'var(--safe-top, 0px)', height: 'calc(100vh - var(--safe-top, 0px))', overflow: 'hidden' }}>
         <MapView backendUrl={location.origin} token="synthetic-web-layout" isAuthenticated mapPageActive
             initialCenter={{ lng: 120, lat: 30 }} alongRouteRequestId={alongRouteRequestId} desktopHeaderMenu={desktopHeaderMenu}
+            exhibition={exhibition} exhibitionOpen={exhibitionOpen} onCloseExhibition={() => setExhibitionOpen(false)}
             onRequireAuth={() => { throw new Error('Unexpected auth request'); }} />
         <AuthPanel user={user} isAuth pathname="/" backendUrl={location.origin}
             onMenuOpenChange={setDesktopHeaderMenu}

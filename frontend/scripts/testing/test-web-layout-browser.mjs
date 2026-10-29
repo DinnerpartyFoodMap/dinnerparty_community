@@ -231,6 +231,28 @@ try {
     await screenshot('radar-six-labels-and-fill');
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'radar has no browser errors');
 
+    // A distant exhibition must finish moving before its venue card measures avoidance.
+    for (const [width, height, zoom] of [[1280, 900, 13], [390, 844, 18]]) {
+        await navigate('map&deferredCamera=1&exhibition=1', width, height);
+        await waitFor(`!!document.querySelector('[data-exhibition-venue]') && !!window.__WEB_LAYOUT_MAP`);
+        await evaluate(`window.__WEB_LAYOUT_MAP.setZoom(${zoom})`);
+        await click('[data-exhibition-venue]');
+        await waitFor(`!document.querySelector('[data-exhibition-venue]') && !!document.querySelector('.fm-card-host,.fm-skin-card') && !window.__WEB_LAYOUT_MAP.pendingCamera`);
+        await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+        const venue = await evaluate(`(() => {
+            const map = window.__WEB_LAYOUT_MAP;
+            return { point: map.lngLatToContainer([113.36,23.1]), zoom: map.getZoom(), pans: map.autoPans,
+                center: map.center, card: document.querySelector('.fm-card-host,.fm-skin-card').textContent };
+        })()`);
+        assert.ok(venue.pans.every(pan => !pan.duringCameraMove), `${width}px: venue card must not interrupt a long camera move: ${JSON.stringify(venue)}`);
+        assert.equal(venue.zoom, Math.max(16, zoom), 'venue focus zooms in when needed and preserves a closer view');
+        assert.ok(Math.abs(venue.center[0] - 113.36) < 0.02 && Math.abs(venue.center[1] - 23.1) < 0.02, 'final center stays near the distant venue');
+        assert.ok(venue.point.x >= 12 && venue.point.x <= width - 12 && venue.point.y >= 12 && venue.point.y <= height - 12, 'venue remains inside the map after card avoidance');
+        assert.ok(venue.card.includes('广州展会场馆') && venue.card.includes('导航'), 'the venue card still opens with navigation');
+        assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'exhibition address focus has no browser errors');
+        await screenshot(`exhibition-venue-${width}`);
+    }
+
     // Exercise the real list -> MapView -> card flow, including AMap's default deferred camera move.
     listHasPlace = true;
     for (const [width, height] of [[1280, 900], [390, 844]]) {
