@@ -318,10 +318,13 @@ function patchIos() {
 
 // iOS 原生地图控件（SwiftUI Liquid Glass）：源码直接维护在 ios/App/App/，这里只校验存在并补齐工程引用，
 // 从不覆盖手写的 Swift 逻辑；重复执行不会产生改动。
+// 新增本地插件后还必须在该文件的列表之外，到 FoodMapBridgeViewController.capacitorDidLoad()
+// 里 registerPluginInstance(...)；否则网页 isPluginAvailable 为 false，会静默回退网页界面。
 const IOS_NATIVE_SOURCES = [
     ['NativePageEngine.swift', 'A7F1C0DE000000000000001D', 'A7F1C0DE000000000000002D'],
     ['NativeAdminPlugin.swift', 'A7F1C0DE000000000000001E', 'A7F1C0DE000000000000002E'],
     ['NativeJourneyPlugin.swift', 'A7F1C0DE000000000000001F', 'A7F1C0DE000000000000002F'],
+    ['NativeScreenPresentation.swift', 'A7F1C0DE0000000000000020', 'A7F1C0DE0000000000000030'],
     ['NativeGlassComponents.swift', 'A7F1C0DE000000000000001A', 'A7F1C0DE000000000000002A'],
     ['NativeAlongRoutePlugin.swift', 'A7F1C0DE000000000000001B', 'A7F1C0DE000000000000002B'],
     ['NativeProfilePlugin.swift', 'A7F1C0DE000000000000001C', 'A7F1C0DE000000000000002C'],

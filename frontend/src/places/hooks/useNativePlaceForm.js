@@ -41,6 +41,7 @@ const imageEntries = (list) => (Array.isArray(list) ? list : [])
 function formLabels(mode, canDirect) {
     return {
         title: mode === 'create' ? t('map:placeForm.titleCreate') : t('map:placeForm.titleEdit'),
+        expand: t('map:placeForm.expand'),
         name: t('map:placeForm.name'),
         namePlaceholder: t('map:addForm.namePlaceholder'),
         nameRequired: t('map:addForm.nameRequired'),

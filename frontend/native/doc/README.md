@@ -95,15 +95,20 @@ iOS 新手指引恢复“更多功能”：原生端显示上滑示意，实际�
 
 实现：[NativePageEngine.swift](../../ios/App/App/NativePageEngine.swift)、[NativeAdminPlugin.swift](../../ios/App/App/NativeAdminPlugin.swift)、[NativeJourneyPlugin.swift](../../ios/App/App/NativeJourneyPlugin.swift)。网页侧控制器为 `src/admin/nativeAdminController.js`、`src/journey/nativeJourneyController.js`；会话为 `src/platform/nativeAdmin.js`、`nativeJourney.js`。
 
+管理后台、住民主页与日记 · 同好使用与住民设置相同的整页呈现（[NativeScreenPresentation.swift](../../ios/App/App/NativeScreenPresentation.swift)）：地图与网页留在下方，页面从右侧滑入、向右退出；左边缘侧滑在根页面关闭，在子页面交给页面栈返回。添加地点仍使用底部半屏：新建立即停在约 45% 高度，半屏时内容不滚动，上滑由面板本身连续展开到全屏；导航栏提供“展开全部”按钮，展开后才允许滚动，和地点详情卡片一致。
+
+**新增本地插件必须注册**：除把 Swift 文件加入 Xcode 工程外，还要在 [FoodMapBridgeViewController.capacitorDidLoad()](../../ios/App/App/FoodMapBridgeViewController.swift) 调用 `bridge?.registerPluginInstance(...)`。未注册时网页 `isPluginAvailable` 为 false，会静默回退网页界面。
+
 | 前置状态 | 操作 | 预期可见结果 |
 | --- | --- | --- |
-| 用 YUYUKO / YOUMU / KOMACHI 账号分别进入后台 | 打开后台，逐个进入可见面板 | 只出现该等级允许的面板；用户/普通用户/地点/分类/白名单/公告/展会/兑换码/反馈/日志可打开 |
+| 用 YUYUKO / YOUMU / KOMACHI 账号分别进入后台 | 打开后台，逐个进入可见面板 | 页面从右侧滑入，地图留在下方；只出现该等级允许的面板 |
 | 用户管理 | 改等级、封禁（时长/原因）、解封、改 QQ、删除 | 确认框与表单为原生；成功后列表刷新并提示；被保护账号没有危险操作 |
 | 地点申请 | 查看 AI 初筛原因与图片，通过/驳回，跳地图 | 图片加载、确认文案与原网页一致；跳地图后后台收起 |
 | 公告/展会/兑换码 | 发布、下线、上传图标、生成与作废 | 表单校验失败有提示；成功后列表与提示更新 |
 | 反馈 | 切换状态、标记处理、删除 | 受保护截图按需加载；操作后列表刷新 |
 | 后台请求失败或原生拒绝 | 断网/旧安装包 | 回退网页后台，不出现空白页 |
-| 登录住民 | 从地图“日记 · 同好”进入 | 原生入口页显示图文生成/日历/同好与数量；地图留在下方 |
+| 登录住民 | 从地图“日记 · 同好”进入 | 原生入口页从右侧滑入，地图留在下方；显示图文生成/日历/同好与数量 |
+| 添加地点（新建） | 打开半屏，向上拖动或点“展开全部” | 半屏时内容不滚动，上滑连续展开到全屏；展开后才可滚动；编辑地点仍直接全屏 |
 | 素材 | 填写文字、日期、可见性，添加相册照片，保存 | 照片上传后出现在本篇照片；未保存内容返回时尽量同步 |
 | 生成 | 保存素材后生成 | 生成页轮询并显示排队/运行/完成/失败；完成后自动进入核对 |
 | 核对 | 改标题/日期/摘要/可见性，编辑站点、排序、删除、添加站点与照片，私密/公开保存 | 站点与照片更新；公开保存遇到冲突时阻止并提示；成功后进入详情 |

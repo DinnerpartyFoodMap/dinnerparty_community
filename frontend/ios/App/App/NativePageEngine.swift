@@ -490,24 +490,18 @@ struct NativePageView: View {
             .navigationTitle(model.spec.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    if model.spec.canGoBack {
-                        Button {
-                            model.back()
-                        } label: {
-                            Image(systemName: "chevron.backward")
-                        }
-                        .accessibilityLabel(Text(model.spec.backTitle))
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button {
-                        model.close()
+                        if model.spec.canGoBack {
+                            model.back()
+                        } else {
+                            model.close()
+                        }
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .bold))
+                        Image(systemName: "chevron.backward")
+                            .font(.headline)
                     }
-                    .accessibilityLabel(Text(model.spec.closeTitle))
+                    .accessibilityLabel(Text(model.spec.canGoBack ? model.spec.backTitle : model.spec.closeTitle))
                 }
             }
         }

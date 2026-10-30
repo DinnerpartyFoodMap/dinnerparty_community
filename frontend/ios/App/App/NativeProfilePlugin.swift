@@ -30,13 +30,12 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     private var queuedFinish: (action: String, values: [String: Any], animated: Bool)?
     private var closeCompletions: [() -> Void] = []
     private var loadingObservation: NSKeyValueObservation?
-    private let sheetDelegate = ProfileSheetDelegate()
+    private let screenPresenter = NativeScreenPresenter()
 
     public override func load() {
         loadingObservation = bridge?.webView?.observe(\.isLoading, options: [.new]) { [weak self] view, _ in
             if view.isLoading { self?.finish(action: "back", animated: false) }
         }
-        sheetDelegate.onDismiss = { [weak self] in self?.finish(action: "back") }
     }
 
     @objc func open(_ call: CAPPluginCall) {
@@ -58,24 +57,17 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
                 self?.finish(action: action, values: values)
             }
             let host = MapChromeHostingController(rootView: NativeProfileView(model: model), dark: model.dark)
-            host.modalPresentationStyle = .pageSheet
-            if #available(iOS 26.0, *) {
-                host.view.backgroundColor = .clear
-            } else {
-                host.view.backgroundColor = .systemGroupedBackground
+            // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
+            host.view.backgroundColor = .systemGroupedBackground
+            screenPresenter.onEdgeBack = { [weak self] in
+                self?.finish(action: "back")
             }
-            if let sheet = host.sheetPresentationController {
-                sheet.detents = [.large()]
-                sheet.prefersGrabberVisible = true
-                sheet.prefersScrollingExpandsWhenScrolledToEdge = true
-            }
-            host.presentationController?.delegate = self.sheetDelegate
             self.model = model
             self.host = host
             self.pending = call
             self.requestID = id
             self.presenting = true
-            presenter.present(host, animated: !UIAccessibility.isReduceMotionEnabled) { [weak self] in
+            screenPresenter.present(host, from: presenter) { [weak self] in
                 guard let self else { return }
                 self.presenting = false
                 if let queued = self.queuedFinish {
@@ -133,14 +125,6 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             complete()
         }
-    }
-}
-
-private final class ProfileSheetDelegate: NSObject, UIAdaptivePresentationControllerDelegate {
-    var onDismiss: (() -> Void)?
-
-    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        onDismiss?()
     }
 }
 
@@ -433,14 +417,14 @@ private struct NativeProfileView: View {
             .navigationTitle(model.text("title", "住民主页"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         model.requestClose()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .bold))
+                        Image(systemName: "chevron.backward")
+                            .font(.headline)
                     }
-                    .accessibilityLabel(Text(model.text("close", "关闭")))
+                    .accessibilityLabel(Text(model.text("back", "返回")))
                 }
             }
         }

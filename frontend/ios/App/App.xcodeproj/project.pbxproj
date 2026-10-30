@@ -17,6 +17,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		A7F1C0DE0000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000002 /* PrivacyInfo.xcprivacy */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		A7F1C0DE0000000000000030 /* NativeScreenPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000020 /* NativeScreenPresentation.swift */; };
 		A7F1C0DE000000000000002F /* NativeJourneyPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */; };
 		A7F1C0DE000000000000002E /* NativeAdminPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001E /* NativeAdminPlugin.swift */; };
 		A7F1C0DE000000000000002D /* NativePageEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001D /* NativePageEngine.swift */; };
@@ -48,6 +49,7 @@
 		A7F1C0DE0000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		A7F1C0DE0000000000000020 /* NativeScreenPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScreenPresentation.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeJourneyPlugin.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001E /* NativeAdminPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAdminPlugin.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001D /* NativePageEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePageEngine.swift; sourceTree = "<group>"; };
@@ -100,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
+				A7F1C0DE0000000000000020 /* NativeScreenPresentation.swift */,
 				A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */,
 				A7F1C0DE000000000000001E /* NativeAdminPlugin.swift */,
 				A7F1C0DE000000000000001D /* NativePageEngine.swift */,
@@ -214,6 +217,7 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				A7F1C0DE0000000000000030 /* NativeScreenPresentation.swift in Sources */,
 				A7F1C0DE000000000000002F /* NativeJourneyPlugin.swift in Sources */,
 				A7F1C0DE000000000000002E /* NativeAdminPlugin.swift in Sources */,
 				A7F1C0DE000000000000002D /* NativePageEngine.swift in Sources */,

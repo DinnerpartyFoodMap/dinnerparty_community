@@ -629,6 +629,7 @@
   },
   "placeForm": {
     "titleCreate": "添加地点",
+    "expand": "展开全部",
     "titleEdit": "修改地点",
     "name": "店名",
     "category": "分类",

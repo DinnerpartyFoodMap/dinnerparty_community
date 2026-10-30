@@ -31,13 +31,12 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
     private var presenting = false
     private var lastSeq = 0
     private var loadingObservation: NSKeyValueObservation?
-    private let sheetDelegate = JourneySheetDelegate()
+    private let screenPresenter = NativeScreenPresenter()
 
     public override func load() {
         loadingObservation = bridge?.webView?.observe(\.isLoading, options: [.new]) { [weak self] view, _ in
             if view.isLoading { self?.finish(action: "close", animated: false) }
         }
-        sheetDelegate.onDismiss = { [weak self] in self?.finish(action: "close") }
     }
 
     @objc func open(_ call: CAPPluginCall) {
@@ -58,24 +57,22 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
             let theme = call.getObject("theme") ?? [:]
             let dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
             let host = MapChromeHostingController(rootView: NativePageView(model: model), dark: dark)
-            host.modalPresentationStyle = .pageSheet
-            if #available(iOS 26.0, *) {
-                host.view.backgroundColor = .clear
-            } else {
-                host.view.backgroundColor = .systemGroupedBackground
+            // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
+            host.view.backgroundColor = .systemGroupedBackground
+            screenPresenter.onEdgeBack = { [weak self] in
+                guard let self, let model = self.model else { return }
+                if model.spec.canGoBack {
+                    model.back()
+                } else {
+                    self.finish(action: "close")
+                }
             }
-            if let sheet = host.sheetPresentationController {
-                sheet.detents = [.large()]
-                sheet.prefersGrabberVisible = true
-                sheet.prefersScrollingExpandsWhenScrolledToEdge = true
-            }
-            host.presentationController?.delegate = self.sheetDelegate
             self.model = model
             self.host = host
             self.pending = call
             self.requestID = id
             self.presenting = true
-            presenter.present(host, animated: !UIAccessibility.isReduceMotionEnabled) { [weak self] in
+            screenPresenter.present(host, from: presenter) { [weak self] in
                 self?.presenting = false
             }
         }
@@ -171,13 +168,5 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             complete()
         }
-    }
-}
-
-private final class JourneySheetDelegate: NSObject, UIAdaptivePresentationControllerDelegate {
-    var onDismiss: (() -> Void)?
-
-    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        onDismiss?()
     }
 }

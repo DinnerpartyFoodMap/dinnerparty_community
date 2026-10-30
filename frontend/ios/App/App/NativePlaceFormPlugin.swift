@@ -66,13 +66,22 @@ public class NativePlaceFormPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             if let sheet = host.sheetPresentationController {
                 if model.isCreate {
-                    // 先停在下方三分之一，地图不变暗、仍能看到选中位置的标记；用户往上拉到全屏
-                    let third = UISheetPresentationController.Detent.Identifier("third")
-                    sheet.detents = [.custom(identifier: third) { context in context.maximumDetentValue / 3 }, .large()]
-                    sheet.selectedDetentIdentifier = third
-                    sheet.largestUndimmedDetentIdentifier = third
+                    // 与地点详情一致：先停在半屏，上滑交给面板本身展开到全屏；半屏时不滚动内容
+                    let compact = UISheetPresentationController.Detent.Identifier("placeForm.compact")
+                    sheet.detents = [.custom(identifier: compact) { context in context.maximumDetentValue * 0.45 }, .large()]
+                    sheet.selectedDetentIdentifier = compact
+                    sheet.largestUndimmedDetentIdentifier = compact
+                    model.onExpand = { [weak sheet] in
+                        guard let sheet, sheet.selectedDetentIdentifier != .large else { return }
+                        sheet.animateChanges { sheet.selectedDetentIdentifier = .large }
+                    }
+                    self.sheetDelegate.onDetent = { [weak model] large in
+                        guard let model else { return }
+                        withAnimation(.easeOut(duration: 0.2)) { model.expanded = large }
+                    }
                 } else {
                     sheet.detents = [.large()]
+                    model.expanded = true
                 }
                 sheet.prefersGrabberVisible = true
                 sheet.prefersScrollingExpandsWhenScrolledToEdge = true
@@ -143,9 +152,10 @@ public class NativePlaceFormPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
-private final class PlaceFormSheetDelegate: NSObject, UIAdaptivePresentationControllerDelegate {
+private final class PlaceFormSheetDelegate: NSObject, UISheetPresentationControllerDelegate {
     var onAttemptDismiss: (() -> Void)?
     var onDismiss: (() -> Void)?
+    var onDetent: ((Bool) -> Void)?
 
     func presentationControllerDidAttemptToDismiss(_ presentationController: UIPresentationController) {
         onAttemptDismiss?()
@@ -153,6 +163,10 @@ private final class PlaceFormSheetDelegate: NSObject, UIAdaptivePresentationCont
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
         onDismiss?()
+    }
+
+    func sheetPresentationControllerDidChangeSelectedDetentIdentifier(_ sheetPresentationController: UISheetPresentationController) {
+        onDetent?(sheetPresentationController.selectedDetentIdentifier == .large)
     }
 }
 
@@ -209,6 +223,8 @@ final class NativePlaceFormModel: ObservableObject {
     @Published var alertMessage: String?
     @Published var confirmDiscard = false
     @Published var confirmDelete = false
+    /// 新建时先停在半屏；上滑到全屏后才允许滚动，和地点卡片的展开方式一致。
+    @Published var expanded = false
 
     let isCreate: Bool
     let dark: Bool
@@ -224,6 +240,8 @@ final class NativePlaceFormModel: ObservableObject {
     let maxImages: Int
     var onFinish: ((String) -> Void)?
     var onLockChange: ((Bool) -> Void)?
+    /// 半屏时由插件把面板动画展开到全屏
+    var onExpand: (() -> Void)?
     private let labels: [String: String]
     private let send: ([String: Any]) -> Void
     /// 打开时的内容（修改地点时判断有没有改动）
@@ -234,6 +252,7 @@ final class NativePlaceFormModel: ObservableObject {
     init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
         self.send = send
         isCreate = call.getString("mode") != "edit"
+        expanded = !isCreate
         dark = call.getBool("dark", false)
         tint = Color(uiColor: UIColor(cssHex: call.getString("primary") ?? "") ?? .systemPink)
         canDirect = call.getBool("canDirect", true)
@@ -570,6 +589,8 @@ private struct NativePlaceFormView: View {
                 .padding(.bottom, 32)
             }
             .scrollDismissesKeyboard(.interactively)
+            .scrollDisabled(!model.expanded)
+            .scrollBounceBehavior(.basedOnSize)
             .background(NativeSheetBackground().ignoresSafeArea())
             .disabled(model.submitting)
             .navigationTitle(model.text("title", model.isCreate ? "添加地点" : "修改地点"))
@@ -579,7 +600,15 @@ private struct NativePlaceFormView: View {
                     Button(model.text("cancel", "取消")) { model.requestCancel() }
                         .disabled(model.submitting)
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    if model.isCreate && !model.expanded {
+                        Button {
+                            model.onExpand?()
+                        } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .accessibilityLabel(Text(model.text("expand", "展开全部")))
+                    }
                     if model.submitting {
                         ProgressView()
                             .accessibilityLabel(Text(model.text("submitting", "提交中...")))
