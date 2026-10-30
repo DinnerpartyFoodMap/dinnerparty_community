@@ -259,6 +259,8 @@ function patchIos() {
         changes.push('iOS 隐私清单文件');
     }
     const pbxproj = resolve(root, 'ios/App/App.xcodeproj/project.pbxproj');
+    // 早期手工写入可能带 UTF-8 BOM；Xcode 的 project loader 会因此拒绝打开工程。
+    patchFile(pbxproj, 'iOS 工程去除 BOM', (text) => (text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text));
     patchFile(pbxproj, 'iOS 只面向 iPhone、开发区域简体中文', (text) => text
         .replace(/TARGETED_DEVICE_FAMILY = "1,2";/g, 'TARGETED_DEVICE_FAMILY = 1;')
         .replace(/developmentRegion = en;/, 'developmentRegion = "zh-Hans";')
@@ -324,7 +326,7 @@ const IOS_NATIVE_SOURCES = [
     ['NativePageEngine.swift', 'A7F1C0DE000000000000001D', 'A7F1C0DE000000000000002D'],
     ['NativeAdminPlugin.swift', 'A7F1C0DE000000000000001E', 'A7F1C0DE000000000000002E'],
     ['NativeJourneyPlugin.swift', 'A7F1C0DE000000000000001F', 'A7F1C0DE000000000000002F'],
-    ['NativeScreenPresentation.swift', 'A7F1C0DE0000000000000020', 'A7F1C0DE0000000000000030'],
+    ['NativeScreenPresentation.swift', 'A7F1C0DE0000000000000031', 'A7F1C0DE0000000000000032'],
     ['NativeGlassComponents.swift', 'A7F1C0DE000000000000001A', 'A7F1C0DE000000000000002A'],
     ['NativeAlongRoutePlugin.swift', 'A7F1C0DE000000000000001B', 'A7F1C0DE000000000000002B'],
     ['NativeProfilePlugin.swift', 'A7F1C0DE000000000000001C', 'A7F1C0DE000000000000002C'],
@@ -390,6 +392,19 @@ try {
         patchIosSwiftPackage();
         patchIos();
         patchIosNativeChrome();
+        // 防止重复对象 ID（Xcode project loader 会以 74 退出）：所有 PBX 对象定义必须唯一。
+        const projectFile = resolve(root, 'ios/App/App.xcodeproj/project.pbxproj');
+        if (existsSync(projectFile)) {
+            const source = readFileSync(projectFile, 'utf8');
+            const definitions = [...source.matchAll(/^\s*([A-F0-9]{24}) \/\* [^\n]*\*\/ = \{isa = /gm)].map((match) => match[1]);
+            const seen = new Set();
+            const duplicates = [];
+            for (const id of definitions) {
+                if (seen.has(id)) duplicates.push(id);
+                seen.add(id);
+            }
+            if (duplicates.length) throw new Error(`Xcode 工程对象 ID 重复：${[...new Set(duplicates)].join('、')}`);
+        }
     }
     console.log(changes.length ? `已更新：${changes.join('、')}` : '原生工程配置已是最新');
 } catch (error) {

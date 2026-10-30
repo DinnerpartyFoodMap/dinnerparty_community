@@ -99,6 +99,8 @@ iOS 新手指引恢复“更多功能”：原生端显示上滑示意，实际�
 
 **新增本地插件必须注册**：除把 Swift 文件加入 Xcode 工程外，还要在 [FoodMapBridgeViewController.capacitorDidLoad()](../../ios/App/App/FoodMapBridgeViewController.swift) 调用 `bridge?.registerPluginInstance(...)`。未注册时网页 `isPluginAvailable` 为 false，会静默回退网页界面。
 
+**Xcode 工程完整性**：`project.pbxproj` 的每个对象 ID 必须唯一，文件也不能带 UTF-8 BOM；否则 `xcodebuild` 的 project loader 会以退出码 74 失败，GitHub Actions 只显示 `Process completed with exit code 74`。`scripts/patch-native-projects.mjs` 会去除 BOM、加入新 Swift 文件，并在结束时校验重复对象 ID；新增原生文件后必须运行它。
+
 | 前置状态 | 操作 | 预期可见结果 |
 | --- | --- | --- |
 | 用 YUYUKO / YOUMU / KOMACHI 账号分别进入后台 | 打开后台，逐个进入可见面板 | 页面从右侧滑入，地图留在下方；只出现该等级允许的面板 |

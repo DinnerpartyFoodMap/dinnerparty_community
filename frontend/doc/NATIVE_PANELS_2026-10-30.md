@@ -23,6 +23,7 @@
 - 管理后台、住民主页与日记 · 同好改为与住民设置相同的整页呈现：`NativeScreenPresentation.swift` 从右侧滑入、地图留在下方、左边缘侧滑返回；根页面侧滑关闭，子页面侧滑交给页面栈。
 - 添加地点新建半屏：初始约 45% 高度，半屏时 `scrollDisabled`，上滑由面板本身连续展开；导航栏“展开全部”按钮用 `animateChanges` 展开，全屏后才允许滚动，与地点详情卡片一致。
 - **插件注册修复**：新插件已加入 `FoodMapBridgeViewController.capacitorDidLoad()` 的 `registerPluginInstance`。此前只把 Swift 文件加入工程但没有注册，网页 `isPluginAvailable` 为 false，所有新原生页静默回退网页，导致真机只看到添加地点表单的玻璃变化。
+- **Xcode 工程修复**：`NativeScreenPresentation.swift` 初次加入时使用了与 `MapChromeModel.swift` 构建对象重复的 ID，且一次 PowerShell 改写引入了 UTF-8 BOM；两者都会让 Xcode project loader 以 74 退出。现已改用唯一 ID `0031/0032`、移除重复条目和 BOM，并让 `patch-native-projects.mjs` 在结束时校验重复对象 ID。
 
 ## 未验证与限制
 
