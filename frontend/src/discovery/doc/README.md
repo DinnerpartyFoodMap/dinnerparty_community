@@ -30,3 +30,7 @@ flowchart TD
 | 取消与 controller 身份判断同时使用 | 单独 abort 不保证已完成或迟到回调不更新状态 |
 
 测试见 [TEST_CASES.md](TEST_CASES.md)。前端 `test:search` 覆盖显式外部查询状态和去重；后端 `tests/maps/test_amap_search_ui.js` 覆盖网页及模拟原生 iOS 输入、按钮调用和收录后刷新。排序/随机算法由后端 test:search / test:random 验证；完整本地/AI 搜索竞态和顺路面板覆盖仍需补充，见 DSC-F01 / DSC-F02 的 [清单](../../../doc/HISTORY_AND_TODO.md)。
+
+## iOS 原生顺路吃（2026-10-30）
+
+iOS 26+ 的“顺路吃”由原生 SwiftUI 面板呈现（[NativeAlongRoutePlugin.swift](../../../ios/App/App/NativeAlongRoutePlugin.swift)）：网页仍负责解析高德行程、规划路线、在地图上画线、查询沿途地点与全部文案，原生只收集条件并显示网页格式化好的路线与地点。编排在 [alongRouteController.js](../alongRouteController.js)，字段白名单与请求关联在 [nativeAlongRoute.js](../../platform/nativeAlongRoute.js)，入口是 [useNativeAlongRoute.js](../useNativeAlongRoute.js)。网页面板保持原流程；原生不可用或失败时回退网页面板。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。

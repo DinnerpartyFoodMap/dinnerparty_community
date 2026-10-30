@@ -319,6 +319,12 @@ function patchIos() {
 // iOS 原生地图控件（SwiftUI Liquid Glass）：源码直接维护在 ios/App/App/，这里只校验存在并补齐工程引用，
 // 从不覆盖手写的 Swift 逻辑；重复执行不会产生改动。
 const IOS_NATIVE_SOURCES = [
+    ['NativePageEngine.swift', 'A7F1C0DE000000000000001D', 'A7F1C0DE000000000000002D'],
+    ['NativeAdminPlugin.swift', 'A7F1C0DE000000000000001E', 'A7F1C0DE000000000000002E'],
+    ['NativeJourneyPlugin.swift', 'A7F1C0DE000000000000001F', 'A7F1C0DE000000000000002F'],
+    ['NativeGlassComponents.swift', 'A7F1C0DE000000000000001A', 'A7F1C0DE000000000000002A'],
+    ['NativeAlongRoutePlugin.swift', 'A7F1C0DE000000000000001B', 'A7F1C0DE000000000000002B'],
+    ['NativeProfilePlugin.swift', 'A7F1C0DE000000000000001C', 'A7F1C0DE000000000000002C'],
     ['NativeClusterMarkers.swift', 'A7F1C0DE0000000000000019', 'A7F1C0DE0000000000000029'],
     ['NativeSettingsPlugin.swift', 'A7F1C0DE0000000000000016', 'A7F1C0DE0000000000000026'],
     ['NativeFeedbackPlugin.swift', 'A7F1C0DE0000000000000017', 'A7F1C0DE0000000000000027'],

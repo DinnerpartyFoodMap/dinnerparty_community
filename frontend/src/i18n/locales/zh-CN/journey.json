@@ -161,6 +161,7 @@
     "clearInteractions": "清除交互记录"
   },
   "composer": {
+    "nativeHint": "填写素材后先保存，再生成日记草稿或直接手动记录。地图位置请在网页端选择。",
     "sync": {
       "local": "已存本机",
       "saving": "正在同步…",
@@ -323,6 +324,7 @@
     "removeHint": "移除后图片仍在私人图片空间，可在日历的管理中删除。"
   },
   "review": {
+    "nativeHint": "站点位置可在网页端的地图上选择；这里可以编辑文字、到访时间与坐标。",
     "aiAssisted": "这份草稿由 AI 根据你的素材整理，信息可能有误，请核对后再保存。",
     "sync": {
       "saved": "草稿已同步",
@@ -441,6 +443,8 @@
     "assignOverLimit": "「{{name}}」最多 {{max}} 张照片。"
   },
   "share": {
+    "nativeIntro": "先选择分享范围和贴文风格生成贴文；图片排版与导出仍在网页分享编辑器中完成。",
+    "openWebEditor": "在网页分享编辑器中继续",
     "coverFailed": "地图首图生成失败",
     "selectStops": "只分享你选中的片段",
     "noVisited": "还没有核对过的地点，请先在「修改」中核对。",

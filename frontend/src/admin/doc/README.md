@@ -23,3 +23,9 @@ flowchart LR
 ```
 
 现有分页面方式优于一个管理大组件；通用表格在 components/data。列表页面仍存在重复网络与错误处理，可在覆盖充分后抽取。案例：ADM-F01 角色入口已有上述浏览器覆盖；ADM-F02/03 已覆盖封禁后端拒绝、重试与取消，其余操作仍待自动化；ADM-F04 已覆盖提交期间关闭弹层与阻止并发刷新，切账号和其他旧响应场景仍待自动化。i18n 仅检查文案，不算这些行为覆盖，见 ADM-F01 的 [清单](../../../doc/HISTORY_AND_TODO.md)。
+
+## iOS 原生管理后台（2026-10-30）
+
+iOS App 的管理后台由 SwiftUI 呈现（[NativeAdminPlugin.swift](../../../ios/App/App/NativeAdminPlugin.swift)），共用声明式页面引擎 `NativePageEngine.swift`。网页按管理员等级构建 dashboard 与各面板页面模型，原生只渲染 rows / form / calendar / images 并回传动作、筛选与表单值；账号请求、权限与校验仍在网页（[nativeAdminController.js](../nativeAdminController.js)、[nativeAdmin.js](../../platform/nativeAdmin.js)）。
+
+覆盖面板：用户、普通用户、地点申请（含 AI 初筛原因与图片）、口味分类、QQ 白名单、公告、展会（含图标上传）、皮肤兑换码、住民反馈、操作日志。原生不可用或请求失败时回退网页 `AdminDashboard`。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。

@@ -18,6 +18,7 @@ import { fetchFavorites } from "../api/client";
 import { getThemeColor, pickContrastTextColor } from "../theme/theme";
 import defaultAvatar from '../img/default.png';
 import AlongRoutePanel from "../discovery/components/AlongRoutePanel";
+import useNativeAlongRoute from "../discovery/useNativeAlongRoute";
 import { recordPlaceBehavior, sharePlaceContent, copyPlaceContent } from "../places/placeBehavior";
 import { buildShareCardModel } from "../places/shareCard";
 import useShareCard from "../places/hooks/useShareCard";
@@ -30,7 +31,7 @@ import { buildPublicUrl, getRuntimeConfig, imageThumbnailUrl } from '../platform
 import { shareContent, copyText } from '../platform/share';
 import { openExternal } from '../platform/navigation';
 import { amapNavigationLink } from './amapNavigation';
-import { getPlatform, APP_VERSION } from '../platform/env';
+import { getPlatform, APP_VERSION, isPluginAvailable } from '../platform/env';
 import { AnimatePresence, motion } from 'motion/react';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import MotionSurface from '../components/overlay/MotionSurface';
@@ -316,7 +317,8 @@ export default function MapUI(props) {
         onPickPoint,
         showTip,
         onRatingSummary,
-        chromeOwner = false
+        chromeOwner = false,
+        nativeOverlayActive = false
     } = props;
 
     const ua = navigator.userAgent || '';
@@ -542,6 +544,24 @@ export default function MapUI(props) {
     const dinnerBtnRef = useRef(null);
     // 系统返回与 Escape：所有面板/弹层登记到统一浮层栈，按真实打开顺序逐层关闭（见 components/overlay）
     const dark = useDarkMode();
+    // iOS 原生顺路吃：插件可用时由 SwiftUI 面板收集条件，网页负责解析行程、规划路线与查询地点
+    const [nativeAlongRouteFailed, setNativeAlongRouteFailed] = useState(false);
+    const nativeAlongRouteEnabled = iosApp && !nativeAlongRouteFailed && isPluginAvailable('NativeAlongRoute');
+    const nativeAlongRoute = useNativeAlongRoute({
+        enabled: nativeAlongRouteEnabled,
+        mapRef,
+        backendUrl,
+        themeColor: customThemeColor,
+        themeSecondary: customThemeSecondary,
+        dark,
+        isNarrow,
+        onResults: onAlongRouteResults,
+        onSelectPlace: onSelectAlongRoutePlace,
+        onUnavailable: () => {
+            setNativeAlongRouteFailed(true);
+            setAlongRouteOpen(true);
+        }
+    });
     // 账号入口：没有上传头像时的默认头像（皮肤可替换，住民自己的头像不变）
     const accountDefaultAvatar = useSkinDefaultAvatar(defaultAvatar);
     const cardFrameActive = useSkinFrameActive('placeCard.frame');
@@ -627,16 +647,25 @@ export default function MapUI(props) {
 
     const openAlongRoute = () => {
         setRandomFoodOpen(false);
-        setAlongRouteOpen(true);
         setFavPageOpen(false);
         setUserPlacesOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
         setMobileAccountOpen(false);
         clearSearch?.({ resetTerm: true, closeSearchUi: true, reloadPlaces: false });
+        if (nativeAlongRouteEnabled) {
+            // 原生面板自带呈现与收起；网页只保留路线与结果，不再渲染 AlongRoutePanel
+            setAlongRouteOpen(false);
+            nativeAlongRoute.open();
+            return;
+        }
+        setAlongRouteOpen(true);
     };
 
-    const closeAlongRoute = () => setAlongRouteOpen(false);
+    const closeAlongRoute = () => {
+        nativeAlongRoute.close();
+        setAlongRouteOpen(false);
+    };
 
     const randomFood = useRandomFood({
         open: randomFoodOpen && !pickerMode,
@@ -989,8 +1018,14 @@ export default function MapUI(props) {
                 setFavPageOpen(false);
                 return true;
             case 'alongRoute':
-                if (alongRouteOpen) setAlongRouteOpen(false);
-                else openAlongRoute();
+                if (nativeAlongRouteEnabled) {
+                    if (nativeAlongRoute.active) nativeAlongRoute.close();
+                    else openAlongRoute();
+                } else if (alongRouteOpen) {
+                    setAlongRouteOpen(false);
+                } else {
+                    openAlongRoute();
+                }
                 return true;
             case 'account': toggleMobileAccount(); return true;
             case 'search':
@@ -1290,7 +1325,7 @@ export default function MapUI(props) {
     // 非选点器的 MapView 只有 App 常驻的主地图：它持有原生会话，地图页被其他页面盖住时只收起原生控件
     const chrome = useMapChrome({
         enabled: layout.sheet && !pickerMode,
-        visible: chromeOwner,
+        visible: chromeOwner && !nativeOverlayActive && !nativeAlongRoute.active,
         items: chromeItems,
         theme: { primary: customThemeColor, onPrimary: pickContrastTextColor(customThemeColor), dark },
         floatingGap: 14,
@@ -1326,8 +1361,8 @@ export default function MapUI(props) {
         }, 800);
         return () => clearTimeout(timer);
     }, [nativeChrome, chromeOwner, chrome.showing, randomFoodOpen, randomFood.result, feedback]);
-    // 网页工具栏、定位按钮、头像与底部输入框：原生接管后不渲染；预计会接管、首次握手还没结果时也先不渲染
-    const webChromeHidden = nativeChrome || chrome.holdWeb;
+    // 网页工具栏、定位按钮、头像与底部输入框：原生接管后不渲染；原生面板（顺路吃 / 住民主页）打开期间也隐藏
+    const webChromeHidden = nativeChrome || chrome.holdWeb || nativeAlongRoute.active || nativeOverlayActive;
 
     // 指引按当前布局介绍按钮：原生控件握手中先不弹出，免得指向随后被替换的网页工具栏
     const onboardingVariant = nativeChrome ? 'native' : (isNarrow ? (iosApp ? 'ios' : 'mobile') : 'desktop');

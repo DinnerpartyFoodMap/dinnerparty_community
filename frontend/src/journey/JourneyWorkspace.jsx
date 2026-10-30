@@ -107,6 +107,25 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
     // 同一篇已在最上层时不再叠一层（地址里保留着 ?diary=，重复处理同一链接也只打开一次）
     const openPublic=useCallback((publicId,stopId)=>{setEntryOpen(false);setMapView(null);setPlaceView(null);setStack(s=>{const top=s[s.length-1];return top?.page==='public'&&top.params.publicId===publicId?s:[...s,entryOf('public',{publicId,stopId})];});},[]);
     React.useImperativeHandle(ref,()=>({open:openEntry,openPublic}),[openEntry,openPublic]);
+    // 原生日记页交回的工具流程：分享画布、地图查看，以及原生打开失败后的网页回退
+    useEffect(()=>{
+        const openWorkspace=()=>openEntry();
+        const openShare=event=>{
+            const journeyId=event?.detail?.journeyId;
+            if(!journeyId)return;
+            setEntryOpen(false);setMapView(null);setPlaceView(null);
+            setStack([entryOf('share',{journeyId})]);
+        };
+        const showMap=event=>{if(event?.detail?.journey)setMapView(event.detail.journey);};
+        window.addEventListener('journey:open-workspace',openWorkspace);
+        window.addEventListener('journey:open-share',openShare);
+        window.addEventListener('journey:show-map',showMap);
+        return()=>{
+            window.removeEventListener('journey:open-workspace',openWorkspace);
+            window.removeEventListener('journey:open-share',openShare);
+            window.removeEventListener('journey:show-map',showMap);
+        };
+    },[openEntry]);
     useEffect(()=>{if(initialPublic?.publicId)openPublic(initialPublic.publicId,initialPublic.stopId);},[initialPublic,openPublic]);
     // 地图上的地点详情等模块通过事件进入日记，避免层层传递回调
     useEffect(()=>{

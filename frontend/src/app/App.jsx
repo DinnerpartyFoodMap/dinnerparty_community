@@ -23,12 +23,18 @@ import { AuthProvider } from "../auth/AuthContext";
 import BanNotice from "../auth/components/BanNotice";
 import { TipsProvider } from "../components/feedback/Tips";
 import { ConfirmProvider } from "../components/feedback/Confirm";
-import { applyDarkMode, applyThemeColors, resolveThemePrimary, resolveThemeSecondary, getSystemPrefersDark, onSystemColorSchemeChange } from "../theme/theme";
+import { applyDarkMode, applyThemeColors, resolveThemePrimary, resolveThemeSecondary, getSystemPrefersDark, onSystemColorSchemeChange, getThemeColor } from "../theme/theme";
 import useDarkMode from "../theme/useDarkMode";
 import { DinnerCreatePage, DinnerDetailPage, DinnerListPage, isDinnerPath, parseDinnerIdFromPath } from "../dinners/DinnerPages";
 import PosterExportPage from "../poster/PosterExportPage";
 import PlaceListPage from "../places/PlaceListPage";
 import UserProfilePage from "../profile/UserProfilePage";
+import NativeProfileHost from "../profile/NativeProfileHost";
+import { supportsNativeProfile } from "../profile/useNativeProfile";
+import NativeAdminHost from "../admin/NativeAdminHost";
+import { supportsNativeAdmin } from "../admin/useNativeAdmin";
+import NativeJourneyHost from "../journey/NativeJourneyHost";
+import { supportsNativeJourney } from "../journey/useNativeJourney";
 import AppUpdatePrompt from "./components/AppUpdatePrompt";
 import FeedbackHost from "../feedback/FeedbackHost";
 import { normalizeFeedbackPrefill } from "../feedback/feedbackTypes";
@@ -114,6 +120,13 @@ export default function App() {
     }, []);
     // App 内原生住民设置打不开或异常结束：本次停留在 /settings 期间改用网页版设置页
     const [nativeSettingsFailed, setNativeSettingsFailed] = useState(false);
+    // 原生住民主页打不开或异常结束：只对出错的那位住民回退网页版，换人重新尝试原生
+    const [nativeProfileFailedId, setNativeProfileFailedId] = useState(null);
+    // 原生管理后台打不开或异常结束：本次停留在 /admin 期间改用网页版
+    const [nativeAdminFailed, setNativeAdminFailed] = useState(false);
+    // 原生日记 · 同好：打开时由原生页接管，失败后本次改用网页工作区
+    const [nativeJourneyOpen, setNativeJourneyOpen] = useState(false);
+    const [nativeJourneyFailed, setNativeJourneyFailed] = useState(false);
     const lastPathRef = useRef(pathname);
     const pageDirectionRef = useRef('push');
     const siteNoticeRef = useRef(null);
@@ -547,6 +560,14 @@ export default function App() {
     // 主题皮肤：随住民切换；冷启动时按通行凭证里的住民先换上本机记住的皮肤
     useSkinSession({ backendUrl: BACKEND_URL, token, userId: user ? user.id : null, pendingUserId: token && !user ? (decodeTokenPayload(token)?.id || null) : null });
     const showAdminPage = pathname === "/admin" && !!token;
+    // iOS 原生管理后台：网页不渲染 AdminDashboard，地图保持挂载，原生页从地图上弹出
+    const nativeAdminActive = showAdminPage && !!user?.admin_level && !nativeAdminFailed && supportsNativeAdmin();
+    const nativeJourneyActive = nativeJourneyOpen && !!user && !!token && !nativeJourneyFailed && supportsNativeJourney();
+    const openJourney = useCallback(() => {
+        if (!token || !user || nativeJourneyFailed || !supportsNativeJourney()) return false;
+        setNativeJourneyOpen(true);
+        return true;
+    }, [token, user?.id, nativeJourneyFailed]);
     const showSettingsBase = pathname === "/settings";
     // App 内原生住民设置：/settings 不渲染网页页面（没有推入动画与“正在打开设置”），地图留在底下，原生页直接从地图上弹起
     const nativeSettingsActive = showSettingsBase && !!user && !nativeSettingsFailed && supportsNativeSettings();
@@ -566,7 +587,11 @@ export default function App() {
     // 地点列表与住民主页
     const showPlaceList = pathname === '/places';
     const profileUserId = parseProfileIdFromPath(pathname);
-    const showMapPage = !showAdminPage && !showSettingsAny && !showAnyDinnerPage && !showPosterExport && !showPlaceList && !profileUserId;
+    // iOS 原生住民主页：网页不渲染 UserProfilePage，地图保持挂载，原生页以系统面板从地图上弹出
+    const nativeProfileFailed = nativeProfileFailedId != null && String(nativeProfileFailedId) === String(profileUserId);
+    const nativeProfileActive = !!profileUserId && !nativeProfileFailed && supportsNativeProfile();
+    const showMapPage = (!showAdminPage || nativeAdminActive) && !showSettingsAny && !showAnyDinnerPage && !showPosterExport && !showPlaceList
+        && (!profileUserId || nativeProfileActive);
     const openPlaceOnMap = useCallback((placeId) => goPath(`/?place=${encodeURIComponent(placeId)}`), [goPath]);
     const openProfile = useCallback((userId) => { if (userId) goPath(`/users/${encodeURIComponent(userId)}`); }, [goPath]);
     const siteNoticeVisible = !!(siteNotice && String(siteNotice.id) !== String(dismissedNoticeId || ''));
@@ -675,6 +700,16 @@ export default function App() {
         if (pathname !== '/settings') setNativeSettingsFailed(false);
     }, [pathname]);
 
+    // 离开管理后台后重置：下次进入重新尝试原生后台
+    useEffect(() => {
+        if (pathname !== '/admin') setNativeAdminFailed(false);
+    }, [pathname]);
+
+    // 离开所有住民主页后清除失败标记：下次进入同一位住民时重新尝试原生页
+    useEffect(() => {
+        if (!profileUserId) setNativeProfileFailedId(null);
+    }, [profileUserId]);
+
     // 页面级可返回状态随路径变化：通知 iOS 侧滑是否接管左边缘
     useEffect(() => { refreshBackTarget(); }, [pathname]);
 
@@ -736,7 +771,7 @@ export default function App() {
             <PlaceListPage backendUrl={BACKEND_URL} token={token} onOpenPlace={openPlaceOnMap} onBack={() => goPath('/')} />
         );
 
-        if (profileUserId) return (
+        if (profileUserId) return nativeProfileActive ? null : (
             <UserProfilePage
                 key={profileUserId}
                 backendUrl={BACKEND_URL}
@@ -766,7 +801,7 @@ export default function App() {
             )
         );
 
-        if (showAdminPage) return (
+        if (showAdminPage) return nativeAdminActive ? null : (
             user ? (
                 <AdminDashboard
                     user={user}
@@ -963,6 +998,7 @@ export default function App() {
                                 isAdmin={isAdmin}
                                 onRequireAuth={() => setShowAuth(true)}
                                 onOpenDinners={() => goPath('/dinners')}
+                                onOpenJourney={openJourney}
                                 onOpenAdmin={() => goPath('/admin')}
                                 onOpenPosterExport={() => {
                                     if (!isAuth) {
@@ -991,6 +1027,7 @@ export default function App() {
                                 exhibitionOpen={exhibitionOpen}
                                 onCloseExhibition={closeExhibition}
                                 mapPageActive={showMapPage || nativeSettingsActive}
+                                nativeOverlayActive={nativeProfileActive || nativeAdminActive || nativeJourneyActive}
                                 mapPreviewActive={mapBackPreview}
                             />
                         </div>
@@ -1016,6 +1053,65 @@ export default function App() {
                                 onOpenSkins={() => goPath('/settings/skins')}
                                 headless
                                 onNativeUnavailable={() => setNativeSettingsFailed(true)}
+                            />
+                        )}
+
+                        {/* 原生住民主页：不占网页页面，地图留在下方；屏蔽 / 偏好 / 小组件请求仍由网页执行 */}
+                        {nativeProfileActive && (
+                            <NativeProfileHost
+                                userId={profileUserId}
+                                backendUrl={BACKEND_URL}
+                                token={token}
+                                currentUser={user}
+                                dark={dark}
+                                themeColor={getThemeColor()}
+                                onBack={() => goPath("/")}
+                                onOpenPlace={openPlaceOnMap}
+                                onOpenFeedback={openFeedback}
+                                onRequireAuth={() => setShowAuth(true)}
+                                onUnavailable={() => setNativeProfileFailedId(profileUserId)}
+                            />
+                        )}
+
+                        {/* 原生管理后台：不占网页页面，权限与请求仍由网页执行 */}
+                        {nativeAdminActive && (
+                            <NativeAdminHost
+                                backendUrl={BACKEND_URL}
+                                token={token}
+                                user={user}
+                                dark={dark}
+                                onBack={() => goPath("/")}
+                                onOpenPlace={openPlaceOnMap}
+                                onRequireAuth={() => setShowAuth(true)}
+                                onUnavailable={() => setNativeAdminFailed(true)}
+                            />
+                        )}
+
+                        {/* 原生日记 · 同好：网页构建页面模型与执行请求，原生只负责界面 */}
+                        {nativeJourneyActive && (
+                            <NativeJourneyHost
+                                open={nativeJourneyActive}
+                                backendUrl={BACKEND_URL}
+                                token={token}
+                                user={user}
+                                dark={dark}
+                                onClose={() => setNativeJourneyOpen(false)}
+                                onOpenPlace={(placeId) => { setNativeJourneyOpen(false); openPlaceOnMap(placeId); }}
+                                onOpenFeedback={(prefill) => { setNativeJourneyOpen(false); openFeedback(prefill); }}
+                                onShowMap={(journey) => {
+                                    setNativeJourneyOpen(false);
+                                    window.dispatchEvent(new CustomEvent('journey:show-map', { detail: { journey } }));
+                                }}
+                                onOpenShare={(journeyId) => {
+                                    setNativeJourneyOpen(false);
+                                    window.dispatchEvent(new CustomEvent('journey:open-share', { detail: { journeyId } }));
+                                }}
+                                onRequireAuth={() => setShowAuth(true)}
+                                onUnavailable={() => {
+                                    setNativeJourneyOpen(false);
+                                    setNativeJourneyFailed(true);
+                                    window.dispatchEvent(new CustomEvent('journey:open-workspace'));
+                                }}
                             />
                         )}
 

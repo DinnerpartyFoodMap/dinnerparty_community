@@ -33,3 +33,12 @@ flowchart TD
 分享（JourneyShare + cover.js）：贴文、图片与生成时的范围是一份分享稿（本机 `share:<日记>` 槽位，含手动修改）；范围收窄或日记已改动即停止导出，其他设置改动标“待更新”；图片按单店 / 多站 / 拼图 / 文字卡模板围绕作者照片自动重画，可换封面与主图、调裁切、重排、删页，文字放不下续页并提示。后端 `unsupported` 列出贴文里找不到依据的价格、时间、排队等内容。公开阅读页打开时地址保留 `?diary=`，照片可放大、失败可重试，未选定店铺的站点标“地点未核实”；地点相关日记带登录身份读取（屏蔽过滤生效）。
 
 案例见 [TEST_CASES.md](TEST_CASES.md)；已有 test:journey-text、后端日记测试与完整浏览器 harness。历史 `01e11a4`、`cc11a4f`；待办 JRN-F01 及已记录的 UI 稳定性问题见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+
+## iOS 原生日记 · 同好（2026-10-30）
+
+iOS App 的日记 · 同好由 SwiftUI 呈现（[NativeJourneyPlugin.swift](../../../ios/App/App/NativeJourneyPlugin.swift)），共用 `NativePageEngine.swift`。网页构建声明式页面模型并执行草稿、生成、公开、同好请求（[nativeJourneyController.js](../nativeJourneyController.js)、[nativeJourney.js](../../platform/nativeJourney.js)）：
+
+- 原生页面：入口、素材（文字/日期/可见性/照片上传）、生成状态、核对（基本信息、站点、照片、私密/公开保存）、日历（月份/日期/搜索/删除）、详情（历史版本、另存、公开链接、删除）、未完成、私人图片、公开日记、同好（同好列表、收藏夹、设置）与分享设置。
+- 生成进度由网页通过 `update` 主动推送；核对页返回时尽力同步草稿，失败时写入本机草稿。
+- 地图选点与分享画布仍由现有网页工具页完成：原生详情页的“在地图中查看”和分享页的“在网页分享编辑器中继续”把流程交回网页工作区；原生打开失败也会回退网页工作区。
+- 未在原生中实现的细节：日历多选合并、同好星图视图、私人图片草稿（本机未上传照片）以及逐站照片选择；这些仍可在网页工作区完成。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。

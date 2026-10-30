@@ -10,3 +10,7 @@
 入口：地点卡片“最近修改”→ 住民的地点列表 →“查看主页”；账号菜单“我的主页”（网页、iOS 原生账号面板、桌面顶栏）。
 
 改轴时同步 `tasteAxes.js` 的 `TASTE_AXES` 与文案 `profile:taste.axes.*`（后端 `TASTE_AXES` 同顺序）。
+
+## iOS 原生住民主页（2026-10-30）
+
+iOS App 的住民主页由原生 SwiftUI 面板呈现（[NativeProfilePlugin.swift](../../../ios/App/App/NativeProfilePlugin.swift)）：网页取 `GET /users/:id/profile`、执行屏蔽、偏好与小组件请求，原生显示头像、六轴雷达、小组件与关系状态。视图模型在 [profileViewModel.js](../profileViewModel.js)（六轴补齐、评价文案、小组件行与全部标签），会话与字段白名单在 [nativeProfile.js](../../platform/nativeProfile.js)，入口 [useNativeProfile.js](../useNativeProfile.js)。插件不可用、打开失败或 profile 加载失败时回退网页 [UserProfilePage.jsx](../UserProfilePage.jsx)。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。

@@ -9,7 +9,8 @@
       "requestId": "请求编号",
       "detail": "详情",
       "time": "时间"
-    }
+    },
+    "target": "目标 {{id}}"
   },
   "banModal": {
     "title": "封禁用户 {{username}}",
@@ -241,6 +242,8 @@
     "information": "展会信息",
     "location": "展会地点",
     "locationPlaceholder": "场馆名称",
+    "latitude": "纬度",
+    "longitude": "经度",
     "pickLocation": "在地图上选择",
     "clearLocation": "清除地点",
     "coordinates": "已选坐标：{{lat}}, {{lng}}",
@@ -351,6 +354,7 @@
     "requestFailed": "请求失败，请稍后重试",
     "from": "来自 {{username}}（QQ {{qq}}）",
     "unknownUser": "未知住民",
+    "imageCount": "图片 {{count}}",
     "imageLoading": "图片加载中",
     "imageAlt": "反馈截图 {{index}}",
     "openImage": "查看第 {{index}} 张原图",

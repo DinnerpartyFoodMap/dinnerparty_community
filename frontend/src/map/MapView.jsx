@@ -91,7 +91,8 @@ export default function MapView({
     onPickPoint,
     initialCenter = null,
     mapPageActive = false,
-    mapPreviewActive = false
+    mapPreviewActive = false,
+    onOpenJourney = null
 }) {
     const containerRef = useRef(null);
     const journeyRef = useRef(null);
@@ -1982,7 +1983,10 @@ export default function MapView({
                 isAdmin={isAdmin}
                 onRequireAuth={onRequireAuth}
                 onOpenDinners={onOpenDinners}
-                onOpenJourney={() => journeyRef.current?.open()}
+                onOpenJourney={() => {
+                    if (onOpenJourney && onOpenJourney() === true) return;
+                    journeyRef.current?.open();
+                }}
                 onOpenMine={onOpenMine}
                 onLogout={onLogout}
                 onOpenAdmin={onOpenAdmin}

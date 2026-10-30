@@ -29,4 +29,20 @@ flowchart TD
 
 聚合点的原生显示使用独立的 `nativeClusterMarkers.js` / WebKit `foodMapClusters` 带回复通道（协议 v2），不改变工具栏协议。独立本机偏好 `clusterGlass` 默认关闭。`open` 获取原生会话，`frame` 发送显示字段、每个图形的局部可见矩形和递增帧序号，`close` 确认清除；一次一帧，后续积压合并为最新状态。首次回执后隐藏 PNG，已确认图形在裁切、暂时空帧和切页时持续保留材质所有权；桥接等待覆盖 800ms 显示租期，短暂忙碌不直接切换材质。超时后到达的握手结果仍负责关闭原生会话。清除失败时等待原生租期结束，再恢复 PNG；原生拒绝过期发送时间和旧会话，后台与网页重载清空显示。v1 旧壳使用 PNG，避免忽略可见片段后覆盖网页前景。对应测试纳入 `test:map`。
 
-已有 test:platform / test:native-chrome（含设置），真机另看 [原生文档](../../../native/doc/README.md)。案例见 [TEST_CASES.md](TEST_CASES.md)，待办 PLT-01 / PLT-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+已有 test:platform / test:native-chrome（含设置）/ test:native-panels，真机另看 [原生文档](../../../native/doc/README.md)。案例见 [TEST_CASES.md](TEST_CASES.md)，待办 PLT-01 / PLT-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+
+## 2026-10-30：顺路吃与住民主页原生页
+
+`NativeAlongRoutePlugin.swift` 与 `NativeProfilePlugin.swift` 沿用“网页执行业务、原生只显示白名单快照”的模式：
+
+- 顺路吃：网页解析高德行程、规划路线、在地图上画线并查询沿途地点；原生 SwiftUI 面板只收集条件、显示网页格式化好的路线与地点。编排在 `src/discovery/alongRouteController.js`，会话与字段白名单在 `src/platform/nativeAlongRoute.js`，入口 `useNativeAlongRoute.js`。
+- 住民主页：网页取 profile、执行屏蔽 / 偏好 / 小组件请求；原生显示六轴雷达、小组件与关系状态。视图模型在 `src/profile/profileViewModel.js`，会话在 `src/platform/nativeProfile.js`，入口 `useNativeProfile.js`。
+- 两者在 iOS 26+ 使用系统 Liquid Glass；更早系统退回 `regularMaterial`。插件不可用、打开失败或请求失败时回到网页顺路面板 / `UserProfilePage`，不静默成功。真机检查见 native/doc。
+
+## 2026-10-30：管理后台与日记 · 同好原生页
+
+`NativePageEngine.swift` 是声明式页面引擎：网页下发 rows / form / calendar / images / tabs / search，SwiftUI 渲染玻璃页面并回传 `action` / `filter` / `submit` / `back` / `loadImage`。
+
+- 管理后台：`NativeAdminPlugin.swift` 与 `src/admin/nativeAdminController.js`。按管理员等级列出面板，用户 / 普通用户 / 地点申请 / 口味分类 / QQ 白名单 / 公告 / 展会 / 兑换码 / 反馈 / 审计均为原生页面；请求、权限与表单校验仍在网页。会话见 `src/platform/nativeAdmin.js`，失败回退网页后台。
+- 日记 · 同好：`NativeJourneyPlugin.swift` 与 `src/journey/nativeJourneyController.js`。入口、素材、生成、核对、日历、详情、未完成、私人图片、公开页、同好与分享设置均为原生页面；草稿、生成、公开、同好请求仍在网页。会话见 `src/platform/nativeJourney.js`，生成进度通过 `update` 主动推送。地图选点与分享画布属于工具流程，交回现有网页界面；原生打开失败回退网页工作区。
+- 两者共用 `NativePageModel` / `NativePageView` 与 `NativeGlassComponents.swift`，真机检查见 native/doc。
