@@ -514,7 +514,7 @@ final class NativePageModel: ObservableObject {
     func presentForm(_ form: NativePageForm) {
         finishPending()
         // 还在加载的占位页让给表单
-        if let last = path.last, case .loading = screens[last.id] { truncate(to: path.count - 1) }
+        if let last = path.last, case .loading? = screens[last.id] { truncate(to: path.count - 1) }
         push(.form(form, level: topLevel))
     }
 
@@ -697,20 +697,20 @@ struct NativePageView: View {
     @ViewBuilder
     private func destination(_ route: NativePageRoute) -> some View {
         switch model.screen(route) {
-        case .page(let spec):
+        case .page(let spec)?:
             NativePageList(model: model, spec: spec, isRoot: false)
-        case .loading(let title, _):
+        case .loading(let title, _)?:
             ProgressView()
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
-        case .row(let row, _):
+        case .row(let row, _)?:
             NativePageRowDetail(model: model, row: row)
-        case .form(let form, _):
+        case .form(let form, _)?:
             NativeFormPage(form: form, model: model)
-        case .none:
+        case nil:
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
         }
     }
@@ -1418,7 +1418,6 @@ struct NativeFormPage: View {
 private struct NativeImageGrid: View {
     let images: [NativePageImageItem]
     @ObservedObject var model: NativePageModel
-    @State private var acting: NativePageImageItem?
 
     private let columns = [GridItem(.adaptive(minimum: 92), spacing: 8)]
 

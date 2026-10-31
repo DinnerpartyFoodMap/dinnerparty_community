@@ -809,15 +809,7 @@ struct MapChromePlaceCard: View {
                 Text(title)
                     .font(.headline)
             }
-            if section.chips {
-                // v14 标签（地图筛选）：可换行排列，点按不收起面板
-                NativeFlowLayout(spacing: 8, lineSpacing: 8) {
-                    ForEach(section.rows) { row in
-                        chipButton(row)
-                    }
-                }
-                .padding(.horizontal, 4)
-            } else if !section.rows.isEmpty {
+            if !section.rows.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
                         if index > 0 {
