@@ -59,7 +59,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             let host = MapChromeHostingController(rootView: NativeProfileView(model: model), dark: model.dark)
             // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
             host.view.backgroundColor = .systemGroupedBackground
-            screenPresenter.onEdgeBack = { [weak self] in
+            self.screenPresenter.onEdgeBack = { [weak self] in
                 self?.finish(action: "back")
             }
             self.model = model
@@ -67,7 +67,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             self.pending = call
             self.requestID = id
             self.presenting = true
-            screenPresenter.present(host, from: presenter) { [weak self] in
+            self.screenPresenter.present(host, from: presenter) { [weak self] in
                 guard let self else { return }
                 self.presenting = false
                 if let queued = self.queuedFinish {
@@ -213,11 +213,11 @@ final class NativeProfileModel: ObservableObject {
         tint = Color(uiColor: UIColor(cssHex: theme["primary"] as? String ?? "") ?? .systemPink)
         baseLabels = Self.strings(call.getObject("labels"))
         let autoLabel = Self.text(baseLabels, "auto", "按评价自动推断")
-        selfLevels = (call.getArray("selfLevels", JSObject.self) ?? []).compactMap { item in
+        selfLevels = (call.getArray("selfLevels", JSObject.self) ?? []).compactMap { item -> LevelOption? in
             guard let id = (item["id"] as? NSNumber)?.intValue, (1...4).contains(id) else { return nil }
             return LevelOption(id: id, label: item["label"] as? String ?? "\(id)")
         } + [LevelOption(id: 0, label: autoLabel)]
-        widgetOptions = (call.getArray("widgetOptions", JSObject.self) ?? []).compactMap { item in
+        widgetOptions = (call.getArray("widgetOptions", JSObject.self) ?? []).compactMap { item -> WidgetOption? in
             guard let id = item["id"] as? String, !id.isEmpty else { return nil }
             return WidgetOption(id: String(id.prefix(32)), title: item["title"] as? String ?? id)
         }
@@ -255,7 +255,7 @@ final class NativeProfileModel: ObservableObject {
                 selfLevel: level.flatMap { (1...4).contains($0) ? $0 : nil }
             )
         }
-        let sections = (object["sections"] as? JSArray ?? []).enumerated().compactMap { index, entry -> WidgetSection? in
+        let sections = (object["sections"] as? JSArray ?? []).enumerated().compactMap { (index, entry) -> WidgetSection? in
             guard let item = entry as? JSObject,
                   let kind = item["kind"] as? String, !kind.isEmpty else { return nil }
             let groups = (item["groups"] as? JSArray ?? []).compactMap { raw -> WidgetGroup? in
@@ -765,8 +765,8 @@ private struct NativeTasteRadar: View {
         for (ringIndex, ratio) in [0.25, 0.5, 0.75, 1.0].enumerated() {
             var path = Path()
             for index in 0..<6 {
-                let point = point(index, CGFloat(ratio), center: center, scale: scale)
-                if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                let position = point(index, CGFloat(ratio), center: center, scale: scale)
+                if index == 0 { path.move(to: position) } else { path.addLine(to: position) }
             }
             path.closeSubpath()
             let dashed = ringIndex == 1
@@ -797,8 +797,8 @@ private struct NativeTasteRadar: View {
         // 已知轴的点；估算轴用空心点
         for (index, axis) in axes.enumerated() {
             guard let value = axis.value else { continue }
-            let point = point(index, CGFloat(value), center: center, scale: scale)
-            let rect = CGRect(x: point.x - 3.5 * scale, y: point.y - 3.5 * scale,
+            let position = point(index, CGFloat(value), center: center, scale: scale)
+            let rect = CGRect(x: position.x - 3.5 * scale, y: position.y - 3.5 * scale,
                               width: 7 * scale, height: 7 * scale)
             let path = Path(ellipseIn: rect)
             if axis.estimated {

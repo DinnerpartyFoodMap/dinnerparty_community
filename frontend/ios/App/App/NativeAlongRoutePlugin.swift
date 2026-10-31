@@ -226,15 +226,15 @@ final class NativeAlongRouteModel: ObservableObject {
         let theme = call.getObject("theme") ?? [:]
         dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
         tint = Color(uiColor: UIColor(cssHex: theme["primary"] as? String ?? "") ?? .systemPink)
-        modes = (call.getArray("modes", JSObject.self) ?? []).compactMap { item in
+        modes = (call.getArray("modes", JSObject.self) ?? []).compactMap { item -> ModeOption? in
             guard let id = item["id"] as? String, !id.isEmpty else { return nil }
             return ModeOption(id: String(id.prefix(16)), label: item["label"] as? String ?? id)
         }
-        distances = (call.getArray("distances", JSObject.self) ?? []).compactMap { item in
+        distances = (call.getArray("distances", JSObject.self) ?? []).compactMap { item -> DistanceOption? in
             guard let value = (item["value"] as? NSNumber)?.intValue, value > 0 else { return nil }
             return DistanceOption(value: value, label: item["label"] as? String ?? "\(value)")
         }
-        allCategories = (call.getArray("categories", JSObject.self) ?? []).compactMap { item in
+        allCategories = (call.getArray("categories", JSObject.self) ?? []).compactMap { item -> CategoryOption? in
             guard let name = item["name"] as? String, !name.isEmpty else { return nil }
             return CategoryOption(name: String(name.prefix(24)), common: (item["common"] as? Bool) ?? false,
                                   order: (item["order"] as? NSNumber)?.intValue ?? 0)
@@ -385,14 +385,14 @@ final class NativeAlongRouteModel: ObservableObject {
         if let value = state["emptyText"] as? String { emptyText = value }
         if let value = state["submitTitle"] as? String, !value.isEmpty { submitTitle = value }
         if let value = (state["selectedRouteIndex"] as? NSNumber)?.intValue { selectedRouteIndex = value }
-        routes = (state["routes"] as? JSArray ?? []).compactMap { entry in
+        routes = (state["routes"] as? JSArray ?? []).compactMap { entry -> RouteRow? in
             guard let item = entry as? JSObject,
                   let index = (item["index"] as? NSNumber)?.intValue else { return nil }
             return RouteRow(index: index,
                             title: item["title"] as? String ?? "\(index + 1)",
                             detail: item["detail"] as? String ?? "")
         }
-        places = (state["places"] as? JSArray ?? []).compactMap { entry in
+        places = (state["places"] as? JSArray ?? []).compactMap { entry -> PlaceRow? in
             guard let item = entry as? JSObject,
                   let id = item["id"] as? String, !id.isEmpty,
                   let name = item["name"] as? String, !name.isEmpty else { return nil }

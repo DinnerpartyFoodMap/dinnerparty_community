@@ -75,13 +75,34 @@ jobs:
       - name: 无签名编译（真机架构）
         working-directory: frontend/ios/App
         run: |
+          # GitHub 的 bash 默认带 -e，编译失败会在管道后立刻退出，先关掉才能打印日志
+          set +e
           xcodebuild -project App.xcodeproj -scheme App -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/dd" \
             MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tail -50
-          exit ${PIPESTATUS[0]}
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | tail -50
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::group::xcodebuild errors"
+            grep -nE "error:|The following build commands failed|Command .* failed" "$RUNNER_TEMP/xcodebuild.log" | head -80 || true
+            echo "::endgroup::"
+            echo "::group::xcodebuild log tail"
+            tail -120 "$RUNNER_TEMP/xcodebuild.log" || true
+            echo "::endgroup::"
+          fi
+          exit "$STATUS"
+
+      - name: 上传编译日志
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-xcodebuild-log
+          path: ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: 打包不签名 IPA
         run: |
@@ -177,11 +198,23 @@ jobs:
       - name: 归档
         working-directory: frontend/ios/App
         run: |
+          # GitHub 的 bash 默认带 -e，归档失败会在管道后立刻退出，先关掉才能打印日志
+          set +e
           xcodebuild -project App.xcodeproj -scheme App -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
             MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER" \
-            archive | tail -50
-          exit ${PIPESTATUS[0]}
+            archive 2>&1 | tee "$RUNNER_TEMP/xcodebuild-archive.log" | tail -50
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::group::xcodebuild errors"
+            grep -nE "error:|The following build commands failed|Command .* failed" "$RUNNER_TEMP/xcodebuild-archive.log" | head -80 || true
+            echo "::endgroup::"
+            echo "::group::xcodebuild log tail"
+            tail -120 "$RUNNER_TEMP/xcodebuild-archive.log" || true
+            echo "::endgroup::"
+          fi
+          exit "$STATUS"
 
       - name: 导出并上传 TestFlight
         working-directory: frontend/ios/App

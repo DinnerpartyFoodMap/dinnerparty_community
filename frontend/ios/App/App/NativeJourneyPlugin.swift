@@ -59,7 +59,7 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
             let host = MapChromeHostingController(rootView: NativePageView(model: model), dark: dark)
             // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
             host.view.backgroundColor = .systemGroupedBackground
-            screenPresenter.onEdgeBack = { [weak self] in
+            self.screenPresenter.onEdgeBack = { [weak self] in
                 guard let self, let model = self.model else { return }
                 if model.spec.canGoBack {
                     model.back()
@@ -72,7 +72,7 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
             self.pending = call
             self.requestID = id
             self.presenting = true
-            screenPresenter.present(host, from: presenter) { [weak self] in
+            self.screenPresenter.present(host, from: presenter) { [weak self] in
                 self?.presenting = false
             }
         }

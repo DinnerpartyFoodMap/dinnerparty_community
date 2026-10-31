@@ -193,14 +193,14 @@ enum NativePageParser {
     }
 
     static func options(_ value: Any?) -> [NativePageOption] {
-        (value as? JSArray ?? []).compactMap { entry in
+        (value as? JSArray ?? []).compactMap { entry -> NativePageOption? in
             guard let item = entry as? JSObject, let id = item["id"] as? String, !id.isEmpty else { return nil }
             return NativePageOption(id: id, title: item["title"] as? String ?? id)
         }
     }
 
     static func actions(_ value: Any?) -> [NativePageAction] {
-        (value as? JSArray ?? []).compactMap { entry in
+        (value as? JSArray ?? []).compactMap { entry -> NativePageAction? in
             guard let item = entry as? JSObject, let id = item["id"] as? String, !id.isEmpty else { return nil }
             let confirm = item["confirm"] as? JSObject
             return NativePageAction(
@@ -216,7 +216,7 @@ enum NativePageParser {
     }
 
     static func chips(_ value: Any?) -> [NativePageChip] {
-        (value as? JSArray ?? []).enumerated().compactMap { index, entry in
+        (value as? JSArray ?? []).enumerated().compactMap { (index, entry) -> NativePageChip? in
             guard let item = entry as? JSObject else { return nil }
             let text = item["text"] as? String ?? ""
             guard !text.isEmpty else { return nil }
@@ -225,7 +225,7 @@ enum NativePageParser {
     }
 
     static func fields(_ value: Any?) -> [NativePageField] {
-        (value as? JSArray ?? []).compactMap { entry in
+        (value as? JSArray ?? []).compactMap { entry -> NativePageField? in
             guard let item = entry as? JSObject, let id = item["id"] as? String, !id.isEmpty else { return nil }
             return NativePageField(
                 id: id,
@@ -254,7 +254,7 @@ enum NativePageParser {
     }
 
     static func rows(_ value: Any?) -> [NativePageRow] {
-        (value as? JSArray ?? []).compactMap { entry in
+        (value as? JSArray ?? []).compactMap { entry -> NativePageRow? in
             guard let item = entry as? JSObject, let id = item["id"] as? String, !id.isEmpty else { return nil }
             return NativePageRow(
                 id: id,
@@ -273,7 +273,7 @@ enum NativePageParser {
     }
 
     static func images(_ value: Any?) -> [NativePageImageItem] {
-        (value as? JSArray ?? []).compactMap { entry in
+        (value as? JSArray ?? []).compactMap { entry -> NativePageImageItem? in
             guard let item = entry as? JSObject, let id = item["id"] as? String, !id.isEmpty else { return nil }
             return NativePageImageItem(
                 id: id,
@@ -287,7 +287,7 @@ enum NativePageParser {
 
     static func calendar(_ value: Any?) -> NativePageCalendar? {
         guard let item = value as? JSObject else { return nil }
-        let days = (item["days"] as? JSArray ?? []).enumerated().compactMap { index, entry -> NativeCalendarDay? in
+        let days = (item["days"] as? JSArray ?? []).enumerated().compactMap { (index, entry) -> NativeCalendarDay? in
             guard let day = entry as? JSObject else { return nil }
             return NativeCalendarDay(
                 id: day["id"] as? String ?? "day-\(index)",
@@ -454,6 +454,12 @@ struct NativePageView: View {
     @State private var search = ""
     @State private var searchInitialized = false
 
+    /// 其它文件（管理后台 / 日记插件）需要通过这个 internal 初始化器创建页面；
+    /// 私有 @State 会让编译器合成的 memberwise init 变成 private。
+    init(model: NativePageModel) {
+        self.model = model
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -540,7 +546,7 @@ struct NativePageView: View {
         ) {
             if let row = model.actionSheet {
                 ForEach(row.actions) { action in
-                    Button(role: action.destructive ? .destructive : nil) {
+                    Button(role: action.destructive ? ButtonRole.destructive : nil) {
                         model.actionSheet = nil
                         model.perform(action)
                     } label: {
@@ -556,7 +562,7 @@ struct NativePageView: View {
         )) {
             if let confirm = model.confirming {
                 Button(confirm.action.confirmButton.isEmpty ? confirm.action.title : confirm.action.confirmButton,
-                       role: confirm.action.destructive ? .destructive : nil) {
+                       role: confirm.action.destructive ? ButtonRole.destructive : nil) {
                     model.confirming = nil
                     model.confirm(confirm.action)
                 }
@@ -930,6 +936,12 @@ struct NativeFormSheet: View {
     @ObservedObject var model: NativePageModel
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String: NativePageValue] = [:]
+
+    /// 私有 @State 会让编译器合成的 memberwise init 变成 private，页面视图无法创建表单 sheet。
+    init(form: NativePageForm, model: NativePageModel) {
+        self.form = form
+        self.model = model
+    }
 
     var body: some View {
         NavigationStack {

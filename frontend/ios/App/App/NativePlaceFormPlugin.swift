@@ -252,7 +252,7 @@ final class NativePlaceFormModel: ObservableObject {
     init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
         self.send = send
         isCreate = call.getString("mode") != "edit"
-        expanded = !isCreate
+        expanded = call.getString("mode") == "edit"
         dark = call.getBool("dark", false)
         tint = Color(uiColor: UIColor(cssHex: call.getString("primary") ?? "") ?? .systemPink)
         canDirect = call.getBool("canDirect", true)

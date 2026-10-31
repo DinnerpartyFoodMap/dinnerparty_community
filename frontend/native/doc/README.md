@@ -101,6 +101,8 @@ iOS 新手指引恢复“更多功能”：原生端显示上滑示意，实际�
 
 **Xcode 工程完整性**：`project.pbxproj` 的每个对象 ID 必须唯一，文件也不能带 UTF-8 BOM；否则 `xcodebuild` 的 project loader 会以退出码 74 失败，GitHub Actions 只显示 `Process completed with exit code 74`。`scripts/patch-native-projects.mjs` 会去除 BOM、加入新 Swift 文件，并在结束时校验重复对象 ID；新增原生文件后必须运行它。
 
+**Swift 编译失败（退出码 65）**：`.github/workflows/mobile-ios.yml` 现在会保留完整 `xcodebuild` 日志，在失败步骤中打印 `error:` 行和日志末尾，并上传 `ios-xcodebuild-log` 工件。Windows 无法编译 Swift，必须用 GitHub Actions 或 Xcode 26 的构建结果确认；不要在没有真实错误行的情况下继续猜改 API。常见错误之一：在 `DispatchQueue.main.async` 等逃逸闭包里引用类属性必须显式写 `self.`（例如本轮的 `self.screenPresenter`），Swift 不会像值类型那样允许隐式 self。
+
 | 前置状态 | 操作 | 预期可见结果 |
 | --- | --- | --- |
 | 用 YUYUKO / YOUMU / KOMACHI 账号分别进入后台 | 打开后台，逐个进入可见面板 | 页面从右侧滑入，地图留在下方；只出现该等级允许的面板 |
