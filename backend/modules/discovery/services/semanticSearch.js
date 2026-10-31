@@ -250,16 +250,20 @@ function passesLocalRecommendationThreshold(match, minimumScore = FALLBACK_RELEV
     return Number.isFinite(score) && score >= safeMinimum;
 }
 
-async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = null } = {}) {
+// placeFilter：可选的地点判断函数（或它的 Promise），AI 从原话里读出的筛选；在向量候选上先筛，再排序与点评
+async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = null, placeFilter = null } = {}) {
     if (!isVectorSearchAvailable()) throw new Error('sqlite-vec is unavailable');
     if (!hasEmbeddingConfiguration()) throw new Error('SILICONFLOW_API_KEY is not configured');
     const safeLimit = Math.max(1, Math.min(10, Number.parseInt(limit, 10) || 5));
     const intentExpansion = await expandSearchIntent(query);
     const queryProfile = buildEmbeddingQuery(query, intentExpansion);
     const embedding = await createEmbedding(queryProfile.text);
-    const candidateLimit = Math.max(100, Math.min(MAX_VECTOR_CANDIDATES, safeLimit * 40));
+    // 筛选提取与意图扩展、向量化并行，到这里才需要它的结果；提取失败按没有筛选处理。有筛选时多取候选，免得筛完不够
+    const accept = await Promise.resolve(placeFilter).catch(() => null);
+    const filtering = typeof accept === 'function';
+    const candidateLimit = filtering ? MAX_VECTOR_CANDIDATES : Math.max(100, Math.min(MAX_VECTOR_CANDIDATES, safeLimit * 40));
     await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
-    const rows = db._raw.prepare(`WITH nearest AS (
+    const candidateRows = db._raw.prepare(`WITH nearest AS (
             SELECT place_id, distance
             FROM place_vectors
             WHERE embedding MATCH ? AND k = ?
@@ -272,6 +276,10 @@ async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = 
         LEFT JOIN User uu ON p.updated_by = uu.id
         WHERE p.moderation_status = 'visible'
         ORDER BY nearest.distance`).all(vectorBuffer(embedding), candidateLimit);
+    const rows = filtering ? candidateRows.filter(accept) : candidateRows;
+    if (!rows.length && candidateRows.length) {
+        return { status: 'no_filter_match', recommendation: null, recommendations: [], matches: [] };
+    }
 
     const matches = rankSemanticRows(rows, {
         center,

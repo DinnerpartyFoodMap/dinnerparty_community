@@ -106,6 +106,11 @@ export function createNativeAlongRouteSession(plugin, snapshot, { onSubmit, onCh
                 if (!stopped) onError?.(error);
             }
         },
+        /** 打开后才读到的分类目录：补给原生（面板不等网络就打开） */
+        async updateCategories(categories) {
+            if (stopped || !Array.isArray(categories)) return;
+            try { await plugin.update?.({ id, categories }); } catch { /* 原生面板已关闭 */ }
+        },
         async stop() {
             stopped = true;
             removeListener();

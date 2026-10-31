@@ -106,3 +106,57 @@ struct NativeSheetBackground: View {
         }
     }
 }
+
+// MARK: - 系统表单
+
+/// 半屏系统面板里的原生表单（Form / List.insetGrouped）：与地点卡片同一种做法——
+/// iOS 26 面板自身是 Liquid Glass，半屏时透出地图、拉到全屏时由系统过渡成不透明底色；
+/// 表单不铺自己的底色（scrollContentBackground 隐藏），分组行用 tertiarySystemFill，在玻璃与不透明底上都清楚。
+/// 更早的系统保留默认的分组底色与行底。
+extension View {
+    @ViewBuilder
+    func nativeSheetForm() -> some View {
+        if #available(iOS 26.0, *) {
+            self.scrollContentBackground(.hidden)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func nativeSheetRow() -> some View {
+        if #available(iOS 26.0, *) {
+            self.listRowBackground(Color(uiColor: .tertiarySystemFill))
+        } else {
+            self
+        }
+    }
+}
+
+/// 表单里的一个可多选标签（分类、筛选）：选中时用主题色底，与系统 Picker 的选中色一致
+struct NativeTagChip: View {
+    let title: String
+    var selected = false
+    var tint: Color = .accentColor
+    var symbol: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let symbol {
+                    Image(systemName: symbol).font(.caption2.weight(.bold))
+                }
+                Text(title).font(.subheadline)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(selected ? tint.opacity(0.18) : Color.primary.opacity(0.07), in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? tint : Color.clear, lineWidth: 1))
+            .foregroundStyle(selected ? tint : Color.primary)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}

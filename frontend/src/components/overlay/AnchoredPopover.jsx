@@ -27,7 +27,7 @@ function computePosition(anchor, popover, placement) {
     return { top, left, placement: `${side}-${align}` };
 }
 
-const ITEM_SELECTOR = '[role="menuitem"]:not([aria-disabled="true"]):not([disabled])';
+const ITEM_SELECTOR = ':is([role="menuitem"], [role="menuitemradio"]):not([aria-disabled="true"]):not([disabled])';
 
 /**
  * @param {{ open: boolean, onClose: Function, anchorRef: { current: HTMLElement }, placement?: string,

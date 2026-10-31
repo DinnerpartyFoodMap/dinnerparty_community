@@ -62,28 +62,31 @@ function distanceKm(a, b) {
 }
 
 /**
- * 查询参数：tags 逗号分隔（命中任一即可），minCost / maxCost 为人均范围（设了范围时没填人均的地点不显示），
+ * 查询参数：tags 逗号分隔（命中任一即可），excludeTags 逗号分隔（命中任一就排除），
+ * minCost / maxCost 为人均范围（设了范围时没填人均的地点不显示），
  * lat / lng / radiusKm 为距离范围
  */
 function normalizeListFilter(query = {}) {
-    const tags = parseCategoryNames(typeof query.tags === 'string' ? query.tags : '').slice(0, 20);
+    const excludeTags = parseCategoryNames(typeof query.excludeTags === 'string' ? query.excludeTags : '').slice(0, 20);
+    const tags = parseCategoryNames(typeof query.tags === 'string' ? query.tags : '').filter((tag) => !excludeTags.includes(tag)).slice(0, 20);
     let minCost = parseCost(query.minCost);
     let maxCost = parseCost(query.maxCost);
     if (minCost !== null && maxCost !== null && minCost > maxCost) [minCost, maxCost] = [maxCost, minCost];
     const offset = Math.max(0, Number.parseInt(query.offset, 10) || 0);
     const limit = Math.max(1, Math.min(LIST_PAGE_LIMIT, Number.parseInt(query.limit, 10) || 20));
-    return { tags, minCost, maxCost, distance: parseDistance(query), offset, limit };
+    return { tags, excludeTags, minCost, maxCost, distance: parseDistance(query), offset, limit };
 }
 
-function matchesFilter(place, { tags, minCost, maxCost, distance = null }) {
+function matchesFilter(place, { tags = [], excludeTags = [], minCost = null, maxCost = null, distance = null }) {
     if (distance) {
         const lat = Number(place.latitude);
         const lng = Number(place.longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng) || distanceKm(distance, { lat, lng }) > distance.radiusKm) return false;
     }
-    if (tags.length) {
+    if (tags.length || excludeTags.length) {
         const names = parseCategoryNames(place.category);
-        if (!tags.some((tag) => names.includes(tag))) return false;
+        if (tags.length && !tags.some((tag) => names.includes(tag))) return false;
+        if (excludeTags.some((tag) => names.includes(tag))) return false;
     }
     if (minCost !== null || maxCost !== null) {
         const cost = Number(place.per_person_cost);

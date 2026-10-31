@@ -27,6 +27,8 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
     private var finishing = false
     private var presenting = false
     private var lastSeq = 0
+    private var queuedFinish: (action: String, animated: Bool)?
+    private var closeCompletions: [() -> Void] = []
     private var loadingObservation: NSKeyValueObservation?
     private let screenPresenter = NativeScreenPresenter()
 
@@ -56,9 +58,14 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             let host = MapChromeHostingController(rootView: NativePageView(model: model), dark: dark)
             // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
             host.view.backgroundColor = .systemGroupedBackground
+            // 子页的返回交给 NavigationStack（系统返回按钮与跟手侧滑）；根页的左边缘侧滑关闭整页
+            self.screenPresenter.edgeEnabled = true
+            model.onDepthChange = { [weak self] depth in
+                self?.screenPresenter.edgeEnabled = depth == 0
+            }
             self.screenPresenter.onEdgeBack = { [weak self] in
                 guard let self, let model = self.model else { return }
-                if model.spec.canGoBack {
+                if model.depth > 0 {
                     model.back()
                 } else {
                     self.finish(action: "close")
@@ -68,9 +75,17 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             self.host = host
             self.pending = call
             self.requestID = id
+            // 序号随会话重新开始：网页每次打开都从 1 计数，沿用上一次的序号会把新会话的回执全部当成过期丢掉
+            self.lastSeq = 0
             self.presenting = true
             self.screenPresenter.present(host, from: presenter) { [weak self] in
-                self?.presenting = false
+                guard let self else { return }
+                self.presenting = false
+                // 滑入途中收到的关闭（网页离开 / 重新打开）等转场结束后执行，不留下没有会话的页面
+                if let queued = self.queuedFinish {
+                    self.queuedFinish = nil
+                    self.finish(action: queued.action, animated: queued.animated)
+                }
             }
         }
     }
@@ -88,6 +103,12 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let id = call.getString("id"), id == self.requestID,
                   let requestId = call.getString("requestId") else { return }
             guard let model = self.model else { return }
+            // 受保护图片的回执只带图片，不影响页面与加载状态
+            if let imageId = call.getString("imageId") {
+                model.setImage(imageId, call.getString("imageData").flatMap { NativePageImage.decode($0) })
+                return
+            }
+            let error = call.getString("error") ?? ""
             if let page = call.getObject("page") {
                 let seq = call.getInt("seq", 0)
                 if seq > 0 {
@@ -95,14 +116,12 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.lastSeq = seq
                 }
                 model.apply(NativePageParser.spec(page))
+            } else if let form = call.getObject("form").flatMap({ NativePageParser.form($0) }) {
+                model.presentForm(form)
+            } else {
+                model.finishWithoutPage(error: !error.isEmpty)
             }
-            if let imageId = call.getString("imageId"), let data = call.getString("imageData") {
-                model.setImage(imageId, NativePageImage.decode(data))
-            }
-            if let form = call.getObject("form") {
-                model.form = NativePageParser.form(form)
-            }
-            if let error = call.getString("error"), !error.isEmpty {
+            if !error.isEmpty {
                 model.alertMessage = error
             } else if let message = call.getString("message"), !message.isEmpty {
                 model.showToast(message)
@@ -129,9 +148,10 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func finish(action: String, animated: Bool = true, completion: (() -> Void)? = nil) {
         guard let host else { completion?(); return }
+        if let completion { closeCompletions.append(completion) }
         guard !finishing else { return }
         if presenting {
-            completion?()
+            queuedFinish = (action, animated)
             return
         }
         finishing = true
@@ -143,8 +163,11 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             self?.requestID = nil
             self?.model = nil
             self?.finishing = false
+            self?.queuedFinish = nil
             call?.resolve(["id": id ?? "", "action": action])
-            completion?()
+            let completions = self?.closeCompletions ?? []
+            self?.closeCompletions.removeAll()
+            completions.forEach { $0() }
         }
         if let presenter = host.presentingViewController {
             presenter.dismiss(animated: animated && !UIAccessibility.isReduceMotionEnabled, completion: complete)

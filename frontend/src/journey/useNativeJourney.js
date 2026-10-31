@@ -41,8 +41,9 @@ export default function useNativeJourney({
         });
         (async () => {
             try {
-                const page = await controller.start();
-                if (cancelled) return;
+                // 不等网络：先打开没有未完成计数的入口，计数读到后再推送（用户已经进了下一级就不推）
+                const page = controller.initialPage();
+                const entryPromise = controller.refreshEntry().catch(() => null);
                 const { registerPlugin } = await import('@capacitor/core');
                 if (cancelled) return;
                 session = createNativeJourneySession(registerPlugin('NativeJourney'), {
@@ -53,7 +54,10 @@ export default function useNativeJourney({
                     onClose: () => { if (!cancelled) onClose?.(); },
                     onError: () => { if (!cancelled) onUnavailable?.(); }
                 });
-                await session.start(page);
+                const started = session.start(page);
+                // open 已经发出之后再推送，原生按顺序先打开再更新
+                entryPromise.then((entry) => { if (entry && !cancelled) session.update(entry); });
+                await started;
             } catch (error) {
                 if (!cancelled) onUnavailable?.(error);
             }

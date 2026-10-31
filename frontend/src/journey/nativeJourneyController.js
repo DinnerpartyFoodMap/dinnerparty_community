@@ -6,6 +6,7 @@ import { copyText } from '../platform/share.js';
 import { buildPublicUrl } from '../platform/runtimeConfig.js';
 import { deleteLocalCompose, deleteLocalDraft, listLocalComposes, loadLocalDraft, saveLocalDraft } from '../platform/localDraftStore.js';
 import { getTokenUserId } from '../platform/credentialStore.js';
+import { nativePageLabels } from '../platform/nativePageLabels.js';
 import { diaryReportPrefill, userReportPrefill } from '../feedback/feedbackTypes.js';
 
 const MAX_PHOTOS = 12;
@@ -153,6 +154,8 @@ export function createNativeJourneyController({
     actions.set(id, run);
     const result = { id, title, tone: options.tone || '', kind: options.kind || 'action' };
     if (options.confirm) result.confirm = options.confirm;
+    // 打开下一级页面：原生立即推入占位页，不等请求
+    if (options.push) result.push = true;
     return result;
   }
 
@@ -188,6 +191,9 @@ export function createNativeJourneyController({
       title,
       subtitle: options.subtitle || '',
       canGoBack: options.canGoBack !== false,
+      // 入口是第 0 级，之后每 go 一页深一级（原生据此推入 / 原地刷新 / 退回）
+      level: options.canGoBack === false ? 0 : stack.length,
+      labels: nativePageLabels(),
       closeTitle: t('common:action.close'),
       backTitle: t('common:action.back'),
       searchPlaceholder: options.searchPlaceholder || '',
@@ -237,9 +243,11 @@ export function createNativeJourneyController({
     return build(type, params);
   }
 
-  async function back() {
+  // 原生弹出了页面：回到它现在最上面的那一级（level 为空时退一级）
+  async function back(level) {
     clearTimers();
-    stack.pop();
+    if (Number.isInteger(level) && level >= 0) stack = stack.slice(0, level);
+    else stack.pop();
     if (!stack.length) return entryPage();
     const top = stack[stack.length - 1];
     return build(top.type, top.params);
@@ -254,12 +262,17 @@ export function createNativeJourneyController({
       material = data?.material?.length || 0;
       unfinished = data?.count || 0;
     } catch (error) { /* 未完成计数失败不影响入口 */ }
+    return entryPageWith(material, unfinished);
+  }
+
+  // 入口不等网络：先用没有计数的入口打开原生页，计数读到后再推送更新
+  function entryPageWith(material, unfinished) {
     const rows = [
       {
         id: 'composer',
         title: t('journey:common.feature.generate'),
         subtitle: material ? t('journey:entry.composerHintUnfinished', { material }) : t('journey:entry.composerHint'),
-        actions: [action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', {}) }))]
+        actions: [action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', {}) }), { push: true })]
       },
       {
         id: 'calendar',
@@ -267,13 +280,13 @@ export function createNativeJourneyController({
         subtitle: t('journey:entry.calendarHint'),
         badge: unfinished ? String(unfinished) : '',
         badgeTone: unfinished ? 'warning' : '',
-        actions: [action(t('journey:common.feature.calendar'), async () => ({ page: await go('calendar', {}) }))]
+        actions: [action(t('journey:common.feature.calendar'), async () => ({ page: await go('calendar', {}) }), { push: true })]
       },
       {
         id: 'community',
         title: t('journey:common.feature.community'),
         subtitle: t('journey:entry.communityHint'),
-        actions: [action(t('journey:common.feature.community'), async () => ({ page: await go('community', { section: 'neighbors' }) }))]
+        actions: [action(t('journey:common.feature.community'), async () => ({ page: await go('community', { section: 'neighbors' }) }), { push: true })]
       }
     ];
     return basePage('journey-entry', t('journey:workspace.launcher'), {
@@ -512,10 +525,10 @@ export function createNativeJourneyController({
         });
         return { page: await go('generation', { composeId: params.composeId, jobId: next.id }) };
       }));
-      buttons.push(action(t('journey:generation.backToMaterial'), async () => ({ page: await go('composer', { composeId: params.composeId }) })));
+      buttons.push(action(t('journey:generation.backToMaterial'), async () => ({ page: await go('composer', { composeId: params.composeId }) }), { push: true }));
     }
     if (status === 'ready' && state.job?.draft_id) {
-      buttons.push(action(t('journey:generation.startReview'), async () => ({ page: await go('review', { draftId: state.job.draft_id }) })));
+      buttons.push(action(t('journey:generation.startReview'), async () => ({ page: await go('review', { draftId: state.job.draft_id }) }), { push: true }));
     }
     buttons.push(action(t('journey:generation.backToCalendar'), async () => ({ page: await resetTo('calendar', {}) })));
     return basePage('journey-generation', t('journey:common.action.generateDraft'), {
@@ -845,7 +858,7 @@ export function createNativeJourneyController({
       badgeTone: entry.visibility === 'public' ? 'primary' : '',
       protectedImage: entry.cover_media_id ? `journey:${entry.cover_media_id}` : '',
         actions: [
-        action(t('journey:common.feature.diary'), async () => ({ page: await go('detail', { journeyId: entry.id }) })),
+        action(t('journey:common.feature.diary'), async () => ({ page: await go('detail', { journeyId: entry.id }) }), { push: true }),
         action(t('common:action.delete'), async () => {
           await api(`/api/journeys/${encodeURIComponent(entry.id)}`, { method: 'DELETE', body: JSON.stringify({ base_revision: entry.revision }) });
           return { page: await calendarPage(), message: t('journey:calendar.deleted', { count: 1 }) };
@@ -871,10 +884,10 @@ export function createNativeJourneyController({
     ];
     if (rows.length) sections.push({ id: 'entries', title: calendarState.day || calendarState.month, rows });
     const buttons = [
-      action(t('journey:calendar.unfinished', { badge: '' }), async () => ({ page: await go('unfinished', {}) })),
-      action(t('journey:common.feature.privateImages'), async () => ({ page: await go('media', {}) })),
-      action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', { preset: calendarState.day ? { date: calendarState.day } : undefined }) }), { tone: 'primary' }),
-      action(t('journey:calendar.createManually'), async () => ({ page: await go('review', { date: calendarState.day || today() }) })),
+      action(t('journey:calendar.unfinished', { badge: '' }), async () => ({ page: await go('unfinished', {}) }), { push: true }),
+      action(t('journey:common.feature.privateImages'), async () => ({ page: await go('media', {}) }), { push: true }),
+      action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', { preset: calendarState.day ? { date: calendarState.day } : undefined }) }), { tone: 'primary', push: true }),
+      action(t('journey:calendar.createManually'), async () => ({ page: await go('review', { date: calendarState.day || today() }) }), { push: true }),
       action(t('common:action.refresh'), async () => ({ page: await calendarPage() }))
     ];
     return basePage('journey-calendar', t('journey:common.feature.calendar'), {
@@ -930,8 +943,8 @@ export function createNativeJourneyController({
       });
     }
     const buttons = [
-      action(t('journey:detail.edit'), async () => ({ page: await go('review', { journeyId: journey.id }) }), { tone: 'primary' }),
-      action(t('journey:common.action.generateShare'), async () => ({ page: await go('share', { journeyId: journey.id }) })),
+      action(t('journey:detail.edit'), async () => ({ page: await go('review', { journeyId: journey.id }) }), { tone: 'primary', push: true }),
+      action(t('journey:common.action.generateShare'), async () => ({ page: await go('share', { journeyId: journey.id }) }), { push: true }),
       action(t('journey:detail.viewOnMap'), async () => {
         onShowMap?.(journey);
         return { close: true };
@@ -1000,7 +1013,7 @@ export function createNativeJourneyController({
           lastError: ''
         }),
         actions: [
-          action(t('journey:unfinished.continue'), async () => ({ page: await go('composer', { composeId: item.id }) })),
+          action(t('journey:unfinished.continue'), async () => ({ page: await go('composer', { composeId: item.id }) }), { push: true }),
           action(t('common:action.delete'), async () => {
             await api(`/api/journeys/compose-drafts/${encodeURIComponent(item.id)}`, { method: 'DELETE', body: JSON.stringify({ revision: item.revision }) });
             return { page: await unfinishedPage() };
@@ -1011,19 +1024,19 @@ export function createNativeJourneyController({
         id: String(item.id),
         title: item.title,
         subtitle: item.job_status === 'queued' ? t('journey:unfinished.queued') : t('journey:unfinished.section.generating'),
-        actions: [action(t('journey:unfinished.view'), async () => ({ page: await go('generation', { composeId: item.id, jobId: item.job_id }) }))]
+        actions: [action(t('journey:unfinished.view'), async () => ({ page: await go('generation', { composeId: item.id, jobId: item.job_id }) }), { push: true })]
       }));
       group(t('journey:unfinished.section.review'), data.review || [], (item) => ({
         id: String(item.id),
         title: item.title,
         subtitle: t('journey:unfinished.reviewMeta', { range: formatRange(item.start_date, item.end_date), stop_count: item.stop_count, pending: item.pending ? t('journey:unfinished.reviewPending', { pending: item.pending }) : '' }),
-        actions: [action(t('journey:unfinished.continueReview'), async () => ({ page: await go('review', { draftId: item.id }) }))]
+        actions: [action(t('journey:unfinished.continueReview'), async () => ({ page: await go('review', { draftId: item.id }) }), { push: true })]
       }));
       group(t('journey:unfinished.section.editing'), data.editing || [], (item) => ({
         id: String(item.id),
         title: item.title,
         subtitle: `${formatRange(item.start_date, item.end_date)}${item.journey_id ? t('journey:unfinished.editingExisting') : t('journey:unfinished.editingNew')}`,
-        actions: [action(t('journey:unfinished.continueEditing'), async () => ({ page: await go('review', { draftId: item.id }) }))]
+        actions: [action(t('journey:unfinished.continueEditing'), async () => ({ page: await go('review', { draftId: item.id }) }), { push: true })]
       }));
     }
     const localEditor = userId ? await loadLocalDraft(userId, 'active').catch(() => null) : null;
@@ -1048,8 +1061,8 @@ export function createNativeJourneyController({
         }]
       });
     }
-    buttons.push(action(t('journey:calendar.createManually'), async () => ({ page: await go('review', { date: today() }) })));
-    buttons.push(action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', {}) })));
+    buttons.push(action(t('journey:calendar.createManually'), async () => ({ page: await go('review', { date: today() }) }), { push: true }));
+    buttons.push(action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', {}) }), { push: true }));
     return basePage('journey-unfinished', t('journey:unfinished.title', { total: '' }), {
       sections,
       empty: t('journey:unfinished.emptyTitle'),
@@ -1395,7 +1408,7 @@ export function createNativeJourneyController({
             }
           }
         }
-        return { page: await back() };
+        return { page: await back(Number(payload.level)) };
       }
       if (type === 'action') {
         const actionId = String(payload.actionId || '');
@@ -1453,6 +1466,13 @@ export function createNativeJourneyController({
 
   return {
     start: entryPage,
+    /** 立即可用的入口页（还没有未完成计数） */
+    initialPage: () => entryPageWith(0, 0),
+    /** 读到计数后的入口页；用户已经离开入口时为 null */
+    async refreshEntry() {
+      const page = await entryPage();
+      return stack.length === 0 ? page : null;
+    },
     handle,
     loadImage,
     close

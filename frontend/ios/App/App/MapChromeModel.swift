@@ -67,6 +67,8 @@ struct MapChromeSheetSection: Identifiable, Equatable {
     var footer: String?
     /// 脚注样式（备案链接等次要信息）
     var footnote: Bool
+    /// v14 标签样式：行画成可换行的标签（地图筛选），tone 为 include / exclude / accent 时着色
+    var chips: Bool = false
     var rows: [MapChromeSheetRow]
 }
 

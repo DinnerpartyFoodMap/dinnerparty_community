@@ -12,7 +12,7 @@ Object.assign(process.env, { LOG_TO_FILE: 'false', LOG_TO_CONSOLE: 'false', DB_F
 require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
 const { db, init } = require('../../infrastructure/database');
 const taste = require('../../modules/preferences/services/tasteAxes');
-const { normalizeSearchFilter } = require('../../modules/discovery/services/searchFilter');
+const { normalizeSearchFilter, searchFilterPredicate } = require('../../modules/discovery/services/searchFilter');
 const appRelease = require('../../modules/appRelease/services/appRelease');
 const { parseAmapRouteUrl, isAllowedAmapUrl } = require('../../modules/discovery/services/alongRoute');
 const sql = db._raw;
@@ -103,10 +103,18 @@ async function main() {
     assert.ok(Math.abs(taste.normalCdf(0) - 0.5) < 1e-6 && taste.normalCdf(1.96) > 0.97 && taste.normalCdf(-1.96) < 0.03);
     // 8. AI 搜索筛选：标签必须是现有分类，人均范围整理好；什么都没有时为 null
     const categories = ['火锅店', '烧烤', '甜品店'];
-    assert.deepEqual(normalizeSearchFilter({ tags: ['火锅店', '编的标签', '火锅店'], min_cost: 80, max_cost: '30.4' }, categories), { tags: ['火锅店'], min_cost: 30, max_cost: 80 });
-    assert.deepEqual(normalizeSearchFilter({ tags: [], min_cost: 0, max_cost: 40 }, categories), { tags: [], min_cost: null, max_cost: 40 });
+    assert.deepEqual(normalizeSearchFilter({ tags: ['火锅店', '编的标签', '火锅店'], min_cost: 80, max_cost: '30.4' }, categories), { tags: ['火锅店'], exclude_tags: [], min_cost: 30, max_cost: 80 });
+    assert.deepEqual(normalizeSearchFilter({ tags: [], min_cost: 0, max_cost: 40 }, categories), { tags: [], exclude_tags: [], min_cost: null, max_cost: 40 });
+    assert.deepEqual(normalizeSearchFilter({ tags: ['火锅店', '烧烤'], exclude_tags: ['烧烤', '编的'] }, categories), { tags: ['火锅店'], exclude_tags: ['烧烤'], min_cost: null, max_cost: null }, 'a tag in both lists counts as excluded');
+    assert.deepEqual(normalizeSearchFilter({ exclude_tags: ['甜品店'] }, categories), { tags: [], exclude_tags: ['甜品店'], min_cost: null, max_cost: null });
     assert.equal(normalizeSearchFilter({ tags: ['不存在'] }, categories), null);
     assert.equal(normalizeSearchFilter(null, categories), null);
+    assert.equal(searchFilterPredicate(null), null);
+    const accept = searchFilterPredicate({ tags: ['火锅店', '烧烤'], exclude_tags: ['甜品店'], min_cost: null, max_cost: 60 });
+    assert.equal(accept({ category: '烧烤', per_person_cost: 50 }), true);
+    assert.equal(accept({ category: '烧烤, 甜品店', per_person_cost: 50 }), false, 'excluded tags win over included ones');
+    assert.equal(accept({ category: '粤菜', per_person_cost: 50 }), false);
+    assert.equal(accept({ category: '火锅店', per_person_cost: 80 }), false);
     // 9. App 发版信息：读服务器本地的 release.json；安装包只能是目录里的 .apk 文件名
     fs.mkdirSync(path.join(temp, 'release'));
     assert.equal(appRelease.getReleases().android.build, null, 'no release file yet');

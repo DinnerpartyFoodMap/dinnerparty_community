@@ -143,32 +143,38 @@ try {
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'More to route has no browser errors');
 
     await navigate('list', 390, 844);
-    await waitFor(`!!document.querySelector('.fm-map-list__radius select')`);
-    const options = await evaluate(`(() => {const s=document.querySelector('.fm-map-list__radius select');return {value:s.value,options:[...s.options].map(o=>({value:o.value,text:o.textContent})),buttonHeight:document.querySelector('.fm-map-list__center-button').getBoundingClientRect().height};})()`);
-    assert.deepEqual(options.options, [{value:'0.5',text:'500 米内'},{value:'1',text:'1 公里内'},{value:'3',text:'3 公里内'},{value:'5',text:'5 公里内'},{value:'10',text:'10 公里内'}], 'the list exposes the five requested radius options');
-    assert.equal(options.value, '3', 'the list starts at 3km');
-    assert.ok(options.buttonHeight >= 44, 'the center is a large touch button');
+    await waitFor(`!!document.querySelector('.fm-map-list__scope')`);
+    const scope = await evaluate(`(() => {const b=document.querySelector('.fm-map-list__scope'),cs=getComputedStyle(b);return {text:b.textContent,height:b.getBoundingClientRect().height,border:cs.borderTopWidth};})()`);
+    assert.ok(scope.text.includes('地图中心') && scope.text.includes('3 公里内'), 'one borderless button shows the center and the 3km default');
+    assert.ok(scope.height >= 44, 'the scope button is a large touch target');
+    assert.equal(scope.border, '0px', 'the scope button has no border');
     await waitFor(`document.querySelector('.fm-place-list__summary')?.textContent.includes('0 个地点')`);
     const defaultRequest = requests.filter(entry => entry.path === '/places/list').at(-1);
     assert.deepEqual(defaultRequest.query, {lat:'30.000000',lng:'120.000000',radiusKm:'3',offset:'0',limit:'20'}, 'the default list request carries 3km and the opening map center');
-    await evaluate(`(() => {const s=document.querySelector('.fm-map-list__radius select');s.value='0.5';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-    await waitFor(`document.querySelector('.fm-map-list__radius select').value==='0.5' && document.querySelector('.fm-place-list__summary')?.textContent.includes('0 个地点')`);
+    await click('.fm-map-list__scope');
+    await waitFor(`document.querySelectorAll('.fm-map-list__radius-chip').length === 5`);
+    const chips = await evaluate(`[...document.querySelectorAll('.fm-map-list__radius-chip')].map(e=>({text:e.textContent,checked:e.getAttribute('aria-checked')}))`);
+    assert.deepEqual(chips.map(c => c.text), ['500 米内','1 公里内','3 公里内','5 公里内','10 公里内'], 'the menu exposes the five requested radius options');
+    assert.equal(chips.find(c => c.checked === 'true').text, '3 公里内', 'the list starts at 3km');
+    await screenshot('list-scope-menu');
+    await click('.fm-map-list__radius-chip');
+    await waitFor(`!document.querySelector('.fm-map-list__radius-chip') && document.querySelector('.fm-map-list__scope')?.textContent.includes('500 米内')`);
     const halfKm = await waitForRequest(query => query.radiusKm === '0.5');
     assert.equal(halfKm.query.radiusKm, '0.5', 'selecting 500m sends radiusKm=0.5 to the actual API boundary');
-    await click('.fm-map-list__center-button');
-    await waitFor(`document.querySelector('[role="menuitem"]')?.textContent.trim()==='换个中心'`);
-    await screenshot('list-center-menu');
-    await click('[role="menuitem"]');
-    await waitFor(`document.querySelector('.fm-map-list__center-button')?.textContent.includes('选定的位置')`);
+    await click('.fm-map-list__scope');
+    await waitFor(`[...document.querySelectorAll('[role="menuitem"]')].some(e=>e.textContent.includes('在地图上选'))`);
+    await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(e=>e.textContent.includes('在地图上选')).dataset.layoutPick='true'`);
+    await click('[data-layout-pick]');
+    await waitFor(`document.querySelector('.fm-map-list__scope')?.textContent.includes('选定的位置')`);
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_PICK_CENTERS'), [{lng:120,lat:30}], 'changing the center passes the existing center to the picker boundary');
     const customCenter = await waitForRequest(query => query.lat === '31.500000' && query.lng === '121.500000');
     assert.deepEqual(customCenter.query, {lat:'31.500000',lng:'121.500000',radiusKm:'0.5',offset:'0',limit:'20'}, 'the selected center is sent to the list API while retaining the 500m radius');
-    await click('.fm-map-list__center-button');
-    await waitFor(`[...document.querySelectorAll('[role="menuitem"]')].some(e=>e.textContent.trim()==='改回地图中心')`);
+    await click('.fm-map-list__scope');
+    await waitFor(`[...document.querySelectorAll('[role="menuitemradio"]')].some(e=>e.textContent.includes('地图中心'))`);
     await screenshot('list-custom-center-menu');
-    await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(e=>e.textContent.trim()==='改回地图中心').dataset.layoutRestore='true'`);
+    await evaluate(`[...document.querySelectorAll('[role="menuitemradio"]')].find(e=>e.textContent.includes('地图中心')).dataset.layoutRestore='true'`);
     await click('[data-layout-restore]');
-    await waitFor(`document.querySelector('.fm-map-list__center-button')?.textContent.includes('地图中心')`);
+    await waitFor(`document.querySelector('.fm-map-list__scope')?.textContent.includes('地图中心')`);
     const restoredCenter = await waitForRequest(query => query.lat === '30.000000' && query.lng === '120.000000');
     assert.deepEqual(restoredCenter.query, {lat:'30.000000',lng:'120.000000',radiusKm:'0.5',offset:'0',limit:'20'}, 'restoring the map center also restores its API coordinates');
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'list center controls have no browser errors');
@@ -258,11 +264,12 @@ try {
     for (const [width, height] of [[1280, 900], [390, 844]]) {
         await navigate('map&deferredCamera=1', width, height);
         await waitFor(`!!document.querySelector('[data-tour="listView"]:not([disabled])')`);
+        // 列表只开一次：从列表打开的地点关掉后回到列表，第二轮直接再点
+        await click('[data-tour="listView"]');
         for (let selection = 1; selection <= 2; selection += 1) {
-            await click('[data-tour="listView"]');
             await waitFor(`document.querySelector('.fm-place-card__title')?.textContent === '列表定位回归面馆'`);
             await click('.fm-place-card__title');
-            await waitFor(`!document.querySelector('.fm-map-list') && !!document.querySelector('.fm-card-host,.fm-skin-card') && window.__WEB_LAYOUT_MAP.cameraMoves.length === ${selection} && !window.__WEB_LAYOUT_MAP.pendingCamera`);
+            await waitFor(`getComputedStyle(document.querySelector('.fm-map-list')).visibility === 'hidden' && !!document.querySelector('.fm-card-host,.fm-skin-card') && window.__WEB_LAYOUT_MAP.cameraMoves.length === ${selection} && !window.__WEB_LAYOUT_MAP.pendingCamera`);
             await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
             const focused = await evaluate(`(() => {
                 const map = window.__WEB_LAYOUT_MAP;
@@ -273,11 +280,11 @@ try {
             assert.ok(focused.point.x >= 12 && focused.point.x <= width - 12 && focused.point.y >= 12 && focused.point.y <= height - 12, `${width}px selection ${selection}: selected place stays on screen`);
             await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }, sessionId);
             await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' }, sessionId);
-            await waitFor(`!document.querySelector('.fm-card-host,.fm-skin-card')`);
+            await waitFor(`!document.querySelector('.fm-card-host,.fm-skin-card') && getComputedStyle(document.querySelector('.fm-map-list')).visibility === 'visible'`);
         }
         assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'list selection has no browser errors');
     }
-    console.log(JSON.stringify({ passed: true, overlap, wide, options, radarFillCount: radar.fills.length, screenshots: scratch }));
+    console.log(JSON.stringify({ passed: true, overlap, wide, scope, radarFillCount: radar.fills.length, screenshots: scratch }));
     await command('Browser.close');
 } catch (error) { console.error(error); console.error('Artifacts: ' + scratch); process.exitCode = 1; }
 finally { socket?.close(); processHandle?.kill(); await server.close(); }

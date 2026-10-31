@@ -1,7 +1,7 @@
 // 原生“顺路吃”面板的网页侧入口。调用方负责判断平台与插件可用性（enabled），
 // 本 hook 负责取分类、打开会话、把网页的路线/结果格式化成原生可直接显示的文案。
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchCategories } from '../api/client.js';
+import { loadCategoryDirectory, peekCategoryDirectory } from '../places/categoryDirectory.js';
 import { createNativeAlongRouteSession } from '../platform/nativeAlongRoute.js';
 import {
     alongRouteDistanceOptions,
@@ -36,6 +36,7 @@ function buildLabels() {
         pasteLinkFirst: t('map:alongRoute.pasteLinkFirst'),
         mapNotReady: t('map:alongRoute.mapNotReadyRetry'),
         chooseRouteFirst: t('map:alongRoute.chooseRouteFirst'),
+        tagsLoading: t('map:alongRoute.tagsLoading'),
         cancel: t('common:action.cancel'),
         ok: t('common:action.ok')
     };
@@ -111,21 +112,17 @@ export default function useNativeAlongRoute({
                 onResults: (results) => latest.current.onResults?.(results)
             });
             controllerRef.current = controller;
-            let categories = [];
-            try {
-                // 分类目录只影响标签建议：接口迟迟不返回时先空着打开面板，不阻塞顺路查询
-                categories = await Promise.race([
-                    fetchCategories(latest.current.backendUrl),
-                    new Promise((resolve) => setTimeout(() => resolve([]), 1500))
-                ]);
-            } catch { /* 分类不可用时仍可搜索 */ }
-            if (generation !== generationRef.current) return false;
+            // 分类目录只影响标签建议：面板立即打开，目录读到后再补上（整页缓存，第二次打开时已经有了）
+            const categoriesPromise = loadCategoryDirectory(latest.current.backendUrl).catch(() => []);
+            const cached = peekCategoryDirectory();
+            const categories = cached || [];
             const snapshot = {
                 theme: { primary: latest.current.themeColor || '#E2789F', dark: !!latest.current.dark },
                 labels: buildLabels(),
                 modes: alongRouteModeOptions(),
                 distances: alongRouteDistanceOptions(),
                 categories: buildAlongRouteCategories(categories),
+                categoriesLoading: !cached,
                 values: { url: '', mode: 'driving', query: '', categories: [], corridorMeters: 1000 }
             };
             const { registerPlugin } = await import('@capacitor/core');
@@ -157,6 +154,11 @@ export default function useNativeAlongRoute({
             });
             if (generation !== generationRef.current) { session.stop(); return false; }
             sessionRef.current = session;
+            if (!cached) {
+                categoriesPromise.then((list) => {
+                    if (generation === generationRef.current) session.updateCategories(buildAlongRouteCategories(list));
+                });
+            }
             await session.start();
             return true;
         } catch (error) {
@@ -169,6 +171,11 @@ export default function useNativeAlongRoute({
             openingRef.current = false;
         }
     }, [enabled, finish]);
+
+    // 提前读好分类目录（整页缓存）：打开面板时标签已经在了
+    useEffect(() => {
+        if (enabled) loadCategoryDirectory(backendUrl).catch(() => {});
+    }, [enabled, backendUrl]);
 
     useEffect(() => () => {
         generationRef.current += 1;

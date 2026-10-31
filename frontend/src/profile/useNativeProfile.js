@@ -61,7 +61,23 @@ export default function useNativeProfile({
             }
         };
 
+        // 主页读取失败：原生页留在原地显示原因与“重试”（不再退回网页）
+        const loadIntoSession = async () => {
+            try {
+                profile = await load();
+                if (!cancelled) session?.update({ profile: view(profile) });
+            } catch (error) {
+                if (cancelled) return;
+                const message = error?.status === 404 ? profileBaseLabels().notFound : (error?.message || profileBaseLabels().loadFailed);
+                session?.update({ error: String(message).slice(0, 200) });
+            }
+        };
+
         const handleEvent = async (type, values) => {
+            if (type === 'reload') {
+                loadIntoSession();
+                return { ok: true };
+            }
             if (!latest.token) {
                 onRequireAuth?.();
                 return { ok: false, message: '' };
@@ -87,15 +103,15 @@ export default function useNativeProfile({
 
         (async () => {
             try {
-                profile = await load();
-                if (cancelled) return;
                 const { registerPlugin } = await import('@capacitor/core');
                 if (cancelled) return;
+                // 不等主页数据：原生页先滑入并显示加载中，数据到了再用 update 补上
                 session = createNativeProfileSession(registerPlugin('NativeProfile'), {
                     userId: String(userId),
                     theme: { primary: themeColor || '#E2789F', dark: !!dark },
                     labels: profileBaseLabels(),
-                    profile: view(profile),
+                    loading: true,
+                    profile: { labels: profileBaseLabels() },
                     selfLevels: profileSelfLevels(),
                     widgetOptions: profileWidgetOptions()
                 }, {
@@ -104,7 +120,9 @@ export default function useNativeProfile({
                     onOpenPlace: (placeId) => { if (!cancelled) onOpenPlace?.(placeId); },
                     onError: () => { if (!cancelled) onUnavailable?.(); }
                 });
-                await session.start();
+                const started = session.start();
+                loadIntoSession();
+                await started;
             } catch (error) {
                 if (!cancelled) onUnavailable?.(error);
             }

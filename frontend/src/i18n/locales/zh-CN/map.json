@@ -88,6 +88,7 @@
     }
   },
   "alongRoute": {
+    "tagsLoading": "正在读取标签…",
     "mapNotReady": "地图尚未就绪",
     "pluginTimeout": "高德路线服务加载超时",
     "invalidEndpoints": "行程起点或终点坐标无效",

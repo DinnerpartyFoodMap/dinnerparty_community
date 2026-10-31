@@ -2,7 +2,7 @@
 // 网页取 profile、执行屏蔽 / 偏好 / 小组件请求；原生只显示网页整理好的文案与雷达数据。
 // 原生经 profileEvent 发来 setTasteLevel / saveWidgets / setBlocked，网页按 requestId 用 respond 回传最新视图模型。
 export const PROFILE_ACTIONS = Object.freeze(['back', 'openPlace']);
-export const PROFILE_EVENTS = Object.freeze(['setTasteLevel', 'saveWidgets', 'setBlocked']);
+export const PROFILE_EVENTS = Object.freeze(['setTasteLevel', 'saveWidgets', 'setBlocked', 'reload']);
 const TASTE_AXES = ['homestyle', 'noodles', 'hotpotBbq', 'dessert', 'drinks', 'foreign'];
 const WIDGET_KINDS = ['collection', 'recent', 'favorite'];
 let sequence = 0;
@@ -30,6 +30,7 @@ export function pickNativeProfileValues(type, values) {
     if (type === 'setBlocked') {
         return typeof values.blocked === 'boolean' ? { blocked: values.blocked } : null;
     }
+    if (type === 'reload') return {};
     return null;
 }
 
@@ -100,6 +101,14 @@ export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, 
                 removeListener();
                 if (!stopped) onError?.(error);
             }
+        },
+        /** 打开后才读到的主页数据（profile）或读取失败的原因（error） */
+        async update({ profile, error } = {}) {
+            if (stopped) return;
+            const payload = { id };
+            if (profile && typeof profile === 'object') payload.profile = profile;
+            else payload.error = String(error || '').slice(0, 200);
+            try { await plugin.update?.(payload); } catch { /* 原生主页已关闭 */ }
         },
         async stop() {
             stopped = true;

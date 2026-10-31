@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import * as MapUtils from "./utils";
 import * as Api from "../api/client";
-import { EMPTY_PLACE_FILTER, isPlaceFilterActive, matchesPlaceFilter, placeFilterFromAi } from "../places/placeFilter";
+import { EMPTY_PLACE_FILTER, matchesPlaceFilter, placeFilterFromAi } from "../places/placeFilter";
 import { MarkerLayerController } from "./MarkerLayerController";
 import { installPinchGuard } from "./pinchGuard";
 import { OverseasTileLayer } from "./overseasTileLayer";
@@ -130,13 +130,9 @@ export default function MapView({
     const [searching, setSearching] = useState(false);
     const [aiThinking, setAiThinking] = useState(false);
     const [aiRecommendations, setAiRecommendations] = useState([]);
-    // 地图筛选（标签 / 人均，places/placeFilter.js）：手动打开筛选面板设置，或由 AI 搜索读出后主动设置（source = 'ai'）
+    // 地图筛选（标签 / 人均，places/placeFilter.js）：只由筛选面板设置。AI 搜索读出的筛选只用在它自己的推荐上，不动地图
     const [placeFilter, setPlaceFilterState] = useState(EMPTY_PLACE_FILTER);
-    const [placeFilterSource, setPlaceFilterSource] = useState(null);
-    const setPlaceFilter = useCallback((next, source = 'manual') => {
-        setPlaceFilterState(next || EMPTY_PLACE_FILTER);
-        setPlaceFilterSource(next && isPlaceFilterActive(next) ? source : null);
-    }, []);
+    const setPlaceFilter = useCallback((next) => setPlaceFilterState(next || EMPTY_PLACE_FILTER), []);
     const [searchResetKey, setSearchResetKey] = useState(0);
     const showTip = useTips();
     const confirm = useConfirm();
@@ -1284,14 +1280,14 @@ export default function MapView({
         aiPromise
             ?.then((result) => {
                 if (requestId !== searchRequestIdRef.current) return;
-                resolvedRecommendations = Array.isArray(result?.recommendations)
+                // AI 从原话里读出的筛选（标签 / 人均）已由后端套用在推荐上；这里只带上它，好在推荐上方说明，地图筛选不变
+                const appliedFilter = placeFilterFromAi(result?.filter);
+                resolvedRecommendations = (Array.isArray(result?.recommendations)
                     ? result.recommendations.filter((recommendation) => recommendation?.place).slice(0, 3)
-                    : (result?.recommendation?.place ? [result.recommendation] : []);
+                    : (result?.recommendation?.place ? [result.recommendation] : []))
+                    .map((recommendation) => ({ ...recommendation, applied_filter: appliedFilter }));
                 setAiRecommendations(resolvedRecommendations);
                 if (fastSettled && resolvedRecommendations.length) publishResults(baseData, resolvedRecommendations);
-                // AI 从原话里读出了筛选（只看某些标签 / 人均范围）：直接作用到地图，筛选按钮随之高亮，可在面板里改或清除
-                const aiFilter = placeFilterFromAi(result?.filter);
-                if (aiFilter) setPlaceFilter(aiFilter, 'ai');
             })
             .catch((error) => {
                 if (error?.name !== 'AbortError' && requestId === searchRequestIdRef.current) {
@@ -1949,7 +1945,6 @@ export default function MapView({
                 onRetryUserPlaces={() => userFilterRef.current && openUserPlaces(userFilterRef.current.user)}
                 onSetUserPlacesBlocked={setUserPlacesBlocked}
                 placeFilter={placeFilter}
-                placeFilterSource={placeFilterSource}
                 onPlaceFilterChange={setPlaceFilter}
                 onSelectUserPlace={handleSelectAlongRoutePlace}
                 openManagePanel={openManagePanel}

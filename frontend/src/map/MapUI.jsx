@@ -71,6 +71,9 @@ import MapListMode from './MapListMode';
 import useNativePlaceForm from '../places/hooks/useNativePlaceForm';
 import { emptyPlaceContent, placeDraftSource, openPlaceDraft, persistPlaceDraft, discardPlaceDraft } from '../places/addPlaceDraft';
 import { EMPTY_PLACE_FILTER, isPlaceFilterActive } from '../places/placeFilter';
+import { describePlaceFilter } from '../places/components/PlaceFilterPanel';
+import { applyFilterSheetRow, filterChromeSheet } from '../places/filterChromeSheet';
+import { loadCategoryDirectory } from '../places/categoryDirectory';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
 // 窄屏底部元素需要避开底部安全区（iPhone 主屏指示条、Android 手势条）；桌面与多数浏览器场景下为 0
@@ -266,7 +269,6 @@ export default function MapUI(props) {
         onSetUserPlacesBlocked,
         onSelectUserPlace,
         placeFilter = EMPTY_PLACE_FILTER,
-        placeFilterSource = null,
         onPlaceFilterChange,
         openManagePanel,
         openCreateFromPoi,
@@ -490,11 +492,19 @@ export default function MapUI(props) {
     const [randomFoodOpen, setRandomFoodOpen] = useState(false);
     // 地图筛选面板（标签 / 人均）：改动立即作用到地图，面板不挡地图
     const [filterOpen, setFilterOpen] = useState(false);
-    // 列表模式：地图换成地点列表（MapListMode），切换按钮的图标变成地图；选中地点、开始添加地点时回到地图
+    // 列表模式：地图换成地点列表（MapListMode），切换按钮的图标变成地图；开始添加地点时退出列表。
+    // 打开地点（从列表点进或别处选中）时列表留在下面、只露出地图和卡片，关掉卡片回到列表。
     const [listMode, setListMode] = useState(false);
     useEffect(() => {
-        if (selectedPlace || addMode) setListMode(false);
-    }, [selectedPlace, addMode]);
+        if (addMode) setListMode(false);
+    }, [addMode]);
+    const listShown = listMode && !selectedPlace;
+    // 切换按钮：列表在显示 → 回地图；列表被卡片盖着 → 关卡片回到列表；否则进入列表
+    const toggleListMode = () => {
+        if (listShown) setListMode(false);
+        else if (listMode) closePopup?.();
+        else setListMode(true);
+    };
     // 指引之外的功能：第一次打开时提示一句它能做什么
     useEffect(() => {
         const opened = filterOpen ? 'filter' : (listMode ? 'listView' : (alongRouteOpen ? 'alongRoute' : null));
@@ -510,15 +520,21 @@ export default function MapUI(props) {
         if (favPageOpen || userPlacesOpen || alongRouteOpen) setFilterOpen(false);
     }, [favPageOpen, userPlacesOpen, alongRouteOpen]);
     const filterActive = isPlaceFilterActive(placeFilter);
+    // iOS 原生筛选面板（协议 v14）的标签目录与“展开全部”；网页面板自己读目录
+    const [filterDirectory, setFilterDirectory] = useState({ list: [], loading: false, error: '' });
+    const [filterShowAll, setFilterShowAll] = useState(false);
+    useEffect(() => {
+        if (!filterOpen || filterDirectory.list.length) return undefined;
+        let cancelled = false;
+        setFilterDirectory((current) => ({ ...current, loading: true, error: '' }));
+        loadCategoryDirectory(backendUrl)
+            .then((list) => { if (!cancelled) setFilterDirectory({ list, loading: false, error: '' }); })
+            .catch((error) => { if (!cancelled) setFilterDirectory({ list: [], loading: false, error: error.message || t('places:filter.tagsLoadFailed') }); });
+        return () => { cancelled = true; };
+    }, [filterOpen, backendUrl]);
     // 随机美食的固定中心（展会地点）；null 表示按地图中心
     const [randomFoodOrigin, setRandomFoodOrigin] = useState(null);
     const handledRandomFoodRequest = useRef(0);
-    const lastAiFilterRef = useRef(null);
-    useEffect(() => {
-        if (placeFilterSource !== 'ai' || placeFilter === lastAiFilterRef.current) return;
-        lastAiFilterRef.current = placeFilter;
-        showTip?.(t('places:filter.aiApplied'));
-    }, [placeFilter, placeFilterSource]);
     // 布局策略集中判断（640px 窄屏基线）
     const layout = useLayoutPolicy();
     const motionFlags = useMotionFlags();
@@ -996,7 +1012,7 @@ export default function MapUI(props) {
             sheetWhenNative: isAuthenticated
         },
         // 列表 / 地图切换、筛选与定位在原生侧共用一个竖向圆角矩形（从上到下）
-        { id: 'listView', title: listMode ? t('places:list.toMap') : t('places:list.toList'), symbol: listMode ? 'map' : 'list.bullet', placement: 'floating', selected: false, disabled: !mapReady, opensOverlay: false },
+        { id: 'listView', title: listShown ? t('places:list.toMap') : t('places:list.toList'), symbol: listShown ? 'map' : 'list.bullet', placement: 'floating', selected: false, disabled: !mapReady, opensOverlay: false },
         { id: 'filter', title: filterActive ? t('places:filter.buttonActive') : t('places:filter.button'), symbol: filterActive ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle', placement: 'floating', selected: filterActive || filterOpen, disabled: !mapReady, opensOverlay: true },
         { id: 'locate', title: locating ? t('map:ui.locating') : t('map:ui.locate'), symbol: locating ? 'location.fill' : 'location', ...nativeIcon('toolbar.icons.locate'), placement: 'floating', busy: locating, disabled: !mapReady || locating, opensOverlay: false }
     ];
@@ -1041,7 +1057,7 @@ export default function MapUI(props) {
                 return true;
             case 'locate': handleLocateMe(); return true;
             case 'filter': toggleFilter(); return true;
-            case 'listView': setListMode((value) => !value); return true;
+            case 'listView': toggleListMode(); return true;
             default: return false;
         }
     };
@@ -1074,6 +1090,8 @@ export default function MapUI(props) {
     const openSheetId = (isAuthenticated && mobileAccountOpen) ? 'account'
         : (isAuthenticated && favPageOpen) ? 'favorites'
         : (randomFoodOpen && !pickerMode) ? 'random'
+        // 地图筛选（原生控件接管时）：从右侧按钮组展开，改动立即作用到地图
+        : (filterOpen && !pickerMode) ? 'filter'
         // 展会面板盖在地点卡片之上：关闭后仍选中的地点卡片重新出现
         : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
         : (selectedPlace && !pickerMode) ? 'place'
@@ -1120,6 +1138,8 @@ export default function MapUI(props) {
         };
     } else if (openSheetId === 'random') {
         chromeSheet = randomFoodChromeSheet(randomFood);
+    } else if (openSheetId === 'filter') {
+        chromeSheet = filterChromeSheet({ filter: placeFilter, categories: filterDirectory.list, showAll: filterShowAll, loading: filterDirectory.loading, error: filterDirectory.error });
     } else if (openSheetId === 'exhibition') {
         chromeSheet = exhibitionChromeSheet(exhibition, { iconUrl: exhibitionIconSource(exhibition.icon_url, backendUrl) });
     } else if (openSheetId === 'place') {
@@ -1222,14 +1242,14 @@ export default function MapUI(props) {
 
     // 列表 / 地图切换：宽屏在筛选按钮下方，窄屏在筛选按钮上方；列表模式时图标是地图
     const listToggleButton = (size) => (
-        <Tooltip text={listMode ? t('places:list.toMap') : t('places:list.toList')} placement={isNarrow ? 'top' : undefined}>
+        <Tooltip text={listShown ? t('places:list.toMap') : t('places:list.toList')} placement={isNarrow ? 'top' : undefined}>
             <div style={{ display: 'inline-block' }}>
                 <Button
                     data-tour="listView"
-                    onClick={() => setListMode((value) => !value)}
+                    onClick={toggleListMode}
                     disabled={!mapReady}
-                    aria-label={listMode ? t('places:list.toMap') : t('places:list.toList')}
-                    aria-pressed={listMode}
+                    aria-label={listShown ? t('places:list.toMap') : t('places:list.toList')}
+                    aria-pressed={listShown}
                     style={{
                         width: 44, height: 44, padding: 0, borderRadius: '50%',
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1238,7 +1258,7 @@ export default function MapUI(props) {
                         color: '#FFFFFF', border: 'none', boxShadow: '0 4px 12px var(--color-glow)', opacity: mapReady ? 1 : 0.6
                     }}
                 >
-                    <span className="material-symbols-outlined" style={{ fontSize: size }}>{listMode ? 'map' : 'view_list'}</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: size }}>{listShown ? 'map' : 'view_list'}</span>
                 </Button>
             </div>
         </Tooltip>
@@ -1290,6 +1310,11 @@ export default function MapUI(props) {
             else if (rowId === 'view') randomFood.selectPlace();
             else if (rowId === 'another') randomFood.drawNext();
             else if (rowId === 'redraw') randomFood.redrawAtMapCenter();
+        } else if (sheetId === 'filter') {
+            if (type === 'dismiss') { setFilterOpen(false); return; }
+            const change = applyFilterSheetRow(placeFilter, rowId);
+            if (change?.filter) onPlaceFilterChange?.(change.filter);
+            else if (change?.toggleShowAll) setFilterShowAll((value) => !value);
         } else if (sheetId === 'exhibition') {
             if (type === 'dismiss') onCloseExhibition?.();
             else if (rowId === 'random') openExhibitionRandom();
@@ -1721,7 +1746,10 @@ export default function MapUI(props) {
         const recommendations = (Array.isArray(aiRecommendations) ? aiRecommendations : [])
             .filter((recommendation) => recommendation?.place)
             .slice(0, 3);
-        return recommendations.map((recommendation, index) => {
+        // AI 读出的筛选只用在推荐上（后端已按它挑过），在第一张卡片上方说明一句
+        const appliedFilter = recommendations[0]?.applied_filter;
+        const filterNote = appliedFilter && describePlaceFilter(appliedFilter);
+        const cards = recommendations.map((recommendation, index) => {
             const place = recommendation.place;
             const matchPercent = Number.isFinite(Number(recommendation.match_percent))
                 ? Math.round(Number(recommendation.match_percent))
@@ -1776,6 +1804,14 @@ export default function MapUI(props) {
                 </Exposure>
             );
         });
+        if (!filterNote) return cards;
+        return [
+            <div key="ai-filter-note" role="note" style={{ margin: '10px 12px 0', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-text-secondary)', fontSize: 12 }}>
+                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16, color: 'var(--theme-icon)' }}>filter_alt</span>
+                <span>{t('places:filter.aiAppliedTo', { filter: filterNote })}</span>
+            </div>,
+            ...cards.map((card, index) => (index === 0 ? React.cloneElement(card, { style: { ...card.props.style, marginTop: 6 } }) : card))
+        ];
     };
 
     const handlePickPlace = () => {
@@ -3267,10 +3303,8 @@ export default function MapUI(props) {
                     locatedCenter={props.locatedCenter}
                     getMapCenter={props.getMapCenter}
                     onPickCenter={props.onPickListCenter}
-                    onOpenPlace={(placeId) => {
-                        setListMode(false);
-                        props.onFocusPlaceFromList?.(placeId);
-                    }}
+                    hidden={!listShown}
+                    onOpenPlace={(placeId) => props.onFocusPlaceFromList?.(placeId)}
                     insets={{
                         top: isNarrow ? 16 : 76,
                         bottom: nativeChrome ? chrome.bottomOccupied + 24 : (isNarrow ? 240 : 24)
@@ -3280,7 +3314,8 @@ export default function MapUI(props) {
 
             {/* 地图筛选：不挡地图（改动立即作用到标记）；宽屏为右侧侧板，窄屏为底部面板 */}
             <ResponsivePanel
-                open={filterOpen && !hideNonSearchButtons && !pickerMode}
+                // 原生控件接管时用原生玻璃面板（filterChromeSheet），网页面板不打开
+                open={filterOpen && !hideNonSearchButtons && !pickerMode && !nativeChrome}
                 onClose={() => setFilterOpen(false)}
                 title={t('places:filter.title')}
                 kind="place-filter"
@@ -3296,8 +3331,7 @@ export default function MapUI(props) {
                 <PlaceFilterPanel
                     backendUrl={backendUrl}
                     value={placeFilter}
-                    source={placeFilterSource}
-                    onChange={(next) => onPlaceFilterChange?.(next, 'manual')}
+                    onChange={(next) => onPlaceFilterChange?.(next)}
                 />
             </ResponsivePanel>
 

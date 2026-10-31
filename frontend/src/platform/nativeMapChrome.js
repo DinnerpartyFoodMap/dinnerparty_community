@@ -27,20 +27,22 @@ import { t } from '../i18n/index.js';
 // v12 列表 / 地图切换（listView）与地图筛选（filter）：浮动按钮，与定位共用一个竖向圆角矩形；工具栏的随机美食（random，与日记互换位置）；
 // 头像按钮与面板行的小红点（badge 为 "dot"，其他文字为小标签：被驳回的地点）。
 // v13 随机美食也使用原生面板（random）：正文段落、加载/错误提示、查看/换一家/重定中心操作。
+// v14 地图筛选也使用原生面板（filter，从右侧按钮组展开的玻璃外壳）：分组 style 为 "chips" 时行画成可换行的标签，
+// 行 tone 为 "include"（绿，包含）/ "exclude"（红，排除）/ "accent"（选中的人均档位）。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
-export const NATIVE_CHROME_PROTOCOL = 13;
+export const NATIVE_CHROME_PROTOCOL = 14;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
-export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces', 'random']);
+export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces', 'random', 'filter']);
 export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss']);
 export const NATIVE_DRAWER_EVENTS = Object.freeze(['select']);
 // 操作指引的目标：上滑展开更多功能（工具栏本身）
 export const NATIVE_TOUR_DRAWER = 'drawer';
 const SHEET_ROW_LIMIT = 300;
-const SHEET_TONES = ['danger', 'muted', 'warning', 'accent'];
+const SHEET_TONES = ['danger', 'muted', 'warning', 'accent', 'include', 'exclude'];
 const SHEET_ACTION_LIMIT = 6;
 const SHEET_SIZES = ['fit', 'list', 'card'];
 
@@ -364,7 +366,7 @@ function sanitizeSections(list, budget) {
         id: clipText(section && section.id, 32) || `section-${index}`,
         title: clipText(section && section.title, 40),
         footer: clipText(section && section.footer, 120),
-        style: section && section.style === 'footnote' ? 'footnote' : 'list',
+        style: section && ['footnote', 'chips'].includes(section.style) ? section.style : 'list',
         rows: sanitizeSheetRows(section && section.rows, budget)
     }));
 }

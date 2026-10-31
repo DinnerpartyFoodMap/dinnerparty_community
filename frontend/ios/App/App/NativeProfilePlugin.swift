@@ -4,10 +4,11 @@ import UIKit
 
 /// 本地 Capacitor 插件：iOS 原生住民主页（/users/:id）。
 ///
-/// open({ id, userId, theme, labels, profile, selfLevels, widgetOptions }) -> { id, action: back|openPlace, values }
+/// open({ id, userId, theme, labels, loading, profile, selfLevels, widgetOptions }) -> { id, action: back|openPlace, values }
+/// update({ id, profile? , error? }) -> {}：页面先滑入显示加载中，网页读到主页数据（或失败原因）后补上
 /// respond({ id, requestId, ok, message, profile }) -> {}
 /// close({ id }) -> {}
-/// 事件 profileEvent：{ id, type: setTasteLevel|saveWidgets|setBlocked, requestId, values }
+/// 事件 profileEvent：{ id, type: setTasteLevel|saveWidgets|setBlocked|reload, requestId, values }
 ///
 /// 网页取 profile、执行屏蔽 / 偏好 / 小组件请求，并把六轴、小组件与文案整理成可直接显示的快照；
 /// 原生只显示与收集输入，不访问后端、不持有凭证。
@@ -18,6 +19,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "respond", returnType: CAPPluginReturnPromise)
     ]
 
@@ -82,6 +84,19 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             guard call.getString("id") == self.requestID else { call.resolve(); return }
             self.finish(action: "back", animated: false) { call.resolve() }
+        }
+    }
+
+    /// 打开时还没有主页数据：网页读到后补上，读取失败时给出原因（页面显示“重试”）
+    @objc func update(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            defer { call.resolve() }
+            guard call.getString("id") == self.requestID, let model = self.model else { return }
+            if let profile = call.getObject("profile") {
+                model.applyProfile(profile)
+            } else {
+                model.applyLoadError(String((call.getString("error") ?? "").prefix(200)))
+            }
         }
     }
 
@@ -195,6 +210,10 @@ final class NativeProfileModel: ObservableObject {
     @Published private(set) var busy = false
     @Published var alertMessage: String?
     @Published var confirmBlock = false
+    /// 主页数据还没到（页面已经滑入）
+    @Published private(set) var loading: Bool
+    /// 读取失败的原因：显示在页面里，可以重试
+    @Published private(set) var loadError: String? = nil
 
     let dark: Bool
     let tint: Color
@@ -224,6 +243,30 @@ final class NativeProfileModel: ObservableObject {
         let profile = call.getObject("profile") ?? [:]
         let labels = baseLabels.merging(Self.strings(profile["labels"] as? JSObject)) { _, new in new }
         view = Self.parse(profile, labels: labels, selfLevels: selfLevels, widgetOptions: widgetOptions)
+        loading = call.getBool("loading", false)
+    }
+
+    func applyProfile(_ profile: JSObject) {
+        let labels = baseLabels.merging(Self.strings(profile["labels"] as? JSObject)) { _, new in new }
+        withAnimation(.easeOut(duration: 0.2)) {
+            view = Self.parse(profile, labels: labels, selfLevels: selfLevels, widgetOptions: widgetOptions)
+            loading = false
+            loadError = nil
+        }
+    }
+
+    func applyLoadError(_ message: String) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            loading = false
+            loadError = message.isEmpty ? text("loadFailed", "住民主页加载失败") : message
+        }
+    }
+
+    /// 读取失败后重试：网页重新读取，结果仍经 update 回来
+    func reload() {
+        loadError = nil
+        loading = true
+        send(["type": "reload", "requestId": UUID().uuidString, "values": [String: Any]()])
     }
 
     private static func strings(_ object: JSObject?) -> [String: String] {
@@ -395,17 +438,25 @@ private struct NativeProfileView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    headerCard
-                    if model.view.blocked {
+                    if model.loading {
+                        ProgressView()
+                            .controlSize(.large)
+                            .frame(maxWidth: .infinity, minHeight: 240)
+                            .accessibilityLabel(Text(model.text("loading", "加载中")))
+                    } else if let error = model.loadError {
                         NativeGlassCard(padding: 16) {
-                            Text(model.text("blockedNote", "你已屏蔽这位住民，TA 的地点和收藏不会显示给你。"))
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+                            VStack(spacing: 12) {
+                                Text(error)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                Button(model.text("retry", "重试")) { model.reload() }
+                                    .buttonStyle(.bordered)
+                            }
+                            .frame(maxWidth: .infinity)
                         }
                     } else {
-                        radarCard
-                        axisEditor
-                        widgets
+                        loadedContent
                     }
                 }
                 .padding(.horizontal, 16)
@@ -427,6 +478,10 @@ private struct NativeProfileView: View {
                     .accessibilityLabel(Text(model.text("back", "返回")))
                 }
             }
+            .sheet(isPresented: Binding(get: { model.editingWidgets != nil }, set: { if !$0 { model.editingWidgets = nil } })) {
+                widgetEditor
+                    .presentationDetents([.medium, .large])
+            }
         }
         .preferredColorScheme(model.dark ? .dark : .light)
         .tint(model.tint)
@@ -438,6 +493,22 @@ private struct NativeProfileView: View {
             Button(model.text("cancel", "取消"), role: .cancel) {}
         } message: {
             Text(model.text("blockConfirm", "屏蔽后，TA 创建的地点、公开日记和同好名片都不会再显示给你，可以随时解除。"))
+        }
+    }
+
+    @ViewBuilder
+    private var loadedContent: some View {
+        headerCard
+        if model.view.blocked {
+            NativeGlassCard(padding: 16) {
+                Text(model.text("blockedNote", "你已屏蔽这位住民，TA 的地点和收藏不会显示给你。"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            radarCard
+            axisEditor
+            widgets
         }
     }
 
@@ -547,28 +618,12 @@ private struct NativeProfileView: View {
 
     @ViewBuilder
     private var widgets: some View {
-        if model.editingWidgets != nil {
-            widgetEditor
-        }
         ForEach(model.view.sections) { section in
             NativeGlassCard(padding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(section.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        if section.kind == model.view.sections.first?.kind && model.view.canEditWidgets {
-                            Button {
-                                model.beginEditingWidgets()
-                            } label: {
-                                Text(model.text("widgetsEdit", "调整小组件"))
-                                    .font(.caption)
-                                    .foregroundStyle(model.tint)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    Text(section.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     if !section.empty.isEmpty && section.groups.isEmpty {
                         Text(section.empty)
                             .font(.footnote)
@@ -588,56 +643,60 @@ private struct NativeProfileView: View {
                 }
             }
         }
+        // 与 iOS 主屏幕“编辑小组件”相同的位置：所有小组件下面居中一枚胶囊按钮
+        if model.view.canEditWidgets {
+            Button {
+                model.beginEditingWidgets()
+            } label: {
+                Label(model.text("widgetsEdit", "调整小组件"), systemImage: "square.grid.2x2")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .nativeGlassSurface(cornerRadius: 22)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(model.tint)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+        }
     }
 
+    /// 调整小组件：系统表单，每个位置一个选择器；右上角保存
     private var widgetEditor: some View {
-        NativeGlassCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(model.text("widgetsEdit", "调整小组件"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                if let slots = model.editingWidgets {
-                    ForEach(Array(slots.enumerated()), id: \.offset) { index, _ in
-                        HStack {
-                            Text(slotLabel(index))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Picker("", selection: Binding(
-                                get: { model.editingWidgets?[safe: index] ?? "recent" },
-                                set: { model.setEditingWidget(index, $0) }
-                            )) {
-                                ForEach(model.view.widgetOptions) { option in
-                                    Text(option.title).tag(option.id)
-                                }
+        NavigationStack {
+            Form {
+                Section {
+                    ForEach(Array((model.editingWidgets ?? []).enumerated()), id: \.offset) { index, _ in
+                        Picker(slotLabel(index), selection: Binding(
+                            get: { model.editingWidgets?[safe: index] ?? "recent" },
+                            set: { model.setEditingWidget(index, $0) }
+                        )) {
+                            ForEach(model.view.widgetOptions) { option in
+                                Text(option.title).tag(option.id)
                             }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .tint(model.tint)
                         }
+                        .pickerStyle(.menu)
                     }
                 }
-                HStack(spacing: 10) {
-                    Button {
-                        model.editingWidgets = nil
-                    } label: {
-                        Text(model.text("cancel", "取消"))
-                            .font(.caption)
-                            .nativeChip()
+            }
+            .navigationTitle(model.text("widgetsEdit", "调整小组件"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(model.text("cancel", "取消")) { model.editingWidgets = nil }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if model.busy {
+                        ProgressView()
+                    } else {
+                        Button(model.text("save", "保存")) { model.saveWidgets() }
+                            .font(.body.weight(.semibold))
                     }
-                    .buttonStyle(.plain)
-                    Button {
-                        model.saveWidgets()
-                    } label: {
-                        Text(model.text("save", "保存"))
-                            .font(.caption.weight(.semibold))
-                            .nativeChip(selected: true, tint: model.tint)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(model.busy)
                 }
             }
         }
+        .tint(model.tint)
+        .preferredColorScheme(model.dark ? .dark : .light)
     }
 
     private func slotLabel(_ index: Int) -> String {

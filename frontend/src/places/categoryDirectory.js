@@ -2,11 +2,15 @@
 import { fetchCategories } from '../api/client';
 
 let categoriesPromise = null;
+let loadedCategories = null;
 
 export function loadCategoryDirectory(backendUrl) {
     if (!categoriesPromise) {
         categoriesPromise = fetchCategories(backendUrl)
-            .then((list) => list.filter((item) => item && item.name))
+            .then((list) => {
+                loadedCategories = list.filter((item) => item && item.name);
+                return loadedCategories;
+            })
             .catch((error) => {
                 categoriesPromise = null;
                 throw error;
@@ -15,7 +19,12 @@ export function loadCategoryDirectory(backendUrl) {
     return categoriesPromise;
 }
 
-/** 添加地点后目录可能多了新分类：下次读取时重新请求 */
+/** 已经读到的目录（还没读到时为 null）：打开面板时直接用，不等网络 */
+export function peekCategoryDirectory() {
+    return loadedCategories;
+}
+
+/** 添加地点后目录可能多了新分类：下次读取时重新请求（读到之前仍可先用旧目录） */
 export function invalidateCategoryDirectory() {
     categoriesPromise = null;
 }

@@ -16,7 +16,15 @@ try {
     assert.equal(matchesFilter({ latitude: 23.131, longitude: 113.26 }, filter), true);
     assert.equal(matchesFilter({ latitude: 23.14, longitude: 113.26 }, filter), false);
     assert.equal(normalizeListFilter({ lat: '', lng: '113.26', radiusKm: '0.5' }).distance, null);
-    console.log('500m normalization and nearby/distant place filtering passed.');
+    const tagged = normalizeListFilter({ tags: '火锅店,烧烤,小吃', excludeTags: '小吃,连锁店' });
+    assert.deepEqual([tagged.tags, tagged.excludeTags], [['火锅店', '烧烤'], ['小吃', '连锁店']], 'a tag in both lists counts as excluded');
+    assert.equal(matchesFilter({ category: '烧烤' }, tagged), true, 'green tags: any one matches');
+    assert.equal(matchesFilter({ category: '烧烤, 连锁店' }, tagged), false, 'red tags: any one excludes');
+    assert.equal(matchesFilter({ category: '粤菜' }, tagged), false);
+    const excludeOnly = normalizeListFilter({ excludeTags: '避雷' });
+    assert.equal(matchesFilter({ category: '粤菜' }, excludeOnly), true, 'only red tags: everything else stays');
+    assert.equal(matchesFilter({ category: '粤菜, 避雷' }, excludeOnly), false);
+    console.log('500m normalization, nearby/distant and include/exclude tag filtering passed.');
 } finally {
     db._raw.close();
     assert.equal(path.dirname(temporaryRoot), os.tmpdir());

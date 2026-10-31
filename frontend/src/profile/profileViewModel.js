@@ -134,6 +134,7 @@ export function profileBaseLabels() {
         blockAndReport: t('profile:blockAndReport'),
         unblock: t('profile:unblock'),
         retry: t('profile:retry'),
+        loading: t('common:status.loading'),
         loadFailed: t('profile:loadFailed'),
         notFound: t('profile:notFound')
     };

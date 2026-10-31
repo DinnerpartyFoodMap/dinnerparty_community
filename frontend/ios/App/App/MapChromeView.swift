@@ -830,6 +830,8 @@ private struct MapChromeMorphingPanel<Buttons: View>: View {
     let maxHeight: CGFloat
     let buttons: Buttons
     @State private var expanded = false
+    /// 右侧按钮组：面板打开时立即隐去，收起时等外壳完全缩回右侧后再淡入（不跟着外壳一起变形，避免先跑到面板左侧）
+    @State private var buttonsShown = true
     @State private var closingPanel: MapChromeSheet?
     @State private var panelHeight: CGFloat = 0
     @State private var dragOffset: CGFloat = 0
@@ -860,10 +862,9 @@ private struct MapChromeMorphingPanel<Buttons: View>: View {
             .overlay(alignment: .bottomTrailing) {
                 buttons
                     .frame(width: 50, height: buttonHeight)
-                    .opacity(expanded ? 0 : 1)
-                    .allowsHitTesting(panel == nil && !expanded)
-                    .accessibilityHidden(panel != nil || expanded)
-                    .animation(.easeOut(duration: 0.12), value: expanded)
+                    .opacity(buttonsShown ? 1 : 0)
+                    .allowsHitTesting(panel == nil && !expanded && buttonsShown)
+                    .accessibilityHidden(panel != nil || expanded || !buttonsShown)
             }
             .overlay(alignment: .bottomTrailing) {
                 if let content {
@@ -905,6 +906,7 @@ private struct MapChromeMorphingPanel<Buttons: View>: View {
                 dragOffset = 0
             }
             closingPanel = next
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.1)) { buttonsShown = false }
             withAnimation(animation) { expanded = true }
         } else {
             withAnimation(animation, completionCriteria: .logicallyComplete) {
@@ -915,6 +917,8 @@ private struct MapChromeMorphingPanel<Buttons: View>: View {
                 guard revision == current, !expanded else { return }
                 closingPanel = nil
                 panelHeight = 0
+                // 外壳已经缩回按钮大小：此时按钮就在最终位置，直接淡入
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) { buttonsShown = true }
             }
         }
     }

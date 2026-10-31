@@ -81,8 +81,14 @@ final class NativeScreenSlideAnimator: NSObject, UIViewControllerAnimatedTransit
 /// 持有转场并安装左边缘侧滑：根页面关闭，子页面调用页面栈返回。
 final class NativeScreenPresenter: NSObject {
     private let transition = NativeScreenTransitionDelegate()
+    private weak var gesture: UIScreenEdgePanGestureRecognizer?
 
     var onEdgeBack: (() -> Void)?
+
+    /// 只在根页启用：子页的左边缘侧滑是系统导航的跟手返回，两个手势不能同时响应
+    var edgeEnabled = true {
+        didSet { gesture?.isEnabled = edgeEnabled }
+    }
 
     func present(_ host: UIViewController, from presenter: UIViewController, completion: (() -> Void)? = nil) {
         host.modalPresentationStyle = .custom
@@ -90,7 +96,9 @@ final class NativeScreenPresenter: NSObject {
         host.modalPresentationCapturesStatusBarAppearance = true
         let gesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdge(_:)))
         gesture.edges = .left
+        gesture.isEnabled = edgeEnabled
         host.view.addGestureRecognizer(gesture)
+        self.gesture = gesture
         presenter.present(host, animated: !UIAccessibility.isReduceMotionEnabled, completion: completion)
     }
 

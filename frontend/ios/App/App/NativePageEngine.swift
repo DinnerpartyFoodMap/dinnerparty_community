@@ -3,8 +3,10 @@ import UIKit
 import PhotosUI
 import Capacitor
 
-/// 原生页面引擎：网页下发声明式页面模型，SwiftUI 负责玻璃界面、输入与动作。
+/// 原生页面引擎：网页下发声明式页面模型，SwiftUI 负责系统分组列表、页面栈、输入与动作。
 /// 管理后台与日记 · 同好共用；所有账号请求、权限与业务规则仍在网页层。
+/// 页面结构与住民设置一致：根页与子页都是 insetGrouped 列表，子页由 NavigationStack 推入（系统返回与侧滑）；
+/// 一行有多个操作时推入这一行的详情页，表单也是推入的页面，不再用操作菜单或全屏弹窗。
 enum NativePageValue: Equatable {
     case text(String)
     case number(Double)
@@ -69,6 +71,8 @@ struct NativePageAction: Identifiable {
     let confirmTitle: String
     let confirmMessage: String
     let confirmButton: String
+    /// 打开下一级页面：点按后立即推入占位页，网页回传后换成真正的页面
+    let push: Bool
 
     var destructive: Bool { tone == "danger" || tone == "warning" }
 }
@@ -174,12 +178,21 @@ struct NativePageSpec {
     let loading: Bool
     let backTitle: String
     let closeTitle: String
+    /// 在网页侧的层级：0 为根页（入口 / 后台首页），越深越大；决定新页面是推入、刷新还是退回
+    let level: Int
+    let cancelTitle: String
+    let okTitle: String
+    let timeoutText: String
+    let pickImageTitle: String
+    let removeImageTitle: String
 
     static let empty = NativePageSpec(
         id: "empty", title: "", subtitle: "", message: "", error: "", emptyText: "",
         canGoBack: false, searchPlaceholder: "", searchValue: "", tabs: [], selectedTab: "",
         sections: [], buttons: [], pagerText: "", pagerPrev: "", pagerNext: "",
-        loading: true, backTitle: "返回", closeTitle: "关闭"
+        loading: true, backTitle: "返回", closeTitle: "关闭", level: 0,
+        cancelTitle: "取消", okTitle: "好", timeoutText: "请求超时，请稍后重试",
+        pickImageTitle: "选择图片", removeImageTitle: "移除"
     )
 }
 
@@ -210,7 +223,8 @@ enum NativePageParser {
                 kind: item["kind"] as? String ?? "action",
                 confirmTitle: confirm?["title"] as? String ?? "",
                 confirmMessage: confirm?["message"] as? String ?? "",
-                confirmButton: confirm?["button"] as? String ?? (item["title"] as? String ?? "")
+                confirmButton: confirm?["button"] as? String ?? (item["title"] as? String ?? ""),
+                push: item["push"] as? Bool ?? false
             )
         }
     }
@@ -322,6 +336,12 @@ enum NativePageParser {
 
     static func spec(_ value: Any?) -> NativePageSpec {
         guard let item = value as? JSObject else { return .empty }
+        let canGoBack = item["canGoBack"] as? Bool ?? false
+        let labels = strings(item["labels"] as? JSObject)
+        func label(_ key: String, _ fallback: String) -> String {
+            guard let text = labels[key], !text.isEmpty else { return fallback }
+            return text
+        }
         return NativePageSpec(
             id: item["id"] as? String ?? "page-\(UUID().uuidString)",
             title: item["title"] as? String ?? "",
@@ -329,7 +349,7 @@ enum NativePageParser {
             message: item["message"] as? String ?? "",
             error: item["error"] as? String ?? "",
             emptyText: item["empty"] as? String ?? "",
-            canGoBack: item["canGoBack"] as? Bool ?? false,
+            canGoBack: canGoBack,
             searchPlaceholder: item["searchPlaceholder"] as? String ?? "",
             searchValue: item["searchValue"] as? String ?? "",
             tabs: options(item["tabs"]),
@@ -341,7 +361,13 @@ enum NativePageParser {
             pagerNext: item["pagerNext"] as? String ?? "",
             loading: item["loading"] as? Bool ?? false,
             backTitle: item["backTitle"] as? String ?? "返回",
-            closeTitle: item["closeTitle"] as? String ?? "关闭"
+            closeTitle: item["closeTitle"] as? String ?? "关闭",
+            level: (item["level"] as? NSNumber)?.intValue ?? (canGoBack ? 1 : 0),
+            cancelTitle: label("cancel", "取消"),
+            okTitle: label("ok", "好"),
+            timeoutText: label("timeout", "请求超时，请稍后重试"),
+            pickImageTitle: label("pickImage", "选择图片"),
+            removeImageTitle: label("removeImage", "移除")
         )
     }
 }
@@ -353,36 +379,165 @@ struct NativePageConfirm: Identifiable {
     let action: NativePageAction
 }
 
+/// 页面栈里的一页。page 是网页下发的页面（level 为它在网页侧的层级，0 为根页）；
+/// loading 是点开下一级后、网页还没回传时先推入的占位页；row / form 是原生自己的二级页
+/// （一行有多个操作时的详情页、可编辑的表单），属于下面那一级网页页面（level 相同、local 为真）。
+enum NativePageScreen {
+    case page(NativePageSpec)
+    case loading(title: String, level: Int)
+    case row(NativePageRow, level: Int)
+    case form(NativePageForm, level: Int)
+
+    var level: Int {
+        switch self {
+        case .page(let spec): return spec.level
+        case .loading(_, let level), .row(_, let level), .form(_, let level): return level
+        }
+    }
+
+    /// 原生自己的二级页（不对应网页页面）
+    var local: Bool {
+        switch self {
+        case .row, .form: return true
+        default: return false
+        }
+    }
+}
+
+struct NativePageRoute: Hashable {
+    let id: Int
+}
+
+/// 管理后台与日记 · 同好共用的页面栈：根页 + NavigationStack 路径。
+/// 网页按“动作 → 新页面”回传；新页面的 level 决定推入（更深）、原地刷新（同级）还是退回（更浅）。
+/// 系统返回（导航栏返回、左边缘侧滑）由 NavigationStack 完成，弹出网页页面后通知网页回到对应层级。
 final class NativePageModel: ObservableObject {
-    @Published var spec: NativePageSpec
-    @Published var loading = false
+    @Published var root: NativePageSpec
+    @Published var path: [NativePageRoute] = [] {
+        didSet { pathChanged(from: oldValue) }
+    }
+    @Published private(set) var screens: [Int: NativePageScreen] = [:]
+    @Published private(set) var loading = false
+    /// 正在等网页回传的那一行（行尾显示转圈）
+    @Published private(set) var busyRow: String?
     @Published var toast: String?
     @Published var alertMessage: String?
-    @Published var form: NativePageForm?
     @Published var images: [String: UIImage] = [:]
     @Published var confirming: NativePageConfirm?
-    @Published var actionSheet: NativePageRow?
+
+    /// 子页数量变化：插件据此只在根页启用“侧滑关闭整页”，子页交给 NavigationStack 的系统返回
+    var onDepthChange: ((Int) -> Void)?
 
     private let onEvent: (String, [String: Any]) -> Void
     private let onLoadImage: (String) -> Void
     private var requestedImages = Set<String>()
     private var toastToken = 0
+    private var routeSeq = 0
+    private var programmatic = false
+    private var pendingWork: DispatchWorkItem?
 
     init(spec: NativePageSpec,
          onEvent: @escaping (String, [String: Any]) -> Void,
          onLoadImage: @escaping (String) -> Void) {
-        self.spec = spec
+        self.root = spec
         self.onEvent = onEvent
         self.onLoadImage = onLoadImage
     }
 
-    func apply(_ next: NativePageSpec) {
-        spec = next
-        loading = false
+    var depth: Int { path.count }
+
+    func screen(_ route: NativePageRoute) -> NativePageScreen? { screens[route.id] }
+
+    /// 当前最上面那一级网页页面的层级（原生二级页算它下面那一页）
+    private var topLevel: Int {
+        for route in path.reversed() {
+            if let screen = screens[route.id] { return screen.level }
+        }
+        return root.level
     }
 
-    func setLoading(_ value: Bool) {
-        withAnimation(.easeOut(duration: 0.15)) { loading = value }
+    // MARK: 路径
+
+    private func push(_ screen: NativePageScreen) {
+        routeSeq += 1
+        screens[routeSeq] = screen
+        programmatic = true
+        path.append(NativePageRoute(id: routeSeq))
+        programmatic = false
+    }
+
+    private func truncate(to count: Int) {
+        guard count < path.count else { return }
+        programmatic = true
+        path = Array(path.prefix(max(0, count)))
+        programmatic = false
+    }
+
+    private func pathChanged(from old: [NativePageRoute]) {
+        let removed = old.filter { route in !path.contains(route) }
+        // 先按被弹出页的类型判断，再清掉它们
+        let poppedRemote = removed.contains { route in !(screens[route.id]?.local ?? true) }
+        for route in removed { screens[route.id] = nil }
+        onDepthChange?(path.count)
+        guard !programmatic, poppedRemote else { return }
+        // 用户点返回或侧滑弹出了网页页面（或还在加载的占位页）：让网页回到现在最上面的层级并刷新它
+        finishPending()
+        request("back", ["level": topLevel])
+    }
+
+    // MARK: 网页回传
+
+    /// 网页回传的新页面：更深一级时推入，同级原地刷新，更浅时退回到那一级
+    func apply(_ next: NativePageSpec) {
+        finishPending()
+        if next.level <= 0 {
+            root = next
+            truncate(to: 0)
+        } else if let index = path.lastIndex(where: { route in
+            guard let screen = screens[route.id] else { return false }
+            return !screen.local && screen.level == next.level
+        }) {
+            screens[path[index].id] = .page(next)
+            truncate(to: index + 1)
+        } else {
+            // 新的一级：保留所有更浅的页（含原生二级页），推入
+            if let keep = path.lastIndex(where: { (screens[$0.id]?.level ?? 0) < next.level }) {
+                truncate(to: keep + 1)
+            } else {
+                truncate(to: 0)
+            }
+            push(.page(next))
+        }
+    }
+
+    /// 网页要求填写表单（编辑、新建）：推入原生表单页
+    func presentForm(_ form: NativePageForm) {
+        finishPending()
+        // 还在加载的占位页让给表单
+        if let last = path.last, case .loading = screens[last.id] { truncate(to: path.count - 1) }
+        push(.form(form, level: topLevel))
+    }
+
+    /// 只有提示、没有新页面的回执：收起占位页；提交成功的表单页退回
+    func finishWithoutPage(error: Bool) {
+        let wasLoading = loading
+        finishPending()
+        guard let last = path.last, let screen = screens[last.id] else { return }
+        switch screen {
+        case .loading:
+            truncate(to: path.count - 1)
+        case .form:
+            if wasLoading && !error { truncate(to: path.count - 1) }
+        default:
+            break
+        }
+    }
+
+    private func finishPending() {
+        pendingWork?.cancel()
+        pendingWork = nil
+        busyRow = nil
+        withAnimation(.easeOut(duration: 0.15)) { loading = false }
     }
 
     func showToast(_ message: String) {
@@ -406,121 +561,105 @@ final class NativePageModel: ObservableObject {
         if let image { images[id] = image }
     }
 
-    func request(_ type: String, _ payload: [String: Any] = [:]) {
+    // MARK: 用户操作
+
+    /// 发给网页并等待回传；超时（网页没有响应）时提示并收起占位页，不让页面一直卡住
+    private func send(_ type: String, _ payload: [String: Any], row: String? = nil) {
+        pendingWork?.cancel()
+        busyRow = row
+        withAnimation(.easeOut(duration: 0.15)) { loading = true }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.finishWithoutPage(error: true)
+            self.alertMessage = self.root.timeoutText
+        }
+        pendingWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: work)
         onEvent(type, payload)
     }
 
-    func perform(_ action: NativePageAction) {
+    func request(_ type: String, _ payload: [String: Any] = [:]) {
+        if type == "back" {
+            // 返回只是让网页同步层级并刷新那一页，界面已经退回，不显示加载
+            onEvent(type, payload)
+            return
+        }
+        send(type, payload)
+    }
+
+    func perform(_ action: NativePageAction, row: NativePageRow? = nil) {
         if !action.confirmTitle.isEmpty || !action.confirmMessage.isEmpty {
             confirming = NativePageConfirm(action: action)
         } else {
-            request("action", ["actionId": action.id])
+            run(action, row: row)
         }
     }
 
     func confirm(_ action: NativePageAction) {
-        request("action", ["actionId": action.id])
+        run(action, row: nil)
     }
 
+    private func run(_ action: NativePageAction, row: NativePageRow?) {
+        guard !loading else { return }
+        if action.push {
+            // 下一级页面：先推入占位页（标题用这一行），网页回传后原地换成真正的页面
+            push(.loading(title: row?.title ?? action.title, level: topLevel + 1))
+            }
+        send("action", ["actionId": action.id], row: action.push ? nil : row?.id)
+    }
+
+    /// 点一行：一个操作直接执行；多个操作推入这一行的详情页，操作列在里面（代替隐藏的操作菜单）
     func tap(_ row: NativePageRow) {
-        guard !row.actions.isEmpty else { return }
+        guard !row.actions.isEmpty, !loading else { return }
         if row.actions.count == 1 {
-            perform(row.actions[0])
+            perform(row.actions[0], row: row)
         } else {
-            actionSheet = row
-        }
+            push(.row(row, level: topLevel))
+            }
     }
 
-    func back() { request("back") }
-    func close() { request("close") }
+    func openForm(_ form: NativePageForm) {
+        push(.form(form, level: topLevel))
+    }
+
+    func back() {
+        guard !path.isEmpty else { return }
+        path.removeLast()
+    }
+
+    func close() { onEvent("close", [:]) }
 
     func filter(_ id: String, _ value: String) {
-        request("filter", ["filterId": id, "value": value])
+        send("filter", ["filterId": id, "value": value])
     }
 
     func submit(_ form: NativePageForm, values: [String: Any]) {
-        request("submit", ["formId": form.id, "values": values])
+        send("submit", ["formId": form.id, "values": values])
     }
 
     func photo(_ actionId: String, base64: String) {
-        request("action", ["actionId": actionId, "image": base64])
+        send("action", ["actionId": actionId, "image": base64])
     }
 }
 
 // MARK: - 页面
 
+/// 与住民设置同一种结构：根页与各级子页都是系统分组列表（insetGrouped），子页由 NavigationStack 推入，
+/// 返回、左边缘侧滑都是系统导航的跟手动画。
 struct NativePageView: View {
     @ObservedObject var model: NativePageModel
-    @State private var search = ""
-    @State private var searchInitialized = false
 
-    /// 其它文件（管理后台 / 日记插件）需要通过这个 internal 初始化器创建页面；
-    /// 私有 @State 会让编译器合成的 memberwise init 变成 private。
+    /// 其它文件（管理后台 / 日记插件）需要通过这个 internal 初始化器创建页面
     init(model: NativePageModel) {
         self.model = model
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    header
-                    searchField
-                    tabs
-                    if !model.spec.message.isEmpty {
-                        notice(model.spec.message, tone: "success", close: false)
-                    }
-                    if !model.spec.error.isEmpty {
-                        notice(model.spec.error, tone: "error", close: false)
-                    }
-                    ForEach(model.spec.sections) { section in
-                        sectionView(section)
-                    }
-                    if !model.spec.emptyText.isEmpty && model.spec.sections.isEmpty {
-                        NativeGlassCard(padding: 16) {
-                            Text(model.spec.emptyText)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                    }
-                    buttons
-                    pager
+        NavigationStack(path: $model.path) {
+            NativePageList(model: model, spec: model.root, isRoot: true)
+                .navigationDestination(for: NativePageRoute.self) { route in
+                    destination(route)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .background(NativeSheetBackground().ignoresSafeArea())
-            .navigationTitle(model.spec.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        if model.spec.canGoBack {
-                            model.back()
-                        } else {
-                            model.close()
-                        }
-                    } label: {
-                        Image(systemName: "chevron.backward")
-                            .font(.headline)
-                    }
-                    .accessibilityLabel(Text(model.spec.canGoBack ? model.spec.backTitle : model.spec.closeTitle))
-                }
-            }
-        }
-        .preferredColorScheme(nil)
-        .overlay {
-            if model.loading {
-                ZStack {
-                    Color.black.opacity(0.08).ignoresSafeArea()
-                    ProgressView()
-                        .padding(20)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-            }
         }
         .overlay(alignment: .bottom) {
             if let toast = model.toast {
@@ -531,31 +670,10 @@ struct NativePageView: View {
                     .background(.regularMaterial, in: Capsule())
                     .padding(.bottom, 28)
                     .transition(.opacity)
+                    .accessibilityAddTraits(.updatesFrequently)
             }
         }
         .animation(.easeOut(duration: 0.2), value: model.toast)
-        .sheet(item: $model.form) { form in
-            NativeFormSheet(form: form, model: model)
-                .presentationDetents([.large])
-                .presentationBackground(.clear)
-        }
-        .confirmationDialog(
-            model.actionSheet?.title ?? "",
-            isPresented: Binding(get: { model.actionSheet != nil }, set: { if !$0 { model.actionSheet = nil } }),
-            titleVisibility: .visible
-        ) {
-            if let row = model.actionSheet {
-                ForEach(row.actions) { action in
-                    Button(role: action.destructive ? ButtonRole.destructive : nil) {
-                        model.actionSheet = nil
-                        model.perform(action)
-                    } label: {
-                        Text(action.title)
-                    }
-                }
-            }
-            Button(model.spec.closeTitle, role: .cancel) { model.actionSheet = nil }
-        }
         .alert(model.confirming?.action.confirmTitle ?? "", isPresented: Binding(
             get: { model.confirming != nil },
             set: { if !$0 { model.confirming = nil } }
@@ -566,294 +684,377 @@ struct NativePageView: View {
                     model.confirming = nil
                     model.confirm(confirm.action)
                 }
-                Button(model.spec.closeTitle, role: .cancel) { model.confirming = nil }
+                Button(model.root.cancelTitle, role: .cancel) { model.confirming = nil }
             }
         } message: {
             Text(model.confirming?.action.confirmMessage ?? "")
         }
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
-            Button("好", role: .cancel) {}
-        }
-        .onAppear {
-            guard !searchInitialized else { return }
-            searchInitialized = true
-            search = model.spec.searchValue
-        }
-        .onChange(of: model.spec.id) { _, _ in
-            search = model.spec.searchValue
+            Button(model.root.okTitle, role: .cancel) {}
         }
     }
 
     @ViewBuilder
-    private var header: some View {
-        if !model.spec.subtitle.isEmpty {
-            NativeGlassCard(padding: 14) {
-                Text(model.spec.subtitle)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+    private func destination(_ route: NativePageRoute) -> some View {
+        switch model.screen(route) {
+        case .page(let spec):
+            NativePageList(model: model, spec: spec, isRoot: false)
+        case .loading(let title, _):
+            ProgressView()
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+        case .row(let row, _):
+            NativePageRowDetail(model: model, row: row)
+        case .form(let form, _):
+            NativeFormPage(form: form, model: model)
+        case .none:
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
         }
     }
+}
 
-    @ViewBuilder
-    private var searchField: some View {
-        if !model.spec.searchPlaceholder.isEmpty {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                TextField(model.spec.searchPlaceholder, text: $search)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .onSubmit { model.filter("search", search.trimmingCharacters(in: .whitespaces)) }
-                if !search.isEmpty {
-                    Button {
-                        search = ""
-                        model.filter("search", "")
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
+/// 一页网页下发的内容：分组列表
+private struct NativePageList: View {
+    @ObservedObject var model: NativePageModel
+    let spec: NativePageSpec
+    let isRoot: Bool
+    @State private var search = ""
+
+    var body: some View {
+        List {
+            if !spec.subtitle.isEmpty {
+                Section {
+                    Text(spec.subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .nativeFieldBackground()
+            if !spec.message.isEmpty {
+                Section {
+                    Label(spec.message, systemImage: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.green)
+                }
+            }
+            if !spec.error.isEmpty {
+                Section {
+                    Label(spec.error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.red)
+                }
+            }
+            if !spec.tabs.isEmpty {
+                Section {
+                    tabsView
+                }
+            }
+            if spec.loading {
+                Section {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                }
+            }
+            ForEach(spec.sections) { section in
+                sectionView(section)
+            }
+            if !spec.emptyText.isEmpty && spec.sections.isEmpty && !spec.loading {
+                Section {
+                    Text(spec.emptyText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            if !spec.buttons.isEmpty {
+                Section {
+                    ForEach(spec.buttons) { action in
+                        buttonRow(action)
+                    }
+                }
+            }
+            if !spec.pagerText.isEmpty || !spec.pagerPrev.isEmpty || !spec.pagerNext.isEmpty {
+                Section {
+                    pager
+                }
+            }
         }
+        .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
+        .modifier(NativePageSearch(enabled: !spec.searchPlaceholder.isEmpty, placeholder: spec.searchPlaceholder, text: $search) {
+            model.filter("search", search.trimmingCharacters(in: .whitespaces))
+        })
+        .navigationTitle(spec.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if isRoot {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        model.close()
+                    } label: {
+                        Image(systemName: "chevron.backward").font(.headline)
+                    }
+                    .accessibilityLabel(Text(spec.closeTitle))
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if model.loading && model.busyRow == nil {
+                    ProgressView()
+                }
+            }
+        }
+        .onAppear { search = spec.searchValue }
+        .onChange(of: spec.id) { _, _ in search = spec.searchValue }
     }
 
     @ViewBuilder
-    private var tabs: some View {
-        if !model.spec.tabs.isEmpty {
+    private var tabsView: some View {
+        if spec.tabs.count <= 4 {
+            Picker("", selection: Binding(
+                get: { spec.selectedTab },
+                set: { model.filter("tabs", $0) }
+            )) {
+                ForEach(spec.tabs) { option in
+                    Text(option.title).tag(option.id)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+        } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(model.spec.tabs) { option in
-                        let selected = option.id == model.spec.selectedTab
-                        Button {
+                    ForEach(spec.tabs) { option in
+                        NativeTagChip(title: option.title, selected: option.id == spec.selectedTab) {
                             model.filter("tabs", option.id)
-                        } label: {
-                            Text(option.title)
-                                .font(.caption.weight(selected ? .semibold : .regular))
-                                .nativeChip(selected: selected, tint: .accentColor)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, 4)
             }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
         }
     }
 
     @ViewBuilder
     private func sectionView(_ section: NativePageSection) -> some View {
-        if !section.rows.isEmpty {
-            NativeGlassCard(padding: 10) {
-                VStack(alignment: .leading, spacing: 0) {
-                    if !section.title.isEmpty {
-                        Text(section.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.top, 4)
-                            .padding(.bottom, 6)
-                    }
-                    ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
-                        rowView(row)
-                        if index < section.rows.count - 1 {
-                            Divider().padding(.leading, row.protectedImage.isEmpty && row.image.isEmpty ? 8 : 62)
-                        }
-                    }
+        Section {
+            if !section.rows.isEmpty {
+                ForEach(section.rows) { row in
+                    NativePageRowButton(model: model, row: row)
                 }
-            }
-        } else if let calendar = section.calendar {
-            NativeCalendarCard(calendar: calendar) { action in
-                model.request("action", ["actionId": action])
-            }
-        } else if let form = section.form {
-            NativeInlineForm(form: form, model: model)
-        } else if !section.images.isEmpty {
-            NativeImageGrid(images: section.images, model: model)
-        } else if !section.text.isEmpty {
-            NativeGlassCard(padding: 14) {
-                Text(section.text)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    private func rowView(_ row: NativePageRow) -> some View {
-        Button {
-            model.tap(row)
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                rowImage(row)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(row.title)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(2)
-                        if !row.badge.isEmpty {
-                            Text(row.badge)
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(badgeColor(row.badgeTone).opacity(0.14), in: Capsule())
-                                .foregroundStyle(badgeColor(row.badgeTone))
-                        }
-                    }
-                    if !row.subtitle.isEmpty {
-                        Text(row.subtitle)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    if !row.detail.isEmpty {
-                        Text(row.detail)
-                            .font(.caption2)
+            } else if let calendar = section.calendar {
+                NativeCalendarCard(calendar: calendar) { action in
+                    model.request("action", ["actionId": action])
+                }
+            } else if let form = section.form {
+                // 表单只显示当前值；“编辑”推入可编辑的表单页
+                ForEach(form.fields) { field in
+                    NativeReadOnlyField(field: field)
+                }
+                Button {
+                    model.openForm(form)
+                } label: {
+                    HStack {
+                        Text(form.openTitle)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
                             .foregroundStyle(.tertiary)
-                            .lineLimit(3)
                     }
-                    if !row.chips.isEmpty {
-                        NativeFlowLayout(spacing: 6, lineSpacing: 6) {
-                            ForEach(row.chips) { chip in
-                                Text(chip.text)
-                                    .font(.caption2)
-                                    .nativeChip(selected: chip.tone == "primary", tint: .accentColor)
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
+                    .contentShape(Rectangle())
                 }
-                Spacer(minLength: 4)
-                if !row.actions.isEmpty {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 9)
-            .background(row.selected ? Color.accentColor.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(row.actions.isEmpty)
-    }
-
-    @ViewBuilder
-    private func rowImage(_ row: NativePageRow) -> some View {
-        if !row.protectedImage.isEmpty {
-            if let image = model.images[row.protectedImage] {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 48, height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            } else {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-                    .frame(width: 48, height: 48)
-                    .overlay(Image(systemName: "photo").foregroundStyle(.tertiary))
-                    .onAppear { model.loadImage(row.protectedImage) }
-            }
-        } else if let url = URL(string: row.image), url.scheme == "https" {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Color.primary.opacity(0.06)
-            }
-            .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-    }
-
-    @ViewBuilder
-    private var buttons: some View {
-        if !model.spec.buttons.isEmpty {
-            NativeGlassCard(padding: 12) {
-                VStack(spacing: 8) {
-                    ForEach(model.spec.buttons) { action in
-                        if action.kind == "photo" {
-                            PhotosPicker(selection: Binding(get: { nil as PhotosPickerItem? }, set: { item in
-                                guard let item else { return }
-                                Task {
-                                    if let data = try? await item.loadTransferable(type: Data.self),
-                                       let image = UIImage(data: data),
-                                       let encoded = NativePageImage.encode(image) {
-                                        await MainActor.run { model.photo(action.id, base64: encoded) }
-                                    }
-                                }
-                            }), matching: .images) {
-                                actionLabel(action)
-                            }
-                        } else {
-                            Button {
-                                model.perform(action)
-                            } label: {
-                                actionLabel(action)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func actionLabel(_ action: NativePageAction) -> some View {
-        Text(action.title)
-            .font(.body.weight(.medium))
-            .frame(maxWidth: .infinity, minHeight: 40)
-            .nativeChip(selected: action.tone == "primary", tint: .accentColor)
-    }
-
-    @ViewBuilder
-    private var pager: some View {
-        if !model.spec.pagerText.isEmpty || !model.spec.pagerPrev.isEmpty || !model.spec.pagerNext.isEmpty {
-            HStack(spacing: 8) {
-                if !model.spec.pagerPrev.isEmpty {
-                    Button {
-                        model.request("action", ["actionId": model.spec.pagerPrev])
-                    } label: {
-                        Image(systemName: "chevron.backward")
-                            .frame(width: 36, height: 36)
-                            .nativeChip()
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-                Text(model.spec.pagerText)
-                    .font(.caption)
+            } else if !section.images.isEmpty {
+                NativeImageGrid(images: section.images, model: model)
+            } else if !section.text.isEmpty {
+                Text(section.text)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Spacer()
-                if !model.spec.pagerNext.isEmpty {
-                    Button {
-                        model.request("action", ["actionId": model.spec.pagerNext])
-                    } label: {
-                        Image(systemName: "chevron.forward")
-                            .frame(width: 36, height: 36)
-                            .nativeChip()
+            }
+        } header: {
+            if !section.title.isEmpty {
+                Text(section.title)
+            } else if let form = section.form, !form.title.isEmpty {
+                Text(form.title)
+            }
+        } footer: {
+            if let form = section.form, !form.message.isEmpty {
+                Text(form.message)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func buttonRow(_ action: NativePageAction) -> some View {
+        if action.kind == "photo" {
+            PhotosPicker(selection: Binding(get: { nil as PhotosPickerItem? }, set: { item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data),
+                       let encoded = NativePageImage.encode(image) {
+                        await MainActor.run { model.photo(action.id, base64: encoded) }
                     }
-                    .buttonStyle(.plain)
+                }
+            }), matching: .images) {
+                Label(action.title, systemImage: "photo.on.rectangle")
+            }
+            .disabled(model.loading)
+        } else {
+            Button(role: action.destructive ? ButtonRole.destructive : nil) {
+                model.perform(action)
+            } label: {
+                HStack {
+                    Text(action.title)
+                        .fontWeight(action.tone == "primary" ? .semibold : .regular)
+                    Spacer()
+                    if action.push {
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .disabled(model.loading)
+        }
+    }
+
+    private var pager: some View {
+        HStack(spacing: 8) {
+            Button {
+                model.request("action", ["actionId": spec.pagerPrev])
+            } label: {
+                Image(systemName: "chevron.backward").frame(width: 36, height: 36)
+            }
+            .buttonStyle(.borderless)
+            .disabled(spec.pagerPrev.isEmpty || model.loading)
+            Spacer()
+            Text(spec.pagerText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                model.request("action", ["actionId": spec.pagerNext])
+            } label: {
+                Image(systemName: "chevron.forward").frame(width: 36, height: 36)
+            }
+            .buttonStyle(.borderless)
+            .disabled(spec.pagerNext.isEmpty || model.loading)
+        }
+    }
+}
+
+/// 有搜索框的页面用系统搜索栏（导航栏下方），提交时交给网页筛选
+private struct NativePageSearch: ViewModifier {
+    let enabled: Bool
+    let placeholder: String
+    @Binding var text: String
+    let submit: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(placeholder))
+                .onSubmit(of: .search, submit)
+                .onChange(of: text) { old, new in
+                    // 点清除按钮：立即取消筛选
+                    if new.isEmpty && !old.isEmpty { submit() }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// 列表里的一行：图片、标题与标签、说明；可点时行尾是箭头（加载时转圈）
+private struct NativePageRowButton: View {
+    @ObservedObject var model: NativePageModel
+    let row: NativePageRow
+
+    var body: some View {
+        if row.actions.isEmpty {
+            content
+                .listRowBackground(row.selected ? Color.accentColor.opacity(0.12) : nil)
+        } else {
+            Button {
+                model.tap(row)
+            } label: {
+                content
+            }
+            .disabled(model.loading)
+            .listRowBackground(row.selected ? Color.accentColor.opacity(0.12) : nil)
+            .accessibilityAddTraits(row.selected ? .isSelected : [])
+        }
+    }
+
+    private var content: some View {
+        HStack(alignment: .center, spacing: 12) {
+            NativePageRowImage(model: model, row: row, size: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(row.title)
+                        .font(.body)
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(2)
+                    if !row.badge.isEmpty {
+                        NativePageBadge(text: row.badge, tone: row.badgeTone)
+                    }
+                }
+                if !row.subtitle.isEmpty {
+                    Text(row.subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                if !row.detail.isEmpty {
+                    Text(row.detail)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(3)
+                }
+                if !row.chips.isEmpty {
+                    Text(row.chips.map(\.text).joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
-            .padding(.top, 2)
+            Spacer(minLength: 4)
+            if model.busyRow == row.id {
+                ProgressView()
+            } else if !row.actions.isEmpty {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct NativePageBadge: View {
+    let text: String
+    let tone: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.14), in: Capsule())
+            .foregroundStyle(color)
     }
 
-    private func notice(_ text: String, tone: String, close: Bool) -> some View {
-        NativeGlassCard(padding: 12) {
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(tone == "error" ? Color.red : Color.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func badgeColor(_ tone: String) -> Color {
+    private var color: Color {
         switch tone {
         case "danger": return .red
         case "warning": return .orange
@@ -864,54 +1065,125 @@ struct NativePageView: View {
     }
 }
 
-// MARK: - 表单
-
-private struct NativeInlineForm: View {
-    let form: NativePageForm
+private struct NativePageRowImage: View {
     @ObservedObject var model: NativePageModel
+    let row: NativePageRow
+    let size: CGFloat
 
     var body: some View {
-        NativeGlassCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(form.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                if !form.message.isEmpty {
-                    Text(form.message)
-                        .font(.caption2)
+        let shape = RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+        if !row.protectedImage.isEmpty {
+            if let image = model.images[row.protectedImage] {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(shape)
+            } else {
+                shape
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(width: size, height: size)
+                    .overlay(Image(systemName: "photo").foregroundStyle(.tertiary))
+                    .onAppear { model.loadImage(row.protectedImage) }
+            }
+        } else if let url = URL(string: row.image), url.scheme == "https" {
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.primary.opacity(0.06)
+            }
+            .frame(width: size, height: size)
+            .clipShape(shape)
+        }
+    }
+}
+
+/// 一行有多个操作时的二级页：上面是这一行的完整信息，下面逐个列出操作（危险操作红色，确认后执行）
+private struct NativePageRowDetail: View {
+    @ObservedObject var model: NativePageModel
+    let row: NativePageRow
+
+    var body: some View {
+        List {
+            Section {
+                HStack(alignment: .top, spacing: 14) {
+                    NativePageRowImage(model: model, row: row, size: 64)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(row.title)
+                                .font(.headline)
+                            if !row.badge.isEmpty {
+                                NativePageBadge(text: row.badge, tone: row.badgeTone)
+                            }
+                        }
+                        if !row.subtitle.isEmpty {
+                            Text(row.subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+                if !row.detail.isEmpty {
+                    Text(row.detail)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
-                ForEach(form.fields) { field in
-                    NativeReadOnlyField(field: field)
+                if !row.chips.isEmpty {
+                    NativeFlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(row.chips) { chip in
+                            Text(chip.text)
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background((chip.tone == "primary" ? Color.accentColor : Color.primary).opacity(0.1), in: Capsule())
+                                .foregroundStyle(chip.tone == "primary" ? Color.accentColor : Color.primary)
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
-                Button {
-                    model.form = form
-                } label: {
-                    Text(form.openTitle)
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 42)
-                        .background(Color.accentColor, in: Capsule())
-                        .foregroundStyle(Color.white)
+            }
+            Section {
+                ForEach(row.actions) { action in
+                    Button(role: action.destructive ? ButtonRole.destructive : nil) {
+                        model.perform(action, row: row)
+                    } label: {
+                        HStack {
+                            Text(action.title)
+                            Spacer()
+                            if action.push {
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .disabled(model.loading)
                 }
-                .buttonStyle(.plain)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(row.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if model.loading { ProgressView() }
             }
         }
     }
 }
 
-/// 内联卡片里的表单只显示当前值；点击后进入可编辑的 sheet。
+// MARK: - 表单
+
+/// 内联卡片里的表单只显示当前值；点击后进入可编辑的表单页。
 private struct NativeReadOnlyField: View {
     let field: NativePageField
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(field.label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
+        LabeledContent(field.label) {
             Text(display)
-                .font(.caption)
-                .foregroundStyle(.primary)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(3)
         }
@@ -919,58 +1191,56 @@ private struct NativeReadOnlyField: View {
 
     private var display: String {
         switch field.kind {
-        case "toggle": return field.value.bool ? "开" : "关"
+        case "toggle": return field.value.bool ? "✓" : "—"
         case "select":
             let id = field.value.text
             return field.options.first { $0.id == id }?.title ?? id
         case "multiselect":
             let selected = Set(field.value.list)
             return field.options.filter { selected.contains($0.id) }.map(\.title).joined(separator: "、")
+        case "image":
+            return field.value.text.isEmpty ? "—" : "✓"
         default: return field.value.text
         }
     }
 }
 
-struct NativeFormSheet: View {
+/// 可编辑的表单页（推入页面栈，不再用全屏弹窗）：系统 Form，右上角提交，返回即取消
+struct NativeFormPage: View {
     let form: NativePageForm
     @ObservedObject var model: NativePageModel
-    @Environment(\.dismiss) private var dismiss
     @State private var values: [String: NativePageValue] = [:]
 
-    /// 私有 @State 会让编译器合成的 memberwise init 变成 private，页面视图无法创建表单 sheet。
+    /// 私有 @State 会让编译器合成的 memberwise init 变成 private，页面视图无法创建表单页。
     init(form: NativePageForm, model: NativePageModel) {
         self.form = form
         self.model = model
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    if !form.message.isEmpty {
-                        Text(form.message)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    ForEach(form.fields) { field in
-                        fieldView(field)
-                    }
+        Form {
+            if !form.message.isEmpty {
+                Section {
+                    Text(form.message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(16)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .background(NativeSheetBackground().ignoresSafeArea())
-            .navigationTitle(form.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(form.cancelTitle) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
+            ForEach(form.fields) { field in
+                fieldSection(field)
+            }
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .disabled(model.loading)
+        .navigationTitle(form.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                if model.loading {
+                    ProgressView()
+                } else {
                     Button(form.submitTitle) {
                         model.submit(form, values: collect())
-                        dismiss()
                     }
                     .font(.body.weight(.semibold))
                 }
@@ -985,124 +1255,111 @@ struct NativeFormSheet: View {
     }
 
     @ViewBuilder
-    private func fieldView(_ field: NativePageField) -> some View {
-        NativeGlassCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(field.label)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                switch field.kind {
-                case "textarea":
-                    TextField(field.placeholder, text: textBinding(field.id), axis: .vertical)
-                        .lineLimit(4...12)
-                        .nativeFieldBackground()
-                case "select":
-                    Picker("", selection: textBinding(field.id)) {
-                        ForEach(field.options) { option in
-                            Text(option.title).tag(option.id)
-                        }
+    private func fieldSection(_ field: NativePageField) -> some View {
+        Section {
+            switch field.kind {
+            case "textarea":
+                TextField(field.placeholder, text: textBinding(field.id), axis: .vertical)
+                    .lineLimit(4...12)
+            case "select":
+                Picker(field.label, selection: textBinding(field.id)) {
+                    ForEach(field.options) { option in
+                        Text(option.title).tag(option.id)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                case "multiselect":
-                    NativeFlowLayout(spacing: 8, lineSpacing: 8) {
-                        ForEach(field.options) { option in
-                            let selected = values[field.id]?.list.contains(option.id) ?? false
-                            Button {
-                                var list = values[field.id]?.list ?? []
-                                if let index = list.firstIndex(of: option.id) { list.remove(at: index) } else { list.append(option.id) }
-                                values[field.id] = .list(list)
-                            } label: {
-                                Text(option.title)
-                                    .font(.caption)
-                                    .nativeChip(selected: selected, tint: .accentColor)
+                }
+                .pickerStyle(.menu)
+            case "multiselect":
+                ForEach(field.options) { option in
+                    let selected = values[field.id]?.list.contains(option.id) ?? false
+                    Button {
+                        var list = values[field.id]?.list ?? []
+                        if let index = list.firstIndex(of: option.id) { list.remove(at: index) } else { list.append(option.id) }
+                        values[field.id] = .list(list)
+                    } label: {
+                        HStack {
+                            Text(option.title).foregroundStyle(Color.primary)
+                            Spacer()
+                            if selected {
+                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .contentShape(Rectangle())
                     }
-                case "toggle":
-                    Toggle(field.label, isOn: boolBinding(field.id))
-                        .labelsHidden()
-                case "date":
-                    DatePicker("", selection: dateBinding(field.id), displayedComponents: .date)
-                        .labelsHidden()
-                        .datePickerStyle(.compact)
-                case "datetime":
-                    DatePicker("", selection: dateBinding(field.id, includeTime: true), displayedComponents: [.date, .hourAndMinute])
-                        .labelsHidden()
-                        .datePickerStyle(.compact)
-                case "number":
-                    TextField(field.placeholder, text: textBinding(field.id))
-                        .keyboardType(.decimalPad)
-                        .nativeFieldBackground()
-                case "image":
-                    imageField(field)
-                case "info":
-                    Text(field.value.text)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                default:
-                    TextField(field.placeholder, text: textBinding(field.id))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .nativeFieldBackground()
+                    .accessibilityAddTraits(selected ? .isSelected : [])
                 }
-                if !field.footer.isEmpty {
-                    Text(field.footer)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+            case "toggle":
+                Toggle(field.label, isOn: boolBinding(field.id))
+            case "date":
+                DatePicker(field.label, selection: dateBinding(field.id), displayedComponents: .date)
+            case "datetime":
+                DatePicker(field.label, selection: dateBinding(field.id, includeTime: true), displayedComponents: [.date, .hourAndMinute])
+            case "number":
+                TextField(field.placeholder, text: textBinding(field.id))
+                    .keyboardType(.decimalPad)
+            case "image":
+                imageField(field)
+            case "info":
+                Text(field.value.text)
+                    .foregroundStyle(.secondary)
+            default:
+                TextField(field.placeholder, text: textBinding(field.id))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+        } header: {
+            // 开关、选择、日期的行内已经有标签
+            if !["toggle", "select", "date", "datetime"].contains(field.kind) {
+                Text(field.label)
+            }
+        } footer: {
+            if !field.footer.isEmpty {
+                Text(field.footer)
             }
         }
     }
 
     @ViewBuilder
     private func imageField(_ field: NativePageField) -> some View {
-        HStack(spacing: 10) {
-            if let image = imageFor(field.id) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            } else if let url = URL(string: values[field.id]?.text ?? ""), url.scheme == "https" {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
+        HStack(spacing: 12) {
+            Group {
+                if let image = imageFor(field.id) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else if let url = URL(string: values[field.id]?.text ?? ""), url.scheme == "https" {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.primary.opacity(0.06)
+                    }
+                } else {
                     Color.primary.opacity(0.06)
+                        .overlay(Image(systemName: "photo").foregroundStyle(.tertiary))
                 }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            } else {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-                    .frame(width: 56, height: 56)
-                    .overlay(Image(systemName: "photo").foregroundStyle(.tertiary))
             }
-            PhotosPicker(selection: Binding(
-                get: { nil as PhotosPickerItem? },
-                set: { item in
-                    guard let item else { return }
-                    Task {
-                        if let data = try? await item.loadTransferable(type: Data.self),
-                           let image = UIImage(data: data),
-                           let encoded = NativePageImage.encode(image) {
-                            await MainActor.run { values[field.id] = .text(encoded) }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 8) {
+                PhotosPicker(selection: Binding(
+                    get: { nil as PhotosPickerItem? },
+                    set: { item in
+                        guard let item else { return }
+                        Task {
+                            if let data = try? await item.loadTransferable(type: Data.self),
+                               let image = UIImage(data: data),
+                               let encoded = NativePageImage.encode(image) {
+                                await MainActor.run { values[field.id] = .text(encoded) }
+                            }
                         }
                     }
+                ), matching: .images) {
+                    Text(model.root.pickImageTitle)
                 }
-            ), matching: .images) {
-                Text("选择图片")
-                    .font(.caption)
-                    .nativeChip()
-            }
-            if !(values[field.id]?.text ?? "").isEmpty {
-                Button {
-                    values[field.id] = .text("")
-                } label: {
-                    Text("移除").font(.caption).foregroundStyle(.red)
+                .buttonStyle(.borderless)
+                if !(values[field.id]?.text ?? "").isEmpty {
+                    Button(model.root.removeImageTitle, role: .destructive) {
+                        values[field.id] = .text("")
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -1161,63 +1418,56 @@ struct NativeFormSheet: View {
 private struct NativeImageGrid: View {
     let images: [NativePageImageItem]
     @ObservedObject var model: NativePageModel
+    @State private var acting: NativePageImageItem?
 
     private let columns = [GridItem(.adaptive(minimum: 92), spacing: 8)]
 
     var body: some View {
-        NativeGlassCard(padding: 12) {
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(images) { item in
-                    ZStack(alignment: .topTrailing) {
-                        Group {
-                            if !item.protectedImage.isEmpty {
-                                if let image = model.images[item.protectedImage] {
-                                    Image(uiImage: image).resizable().scaledToFill()
-                                } else {
-                                    Color.primary.opacity(0.06)
-                                        .onAppear { model.loadImage(item.protectedImage) }
-                                }
-                            } else if let url = URL(string: item.image), url.scheme == "https" {
-                                AsyncImage(url: url) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: {
-                                    Color.primary.opacity(0.06)
-                                }
+        LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(images) { item in
+                ZStack(alignment: .topTrailing) {
+                    Group {
+                        if !item.protectedImage.isEmpty {
+                            if let image = model.images[item.protectedImage] {
+                                Image(uiImage: image).resizable().scaledToFill()
                             } else {
                                 Color.primary.opacity(0.06)
+                                    .onAppear { model.loadImage(item.protectedImage) }
                             }
-                        }
-                        .frame(height: 92)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        if !item.caption.isEmpty {
-                            Text(item.caption)
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(.regularMaterial, in: Capsule())
-                                .padding(5)
-                        }
-                        if !item.actions.isEmpty {
-                            Button {
-                                model.actionSheet = NativePageRow(
-                                    id: item.id, title: item.caption, subtitle: "", detail: "",
-                                    image: "", protectedImage: "", badge: "", badgeTone: "",
-                                    chips: [], actions: item.actions, selected: false
-                                )
-                            } label: {
-                                Image(systemName: "ellipsis.circle.fill")
-                                    .font(.system(size: 20))
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(Color.white, Color.black.opacity(0.5))
-                                    .padding(6)
+                        } else if let url = URL(string: item.image), url.scheme == "https" {
+                            AsyncImage(url: url) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                Color.primary.opacity(0.06)
                             }
-                            .buttonStyle(.plain)
+                        } else {
+                            Color.primary.opacity(0.06)
                         }
                     }
+                    .frame(height: 92)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    if !item.caption.isEmpty {
+                        Text(item.caption)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.regularMaterial, in: Capsule())
+                            .padding(5)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard !item.actions.isEmpty else { return }
+                    model.tap(NativePageRow(
+                        id: item.id, title: item.caption, subtitle: "", detail: "",
+                        image: item.image, protectedImage: item.protectedImage, badge: "", badgeTone: "",
+                        chips: [], actions: item.actions, selected: false
+                    ))
                 }
             }
         }
+        .padding(.vertical, 6)
     }
 }
 
@@ -1228,58 +1478,57 @@ private struct NativeCalendarCard: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
 
     var body: some View {
-        NativeGlassCard(padding: 14) {
-            VStack(spacing: 10) {
-                HStack {
-                    Button {
-                        if !calendar.previousAction.isEmpty { action(calendar.previousAction) }
-                    } label: {
-                        Image(systemName: "chevron.left").frame(width: 34, height: 34)
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    Text(calendar.monthLabel).font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Button {
-                        if !calendar.nextAction.isEmpty { action(calendar.nextAction) }
-                    } label: {
-                        Image(systemName: "chevron.right").frame(width: 34, height: 34)
-                    }
-                    .buttonStyle(.plain)
+        VStack(spacing: 10) {
+            HStack {
+                Button {
+                    if !calendar.previousAction.isEmpty { action(calendar.previousAction) }
+                } label: {
+                    Image(systemName: "chevron.left").frame(width: 34, height: 34)
                 }
-                LazyVGrid(columns: columns, spacing: 4) {
-                    ForEach(Array(calendar.weekdays.enumerated()), id: \.offset) { _, weekday in
-                        Text(weekday)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(calendar.days) { day in
-                        if day.day == 0 {
-                            Color.clear.frame(height: 42)
-                        } else {
-                            Button {
-                                if !day.action.isEmpty { action(day.action) }
-                            } label: {
-                                VStack(spacing: 1) {
-                                    Text("\(day.day)").font(.caption)
-                                    if day.count > 0 {
-                                        Text("\(day.count)").font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.accentColor)
-                                    } else if day.hasDraft {
-                                        Circle().fill(Color.orange).frame(width: 4, height: 4)
-                                    } else {
-                                        Color.clear.frame(width: 4, height: 4)
-                                    }
+                .buttonStyle(.borderless)
+                Spacer()
+                Text(calendar.monthLabel).font(.headline)
+                Spacer()
+                Button {
+                    if !calendar.nextAction.isEmpty { action(calendar.nextAction) }
+                } label: {
+                    Image(systemName: "chevron.right").frame(width: 34, height: 34)
+                }
+                .buttonStyle(.borderless)
+            }
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(Array(calendar.weekdays.enumerated()), id: \.offset) { _, weekday in
+                    Text(weekday)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(calendar.days) { day in
+                    if day.day == 0 {
+                        Color.clear.frame(height: 42)
+                    } else {
+                        Button {
+                            if !day.action.isEmpty { action(day.action) }
+                        } label: {
+                            VStack(spacing: 1) {
+                                Text("\(day.day)").font(.subheadline)
+                                if day.count > 0 {
+                                    Text("\(day.count)").font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.accentColor)
+                                } else if day.hasDraft {
+                                    Circle().fill(Color.orange).frame(width: 4, height: 4)
+                                } else {
+                                    Color.clear.frame(width: 4, height: 4)
                                 }
-                                .frame(maxWidth: .infinity, minHeight: 42)
-                                .background(day.selected ? Color.accentColor.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(day.selected ? Color.accentColor : Color.clear, lineWidth: 1))
                             }
-                            .buttonStyle(.plain)
+                            .foregroundStyle(day.selected ? Color.white : Color.primary)
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .background(day.selected ? Color.accentColor : Color.clear, in: Circle().inset(by: 1))
                         }
+                        .buttonStyle(.borderless)
                     }
                 }
             }
         }
+        .padding(.vertical, 4)
     }
 }
 

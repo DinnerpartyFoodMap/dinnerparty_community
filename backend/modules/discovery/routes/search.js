@@ -7,7 +7,7 @@ const {
     normalizeCenter,
     normalizeBounds
 } = require('../services/semanticSearch');
-const { extractSearchFilter } = require('../services/searchFilter');
+const { extractSearchFilter, searchFilterPredicate } = require('../services/searchFilter');
 
 const router = express.Router();
 const AI_QUERY_MAX_LENGTH = 300;
@@ -60,7 +60,8 @@ router.get('/places/search', attachViewer, sendFastSearch);
 
 // Request B: embedding -> sqlite-vec KNN -> DeepSeek Yuyuko recommendation.
 // 需要登录；reason_source 为 deepseek 的推荐语由模型写成，前端标注“AI 生成”（所用模型公示在用户协议）。
-// filter：同时从原话里读出的地图筛选（标签 / 人均，services/searchFilter.js），前端据此打开筛选；读不出时为 null。
+// filter：同时从原话里读出的筛选（标签 / 排除标签 / 人均，services/searchFilter.js），只套用在这次的推荐候选上，
+// 前端在推荐上方说明，不改地图筛选；读不出时为 null。
 router.post('/places/search/ai', requireAuth, async (req, res) => {
     const query = String(req.body?.q || '').trim();
     if (!query) return res.status(400).json({ error: '搜索内容不能为空' });
@@ -83,7 +84,8 @@ router.post('/places/search/ai', requireAuth, async (req, res) => {
             searchSemanticPlaces(query, {
                 limit: parseLimit(req.body?.limit, 5, 10),
                 center,
-                bounds
+                bounds,
+                placeFilter: filterPromise.then(searchFilterPredicate)
             }),
             filterPromise
         ]);

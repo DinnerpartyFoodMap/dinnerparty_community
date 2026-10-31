@@ -6,6 +6,7 @@ import { feedbackTypeLabel } from '../feedback/feedbackTypes.js';
 import { TASTE_AXES, axisLabel } from '../profile/tasteAxes.js';
 import { getSkin } from '../skins/registry.js';
 import { copyText } from '../platform/share.js';
+import { nativePageLabels } from '../platform/nativePageLabels.js';
 
 const PAGE_SIZE = 10;
 const QQ_PATTERN = /^\d{5,15}$/;
@@ -95,6 +96,8 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
     actions.set(id, run);
     const result = { id, title, tone: options.tone || '' };
     if (options.confirm) result.confirm = options.confirm;
+    // 打开下一级页面：原生立即推入占位页，不等请求
+    if (options.push) result.push = true;
     return result;
   }
 
@@ -131,10 +134,12 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
     const sections = sectionPermissions(level);
     const rows = sections.map((id) => {
       const title = SECTION_TITLES[id]();
-      return { id, title, subtitle: '', actions: [action(title, async () => ({ page: await load(id) }))] };
+      return { id, title, subtitle: '', actions: [action(title, async () => ({ page: await load(id) }), { push: true })] };
     });
     return {
       id: 'admin-dashboard',
+      level: 0,
+      labels: nativePageLabels(),
       title: t('admin:dashboard.title'),
       subtitle: `${user?.username || ''} · ${level || t('admin:dashboard.regularUser')}`,
       canGoBack: false,
@@ -168,6 +173,9 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
       title,
       subtitle: options.subtitle || '',
       canGoBack: true,
+      // 后台首页是第 0 级，各管理项是第 1 级（原生据此推入 / 原地刷新 / 退回）
+      level: options.level ?? 1,
+      labels: nativePageLabels(),
       closeTitle: t('common:action.close'),
       searchPlaceholder: options.searchPlaceholder || '',
       searchValue: options.searchValue || '',

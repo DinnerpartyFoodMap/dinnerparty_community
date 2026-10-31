@@ -386,7 +386,15 @@ struct MapChromeMenuPanel: View {
                     .padding(.horizontal, 4)
                     .accessibilityAddTraits(.isHeader)
             }
-            if !section.rows.isEmpty {
+            if section.chips {
+                // v14 标签（地图筛选）：可换行排列，点按不收起面板
+                NativeFlowLayout(spacing: 8, lineSpacing: 8) {
+                    ForEach(section.rows) { row in
+                        chipButton(row)
+                    }
+                }
+                .padding(.horizontal, 4)
+            } else if !section.rows.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
                         if index > 0 {
@@ -456,6 +464,40 @@ struct MapChromeMenuPanel: View {
         .disabled(row.disabled)
         .opacity(row.disabled ? 0.55 : 1)
         .accessibilityLabel(Text(row.subtitle.map { "\(row.title), \($0)" } ?? row.title))
+    }
+
+    /// 标签：未选为浅底；include 绿、exclude 红、accent 主题色（描边 + 浅色底），选中时带图标
+    private func chipButton(_ row: MapChromeSheetRow) -> some View {
+        let tint: Color? = {
+            switch row.tone {
+            case "include": return .green
+            case "exclude": return .red
+            case "accent": return accent
+            default: return nil
+            }
+        }()
+        return Button {
+            model.selectSheetRow(row)
+        } label: {
+            HStack(spacing: 4) {
+                if let symbol = row.symbol {
+                    Image(systemName: symbol).font(.caption.weight(.bold))
+                }
+                Text(row.title).font(.subheadline.weight(tint == nil ? .regular : .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 36)
+            .background((tint ?? Color.primary).opacity(tint == nil ? 0.08 : 0.16), in: Capsule())
+            .overlay(Capsule().strokeBorder(tint ?? Color.clear, lineWidth: 1))
+            .foregroundStyle(tint ?? Color.primary)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(row.disabled)
+        .opacity(row.disabled ? 0.55 : 1)
+        .accessibilityLabel(Text(row.subtitle.map { "\(row.title), \($0)" } ?? row.title))
+        .accessibilityAddTraits(tint == nil ? [] : .isSelected)
     }
 
     private func titleStyle(_ row: MapChromeSheetRow, footnote: Bool) -> Color {
@@ -767,7 +809,15 @@ struct MapChromePlaceCard: View {
                 Text(title)
                     .font(.headline)
             }
-            if !section.rows.isEmpty {
+            if section.chips {
+                // v14 标签（地图筛选）：可换行排列，点按不收起面板
+                NativeFlowLayout(spacing: 8, lineSpacing: 8) {
+                    ForEach(section.rows) { row in
+                        chipButton(row)
+                    }
+                }
+                .padding(.horizontal, 4)
+            } else if !section.rows.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
                         if index > 0 {
