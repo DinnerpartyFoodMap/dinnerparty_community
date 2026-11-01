@@ -428,107 +428,74 @@ final class NativeAlongRouteModel: ObservableObject {
 
 // MARK: - 页面
 
+/// 顺路吃面板。与地点卡片、添加地点同一种做法：不套 NavigationStack / Form、不铺底色，
+/// 半屏透出系统玻璃、全屏由系统过渡为不透明；标题行与收藏面板一致，各栏是 NativeSheetGroup。
 private struct NativeAlongRouteView: View {
     @ObservedObject var model: NativeAlongRouteModel
 
-    /// 系统表单：行程、出行方式、想吃什么、标签、距离各是一组，下面是方案与沿途地点；
-    /// 面板底色交给系统（半屏玻璃、全屏不透明，与地点卡片相同）。
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField(model.text("shareLinkPlaceholder", "粘贴 surl.amap.com/..."), text: $model.url)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .submitLabel(.go)
-                        .onSubmit { model.submit() }
-                        .nativeSheetRow()
-                } header: {
-                    Text(model.text("shareLink", "高德行程分享"))
-                } footer: {
-                    if let trip = model.trip, !trip.isEmpty {
-                        Text(trip).lineLimit(2)
-                    }
-                }
-
-                Section {
-                    Picker(model.text("travelMode", "出行方式"), selection: $model.mode) {
-                        ForEach(model.modes) { option in
-                            Text(option.label).tag(option.id)
+        VStack(spacing: 0) {
+            NativeSheetHeader(title: model.text("title", "顺路吃"),
+                              closeLabel: model.text("close", "关闭顺路吃"),
+                              onClose: { model.requestClose() }) {
+                Color.clear
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    NativeSheetGroup(model.text("shareLink", "高德行程分享"), footer: model.trip) {
+                        NativeSheetRow {
+                            TextField(model.text("shareLinkPlaceholder", "粘贴 surl.amap.com/..."), text: $model.url)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                                .submitLabel(.go)
+                                .onSubmit { model.submit() }
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-                    .nativeSheetRow()
-                } header: {
-                    Text(model.text("travelMode", "出行方式"))
-                }
-
-                Section {
-                    TextField(model.text("wantPlaceholder", "例如：火锅、想吃辣的、奶茶"), text: $model.query)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .nativeSheetRow()
-                } header: {
-                    Text(model.text("want", "想吃什么"))
-                }
-
-                tagsSection
-
-                Section {
-                    Picker(model.text("maxDistance", "离路线最远"), selection: $model.corridor) {
-                        ForEach(model.distances) { option in
-                            Text(option.label).tag(option.value)
+                    NativeSheetGroup(model.text("travelMode", "出行方式")) {
+                        modePicker
+                    }
+                    NativeSheetGroup(model.text("want", "想吃什么"), trailing: model.text("optional", "可选")) {
+                        NativeSheetRow {
+                            TextField(model.text("wantPlaceholder", "例如：火锅、想吃辣的、奶茶"), text: $model.query)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                         }
                     }
-                    .pickerStyle(.menu)
-                    .nativeSheetRow()
-                    Button {
-                        model.submit()
-                    } label: {
-                        HStack(spacing: 8) {
-                            if model.busy {
-                                ProgressView()
+                    tagsSection
+                    NativeSheetGroup(nil) {
+                        NativeSheetRow {
+                            HStack {
+                                Text(model.text("maxDistance", "离路线最远"))
+                                Spacer(minLength: 8)
+                                Picker(model.text("maxDistance", "离路线最远"), selection: $model.corridor) {
+                                    ForEach(model.distances) { option in
+                                        Text(option.label).tag(option.value)
+                                    }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
                             }
-                            Text(model.busy ? model.text("searching", "正在规划或筛选…") : model.submitTitle)
-                                .font(.body.weight(.semibold))
                         }
-                        .frame(maxWidth: .infinity)
                     }
-                    .disabled(!model.canSubmit)
-                    .nativeSheetRow()
-                }
-
-                if !model.routes.isEmpty && model.places.isEmpty {
-                    routesSection
-                }
-                if !model.places.isEmpty {
-                    placesSection
-                } else if !model.emptyText.isEmpty && !model.busy {
-                    Section {
+                    submitButton
+                    if !model.routes.isEmpty && model.places.isEmpty {
+                        routesSection
+                    }
+                    if !model.places.isEmpty {
+                        placesSection
+                    } else if !model.emptyText.isEmpty && !model.busy {
                         Text(model.emptyText)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center)
-                            .nativeSheetRow()
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 32)
             }
-            .nativeSheetForm()
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(model.text("title", "顺路吃"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        model.requestClose()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(Text(model.text("close", "关闭顺路吃")))
-                }
-            }
         }
         .preferredColorScheme(model.dark ? .dark : .light)
         .tint(model.tint)
@@ -537,21 +504,83 @@ private struct NativeAlongRouteView: View {
         }
     }
 
+    /// 出行方式：一栏里四个按钮，选中的用主题色浅底，按钮本身不再有边框（只有分组这一层）
+    private var modePicker: some View {
+        HStack(spacing: 6) {
+            ForEach(model.modes) { option in
+                let selected = model.mode == option.id
+                Button {
+                    model.mode = option.id
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: model.symbol(for: option.id))
+                            .font(.system(size: 17))
+                        Text(option.label)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(selected ? model.tint.opacity(0.18) : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .foregroundStyle(selected ? model.tint : Color.primary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(6)
+    }
+
+    /// 规划并找店：独立的一枚主按钮，不和上面的距离选择放在同一栏
+    private var submitButton: some View {
+        Button {
+            model.submit()
+        } label: {
+            HStack(spacing: 8) {
+                if model.busy {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "fork.knife")
+                }
+                Text(model.busy ? model.text("searching", "正在规划或筛选…") : model.submitTitle)
+                    .font(.body.weight(.semibold))
+            }
+            .foregroundStyle(Color.white)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(model.tint.opacity(model.canSubmit || model.busy ? 1 : 0.45), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.canSubmit)
+    }
+
     /// 标签：搜索行 + 一行可换行的标签（已选的在前，可点掉）
     private var tagsSection: some View {
         let visible = model.visibleCategories.filter { !model.categories.contains($0.name) }
         let searching = !model.categoryQuery.trimmingCharacters(in: .whitespaces).isEmpty
-        return Section {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                TextField(model.text("tagSearch", "搜索全部标签"), text: $model.categoryQuery)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+        let footer: String
+        if model.categoriesLoading && !searching {
+            footer = model.text("tagsLoading", "正在读取标签…")
+        } else if visible.isEmpty && searching {
+            footer = model.text("noMatchingTags", "没有找到匹配标签")
+        } else {
+            footer = searching ? model.text("matchingTags", "匹配的标签") : model.text("frequentTags", "常用标签")
+        }
+        return NativeSheetGroup(model.text("tags", "标签"), trailing: model.text("optional", "可选"), footer: footer) {
+            NativeSheetRow {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    TextField(model.text("tagSearch", "搜索全部标签"), text: $model.categoryQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
             }
-            .nativeSheetRow()
             if !model.categories.isEmpty || !visible.isEmpty {
+                Divider().padding(.leading, 16)
                 NativeFlowLayout(spacing: 8, lineSpacing: 8) {
                     ForEach(model.categories, id: \.self) { name in
                         NativeTagChip(title: name, selected: true, tint: model.tint, symbol: "xmark") {
@@ -564,100 +593,86 @@ private struct NativeAlongRouteView: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
-                .nativeSheetRow()
-            }
-        } header: {
-            Text(model.text("tags", "标签"))
-        } footer: {
-            if model.categoriesLoading && !searching {
-                Text(model.text("tagsLoading", "正在读取标签…"))
-            } else if visible.isEmpty && searching {
-                Text(model.text("noMatchingTags", "没有找到匹配标签"))
-            } else {
-                Text(searching ? model.text("matchingTags", "匹配的标签") : model.text("frequentTags", "常用标签"))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
         }
     }
 
     private var routesSection: some View {
-        Section {
-            ForEach(model.routes) { route in
+        NativeSheetGroup(model.routesTitle) {
+            ForEach(Array(model.routes.enumerated()), id: \.element.id) { index, route in
                 let selected = model.selectedRouteIndex == route.index
+                if index > 0 { Divider().padding(.leading, 16) }
                 Button {
                     model.chooseRoute(route.index)
                 } label: {
-                    HStack(spacing: 10) {
-                        Text(route.title)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(Color.primary)
-                        Spacer(minLength: 8)
-                        Text(route.detail)
-                            .font(.subheadline)
-                            .foregroundStyle(selected ? model.tint : .secondary)
-                            .lineLimit(1)
-                        if selected {
-                            Image(systemName: "checkmark")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(model.tint)
+                    NativeSheetRow {
+                        HStack(spacing: 10) {
+                            Text(route.title)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Color.primary)
+                            Spacer(minLength: 8)
+                            Text(route.detail)
+                                .font(.subheadline)
+                                .foregroundStyle(selected ? model.tint : .secondary)
+                                .lineLimit(1)
+                            Image(systemName: selected ? "checkmark" : "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(selected ? model.tint : Color.secondary)
                         }
                     }
                     .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .disabled(model.busy)
                 .accessibilityAddTraits(selected ? .isSelected : [])
-                .nativeSheetRow()
-            }
-        } header: {
-            if let title = model.routesTitle, !title.isEmpty {
-                Text(title)
             }
         }
     }
 
     private var placesSection: some View {
-        Section {
+        NativeSheetGroup(model.routesTitle) {
             ForEach(Array(model.places.enumerated()), id: \.element.id) { index, place in
+                if index > 0 { Divider().padding(.leading, 52) }
                 Button {
                     model.selectPlace(place.id)
                 } label: {
-                    HStack(alignment: .top, spacing: 12) {
-                        Text("\(index + 1)")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.white)
-                            .frame(width: 24, height: 24)
-                            .background(model.tint, in: Circle())
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(place.name)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(Color.primary)
-                                .lineLimit(1)
-                            if !place.meta.isEmpty {
-                                Text(place.meta)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                    NativeSheetRow {
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("\(index + 1)")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Color.white)
+                                .frame(width: 24, height: 24)
+                                .background(model.tint, in: Circle())
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(place.name)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(Color.primary)
                                     .lineLimit(1)
+                                if !place.meta.isEmpty {
+                                    Text(place.meta)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                if !place.matches.isEmpty {
+                                    Text(place.matches)
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
                             }
-                            if !place.matches.isEmpty {
-                                Text(place.matches)
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
-                            }
+                            Spacer(minLength: 6)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
                         }
-                        Spacer(minLength: 6)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
                     }
                     .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .disabled(model.busy)
-                .nativeSheetRow()
-            }
-        } header: {
-            if let title = model.routesTitle, !title.isEmpty {
-                Text(title)
             }
         }
     }

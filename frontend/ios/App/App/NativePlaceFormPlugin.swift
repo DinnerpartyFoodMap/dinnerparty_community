@@ -545,12 +545,6 @@ private struct NativePlaceFormView: View {
 
     private let cameraAvailable = UIImagePickerController.isSourceTypeAvailable(.camera)
 
-    /// 分组底色：与收藏面板、地点卡片一致；iOS 26 以前面板不是玻璃，用系统分组行底色
-    private var groupFill: Color {
-        if #available(iOS 26.0, *) { return Color(uiColor: .tertiarySystemFill) }
-        return Color(uiColor: .secondarySystemGroupedBackground)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -665,91 +659,43 @@ private struct NativePlaceFormView: View {
 
     /// 与收藏面板的标题行一致：左边关闭、居中标题、右边提交（圆形按钮，不再有展开按钮）
     private var header: some View {
-        HStack(spacing: 12) {
-            Button {
-                model.requestCancel()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.primary.opacity(0.1)))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(model.submitting)
-            .accessibilityLabel(Text(model.text("cancel", "取消")))
-            Text(model.text("title", model.isCreate ? "添加地点" : "修改地点"))
-                .font(.title3.weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity)
-                .accessibilityAddTraits(.isHeader)
-            Group {
-                if model.submitting {
-                    ProgressView()
+        NativeSheetHeader(title: model.text("title", model.isCreate ? "添加地点" : "修改地点"),
+                          closeLabel: model.text("cancel", "取消"),
+                          closeDisabled: model.submitting,
+                          onClose: { model.requestCancel() }) {
+            if model.submitting {
+                ProgressView()
+                    .accessibilityLabel(Text(model.text("submitting", "提交中...")))
+            } else {
+                let enabled = !(model.trimmedName.isEmpty || model.uploading || model.loadingImages)
+                Button {
+                    model.submit()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(enabled ? Color.white : Color.secondary)
                         .frame(width: 44, height: 44)
-                        .accessibilityLabel(Text(model.text("submitting", "提交中...")))
-                } else {
-                    let enabled = !(model.trimmedName.isEmpty || model.uploading || model.loadingImages)
-                    Button {
-                        model.submit()
-                    } label: {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(enabled ? Color.white : Color.secondary)
-                            .frame(width: 44, height: 44)
-                            .background(Circle().fill(enabled ? model.tint : Color.primary.opacity(0.1)))
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!enabled)
-                    .accessibilityLabel(Text(model.text("submit", "提交")))
+                        .background(Circle().fill(enabled ? model.tint : Color.primary.opacity(0.1)))
+                        .contentShape(Circle())
                 }
+                .buttonStyle(.plain)
+                .disabled(!enabled)
+                .accessibilityLabel(Text(model.text("submit", "提交")))
             }
         }
-        .padding(.horizontal, 16)
-        // 系统拖动条在上方
-        .padding(.top, 18)
-        .padding(.bottom, 10)
     }
 
     // MARK: 分组
 
-    /// 一栏：组外标题（可带右侧小字）、圆角分组、组下说明
+    /// 一栏与一行：见 NativeGlassComponents.swift 的 NativeSheetGroup / NativeSheetRow
     private func formSection<Content: View>(_ title: String?, trailing: String? = nil,
                                             footer: String? = nil, footerColor: Color = .secondary,
                                             @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if title != nil || trailing != nil {
-                HStack {
-                    if let title { Text(title) }
-                    Spacer(minLength: 8)
-                    if let trailing { Text(trailing).monospacedDigit() }
-                }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                content()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(groupFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            if let footer, !footer.isEmpty {
-                Text(footer)
-                    .font(.footnote)
-                    .foregroundStyle(footerColor)
-                    .padding(.horizontal, 16)
-            }
-        }
+        NativeSheetGroup(title, trailing: trailing, footer: footer, footerColor: footerColor, content: content)
     }
 
     private func row<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        NativeSheetRow(content)
     }
 
     private var divider: some View {

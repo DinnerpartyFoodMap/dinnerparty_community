@@ -129,6 +129,7 @@
     "waypoints": "· 含 {{count}} 个途经点",
     "travelMode": "出行方式",
     "wantLabel": "想吃什么",
+    "optional": "可选",
     "wantPlaceholder": "例如：火锅、想吃辣的、奶茶",
     "tagsLabel": "标签",
     "deselectTag": "取消选择标签{{name}}",

@@ -21,6 +21,7 @@ function buildLabels() {
         shareLinkPlaceholder: t('map:alongRoute.shareLinkPlaceholder'),
         travelMode: t('map:alongRoute.travelMode'),
         want: t('map:alongRoute.wantLabel'),
+        optional: t('map:alongRoute.optional'),
         wantPlaceholder: t('map:alongRoute.wantPlaceholder'),
         tags: t('map:alongRoute.tagsLabel'),
         tagSearch: t('map:alongRoute.tagSearchPlaceholder'),

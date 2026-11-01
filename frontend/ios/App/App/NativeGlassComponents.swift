@@ -107,32 +107,6 @@ struct NativeSheetBackground: View {
     }
 }
 
-// MARK: - 系统表单
-
-/// 半屏系统面板里的原生表单（Form / List.insetGrouped）：与地点卡片同一种做法——
-/// iOS 26 面板自身是 Liquid Glass，半屏时透出地图、拉到全屏时由系统过渡成不透明底色；
-/// 表单不铺自己的底色（scrollContentBackground 隐藏），分组行用 tertiarySystemFill，在玻璃与不透明底上都清楚。
-/// 更早的系统保留默认的分组底色与行底。
-extension View {
-    @ViewBuilder
-    func nativeSheetForm() -> some View {
-        if #available(iOS 26.0, *) {
-            self.scrollContentBackground(.hidden)
-        } else {
-            self
-        }
-    }
-
-    @ViewBuilder
-    func nativeSheetRow() -> some View {
-        if #available(iOS 26.0, *) {
-            self.listRowBackground(Color(uiColor: .tertiarySystemFill))
-        } else {
-            self
-        }
-    }
-}
-
 /// 表单里的一个可多选标签（分类、筛选）：选中时用主题色底，与系统 Picker 的选中色一致
 struct NativeTagChip: View {
     let title: String
@@ -158,5 +132,122 @@ struct NativeTagChip: View {
         }
         .buttonStyle(.borderless)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+// MARK: - 半屏面板里的分组（添加地点、顺路吃）
+
+extension Color {
+    /// 半屏面板里分组的底色：与收藏面板、地点卡片一致；iOS 26 以前面板不是玻璃，用系统分组行底色
+    static var nativeSheetGroupFill: Color {
+        if #available(iOS 26.0, *) { return Color(uiColor: .tertiarySystemFill) }
+        return Color(uiColor: .secondarySystemGroupedBackground)
+    }
+}
+
+/// 半屏系统面板里的一栏：组外标题（可带右侧小字）、圆角分组、组下说明。
+/// 面板本身不铺底色（不套 NavigationStack / Form）：半屏透出系统玻璃，拉到全屏由系统过渡为不透明，与地点卡片相同。
+struct NativeSheetGroup<Content: View>: View {
+    let title: String?
+    var trailing: String? = nil
+    var footer: String? = nil
+    var footerColor: Color = .secondary
+    let content: Content
+
+    init(_ title: String?, trailing: String? = nil, footer: String? = nil, footerColor: Color = .secondary,
+         @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.trailing = trailing
+        self.footer = footer
+        self.footerColor = footerColor
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if title != nil || trailing != nil {
+                HStack {
+                    if let title { Text(title) }
+                    Spacer(minLength: 8)
+                    if let trailing { Text(trailing).monospacedDigit() }
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.nativeSheetGroupFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            if let footer, !footer.isEmpty {
+                Text(footer)
+                    .font(.footnote)
+                    .foregroundStyle(footerColor)
+                    .padding(.horizontal, 16)
+            }
+        }
+    }
+}
+
+/// 分组里的一行：左右 16、至少 44 高
+struct NativeSheetRow<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder _ content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+}
+
+/// 半屏面板的标题行，与收藏面板一致：左边圆形关闭钮、居中标题、右边自定（提交钮或等宽占位）
+struct NativeSheetHeader<Trailing: View>: View {
+    let title: String
+    let closeLabel: String
+    var closeDisabled = false
+    let onClose: () -> Void
+    let trailing: Trailing
+
+    init(title: String, closeLabel: String, closeDisabled: Bool = false, onClose: @escaping () -> Void,
+         @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.closeLabel = closeLabel
+        self.closeDisabled = closeDisabled
+        self.onClose = onClose
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(Color.primary.opacity(0.1)))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(closeDisabled)
+            .accessibilityLabel(Text(closeLabel))
+            Text(title)
+                .font(.title3.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .accessibilityAddTraits(.isHeader)
+            trailing
+                .frame(width: 44, height: 44)
+        }
+        .padding(.horizontal, 16)
+        // 系统拖动条在上方
+        .padding(.top, 18)
+        .padding(.bottom, 10)
     }
 }
