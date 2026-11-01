@@ -3,8 +3,11 @@ import UIKit
 
 /// 与住民设置一致的整页呈现：地图与网页留在下方，页面从右侧推入、向右退出。
 /// 由于不能移除 presenter view（否则返回时地图会重新挂载并闪一帧），这里使用自定义
-/// presentation controller；左边缘侧滑在根页面关闭整页，在子页面交给页面栈返回。
+/// presentation controller；根页面的左边缘侧滑跟手关闭整页（可拖回取消），子页面交给页面栈返回。
 final class NativeScreenTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
+    var interaction: UIPercentDrivenInteractiveTransition?
+    var onDismissalEnd: ((Bool) -> Void)?
+
     func animationController(forPresented presented: UIViewController, presenting: UIViewController,
                              source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
         NativeScreenSlideAnimator(presenting: true)
@@ -14,21 +17,35 @@ final class NativeScreenTransitionDelegate: NSObject, UIViewControllerTransition
         NativeScreenSlideAnimator(presenting: false)
     }
 
+    func interactionControllerForDismissal(using animator: UIViewControllerAnimatedTransitioning) -> UIViewControllerInteractiveTransitioning? {
+        interaction
+    }
+
     func presentationController(forPresented presented: UIViewController, presenting: UIViewController?,
                                 source: UIViewController) -> UIPresentationController? {
-        NativeScreenPresentationController(presentedViewController: presented, presenting: presenting)
+        let controller = NativeScreenPresentationController(presentedViewController: presented, presenting: presenting)
+        controller.onDismissalEnd = { [weak self] completed in self?.onDismissalEnd?(completed) }
+        return controller
     }
 }
 
 final class NativeScreenPresentationController: UIPresentationController {
+    var onDismissalEnd: ((Bool) -> Void)?
+
     override var shouldRemovePresentersView: Bool { false }
 
     override var frameOfPresentedViewInContainerView: CGRect {
         containerView?.bounds ?? .zero
     }
 
+    override func dismissalTransitionDidEnd(_ completed: Bool) {
+        super.dismissalTransitionDidEnd(completed)
+        onDismissalEnd?(completed)
+    }
+
     override func containerViewWillLayoutSubviews() {
         super.containerViewWillLayoutSubviews()
+        // 用 bounds / center 布局，保留横向动画正在使用的 transform。
         let frame = frameOfPresentedViewInContainerView
         presentedView?.bounds = CGRect(origin: .zero, size: frame.size)
         presentedView?.center = CGPoint(x: frame.midX, y: frame.midY)
@@ -55,14 +72,16 @@ final class NativeScreenSlideAnimator: NSObject, UIViewControllerAnimatedTransit
         let frame = presenting ? context.finalFrame(for: controller) : context.initialFrame(for: controller)
         movingView.frame = frame.isEmpty ? container.bounds : frame
         let offset = CGAffineTransform(translationX: container.bounds.width, y: 0)
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        // 手指直接驱动时仍按水平距离跟随；自动动画遵循“减弱动态效果”。
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled && !context.isInteractive
         if presenting {
             container.addSubview(movingView)
             movingView.transform = reduceMotion ? .identity : offset
             movingView.alpha = reduceMotion ? 0 : 1
         }
+        let curve: UIView.AnimationOptions = context.isInteractive ? .curveLinear : .curveEaseInOut
         UIView.animate(withDuration: transitionDuration(using: context), delay: 0,
-                       options: [.curveEaseInOut, .beginFromCurrentState]) {
+                       options: [curve, .beginFromCurrentState]) {
             movingView.transform = self.presenting || reduceMotion ? .identity : offset
             movingView.alpha = !self.presenting && reduceMotion ? 0 : 1
         } completion: { _ in
@@ -78,16 +97,33 @@ final class NativeScreenSlideAnimator: NSObject, UIViewControllerAnimatedTransit
     }
 }
 
-/// 持有转场并安装左边缘侧滑：根页面关闭，子页面调用页面栈返回。
+/// 持有转场并安装左边缘侧滑。根页面时手势直接驱动退场动画（与住民设置相同，松手按距离与速度决定关闭或回弹）；
+/// 插件通过 dismiss(_:animated:completion:) 关闭，回弹取消时 completion 不会执行，改为通知 onDismissCancelled。
 final class NativeScreenPresenter: NSObject {
     private let transition = NativeScreenTransitionDelegate()
     private weak var gesture: UIScreenEdgePanGestureRecognizer?
+    private weak var host: UIViewController?
+    private var tracking = false
 
-    var onEdgeBack: (() -> Void)?
+    /// 根页面左边缘侧滑开始：插件在这里调用自己的关闭流程（最终走到 dismiss）；
+    /// 返回 false 表示没有开始关闭（正在呈现或已在关闭），这次侧滑不驱动动画
+    var onEdgeBack: (() -> Bool)?
+    /// 侧滑拖回、退场取消：插件恢复为“未在关闭”
+    var onDismissCancelled: (() -> Void)?
 
     /// 只在根页启用：子页的左边缘侧滑是系统导航的跟手返回，两个手势不能同时响应
     var edgeEnabled = true {
         didSet { gesture?.isEnabled = edgeEnabled }
+    }
+
+    override init() {
+        super.init()
+        transition.onDismissalEnd = { [weak self] completed in
+            guard let self else { return }
+            self.tracking = false
+            self.transition.interaction = nil
+            if !completed { self.onDismissCancelled?() }
+        }
     }
 
     func present(_ host: UIViewController, from presenter: UIViewController, completion: (() -> Void)? = nil) {
@@ -99,14 +135,61 @@ final class NativeScreenPresenter: NSObject {
         gesture.isEnabled = edgeEnabled
         host.view.addGestureRecognizer(gesture)
         self.gesture = gesture
+        self.host = host
+        tracking = false
+        transition.interaction = nil
         presenter.present(host, animated: !UIAccessibility.isReduceMotionEnabled, completion: completion)
     }
 
+    /// 关闭整页。侧滑驱动时始终带动画（跟手）；被拖回时不执行 completion。
+    func dismiss(_ host: UIViewController, animated: Bool, completion: @escaping () -> Void) {
+        guard let presenter = host.presentingViewController else { completion(); return }
+        let interactive = transition.interaction != nil
+        presenter.dismiss(animated: animated && (interactive || !UIAccessibility.isReduceMotionEnabled)) { [weak host] in
+            // 交互退场取消时 UIKit 也可能回调：页面仍在就不算关闭
+            guard host?.presentingViewController == nil else { return }
+            completion()
+        }
+    }
+
+    private var canBeginInteraction: Bool {
+        guard let host else { return false }
+        return host.presentingViewController != nil && host.presentedViewController == nil && host.transitionCoordinator == nil
+    }
+
     @objc private func handleEdge(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard gesture.state == .ended, let view = gesture.view else { return }
+        guard let view = gesture.view else { return }
         let distance = max(0, gesture.translation(in: view).x)
-        let velocity = gesture.velocity(in: view).x
-        let committed = distance > max(60, view.bounds.width * 0.25) || (distance > 24 && velocity > 600)
-        if committed { onEdgeBack?() }
+        let progress = min(1, distance / max(1, view.bounds.width))
+        switch gesture.state {
+        case .began:
+            guard canBeginInteraction else { return }
+            let interaction = UIPercentDrivenInteractiveTransition()
+            interaction.completionCurve = .easeOut
+            transition.interaction = interaction
+            tracking = true
+            guard onEdgeBack?() == true else {
+                tracking = false
+                transition.interaction = nil
+                return
+            }
+            interaction.update(progress)
+        case .changed:
+            guard tracking else { return }
+            transition.interaction?.update(progress)
+        case .ended:
+            guard tracking, let interaction = transition.interaction else { return }
+            tracking = false
+            interaction.update(progress)
+            let velocity = gesture.velocity(in: view).x
+            let committed = (progress >= 0.3 && velocity >= -150) || (distance > 24 && velocity > 600)
+            if committed { interaction.finish() } else { interaction.cancel() }
+        case .cancelled, .failed:
+            guard tracking else { return }
+            tracking = false
+            transition.interaction?.cancel()
+        default:
+            break
+        }
     }
 }

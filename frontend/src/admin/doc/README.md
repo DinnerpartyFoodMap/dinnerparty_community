@@ -28,4 +28,4 @@ flowchart LR
 
 iOS App 的管理后台由 SwiftUI 呈现（[NativeAdminPlugin.swift](../../../ios/App/App/NativeAdminPlugin.swift)），共用声明式页面引擎 `NativePageEngine.swift`。网页按管理员等级构建 dashboard 与各面板页面模型，原生只渲染 rows / form / calendar / images 并回传动作、筛选与表单值；账号请求、权限与校验仍在网页（[nativeAdminController.js](../nativeAdminController.js)、[nativeAdmin.js](../../platform/nativeAdmin.js)）。
 
-覆盖面板：用户、普通用户、地点申请（含 AI 初筛原因与图片）、口味分类、QQ 白名单、公告、展会（含图标上传）、皮肤兑换码、住民反馈、操作日志。原生不可用或请求失败时回退网页 `AdminDashboard`。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。
+覆盖面板：用户、普通用户、地点申请（含 AI 初筛原因与图片）、口味分类、QQ 白名单、公告、展会（含图标上传）、住民反馈、操作日志。皮肤兑换码不在 iOS 后台出现（App 内不提兑换码），在网页后台生成。首页顶部是与住民主页相同的个人信息框；各页的刷新在导航栏右侧；用户与地点申请的详情按字段分开；口味分类在列表里直接勾选并实时保存；白名单与公告的输入框直接在页面里，白名单记录左滑删除；当前生效公告用网页 `Notice` 组件渲染的 HTML 显示。原生不可用或请求失败时回退网页 `AdminDashboard`。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。

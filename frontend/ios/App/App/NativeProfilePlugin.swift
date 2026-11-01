@@ -61,8 +61,14 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             let host = MapChromeHostingController(rootView: NativeProfileView(model: model), dark: model.dark)
             // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
             host.view.backgroundColor = .systemGroupedBackground
+            // 侧滑拖回取消：页面仍在，恢复为可再次关闭
+            self.screenPresenter.onDismissCancelled = { [weak self] in
+                self?.finishing = false
+            }
             self.screenPresenter.onEdgeBack = { [weak self] in
-                self?.finish(action: "back")
+                guard let self, !self.presenting, !self.finishing else { return false }
+                self.finish(action: "back")
+                return true
             }
             self.model = model
             self.host = host
@@ -135,11 +141,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             self?.closeCompletions.removeAll()
             completions.forEach { $0() }
         }
-        if let presenter = host.presentingViewController {
-            presenter.dismiss(animated: animated && !UIAccessibility.isReduceMotionEnabled, completion: complete)
-        } else {
-            complete()
-        }
+        screenPresenter.dismiss(host, animated: animated, completion: complete)
     }
 }
 

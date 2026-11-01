@@ -5,7 +5,7 @@ import UIKit
 /// 本地 Capacitor 插件：iOS 原生管理后台（NativeAdminPlugin.swift）。
 ///
 /// open({ id, dashboard, theme }) -> { id, action: close }
-/// respond({ id, requestId, ok, message, error, page?, form?, imageId?, imageData? }) -> {}
+/// respond({ id, requestId, ok, message, error, page?, form?, silent?, imageId?, imageData? }) -> {}
 /// close({ id }) -> {}
 /// 事件 adminEvent：{ id, type: action|filter|submit|back|loadImage, requestId, ... }
 ///
@@ -64,13 +64,18 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             model.onDepthChange = { [weak self] depth in
                 self?.screenPresenter.edgeEnabled = depth == 0
             }
+            // 侧滑拖回取消：页面仍在，恢复为可再次关闭
+            self.screenPresenter.onDismissCancelled = { [weak self] in
+                self?.finishing = false
+            }
             self.screenPresenter.onEdgeBack = { [weak self] in
-                guard let self, let model = self.model else { return }
+                guard let self, let model = self.model, !self.presenting, !self.finishing else { return false }
                 if model.depth > 0 {
                     model.back()
-                } else {
-                    self.finish(action: "close")
+                    return false
                 }
+                self.finish(action: "close")
+                return true
             }
             self.model = model
             self.host = host
@@ -110,6 +115,15 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let error = call.getString("error") ?? ""
+            // 实时保存（口味分类的勾选）只回提示，不动页面、不结束其他请求的加载
+            if call.getBool("silent", false) {
+                if !error.isEmpty {
+                    model.alertMessage = error
+                } else if let message = call.getString("message"), !message.isEmpty {
+                    model.showToast(message)
+                }
+                return
+            }
             if let page = call.getObject("page") {
                 let seq = call.getInt("seq", 0)
                 if seq > 0 {
@@ -170,10 +184,6 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             self?.closeCompletions.removeAll()
             completions.forEach { $0() }
         }
-        if let presenter = host.presentingViewController {
-            presenter.dismiss(animated: animated && !UIAccessibility.isReduceMotionEnabled, completion: complete)
-        } else {
-            complete()
-        }
+        screenPresenter.dismiss(host, animated: animated, completion: complete)
     }
 }

@@ -158,7 +158,14 @@
       "status": "当前状态",
       "proposal": "提议内容"
     },
-    "note": "备注: {{note}}"
+    "note": "备注: {{note}}",
+    "typeModify": "修改地点",
+    "field": {
+      "type": "类型",
+      "creator": "创建者",
+      "note": "备注",
+      "imageCount": "{{count}} 张"
+    }
   },
   "qqWhitelist": {
     "forbidden": "权限不足，无法获取QQ白名单",
@@ -221,6 +228,14 @@
     "qqFailed": "QQ 号修改失败：{{message}}",
     "col": {
       "username": "用户名"
+    },
+    "field": {
+      "id": "ID",
+      "qq": "QQ 号",
+      "noQq": "未绑定",
+      "banReason": "封禁原因",
+      "banExpires": "解封时间",
+      "none": "未填写"
     }
   },
   "exhibitions": {

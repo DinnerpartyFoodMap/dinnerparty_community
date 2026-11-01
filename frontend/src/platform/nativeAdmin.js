@@ -31,6 +31,7 @@ export function createNativeAdminSession(plugin, snapshot, { onEvent, onLoadImag
         };
         if (result?.page && typeof result.page === 'object') payload.page = result.page;
         if (result?.form && typeof result.form === 'object') payload.form = result.form;
+        if (result?.silent) payload.silent = true;
         if (result?.imageId) payload.imageId = result.imageId;
         if (result?.imageData) payload.imageData = result.imageData;
         try { await plugin.respond?.(payload); } catch { /* 原生页已关闭 */ }

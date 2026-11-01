@@ -8,6 +8,7 @@ export function nativePageLabels() {
         ok: t('common:action.ok'),
         timeout: t('common:error.timeout'),
         pickImage: t('common:action.chooseImage'),
-        removeImage: t('common:action.remove')
+        removeImage: t('common:action.remove'),
+        refresh: t('common:action.refresh')
     };
 }
