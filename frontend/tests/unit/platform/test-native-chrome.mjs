@@ -314,7 +314,16 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 14);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 15);
+    // v15 双头拉杆：数值夹在范围内、低高不交叉；非 range 样式不带 range；link 语气保留
+    const ranged = sanitizeSheet({ id: 'filter', size: 'list', sections: [
+        { id: 'cost', style: 'range', rows: [], range: { id: 'cost', min: 0, max: 200, step: 5, low: 250, high: -3, labels: ['低', '高'], valueFormat: '¥%d', evil: 1 } },
+        { id: 'tags', style: 'chips', rows: [{ id: 'tags:more', title: '展开', tone: 'link' }], range: { min: 0, max: 1 } }
+    ] });
+    assert.deepEqual([ranged.sections[0].style, ranged.sections[0].range.low, ranged.sections[0].range.high, 'evil' in ranged.sections[0].range], ['range', 0, 200, false]);
+    assert.equal('range' in ranged.sections[1], false);
+    assert.equal(ranged.sections[1].rows[0].tone, 'link');
+    assert.equal(sanitizeSheet({ id: 'filter', sections: [{ style: 'range', range: { min: 5, max: 5 } }] }).sections[0].style, 'list');
     // Swift 插件的协议版本与面板 / 动作白名单必须与网页一致：网页新增面板忘了改 Swift 时，原生会静默丢掉它
     const swift = readFileSync(new URL('../../../ios/App/App/NativeMapChromePlugin.swift', import.meta.url), 'utf8');
     const swiftSet = (name) => [...swift.split(`static let ${name}: Set<String> = [`)[1].split(']')[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();

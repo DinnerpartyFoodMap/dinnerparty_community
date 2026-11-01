@@ -23,11 +23,7 @@
     "costMaxLabel": "最高人均",
     "reset": "清除筛选",
     "included": "包含",
-    "excluded": "排除",
-    "costAtMost": "¥{{max}} 以下",
-    "costAtLeast": "¥{{min}} 以上",
-    "costBetween": "¥{{min}}–{{max}}",
-    "costCurrent": "当前：{{range}}"
+    "excluded": "排除"
   },
   "list": {
     "title": "地点列表",

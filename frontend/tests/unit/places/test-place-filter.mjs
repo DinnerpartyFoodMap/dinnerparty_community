@@ -62,26 +62,33 @@ assert.equal(placeListQuery(EMPTY_PLACE_FILTER, { center: null, radiusKm: 3 }).t
 assert.deepEqual([...RADIUS_OPTIONS_KM], [0.5, 1, 3, 5, 10], 'bounded options include a walkable 500m radius');
 assert.equal(placeListQuery(EMPTY_PLACE_FILTER, { center: { lat: 23.1, lng: 113.3 }, radiusKm: 0.5 }).get('radiusKm'), '0.5');
 
-// iOS 原生筛选面板（协议 v14）：标签为 chips，点一下包含 / 排除 / 取消；人均档位；清除
+// iOS 原生筛选面板（协议 v15）：标签为 chips，点一下包含 / 排除 / 取消；展开全部跟在标签后（无边框 link）；人均双头拉杆；清除在标题左侧
 const directory = [{ name: '快餐', is_common: true }, { name: '避雷', is_common: true }, { name: '粤菜', is_common: false }];
 let sheet = filterChromeSheet({ filter: normalizePlaceFilter({ tags: ['快餐'], excludeTags: ['粤菜'], maxCost: 30 }), categories: directory });
 assert.equal(sheet.id, 'filter');
 const tagSection = sheet.sections.find((section) => section.id === 'tags');
 assert.equal(tagSection.style, 'chips');
-assert.deepEqual(tagSection.rows.map((row) => [row.title, row.tone]), [['快餐', 'include'], ['避雷', undefined], ['粤菜', 'exclude']], 'picked uncommon tags stay visible while collapsed');
+assert.deepEqual(tagSection.rows.map((row) => [row.title, row.tone]).slice(0, 3), [['快餐', 'include'], ['避雷', undefined], ['粤菜', 'exclude']], 'picked uncommon tags stay visible while collapsed');
+assert.deepEqual([tagSection.rows.at(-1).id, tagSection.rows.at(-1).tone], ['tags:more', 'link'], 'expand-all follows the tags as a borderless link');
 assert.ok(tagSection.rows.every((row) => row.keepsOpen), 'tapping a tag keeps the panel open');
-assert.equal(sheet.sections.find((section) => section.id === 'cost').rows.find((row) => row.tone === 'accent').id, 'cost:0-30');
-assert.equal(sheet.sections.find((section) => section.id === 'actions').rows[0].disabled, false);
+assert.ok(!sheet.sections.some((section) => section.id === 'more' || section.id === 'actions'));
+const cost = sheet.sections.find((section) => section.id === 'cost');
+assert.equal(cost.style, 'range');
+assert.deepEqual([cost.range.min, cost.range.max, cost.range.step, cost.range.low, cost.range.high], [0, 200, 5, 0, 30]);
+assert.equal(cost.range.valueFormat.includes('%d'), true);
+assert.deepEqual([sheet.leading.id, sheet.leading.disabled], ['reset', false]);
 let change = applyFilterSheetRow(normalizePlaceFilter({ tags: ['快餐'] }), 'tag:快餐');
 assert.deepEqual(change.filter.excludeTags, ['快餐'], 'second tap turns the tag red');
-change = applyFilterSheetRow(change.filter, 'cost:60-100');
+change = applyFilterSheetRow(change.filter, 'cost:range:60:100');
 assert.deepEqual([change.filter.minCost, change.filter.maxCost, change.filter.excludeTags], [60, 100, ['快餐']]);
+assert.deepEqual([applyFilterSheetRow(change.filter, 'cost:range:0:200').filter.minCost, applyFilterSheetRow(change.filter, 'cost:range:0:200').filter.maxCost], [null, null], 'both ends at the limits mean no cost filter');
+assert.equal(applyFilterSheetRow(EMPTY_PLACE_FILTER, 'cost:range:x:1'), null);
 assert.equal(isPlaceFilterActive(applyFilterSheetRow(change.filter, 'reset').filter), false);
 assert.deepEqual(applyFilterSheetRow(EMPTY_PLACE_FILTER, 'tags:more'), { toggleShowAll: true });
 assert.equal(applyFilterSheetRow(EMPTY_PLACE_FILTER, 'nope'), null);
-sheet = filterChromeSheet({ filter: normalizePlaceFilter({ minCost: 20, maxCost: 90 }), categories: directory, showAll: true });
-assert.equal(sheet.sections.find((section) => section.id === 'tags').rows.length, 3);
-assert.ok(sheet.sections.find((section) => section.id === 'cost').footer.includes('¥20'), 'a slider range set on the web is described');
+sheet = filterChromeSheet({ filter: EMPTY_PLACE_FILTER, categories: directory, showAll: true });
+assert.equal(sheet.sections.find((section) => section.id === 'tags').rows.length, 4);
+assert.equal(sheet.leading.disabled, true, 'nothing to clear');
 
 // App 更新：服务器构建号更大时才提示；读不出本机构建号时不提示
 assert.equal(needsUpdate('23', { build: 24 }), true);

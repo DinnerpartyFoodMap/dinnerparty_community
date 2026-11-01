@@ -1,32 +1,13 @@
 // iOS 原生地图控件里的筛选面板（协议 v14 的 filter 面板，从右侧按钮组展开的玻璃外壳）：
 // 与网页 PlaceFilterPanel 同一份筛选状态。标签画成标签（style "chips"）：点一下包含（绿），再点排除（红），再点取消；
-// 人均用几档常用范围（原生面板里没有双滑块），网页拉杆设出的其他范围在说明里显示，点“不限”可清除。
-import { cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState } from './placeFilter.js';
+// “展开全部标签”是跟在标签后面的无边框文字（tone "link"）。人均与网页一样是双头拉杆（v15 style "range"），
+// 松手后原生回传行 id "cost:range:<低>:<高>"。清除筛选在标题左侧（leading）。
+import { COST_SLIDER, cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState } from './placeFilter.js';
 import { t } from '../i18n/index.js';
-
-/** 人均档位：[最低, 最高]，null 为不设 */
-export const FILTER_COST_PRESETS = Object.freeze([
-    { id: 'any', min: null, max: null },
-    { id: '0-30', min: null, max: 30 },
-    { id: '30-60', min: 30, max: 60 },
-    { id: '60-100', min: 60, max: 100 },
-    { id: '100-', min: 100, max: null }
-]);
 
 // 展开全部时最多下发的标签数（原生面板一次最多 300 行）
 const TAG_LIMIT = 200;
-
-const costPresetLabel = (preset) => {
-    if (preset.min === null && preset.max === null) return t('places:filter.costNoMin');
-    if (preset.min === null) return t('places:filter.costAtMost', { max: preset.max });
-    if (preset.max === null) return t('places:filter.costAtLeast', { min: preset.min });
-    return t('places:filter.costBetween', { min: preset.min, max: preset.max });
-};
-
-const costValue = (value, bound) => {
-    if (value !== null) return t('places:filter.costValue', { cost: value });
-    return bound === 'min' ? t('places:filter.costNoMin') : t('places:filter.costNoMax');
-};
+const COST_RANGE_PREFIX = 'cost:range:';
 
 /**
  * 面板快照。categories 为分类目录（常用在前）；showAll 为展开全部标签；loading / error 为目录读取状态。
@@ -48,60 +29,61 @@ export function filterChromeSheet({ filter, categories = [], showAll = false, lo
             keepsOpen: true
         };
     });
-    const presetSelected = (preset) => preset.min === value.minCost && preset.max === value.maxCost;
-    const customCost = !FILTER_COST_PRESETS.some(presetSelected);
+    // 与网页一样：展开 / 收起紧跟在标签后面，无边框文字，字号与标签相同
+    if (others.length) {
+        tagRows.push({
+            id: 'tags:more',
+            title: showAll ? t('places:filter.tagsCollapse') : t('places:filter.tagsExpand', { count: others.length }),
+            tone: 'link',
+            keepsOpen: true
+        });
+    }
     const sections = [];
     if (tagRows.length) {
         sections.push({ id: 'tags', title: t('places:filter.tagsTitle'), style: 'chips', footer: t('places:filter.tagsHint'), rows: tagRows });
     }
-    if (others.length) {
-        sections.push({
-            id: 'more',
-            rows: [{
-                id: 'tags:more',
-                title: showAll ? t('places:filter.tagsCollapse') : t('places:filter.tagsExpand', { count: others.length }),
-                symbol: showAll ? 'chevron.up' : 'chevron.down',
-                keepsOpen: true
-            }]
-        });
-    }
     sections.push({
         id: 'cost',
         title: t('places:filter.costTitle'),
-        style: 'chips',
-        footer: customCost
-            ? t('places:filter.costCurrent', { range: t('places:filter.costRange', { min: costValue(value.minCost, 'min'), max: costValue(value.maxCost, 'max') }) })
-            : undefined,
-        rows: FILTER_COST_PRESETS.map((preset) => ({
-            id: `cost:${preset.id}`,
-            title: costPresetLabel(preset),
-            tone: presetSelected(preset) ? 'accent' : undefined,
-            keepsOpen: true
-        }))
-    });
-    sections.push({
-        id: 'actions',
-        rows: [{ id: 'reset', title: t('places:filter.reset'), symbol: 'xmark.circle', tone: 'danger', disabled: !isPlaceFilterActive(value), keepsOpen: true }]
+        style: 'range',
+        rows: [],
+        range: {
+            id: 'cost',
+            min: COST_SLIDER.min,
+            max: COST_SLIDER.max,
+            step: COST_SLIDER.step,
+            low: value.minCost ?? COST_SLIDER.min,
+            high: value.maxCost ?? COST_SLIDER.max,
+            labels: [t('places:filter.costMinLabel'), t('places:filter.costMaxLabel')],
+            // 原生按网页的文案拼出“¥30 - 不限”：%d 为金额，%min / %max 为两端
+            valueFormat: t('places:filter.costValue', { cost: '%d' }),
+            noMin: t('places:filter.costNoMin'),
+            noMax: t('places:filter.costNoMax'),
+            rangeFormat: t('places:filter.costRange', { min: '%min', max: '%max' })
+        }
     });
     return {
         id: 'filter',
         title: t('places:filter.title'),
         size: 'list',
+        // 标题左侧：清除筛选
+        leading: { id: 'reset', title: t('places:filter.reset'), symbol: 'xmark.circle', disabled: !isPlaceFilterActive(value), keepsOpen: true },
         message: loading && !categories.length ? t('common:status.loading') : (error || undefined),
         messageTone: loading && !categories.length ? 'loading' : (error ? 'danger' : undefined),
         sections
     };
 }
 
-/** 点了面板里的一行：返回 { filter } 新筛选，或 { toggleShowAll: true }；不认识的行返回 null */
+/** 点了面板里的一行（或拉杆松手）：返回 { filter } 新筛选，或 { toggleShowAll: true }；不认识的行返回 null */
 export function applyFilterSheetRow(filter, rowId) {
     const id = String(rowId || '');
     if (id.startsWith('tag:')) return { filter: cyclePlaceFilterTag(filter, id.slice(4)) };
     if (id === 'tags:more') return { toggleShowAll: true };
-    if (id.startsWith('cost:')) {
-        const preset = FILTER_COST_PRESETS.find((item) => `cost:${item.id}` === id);
-        if (!preset) return null;
-        return { filter: normalizePlaceFilter({ ...normalizePlaceFilter(filter), minCost: preset.min, maxCost: preset.max }) };
+    if (id.startsWith(COST_RANGE_PREFIX)) {
+        const [low, high] = id.slice(COST_RANGE_PREFIX.length).split(':').map(Number);
+        if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+        // 两端拉到头就是不限（normalizePlaceFilter 处理）
+        return { filter: normalizePlaceFilter({ ...normalizePlaceFilter(filter), minCost: low, maxCost: high }) };
     }
     if (id === 'reset') return { filter: normalizePlaceFilter(null) };
     return null;

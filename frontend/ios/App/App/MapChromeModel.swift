@@ -67,9 +67,39 @@ struct MapChromeSheetSection: Identifiable, Equatable {
     var footer: String?
     /// 脚注样式（备案链接等次要信息）
     var footnote: Bool
-    /// v14 标签样式：行画成可换行的标签（地图筛选），tone 为 include / exclude / accent 时着色
+    /// v14 标签样式：行画成可换行的标签（地图筛选），tone 为 include / exclude / accent 时着色，link 为无边框文字
     var chips: Bool = false
     var rows: [MapChromeSheetRow]
+    /// v15 双头拉杆（地图筛选的人均）
+    var range: MapChromeSheetRange? = nil
+}
+
+/// v15 双头拉杆：整数范围；松手回传行 id "<id>:range:<低>:<高>"。
+/// 文案由网页下发：valueFormat 里 %d 为数值，rangeFormat 里 %min / %max 为两端；拉到头显示 noMin / noMax
+struct MapChromeSheetRange: Equatable {
+    let id: String
+    let min: Int
+    let max: Int
+    let step: Int
+    let low: Int
+    let high: Int
+    let labels: [String]
+    let valueFormat: String
+    let noMin: String
+    let noMax: String
+    let rangeFormat: String
+
+    func text(_ value: Int, lower: Bool) -> String {
+        if lower && value <= min { return noMin }
+        if !lower && value >= max { return noMax }
+        return valueFormat.replacingOccurrences(of: "%d", with: String(value))
+    }
+
+    func rangeText(low: Int, high: Int) -> String {
+        rangeFormat
+            .replacingOccurrences(of: "%min", with: text(low, lower: true))
+            .replacingOccurrences(of: "%max", with: text(high, lower: false))
+    }
 }
 
 /// 地点卡片展开后的一组图片（外观、菜单）。thumbnails 与 images 逐项对应：方块用缩略图，大图用原图
@@ -459,6 +489,12 @@ final class MapChromeModel: ObservableObject {
         guard let sheet = presentedSheet, !row.disabled, !row.expands else { return }
         if !row.keepsOpen { dismissedSheetToken = sheet.token }
         onSheetEvent?("select", ["sheetId": sheet.sheetId, "token": sheet.token, "rowId": row.id])
+    }
+
+    /// v15 拉杆松手：面板不收起，回传 "<id>:range:<低>:<高>"
+    func selectSheetRange(_ range: MapChromeSheetRange, low: Int, high: Int) {
+        guard let sheet = presentedSheet else { return }
+        onSheetEvent?("select", ["sheetId": sheet.sheetId, "token": sheet.token, "rowId": "\(range.id):range:\(low):\(high)"])
     }
 
     /// 用户下滑、点遮罩或关闭按钮

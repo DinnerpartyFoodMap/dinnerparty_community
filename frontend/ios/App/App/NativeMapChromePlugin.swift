@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 14）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 15）。
 ///
 /// capabilities() -> { protocolVersion, supportsGlass, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
@@ -65,7 +65,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 14
+    static let protocolVersion = 15
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "random", "add", "search", "alongRoute", "account", "locate", "filter", "listView"]
@@ -428,10 +428,32 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 footer: clip(rawSection["footer"], 120),
                 footnote: (rawSection["style"] as? String) == "footnote",
                 chips: (rawSection["style"] as? String) == "chips",
-                rows: parseRows(rawSection["rows"], budget: &budget)
+                rows: parseRows(rawSection["rows"], budget: &budget),
+                range: (rawSection["style"] as? String) == "range" ? parseRange(rawSection["range"]) : nil
             ))
         }
         return sections
+    }
+
+    /// v15 双头拉杆：数值不合法时丢弃整段
+    private static func parseRange(_ raw: JSValue?) -> MapChromeSheetRange? {
+        guard let object = raw as? JSObject else { return nil }
+        func int(_ key: String) -> Int? { (object[key] as? NSNumber)?.intValue }
+        guard let min = int("min"), let max = int("max"), max > min else { return nil }
+        let step = Swift.max(1, Swift.min(int("step") ?? 1, max - min))
+        var low = Swift.min(max, Swift.max(min, int("low") ?? min))
+        var high = Swift.min(max, Swift.max(min, int("high") ?? max))
+        if low > high { swap(&low, &high) }
+        let labels = ((object["labels"] as? JSArray) ?? []).compactMap { $0 as? String }.map { String($0.prefix(20)) }
+        return MapChromeSheetRange(
+            id: clip(object["id"], 24) ?? "range",
+            min: min, max: max, step: step, low: low, high: high,
+            labels: labels,
+            valueFormat: clip(object["valueFormat"], 20) ?? "%d",
+            noMin: clip(object["noMin"], 12) ?? "",
+            noMax: clip(object["noMax"], 12) ?? "",
+            rangeFormat: clip(object["rangeFormat"], 40) ?? "%min - %max"
+        )
     }
 
     private static func parseRows(_ raw: JSValue?, budget: inout Int) -> [MapChromeSheetRow] {

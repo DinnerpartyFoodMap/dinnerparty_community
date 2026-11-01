@@ -286,40 +286,81 @@ struct MapChromeMenuPanel: View {
             }
     }
 
+    @ViewBuilder
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // 与右侧关闭钮等宽的占位，标题保持居中
-            Color.clear.frame(width: 44, height: 44)
-            VStack(spacing: 2) {
-                Text(sheet.title)
-                    .font(.title3.weight(.bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                if let subtitle = sheet.subtitle {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        if let leading = sheet.leading {
+            // v15 标题左侧的文字按钮（筛选的“清除筛选”）：标题仍在整行居中，两侧按钮叠在上面
+            ZStack {
+                titleBlock
+                    .padding(.horizontal, 104)
+                HStack {
+                    leadingButton(leading)
+                    Spacer(minLength: 0)
+                    closeButton
                 }
             }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-            Button {
-                model.dismissSheet()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .frame(width: 44, height: 44)
-                    // 与工具栏一致：面板是一整块玻璃，内部按钮不再叠加玻璃
-                    .background(Circle().fill(Color.primary.opacity(0.1)))
-                    .contentShape(Circle())
+        } else {
+            HStack(alignment: .center, spacing: 12) {
+                // 与右侧关闭钮等宽的占位，标题保持居中
+                Color.clear.frame(width: 44, height: 44)
+                titleBlock
+                closeButton
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(model.text("close", "关闭")))
         }
+    }
+
+    private func leadingButton(_ row: MapChromeSheetRow) -> some View {
+        Button {
+            model.selectSheetRow(row)
+        } label: {
+            Text(row.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .foregroundStyle(row.tone == "danger" ? Color.red : accent)
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(Capsule().fill(Color.primary.opacity(0.1)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(row.disabled)
+        .opacity(row.disabled ? 0.45 : 1)
+        .accessibilityLabel(Text(row.title))
+    }
+
+    private var titleBlock: some View {
+        VStack(spacing: 2) {
+            Text(sheet.title)
+                .font(.title3.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let subtitle = sheet.subtitle {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var closeButton: some View {
+        Button {
+            model.dismissSheet()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .frame(width: 44, height: 44)
+                // 与工具栏一致：面板是一整块玻璃，内部按钮不再叠加玻璃
+                .background(Circle().fill(Color.primary.opacity(0.1)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(model.text("close", "关闭")))
     }
 
     private var content: some View {
@@ -380,7 +421,13 @@ struct MapChromeMenuPanel: View {
 
     private func sectionView(_ section: MapChromeSheetSection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let title = section.title {
+            if let range = section.range {
+                // v15 双头拉杆：标题与当前范围在同一行（与网页一致），拖动时实时更新，松手回传
+                MapChromeRangeSlider(title: section.title ?? "", range: range, accent: accent) { low, high in
+                    model.selectSheetRange(range, low: low, high: high)
+                }
+                .padding(.horizontal, 4)
+            } else if let title = section.title {
                 Text(title)
                     .font(.headline)
                     .padding(.horizontal, 4)
@@ -476,7 +523,22 @@ struct MapChromeMenuPanel: View {
             default: return nil
             }
         }()
-        return Button {
+        if row.tone == "link" {
+            // v15 跟在标签后面的无边框文字（展开全部标签）：字号与标签相同，高度对齐标签
+            return AnyView(Button {
+                model.selectSheetRow(row)
+            } label: {
+                Text(row.title)
+                    .font(.subheadline)
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 4)
+                    .frame(minHeight: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(row.disabled))
+        }
+        return AnyView(Button {
             model.selectSheetRow(row)
         } label: {
             HStack(spacing: 4) {
@@ -497,13 +559,124 @@ struct MapChromeMenuPanel: View {
         .disabled(row.disabled)
         .opacity(row.disabled ? 0.55 : 1)
         .accessibilityLabel(Text(row.subtitle.map { "\(row.title), \($0)" } ?? row.title))
-        .accessibilityAddTraits(tint == nil ? [] : .isSelected)
+        .accessibilityAddTraits(tint == nil ? [] : .isSelected))
     }
 
     private func titleStyle(_ row: MapChromeSheetRow, footnote: Bool) -> Color {
         if row.tone == "danger" { return .red }
         if row.tone == "muted" || footnote { return .secondary }
         return .primary
+    }
+}
+
+/// v15 双头拉杆（与网页 RangeSlider 相同：灰色轨道、两端之间主色填充、白色圆形滑块带主色描边）。
+/// 按下时选离手指近的滑块，两端不交叉；拖动时本地更新文字，松手才回传。读屏每个滑块可单独增减。
+private struct MapChromeRangeSlider: View {
+    let title: String
+    let range: MapChromeSheetRange
+    let accent: Color
+    let commit: (Int, Int) -> Void
+    @State private var low: Int
+    @State private var high: Int
+    @State private var dragging: Thumb?
+
+    private enum Thumb { case low, high }
+    private static let thumb: CGFloat = 22
+
+    init(title: String, range: MapChromeSheetRange, accent: Color, commit: @escaping (Int, Int) -> Void) {
+        self.title = title
+        self.range = range
+        self.accent = accent
+        self.commit = commit
+        _low = State(initialValue: range.low)
+        _high = State(initialValue: range.high)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                Text(range.rangeText(low: low, high: high))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            GeometryReader { proxy in
+                let width = max(1, proxy.size.width - Self.thumb)
+                let x = { (value: Int) -> CGFloat in
+                    Self.thumb / 2 + CGFloat(value - range.min) / CGFloat(range.max - range.min) * width
+                }
+                ZStack(alignment: .topLeading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.15))
+                        .frame(width: width, height: 6)
+                        .offset(x: Self.thumb / 2, y: 15)
+                    Capsule()
+                        .fill(accent)
+                        .frame(width: max(0, x(high) - x(low)), height: 6)
+                        .offset(x: x(low), y: 15)
+                    knob(.low).offset(x: x(low) - Self.thumb / 2, y: 7)
+                    knob(.high).offset(x: x(high) - Self.thumb / 2, y: 7)
+                }
+                .frame(width: proxy.size.width, height: 36, alignment: .topLeading)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { drag in
+                            let value = snap(drag.location.x, width: width)
+                            if dragging == nil {
+                                let start = drag.startLocation.x
+                                let toLow = abs(start - x(low))
+                                let toHigh = abs(start - x(high))
+                                // 两个滑块重叠时按手指在哪一侧决定（拉到最右时仍能把低端拉回来）
+                                dragging = toLow < toHigh || (toLow == toHigh && start <= x(low)) ? .low : .high
+                            }
+                            if dragging == .low { low = min(value, high) } else { high = max(value, low) }
+                        }
+                        .onEnded { _ in
+                            dragging = nil
+                            if low != range.low || high != range.high { commit(low, high) }
+                        }
+                )
+            }
+            .frame(height: 36)
+        }
+        .onChange(of: range) { _, next in
+            guard dragging == nil else { return }
+            low = next.low
+            high = next.high
+        }
+    }
+
+    private func knob(_ thumb: Thumb) -> some View {
+        let value = thumb == .low ? low : high
+        return Circle()
+            .fill(Color(uiColor: .systemBackground))
+            .overlay(Circle().strokeBorder(accent, lineWidth: 2))
+            .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+            .frame(width: Self.thumb, height: Self.thumb)
+            .accessibilityElement()
+            .accessibilityLabel(Text(range.labels.count > (thumb == .low ? 0 : 1) ? range.labels[thumb == .low ? 0 : 1] : ""))
+            .accessibilityValue(Text(range.text(value, lower: thumb == .low)))
+            .accessibilityAdjustableAction { direction in
+                let delta = direction == .increment ? range.step : -range.step
+                if thumb == .low {
+                    low = min(high, max(range.min, low + delta))
+                } else {
+                    high = max(low, min(range.max, high + delta))
+                }
+                commit(low, high)
+            }
+    }
+
+    private func snap(_ location: CGFloat, width: CGFloat) -> Int {
+        let ratio = min(1, max(0, (location - Self.thumb / 2) / width))
+        let raw = Double(range.min) + Double(ratio) * Double(range.max - range.min)
+        let stepped = (raw / Double(range.step)).rounded() * Double(range.step)
+        return min(range.max, max(range.min, Int(stepped)))
     }
 }
 
