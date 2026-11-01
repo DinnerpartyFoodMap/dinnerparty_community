@@ -57,7 +57,7 @@ public class NativePlaceFormPlugin: CAPPlugin, CAPBridgedPlugin {
             model.onFinish = { [weak self] action in self?.finish(action: action) }
             let host = MapChromeHostingController(rootView: NativePlaceFormView(model: model), dark: model.dark)
             host.modalPresentationStyle = .pageSheet
-            // iOS 26 的 pageSheet 本身是 Liquid Glass：宿主保持透明，表单内部用玻璃卡片；
+            // iOS 26 的 pageSheet 本身是 Liquid Glass：宿主与表单都不铺底色（与地点卡片一致，全屏时由系统过渡为不透明）；
             // 更早的系统继续用不透明分组底色，避免深色地图上的内容被浅色系统面板洗白。
             if #available(iOS 26.0, *) {
                 host.view.backgroundColor = .clear
@@ -71,10 +71,6 @@ public class NativePlaceFormPlugin: CAPPlugin, CAPBridgedPlugin {
                     sheet.detents = [.custom(identifier: compact) { context in context.maximumDetentValue * 0.45 }, .large()]
                     sheet.selectedDetentIdentifier = compact
                     sheet.largestUndimmedDetentIdentifier = compact
-                    model.onExpand = { [weak sheet] in
-                        guard let sheet, sheet.selectedDetentIdentifier != .large else { return }
-                        sheet.animateChanges { sheet.selectedDetentIdentifier = .large }
-                    }
                     self.sheetDelegate.onDetent = { [weak model] large in
                         guard let model else { return }
                         withAnimation(.easeOut(duration: 0.2)) { model.expanded = large }
@@ -240,8 +236,6 @@ final class NativePlaceFormModel: ObservableObject {
     let maxImages: Int
     var onFinish: ((String) -> Void)?
     var onLockChange: ((Bool) -> Void)?
-    /// 半屏时由插件把面板动画展开到全屏
-    var onExpand: (() -> Void)?
     private let labels: [String: String]
     private let send: ([String: Any]) -> Void
     /// 打开时的内容（修改地点时判断有没有改动）
@@ -536,119 +530,91 @@ final class NativePlaceFormModel: ObservableObject {
 
 // MARK: - 页面
 
+/// 添加 / 修改地点表单。与地点卡片同一种做法：不套 NavigationStack、不铺底色，面板底色完全交给系统
+/// （iOS 26 半屏是 Liquid Glass，拉到全屏由系统过渡为不透明）；顶部是与收藏面板一致的标题行
+/// （左关闭、居中标题、右提交），各栏是 tertiarySystemFill 的圆角分组，与收藏面板的分组底色、透明度相同。
 private struct NativePlaceFormView: View {
     @ObservedObject var model: NativePlaceFormModel
-    @State private var exteriorItems: [PhotosPickerItem] = []
-    @State private var menuItems: [PhotosPickerItem] = []
+    /// 相册选图：点“添加图片”菜单里的“从相册选择”后弹出系统相册，选好的图放进 pickerTarget 这一组
+    @State private var pickerShown = false
+    @State private var pickerTarget: NativePlaceFormModel.ImageGroup?
+    @State private var pickedItems: [PhotosPickerItem] = []
     @State private var cameraGroup: NativePlaceFormModel.ImageGroup?
+    @State private var categoryQuery = ""
+    @FocusState private var categoryFocused: Bool
 
     private let cameraAvailable = UIImagePickerController.isSourceTypeAvailable(.camera)
 
-    /// 系统表单：每一栏是一个分组（标题在组外、说明在组下），与“设置”等系统 App 一致；
-    /// 面板底色交给系统（半屏玻璃、全屏不透明，与地点卡片相同），行底见 nativeSheetRow。
+    /// 分组底色：与收藏面板、地点卡片一致；iOS 26 以前面板不是玻璃，用系统分组行底色
+    private var groupFill: Color {
+        if #available(iOS 26.0, *) { return Color(uiColor: .tertiarySystemFill) }
+        return Color(uiColor: .secondarySystemGroupedBackground)
+    }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                locationSection
-                Section {
-                    TextField(model.text("namePlaceholder", "店名"), text: $model.name)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .nativeSheetRow()
-                    NavigationLink {
-                        NativePlaceCategoryPicker(model: model)
-                    } label: {
-                        LabeledContent(model.text("category", "分类")) {
-                            Text(model.categories.isEmpty ? model.text("categoryNone", "未选择") : model.categories.joined(separator: "、"))
-                                .lineLimit(1)
+        VStack(spacing: 0) {
+            header
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    locationSection
+                    formSection(model.text("name", "店名")) {
+                        row {
+                            TextField(model.text("namePlaceholder", "店名"), text: $model.name)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                         }
                     }
-                    .nativeSheetRow()
-                    LabeledContent(model.text("cost", "人均")) {
-                        TextField(model.text("costPlaceholder", "人均（元，选填）"), text: $model.cost)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    .nativeSheetRow()
-                } header: {
-                    Text(model.text("name", "店名"))
-                }
-                Section {
-                    TextField(model.text("descriptionPlaceholder", "简介"), text: $model.description, axis: .vertical)
-                        .lineLimit(4...12)
-                        .nativeSheetRow()
-                } header: {
-                    HStack {
-                        Text(model.text("description", "简介"))
-                        Spacer()
-                        Text("\(model.description.count) / \(model.maxDescription)")
-                            .monospacedDigit()
-                    }
-                } footer: {
-                    Text(model.text("markdownHint", "支持基础 Markdown"))
-                }
-                if model.isCreate && !model.tiers.isEmpty {
-                    ratingSection
-                }
-                imagesSection(.exterior, items: $exteriorItems)
-                imagesSection(.menu, items: $menuItems)
-                if model.canDelete {
-                    Section {
-                        Button(role: .destructive) {
-                            model.confirmDelete = true
-                        } label: {
-                            Text(model.text("delete", "删除地点"))
-                                .frame(maxWidth: .infinity)
-                        }
-                        .nativeSheetRow()
-                    } footer: {
-                        if !model.isCreate && !model.canDirect {
-                            Text(model.text("needsReview", "你不是创建者，修改会提交给管理员审核"))
+                    categorySection
+                    formSection(model.text("cost", "人均")) {
+                        row {
+                            HStack(spacing: 6) {
+                                TextField(model.text("costPlaceholder", "人均价格（元，可选）"), text: $model.cost)
+                                    .keyboardType(.numberPad)
+                                if !model.cost.isEmpty {
+                                    Text(model.text("costUnit", "元")).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
-                } else if !model.isCreate && !model.canDirect {
-                    Section {
+                    descriptionSection
+                    if model.isCreate && !model.tiers.isEmpty {
+                        ratingSection
+                    }
+                    imagesSection(.exterior)
+                    imagesSection(.menu)
+                    if !model.isCreate && !model.canDirect {
                         Label(model.text("needsReview", "你不是创建者，修改会提交给管理员审核"), systemImage: "info.circle")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                            .nativeSheetRow()
+                            .padding(.horizontal, 16)
+                    }
+                    if model.canDelete {
+                        formSection(nil) {
+                            Button(role: .destructive) {
+                                model.confirmDelete = true
+                            } label: {
+                                row {
+                                    Text(model.text("delete", "删除地点"))
+                                        .frame(maxWidth: .infinity)
+                                        .foregroundStyle(Color.red)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 32)
             }
-            .nativeSheetForm()
             .scrollDismissesKeyboard(.interactively)
             // 与地点卡片一致：半屏时内容不滚动，上滑由面板本身展开到全屏
             .scrollDisabled(!model.expanded)
             .scrollBounceBehavior(.basedOnSize)
             .disabled(model.submitting)
-            .navigationTitle(model.text("title", model.isCreate ? "添加地点" : "修改地点"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(model.text("cancel", "取消")) { model.requestCancel() }
-                        .disabled(model.submitting)
-                }
-                ToolbarItemGroup(placement: .confirmationAction) {
-                    if model.isCreate && !model.expanded {
-                        Button {
-                            model.onExpand?()
-                        } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .accessibilityLabel(Text(model.text("expand", "展开全部")))
-                    }
-                    if model.submitting {
-                        ProgressView()
-                            .accessibilityLabel(Text(model.text("submitting", "提交中...")))
-                    } else {
-                        Button(model.text("submit", "提交")) { model.submit() }
-                            .font(.body.weight(.semibold))
-                            .disabled(model.trimmedName.isEmpty || model.uploading || model.loadingImages)
-                    }
-                }
-            }
         }
-        // 同步整个呈现（含导航栏、行背景与系统面板），不只覆盖文字的 environment。
+        // 同步整个呈现（含系统面板），不只覆盖文字的 environment。
         .preferredColorScheme(model.dark ? .dark : .light)
         .tint(model.tint)
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
@@ -662,6 +628,13 @@ private struct NativePlaceFormView: View {
             Button(model.text("delete", "删除地点"), role: .destructive) { model.delete() }
             Button(model.text("cancel", "取消"), role: .cancel) {}
         }
+        .photosPicker(
+            isPresented: $pickerShown,
+            selection: $pickedItems,
+            maxSelectionCount: max(1, pickerTarget.map { model.remaining($0) } ?? 1),
+            selectionBehavior: .ordered,
+            matching: .images
+        )
         .fullScreenCover(item: $cameraGroup) { group in
             PlaceFormCameraPicker { image in
                 cameraGroup = nil
@@ -681,61 +654,261 @@ private struct NativePlaceFormView: View {
         .onChange(of: model.isLocked) { _, locked in
             model.onLockChange?(locked)
         }
-        .onChange(of: exteriorItems) { _, items in load(items, into: .exterior) }
-        .onChange(of: menuItems) { _, items in load(items, into: .menu) }
+        .onChange(of: pickedItems) { _, items in
+            guard !items.isEmpty, let group = pickerTarget else { return }
+            pickedItems = []
+            load(items, into: group)
+        }
+    }
+
+    // MARK: 标题行
+
+    /// 与收藏面板的标题行一致：左边关闭、居中标题、右边提交（圆形按钮，不再有展开按钮）
+    private var header: some View {
+        HStack(spacing: 12) {
+            Button {
+                model.requestCancel()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(Color.primary.opacity(0.1)))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.submitting)
+            .accessibilityLabel(Text(model.text("cancel", "取消")))
+            Text(model.text("title", model.isCreate ? "添加地点" : "修改地点"))
+                .font(.title3.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .accessibilityAddTraits(.isHeader)
+            Group {
+                if model.submitting {
+                    ProgressView()
+                        .frame(width: 44, height: 44)
+                        .accessibilityLabel(Text(model.text("submitting", "提交中...")))
+                } else {
+                    let enabled = !(model.trimmedName.isEmpty || model.uploading || model.loadingImages)
+                    Button {
+                        model.submit()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(enabled ? Color.white : Color.secondary)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(enabled ? model.tint : Color.primary.opacity(0.1)))
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!enabled)
+                    .accessibilityLabel(Text(model.text("submit", "提交")))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        // 系统拖动条在上方
+        .padding(.top, 18)
+        .padding(.bottom, 10)
+    }
+
+    // MARK: 分组
+
+    /// 一栏：组外标题（可带右侧小字）、圆角分组、组下说明
+    private func formSection<Content: View>(_ title: String?, trailing: String? = nil,
+                                            footer: String? = nil, footerColor: Color = .secondary,
+                                            @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if title != nil || trailing != nil {
+                HStack {
+                    if let title { Text(title) }
+                    Spacer(minLength: 8)
+                    if let trailing { Text(trailing).monospacedDigit() }
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(groupFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            if let footer, !footer.isEmpty {
+                Text(footer)
+                    .font(.footnote)
+                    .foregroundStyle(footerColor)
+                    .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    private func row<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+
+    private var divider: some View {
+        Divider().padding(.leading, 16)
     }
 
     @ViewBuilder
     private var locationSection: some View {
         if !model.addressText.isEmpty || !model.positionText.isEmpty {
-            Section {
+            formSection(nil) {
                 if !model.addressText.isEmpty {
-                    LabeledContent(model.text("address", "地址"), value: model.addressText)
-                        .nativeSheetRow()
+                    row { LabeledContent(model.text("address", "地址"), value: model.addressText) }
                 }
                 if !model.positionText.isEmpty {
-                    LabeledContent(model.text("position", "位置")) {
-                        Text(model.positionText).monospacedDigit()
+                    if !model.addressText.isEmpty { divider }
+                    row {
+                        LabeledContent(model.text("position", "位置")) {
+                            Text(model.positionText).monospacedDigit()
+                        }
                     }
-                    .nativeSheetRow()
                 }
                 if model.canPickPosition {
+                    divider
                     Button {
                         model.pickPosition()
                     } label: {
-                        Label(model.text("pickPosition", "在地图上修改位置"), systemImage: "mappin.and.ellipse")
+                        row { Label(model.text("pickPosition", "在地图上修改位置"), systemImage: "mappin.and.ellipse") }
+                            .contentShape(Rectangle())
                     }
-                    .nativeSheetRow()
+                    .buttonStyle(.plain)
+                    .foregroundStyle(model.tint)
                 }
             }
         }
     }
 
+    // MARK: 分类（与网页的分类输入一致）
+
+    private var trimmedCategoryQuery: String { categoryQuery.trimmingCharacters(in: .whitespaces) }
+
+    /// 没输入时是常用分类，输入时是匹配的分类（开头匹配在前）
+    private var categorySuggestions: [String] {
+        let query = trimmedCategoryQuery
+        if query.isEmpty {
+            return model.categoryOptions.filter(\.common).map(\.name)
+        }
+        let matches = model.categoryOptions.map(\.name).filter { $0.localizedCaseInsensitiveContains(query) }
+        let prefix = matches.filter { $0.lowercased().hasPrefix(query.lowercased()) }
+        return Array((prefix + matches.filter { !prefix.contains($0) }).prefix(30))
+    }
+
+    /// 回车或点“添加新分类”：已有的直接选中，新的检查长度与逗号后加入（保存地点时后端登记到分类目录）
+    private func addTypedCategory() {
+        let query = trimmedCategoryQuery
+        guard !query.isEmpty else { return }
+        if model.categories.contains(query) {
+            categoryQuery = ""
+            return
+        }
+        guard NativePlaceFormModel.validCategory(query) else {
+            model.alertMessage = model.text("categoryInvalid", "分类不能超过 8 个汉字或 16 个英文字符，且不能包含逗号")
+            return
+        }
+        model.toggleCategory(query)
+        categoryQuery = ""
+    }
+
+    /// 网页同款：已选分类是可点掉的标签，后面紧跟输入框；聚焦或输入时下面列出常用 / 匹配的分类，回车添加新分类
+    private var categorySection: some View {
+        let query = trimmedCategoryQuery
+        let suggestions = categorySuggestions
+        let canAdd = !query.isEmpty && !model.categoryOptions.contains(where: { $0.name == query }) && !model.categories.contains(query)
+        let showSuggestions = categoryFocused || !query.isEmpty
+        return formSection(model.text("category", "分类")) {
+            NativeFlowLayout(spacing: 6, lineSpacing: 6) {
+                ForEach(model.categories, id: \.self) { name in
+                    NativeTagChip(title: name, selected: true, tint: model.tint, symbol: "xmark") {
+                        model.toggleCategory(name)
+                    }
+                }
+                TextField(model.text("categorySearch", "搜索或添加分类"), text: $categoryQuery)
+                    .focused($categoryFocused)
+                    .submitLabel(.done)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit(addTypedCategory)
+                    .frame(minWidth: 140, minHeight: 34)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { categoryFocused = true }
+            if showSuggestions {
+                divider
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(query.isEmpty ? model.text("categoryFrequent", "常用分类") : model.text("categoryMatching", "匹配分类"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if suggestions.isEmpty && !canAdd {
+                        Text(model.text("categoryNoMatch", "没有匹配的分类，按回车创建"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    NativeFlowLayout(spacing: 6, lineSpacing: 6) {
+                        if canAdd {
+                            NativeTagChip(title: model.text("categoryAdd", "添加新分类：") + query, tint: model.tint, symbol: "plus") {
+                                addTypedCategory()
+                            }
+                        }
+                        ForEach(suggestions, id: \.self) { name in
+                            NativeTagChip(title: name, selected: model.categories.contains(name), tint: model.tint) {
+                                model.toggleCategory(name)
+                                categoryQuery = ""
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: showSuggestions)
+    }
+
+    private var descriptionSection: some View {
+        formSection(model.text("description", "简介"),
+                    trailing: "\(model.description.count) / \(model.maxDescription)",
+                    footer: model.text("markdownHint", "支持基础 Markdown")) {
+            row {
+                TextField(model.text("descriptionPlaceholder", "简介"), text: $model.description, axis: .vertical)
+                    .lineLimit(4...12)
+            }
+        }
+    }
+
+    // MARK: 评价
+
     private var ratingSection: some View {
-        Section {
+        let selectedTier = model.tiers.first(where: { $0.id == model.rating })
+        return formSection(model.text("rating", "我的评价"),
+                           footer: selectedTier?.hint ?? (model.ratingMissing ? model.text("ratingRequired", "请选择你的评价") : nil),
+                           footerColor: selectedTier == nil && model.ratingMissing ? .red : .secondary) {
             HStack(spacing: 8) {
                 ForEach(model.tiers) { tier in
                     ratingOption(tier)
                 }
             }
-            .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
-            .nativeSheetRow()
-        } header: {
-            Text(model.text("rating", "我的评价"))
-        } footer: {
-            if let tier = model.tiers.first(where: { $0.id == model.rating }) {
-                Text(tier.hint)
-            } else if model.ratingMissing {
-                Text(model.text("ratingRequired", "请选择你的评价")).foregroundStyle(Color.red)
-            }
+            .padding(10)
         }
     }
 
-    /// 评价的一档：四档各有颜色，选中时加粗、描边、底色加深。同一行有四个按钮，用 borderless 才能分别点
+    /// 评价的一档：四个按钮同一种圆角与边框粗细，只用颜色深浅区分选中；没选时提交，四个一起描红
     private func ratingOption(_ tier: NativePlaceFormModel.Tier) -> some View {
         let selected = model.rating == tier.id
         let color = model.color(for: tier)
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let border: Color = selected ? color : (model.ratingMissing ? Color.red.opacity(0.6) : color.opacity(0.35))
         return Button {
             model.rating = tier.id
             model.ratingMissing = false
@@ -746,14 +919,16 @@ private struct NativePlaceFormView: View {
                 .minimumScaleFactor(0.7)
                 .foregroundStyle(color)
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(shape.fill(color.opacity(selected ? 0.18 : 0.07)))
-                .overlay(shape.strokeBorder(selected ? color : (model.ratingMissing ? Color.red : color.opacity(0.35)), lineWidth: selected ? 2 : 1))
+                .background(shape.fill(color.opacity(selected ? 0.2 : 0.06)))
+                .overlay(shape.strokeBorder(border, lineWidth: 1.5))
                 .contentShape(shape)
         }
         .buttonStyle(.borderless)
         .accessibilityLabel(Text(tier.hint.isEmpty ? tier.title : "\(tier.title)：\(tier.hint)"))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
+
+    // MARK: 图片
 
     private func load(_ items: [PhotosPickerItem], into group: NativePlaceFormModel.ImageGroup) {
         guard !items.isEmpty else { return }
@@ -769,7 +944,6 @@ private struct NativePlaceFormView: View {
                 }
             }
             await MainActor.run {
-                if group == .exterior { exteriorItems = [] } else { menuItems = [] }
                 model.loadingImages = false
                 model.addImages(loaded, to: group)
                 if failed { model.alertMessage = model.text("imageUnreadable", "图片无法读取") }
@@ -777,10 +951,10 @@ private struct NativePlaceFormView: View {
         }
     }
 
-    /// 图片一组：已选图片横向排在一行，下面是“从相册选择 / 拍照”两行系统按钮
-    private func imagesSection(_ group: NativePlaceFormModel.ImageGroup, items: Binding<[PhotosPickerItem]>) -> some View {
+    /// 图片一组：已选图片横向排成一行；下面一个“添加图片”，点开小菜单选“从相册选择”或“拍照”
+    private func imagesSection(_ group: NativePlaceFormModel.ImageGroup) -> some View {
         let images = model.images(group)
-        return Section {
+        return formSection(group == .exterior ? model.text("exteriorImages", "外观图片") : model.text("menuImages", "菜单图片")) {
             if !images.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
@@ -790,37 +964,43 @@ private struct NativePlaceFormView: View {
                     }
                     // 留出删除钮扩大后伸出图片右上角的点按范围
                     .padding(.vertical, 8)
-                    .padding(.trailing, 8)
+                    .padding(.horizontal, 12)
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 0))
-                .nativeSheetRow()
+                if model.remaining(group) > 0 || model.loadingImages { divider }
             }
             if model.remaining(group) > 0 {
-                PhotosPicker(selection: items, maxSelectionCount: model.remaining(group), selectionBehavior: .ordered, matching: .images) {
-                    Label(model.text("chooseFromAlbum", "从相册选择（可多选）"), systemImage: "photo.on.rectangle")
+                Menu {
+                    Button {
+                        pickerTarget = group
+                        pickerShown = true
+                    } label: {
+                        Label(model.text("chooseFromAlbum", "从相册选择"), systemImage: "photo.on.rectangle")
+                    }
+                    if cameraAvailable {
+                        Button {
+                            cameraGroup = group
+                        } label: {
+                            Label(model.text("takePhoto", "拍照"), systemImage: "camera")
+                        }
+                    }
+                } label: {
+                    row {
+                        Label(model.text("addImage", "添加图片"), systemImage: "plus.circle.fill")
+                            .foregroundStyle(model.tint)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .disabled(model.loadingImages)
-                .nativeSheetRow()
-                if cameraAvailable {
-                    Button {
-                        cameraGroup = group
-                    } label: {
-                        Label(model.text("takePhoto", "拍照"), systemImage: "camera")
-                    }
-                    .disabled(model.loadingImages)
-                    .nativeSheetRow()
-                }
             }
             if model.loadingImages {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
+                row {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
                 }
-                .nativeSheetRow()
             }
-        } header: {
-            Text(group == .exterior ? model.text("exteriorImages", "外观图片") : model.text("menuImages", "菜单图片"))
         }
     }
 
@@ -871,109 +1051,6 @@ private struct NativePlaceFormView: View {
             .offset(x: 8, y: -8)
             .accessibilityLabel(Text(model.text("removeImage", "移除图片")))
         }
-    }
-}
-
-/// 分类选择：常用在前，可搜索；搜不到时可以添加新分类（保存地点时后端登记到分类目录）
-private struct NativePlaceCategoryPicker: View {
-    @ObservedObject var model: NativePlaceFormModel
-    @State private var query = ""
-    @FocusState private var searchFocused: Bool
-
-    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespaces) }
-
-    private var visible: [NativePlaceFormModel.CategoryOption] {
-        let options = model.categoryOptions
-        guard !trimmedQuery.isEmpty else { return options }
-        return options.filter { $0.name.localizedCaseInsensitiveContains(trimmedQuery) }
-    }
-
-    var body: some View {
-        List {
-            Section {
-                searchField.nativeSheetRow()
-            }
-            // 已选但不在目录里的（新分类、旧数据）也要能取消
-            let extra = model.categories.filter { name in !model.categoryOptions.contains { $0.name == name } }
-            if !extra.isEmpty {
-                Section {
-                    ForEach(extra, id: \.self) { name in
-                        row(name).nativeSheetRow()
-                    }
-                }
-            }
-            if !trimmedQuery.isEmpty && !model.categoryOptions.contains(where: { $0.name == trimmedQuery }) && !model.categories.contains(trimmedQuery) {
-                Section {
-                    Button {
-                        if NativePlaceFormModel.validCategory(trimmedQuery) {
-                            model.toggleCategory(trimmedQuery)
-                            query = ""
-                        } else {
-                            model.alertMessage = model.text("categoryInvalid", "分类不能超过 8 个汉字或 16 个英文字符，且不能包含逗号")
-                        }
-                    } label: {
-                        // 文案（含冒号）由网页下发，后面接输入的分类名
-                        Label(model.text("categoryAdd", "添加新分类：") + trimmedQuery, systemImage: "plus.circle")
-                    }
-                    .nativeSheetRow()
-                }
-            }
-            Section {
-                ForEach(visible) { option in
-                    row(option.name).nativeSheetRow()
-                }
-            }
-        }
-        .nativeSheetForm()
-        .navigationTitle(model.text("category", "分类"))
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    /// 搜索框占满一整行、至少 44pt 高，点这一行任何位置都能开始输入
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            TextField(model.text("categorySearch", "搜索或添加分类"), text: $query)
-                .focused($searchFocused)
-                .submitLabel(.search)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                    searchFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(Text(model.text("clearSearch", "清空")))
-            }
-        }
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .onTapGesture { searchFocused = true }
-    }
-
-    private func row(_ name: String) -> some View {
-        Button {
-            model.toggleCategory(name)
-        } label: {
-            HStack {
-                Text(name).foregroundStyle(Color.primary)
-                Spacer()
-                if model.categories.contains(name) {
-                    Image(systemName: "checkmark").foregroundStyle(model.tint)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(model.categories.contains(name) ? .isSelected : [])
     }
 }
 

@@ -641,6 +641,8 @@
     "descriptionPlaceholder": "写点简介：招牌菜、营业时间、怎么找到……",
     "markdownHint": "支持基础 Markdown",
     "cost": "人均",
+    "addImage": "添加图片",
+    "costUnit": "元",
     "chooseFromAlbum": "从相册选择",
     "removeImage": "移除图片",
     "imageUnreadable": "有图片无法读取",
