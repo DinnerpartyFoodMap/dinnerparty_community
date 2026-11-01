@@ -212,4 +212,9 @@ export function getThemeSecondary() {
     }
 }
 
+/** iOS 原生页面用的两种主题色（住民设置里的主色 / 辅色）：主色用于主要按钮与选中，辅色用于标签与次要强调 */
+export function nativeThemeColors() {
+    return { primary: getThemeColor() || '#E2789F', secondary: getThemeSecondary() || '#8C6BB1' };
+}
+
 export default { applyDarkMode, isDarkMode };

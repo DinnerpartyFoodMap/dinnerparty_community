@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { createNativeJourneySession } from '../platform/nativeJourney.js';
 import { getPlatform, isPluginAvailable } from '../platform/env.js';
 import { createNativeJourneyController } from './nativeJourneyController.js';
+import { nativeThemeColors } from '../theme/theme.js';
 
 /** 当前安装包能否用原生日记 · 同好（iOS App 且包含插件） */
 export function supportsNativeJourney() {
@@ -47,7 +48,7 @@ export default function useNativeJourney({
                 const { registerPlugin } = await import('@capacitor/core');
                 if (cancelled) return;
                 session = createNativeJourneySession(registerPlugin('NativeJourney'), {
-                    theme: { dark: !!dark }
+                    theme: { dark: !!dark, ...nativeThemeColors() }
                 }, {
                     onEvent: (type, event) => controller.handle(type, event),
                     onLoadImage: (imageId) => controller.loadImage(imageId),

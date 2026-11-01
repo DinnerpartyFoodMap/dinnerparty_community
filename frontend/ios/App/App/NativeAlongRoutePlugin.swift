@@ -221,6 +221,8 @@ final class NativeAlongRouteModel: ObservableObject {
 
     let dark: Bool
     let tint: Color
+    /// 住民设置的辅色（标签、次要强调）
+    let secondary: Color
     let modes: [ModeOption]
     let distances: [DistanceOption]
     private let labels: [String: String]
@@ -238,7 +240,9 @@ final class NativeAlongRouteModel: ObservableObject {
         self.labels = labels
         let theme = call.getObject("theme") ?? [:]
         dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
-        tint = Color(uiColor: UIColor(cssHex: theme["primary"] as? String ?? "") ?? .systemPink)
+        let colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String)
+        tint = colors.primary
+        secondary = colors.secondary
         modes = (call.getArray("modes", JSObject.self) ?? []).compactMap { item -> ModeOption? in
             guard let id = item["id"] as? String, !id.isEmpty else { return nil }
             return ModeOption(id: String(id.prefix(16)), label: item["label"] as? String ?? id)
@@ -498,7 +502,7 @@ private struct NativeAlongRouteView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .preferredColorScheme(model.dark ? .dark : .light)
-        .tint(model.tint)
+        .nativeThemeColors(primary: model.tint, secondary: model.secondary)
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
             Button(model.text("ok", "好"), role: .cancel) {}
         }
@@ -583,12 +587,12 @@ private struct NativeAlongRouteView: View {
                 Divider().padding(.leading, 16)
                 NativeFlowLayout(spacing: 8, lineSpacing: 8) {
                     ForEach(model.categories, id: \.self) { name in
-                        NativeTagChip(title: name, selected: true, tint: model.tint, symbol: "xmark") {
+                        NativeTagChip(title: name, selected: true, symbol: "xmark") {
                             model.toggleCategory(name)
                         }
                     }
                     ForEach(visible) { option in
-                        NativeTagChip(title: option.name, tint: model.tint) {
+                        NativeTagChip(title: option.name) {
                             model.toggleCategory(option.name)
                         }
                     }

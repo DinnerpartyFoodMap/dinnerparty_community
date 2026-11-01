@@ -1,3 +1,4 @@
+const path = require("path");
 const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
@@ -555,10 +556,17 @@ router.put('/me/avatar', requireAuth, upload.single('avatar'), async (req, res) 
 });
 
 // 获取指定用户的头像
+// 没有头像时默认 404；?fallback=default 时返回默认头像（与网页 src/img/default.png 相同，iOS 原生列表只能加载 https 图片）
+const DEFAULT_AVATAR_FILE = path.join(__dirname, '..', 'assets', 'default-avatar.png');
 router.get('/:id/avatar', (req, res) => {
     db.get('SELECT avatar_blob FROM User WHERE id = ?', [req.params.id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (!row || !row.avatar_blob) {
+            if (req.query.fallback === 'default') {
+                // 住民之后可能会上传头像：默认头像只缓存一小时
+                res.set('Cache-Control', 'public, max-age=3600');
+                return res.sendFile(DEFAULT_AVATAR_FILE);
+            }
             return res.status(404).json({ error: '未找到头像' });
         }
         res.set('Content-Type', 'image/webp');

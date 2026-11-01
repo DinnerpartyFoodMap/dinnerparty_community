@@ -225,6 +225,8 @@ final class NativePlaceFormModel: ObservableObject {
     let isCreate: Bool
     let dark: Bool
     let tint: Color
+    /// 住民设置的辅色（分类标签、次要强调）
+    let secondary: Color
     let categoryOptions: [CategoryOption]
     let tiers: [Tier]
     let canDirect: Bool
@@ -248,7 +250,9 @@ final class NativePlaceFormModel: ObservableObject {
         isCreate = call.getString("mode") != "edit"
         expanded = call.getString("mode") == "edit"
         dark = call.getBool("dark", false)
-        tint = Color(uiColor: UIColor(cssHex: call.getString("primary") ?? "") ?? .systemPink)
+        let colors = NativeThemeColors(primary: call.getString("primary"), secondary: call.getString("secondary"))
+        tint = colors.primary
+        secondary = colors.secondary
         canDirect = call.getBool("canDirect", true)
         canDelete = call.getBool("canDelete", false)
         canPickPosition = call.getBool("canPickPosition", false)
@@ -610,7 +614,7 @@ private struct NativePlaceFormView: View {
         }
         // 同步整个呈现（含系统面板），不只覆盖文字的 environment。
         .preferredColorScheme(model.dark ? .dark : .light)
-        .tint(model.tint)
+        .nativeThemeColors(primary: model.tint, secondary: model.secondary)
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
             Button(model.text("ok", "好"), role: .cancel) {}
         }
@@ -772,7 +776,7 @@ private struct NativePlaceFormView: View {
         return formSection(model.text("category", "分类")) {
             NativeFlowLayout(spacing: 6, lineSpacing: 6) {
                 ForEach(model.categories, id: \.self) { name in
-                    NativeTagChip(title: name, selected: true, tint: model.tint, symbol: "xmark") {
+                    NativeTagChip(title: name, selected: true, symbol: "xmark") {
                         model.toggleCategory(name)
                     }
                 }
@@ -802,12 +806,12 @@ private struct NativePlaceFormView: View {
                     }
                     NativeFlowLayout(spacing: 6, lineSpacing: 6) {
                         if canAdd {
-                            NativeTagChip(title: model.text("categoryAdd", "添加新分类：") + query, tint: model.tint, symbol: "plus") {
+                            NativeTagChip(title: model.text("categoryAdd", "添加新分类：") + query, symbol: "plus") {
                                 addTypedCategory()
                             }
                         }
                         ForEach(suggestions, id: \.self) { name in
-                            NativeTagChip(title: name, selected: model.categories.contains(name), tint: model.tint) {
+                            NativeTagChip(title: name, selected: model.categories.contains(name)) {
                                 model.toggleCategory(name)
                                 categoryQuery = ""
                             }

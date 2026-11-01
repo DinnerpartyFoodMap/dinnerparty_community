@@ -6,7 +6,7 @@ import { loadCategoryDirectory } from '../categoryDirectory';
 import { RATING_TIERS } from '../rating';
 import { PLACE_IMAGE_PICK_LIMIT, uploadPlaceImage } from '../components/PlaceImageInputs';
 import { imageThumbnailUrl } from '../../platform/runtimeConfig';
-import { getThemeColor } from '../../theme/theme';
+import { getThemeColor, getThemeSecondary } from '../../theme/theme';
 import useDarkMode from '../../theme/useDarkMode';
 import { t } from '../../i18n/index.js';
 
@@ -125,6 +125,7 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
                 mode: current.mode,
                 dark: latest.current.dark,
                 primary: getThemeColor() || '#E2789F',
+                secondary: getThemeSecondary() || '#8C6BB1',
                 categories: categories.map((item) => ({ name: item.name, common: !!item.is_common })),
                 tiers: RATING_TIERS.map((tier) => ({ score: tier.score, title: tier.label, hint: tier.hint, color: tierColor(tier.tone) })),
                 limits: { descriptionLength: 1000, images: PLACE_IMAGE_PICK_LIMIT },

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useOverlayEntry } from '../components/overlay/MotionSurface';
 import { getPlatform, isPluginAvailable } from '../platform/env';
 import { createNativeFeedbackSession } from '../platform/nativeFeedback';
-import { getThemeColor } from '../theme/theme';
+import { getThemeColor, getThemeSecondary } from '../theme/theme';
 import useDarkMode from '../theme/useDarkMode';
 import { FEEDBACK_LIMITS, FEEDBACK_TYPES, FEEDBACK_TYPE_VALUES } from './feedbackTypes';
 import { submitFeedback } from './feedbackApi';
@@ -19,6 +19,7 @@ function buildSnapshot(dark, prefill) {
     return {
         dark,
         primary: getThemeColor() || '#E2789F',
+        secondary: getThemeSecondary() || '#8C6BB1',
         types: FEEDBACK_TYPES.map(({ value, label, hint, symbol }) => ({ id: value, title: label, hint, symbol })),
         limits: { ...FEEDBACK_LIMITS },
         ...(prefill ? { prefill: { type: prefill.type, content: prefill.content } } : null),

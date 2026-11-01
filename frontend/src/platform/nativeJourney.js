@@ -1,8 +1,8 @@
 // iOS 原生日记 · 同好（NativeJourneyPlugin.swift）的网页侧会话。
-// 网页构建页面模型并执行请求；原生回传动作 / 筛选 / 表单值 / 图片请求，网页按 requestId 回传新页面。
+// 网页构建页面模型并执行请求；原生回传动作 / 筛选 / 表单值 / 自绘页面操作（custom）/ 图片请求，网页按 requestId 回传新页面。
 // 生成任务的进度由网页通过 update 主动推送到原生。
 export const JOURNEY_ACTIONS = Object.freeze(['close']);
-const EVENTS = ['action', 'filter', 'submit', 'back'];
+const EVENTS = ['action', 'filter', 'submit', 'back', 'custom'];
 let sequence = 0;
 
 const clip = (value, limit) => (typeof value === 'string' ? value.slice(0, limit) : '');
@@ -30,6 +30,8 @@ export function createNativeJourneySession(plugin, snapshot, { onEvent, onLoadIm
             message: String(result?.message || '').slice(0, 240),
             error: String(result?.error || '').slice(0, 240)
         };
+        // 只同步内容的回执（自绘页面输入时防丢）：原生收到后不改页面、不结束加载
+        if (result?.silent) payload.silent = true;
         if (result?.page && typeof result.page === 'object') payload.page = result.page;
         if (result?.form && typeof result.form === 'object') payload.form = result.form;
         if (result?.imageId) payload.imageId = result.imageId;

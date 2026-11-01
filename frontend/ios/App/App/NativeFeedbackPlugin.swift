@@ -164,6 +164,8 @@ final class NativeFeedbackModel: ObservableObject {
 
     let dark: Bool
     let tint: Color
+    /// 住民设置的辅色（标签、次要强调）
+    let secondary: Color
     let types: [TypeOption]
     let maxLength: Int
     let maxImages: Int
@@ -179,7 +181,9 @@ final class NativeFeedbackModel: ObservableObject {
     init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
         self.send = send
         dark = call.getBool("dark", false)
-        tint = Color(uiColor: UIColor(cssHex: call.getString("primary") ?? "") ?? .systemPink)
+        let colors = NativeThemeColors(primary: call.getString("primary"), secondary: call.getString("secondary"))
+        tint = colors.primary
+        secondary = colors.secondary
         let types = (call.getArray("types", JSObject.self) ?? []).compactMap { item -> TypeOption? in
             guard let id = item["id"] as? String, !id.isEmpty else { return nil }
             return TypeOption(id: id, title: item["title"] as? String ?? id, hint: item["hint"] as? String ?? "",
@@ -369,7 +373,7 @@ private struct NativeFeedbackView: View {
                 }
             }
         }
-        .tint(model.tint)
+        .nativeThemeColors(primary: model.tint, secondary: model.secondary)
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
             Button(model.text("ok", "好"), role: .cancel) {}
         }

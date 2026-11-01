@@ -118,7 +118,7 @@ export default function useNativeAlongRoute({
             const cached = peekCategoryDirectory();
             const categories = cached || [];
             const snapshot = {
-                theme: { primary: latest.current.themeColor || '#E2789F', dark: !!latest.current.dark },
+                theme: { primary: latest.current.themeColor || '#E2789F', secondary: latest.current.themeSecondary || '#8C6BB1', dark: !!latest.current.dark },
                 labels: buildLabels(),
                 modes: alongRouteModeOptions(),
                 distances: alongRouteDistanceOptions(),

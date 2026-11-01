@@ -217,6 +217,8 @@ final class NativeProfileModel: ObservableObject {
 
     let dark: Bool
     let tint: Color
+    /// 住民设置的辅色（标签、次要强调）
+    let secondary: Color
     var onFinish: ((String, [String: Any]) -> Void)?
 
     private let selfLevels: [LevelOption]
@@ -229,7 +231,9 @@ final class NativeProfileModel: ObservableObject {
         self.send = send
         let theme = call.getObject("theme") ?? [:]
         dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
-        tint = Color(uiColor: UIColor(cssHex: theme["primary"] as? String ?? "") ?? .systemPink)
+        let colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String)
+        tint = colors.primary
+        secondary = colors.secondary
         baseLabels = Self.strings(call.getObject("labels"))
         let autoLabel = Self.text(baseLabels, "auto", "按评价自动推断")
         selfLevels = (call.getArray("selfLevels", JSObject.self) ?? []).compactMap { item -> LevelOption? in
@@ -484,7 +488,7 @@ private struct NativeProfileView: View {
             }
         }
         .preferredColorScheme(model.dark ? .dark : .light)
-        .tint(model.tint)
+        .nativeThemeColors(primary: model.tint, secondary: model.secondary)
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
             Button(model.text("ok", "好"), role: .cancel) {}
         }
@@ -695,7 +699,7 @@ private struct NativeProfileView: View {
                 }
             }
         }
-        .tint(model.tint)
+        .nativeThemeColors(primary: model.tint, secondary: model.secondary)
         .preferredColorScheme(model.dark ? .dark : .light)
     }
 

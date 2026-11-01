@@ -96,6 +96,8 @@ struct NativePageField: Identifiable {
     let footer: String
     let options: [NativePageOption]
     let value: NativePageValue
+    /// 依赖的开关字段 id：那个开关关着时本项不可用并自动关闭（网页“允许研究”依赖“允许记录互动”）
+    var requires: String = ""
 }
 
 struct NativePageForm: Identifiable {
@@ -107,6 +109,10 @@ struct NativePageForm: Identifiable {
     let openTitle: String
     let cancelTitle: String
     let fields: [NativePageField]
+    /// 表单页底部的其他操作（如删除），危险操作红色、确认后执行
+    var actions: [NativePageAction] = []
+    /// 直接在页面里编辑（发现设置），不再推入表单页
+    var inline: Bool = false
 }
 
 struct NativePageRow: Identifiable {
@@ -121,6 +127,10 @@ struct NativePageRow: Identifiable {
     let chips: [NativePageChip]
     let actions: [NativePageAction]
     let selected: Bool
+    /// 行尾的小字（数量等），无边框
+    var trailing: String = ""
+    /// "circle"：图片画成圆形（住民头像）
+    var imageShape: String = ""
 }
 
 struct NativeCalendarDay: Identifiable {
@@ -185,6 +195,8 @@ struct NativePageSpec {
     let timeoutText: String
     let pickImageTitle: String
     let removeImageTitle: String
+    /// 原生自绘页面的数据（日记的图文生成、日历）：type 决定由哪个视图绘制，见 NativePageModel.customRenderer
+    var custom: JSObject? = nil
 
     static let empty = NativePageSpec(
         id: "empty", title: "", subtitle: "", message: "", error: "", emptyText: "",
@@ -248,7 +260,8 @@ enum NativePageParser {
                 placeholder: item["placeholder"] as? String ?? "",
                 footer: item["footer"] as? String ?? "",
                 options: options(item["options"]),
-                value: NativePageValue.parse(item["value"])
+                value: NativePageValue.parse(item["value"]),
+                requires: item["requires"] as? String ?? ""
             )
         }
     }
@@ -263,7 +276,9 @@ enum NativePageParser {
             submitTitle: item["submitTitle"] as? String ?? "保存",
             openTitle: item["openTitle"] as? String ?? (item["submitTitle"] as? String ?? "编辑"),
             cancelTitle: item["cancelTitle"] as? String ?? "取消",
-            fields: fields(item["fields"])
+            fields: fields(item["fields"]),
+            actions: actions(item["actions"]),
+            inline: item["inline"] as? Bool ?? false
         )
     }
 
@@ -281,7 +296,9 @@ enum NativePageParser {
                 badgeTone: item["badgeTone"] as? String ?? "",
                 chips: chips(item["chips"]),
                 actions: actions(item["actions"]),
-                selected: item["selected"] as? Bool ?? false
+                selected: item["selected"] as? Bool ?? false,
+                trailing: item["trailing"] as? String ?? "",
+                imageShape: item["imageShape"] as? String ?? ""
             )
         }
     }
@@ -367,7 +384,8 @@ enum NativePageParser {
             okTitle: label("ok", "好"),
             timeoutText: label("timeout", "请求超时，请稍后重试"),
             pickImageTitle: label("pickImage", "选择图片"),
-            removeImageTitle: label("removeImage", "移除")
+            removeImageTitle: label("removeImage", "移除"),
+            custom: item["custom"] as? JSObject
         )
     }
 }
@@ -427,6 +445,12 @@ final class NativePageModel: ObservableObject {
 
     /// 子页数量变化：插件据此只在根页启用“侧滑关闭整页”，子页交给 NavigationStack 的系统返回
     var onDepthChange: ((Int) -> Void)?
+    /// 住民设置的主色 / 辅色（插件打开时按网页下发的 theme 设置）
+    var colors = NativeThemeColors(primary: nil, secondary: nil)
+    /// "sheet"：根页是从下方弹出的半屏面板（日记 · 同好的入口），根页透出面板玻璃；"screen"：整页（管理后台）
+    var presentation = "screen"
+    /// 自绘页面：spec.custom 有对应视图时返回它，否则用通用列表
+    var customRenderer: ((NativePageSpec, NativePageModel) -> AnyView?)?
 
     private let onEvent: (String, [String: Any]) -> Void
     private let onLoadImage: (String) -> Void
@@ -640,6 +664,21 @@ final class NativePageModel: ObservableObject {
     func photo(_ actionId: String, base64: String) {
         send("action", ["actionId": actionId, "image": base64])
     }
+
+    /// 自绘页面的操作：intent 与当前填写内容交给网页；push 时先推入占位页（标题为 push）；
+    /// silent 只同步内容（输入时防丢），不显示加载、不等回执
+    func custom(_ intent: String, values: [String: Any] = [:], extra: [String: Any] = [:],
+                push: String? = nil, silent: Bool = false) {
+        var payload: [String: Any] = ["intent": intent, "values": values]
+        for (key, value) in extra { payload[key] = value }
+        if silent {
+            onEvent("custom", payload)
+            return
+        }
+        guard !loading else { return }
+        if let push { self.push(.loading(title: push, level: topLevel + 1)) }
+        send("custom", payload)
+    }
 }
 
 // MARK: - 页面
@@ -674,6 +713,7 @@ struct NativePageView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: model.toast)
+        .nativeThemeColors(primary: model.colors.primary, secondary: model.colors.secondary)
         .alert(model.confirming?.action.confirmTitle ?? "", isPresented: Binding(
             get: { model.confirming != nil },
             set: { if !$0 { model.confirming = nil } }
@@ -719,11 +759,44 @@ struct NativePageView: View {
 /// 一页网页下发的内容：分组列表
 private struct NativePageList: View {
     @ObservedObject var model: NativePageModel
+    @Environment(\.nativePrimaryTint) private var primaryTint
     let spec: NativePageSpec
     let isRoot: Bool
     @State private var search = ""
 
+    /// 半屏面板的根页：不铺列表底色，透出面板玻璃（与收藏面板同一种分组底色）
+    private var glass: Bool { isRoot && model.presentation == "sheet" }
+
     var body: some View {
+        Group {
+            if let custom = model.customRenderer?(spec, model) {
+                custom
+            } else {
+                list
+            }
+        }
+        .navigationTitle(spec.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if isRoot {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        model.close()
+                    } label: {
+                        Image(systemName: model.presentation == "sheet" ? "xmark" : "chevron.backward").font(.headline)
+                    }
+                    .accessibilityLabel(Text(spec.closeTitle))
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if model.loading && model.busyRow == nil {
+                    ProgressView()
+                }
+            }
+        }
+    }
+
+    private var list: some View {
         List {
             if !spec.subtitle.isEmpty {
                 Section {
@@ -736,7 +809,7 @@ private struct NativePageList: View {
                 Section {
                     Label(spec.message, systemImage: "checkmark.circle.fill")
                         .font(.subheadline)
-                        .foregroundStyle(Color.green)
+                        .foregroundStyle(.tint)
                 }
             }
             if !spec.error.isEmpty {
@@ -785,36 +858,20 @@ private struct NativePageList: View {
             }
         }
         .listStyle(.insetGrouped)
+        .modifier(NativePageGlassList(enabled: glass))
+        .environment(\.nativePageGlassRows, glass)
         .scrollDismissesKeyboard(.interactively)
         .modifier(NativePageSearch(enabled: !spec.searchPlaceholder.isEmpty, placeholder: spec.searchPlaceholder, text: $search) {
             model.filter("search", search.trimmingCharacters(in: .whitespaces))
         })
-        .navigationTitle(spec.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if isRoot {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        model.close()
-                    } label: {
-                        Image(systemName: "chevron.backward").font(.headline)
-                    }
-                    .accessibilityLabel(Text(spec.closeTitle))
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if model.loading && model.busyRow == nil {
-                    ProgressView()
-                }
-            }
-        }
         .onAppear { search = spec.searchValue }
         .onChange(of: spec.id) { _, _ in search = spec.searchValue }
     }
 
     @ViewBuilder
     private var tabsView: some View {
-        if spec.tabs.count <= 4 {
+        // 分段控件放不下长标题（合并预览的顺序规则）：标题较长时改用可横滑的标签
+        if spec.tabs.count <= 4 && spec.tabs.allSatisfy({ $0.title.count <= 6 }) {
             Picker("", selection: Binding(
                 get: { spec.selectedTab },
                 set: { model.filter("tabs", $0) }
@@ -831,7 +888,7 @@ private struct NativePageList: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(spec.tabs) { option in
-                        NativeTagChip(title: option.title, selected: option.id == spec.selectedTab) {
+                        NativeTagChip(title: option.title, selected: option.id == spec.selectedTab, tint: primaryTint) {
                             model.filter("tabs", option.id)
                         }
                     }
@@ -854,6 +911,8 @@ private struct NativePageList: View {
                 NativeCalendarCard(calendar: calendar) { action in
                     model.request("action", ["actionId": action])
                 }
+            } else if let form = section.form, form.inline {
+                NativeInlineEditableForm(form: form, model: model)
             } else if let form = section.form {
                 // 表单只显示当前值；“编辑”推入可编辑的表单页
                 ForEach(form.fields) { field in
@@ -885,8 +944,10 @@ private struct NativePageList: View {
                 Text(form.title)
             }
         } footer: {
-            if let form = section.form, !form.message.isEmpty {
+            if let form = section.form, !form.message.isEmpty, !form.inline {
                 Text(form.message)
+            } else if !section.text.isEmpty && (!section.rows.isEmpty || section.form?.inline == true) {
+                Text(section.text)
             }
         }
     }
@@ -978,11 +1039,19 @@ private struct NativePageSearch: ViewModifier {
 private struct NativePageRowButton: View {
     @ObservedObject var model: NativePageModel
     let row: NativePageRow
+    @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativePageGlassRows) private var glassRows
+
+    /// 选中行用主色浅底；半屏面板根页的行用与收藏面板相同的分组底色
+    private var rowBackground: Color? {
+        if row.selected { return primaryTint.opacity(0.12) }
+        return glassRows ? Color.nativeSheetGroupFill : nil
+    }
 
     var body: some View {
         if row.actions.isEmpty {
             content
-                .listRowBackground(row.selected ? Color.accentColor.opacity(0.12) : nil)
+                .listRowBackground(rowBackground)
         } else {
             Button {
                 model.tap(row)
@@ -990,14 +1059,14 @@ private struct NativePageRowButton: View {
                 content
             }
             .disabled(model.loading)
-            .listRowBackground(row.selected ? Color.accentColor.opacity(0.12) : nil)
+            .listRowBackground(rowBackground)
             .accessibilityAddTraits(row.selected ? .isSelected : [])
         }
     }
 
     private var content: some View {
         HStack(alignment: .center, spacing: 12) {
-            NativePageRowImage(model: model, row: row, size: 44)
+            NativePageRowImage(model: model, row: row, size: row.imageShape == "circle" ? 40 : 44)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(row.title)
@@ -1028,6 +1097,12 @@ private struct NativePageRowButton: View {
                 }
             }
             Spacer(minLength: 4)
+            if !row.trailing.isEmpty {
+                Text(row.trailing)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
             if model.busyRow == row.id {
                 ProgressView()
             } else if !row.actions.isEmpty {
@@ -1044,6 +1119,8 @@ private struct NativePageRowButton: View {
 private struct NativePageBadge: View {
     let text: String
     let tone: String
+    @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativeSecondaryTint) private var secondaryTint
 
     var body: some View {
         Text(text)
@@ -1057,9 +1134,8 @@ private struct NativePageBadge: View {
     private var color: Color {
         switch tone {
         case "danger": return .red
-        case "warning": return .orange
-        case "success": return .green
-        case "primary": return .accentColor
+        case "warning": return secondaryTint
+        case "success", "primary": return primaryTint
         default: return .secondary
         }
     }
@@ -1071,7 +1147,7 @@ private struct NativePageRowImage: View {
     let size: CGFloat
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: row.imageShape == "circle" ? size / 2 : size * 0.22, style: .continuous)
         if !row.protectedImage.isEmpty {
             if let image = model.images[row.protectedImage] {
                 Image(uiImage: image)
@@ -1102,6 +1178,8 @@ private struct NativePageRowImage: View {
 private struct NativePageRowDetail: View {
     @ObservedObject var model: NativePageModel
     let row: NativePageRow
+    @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativeSecondaryTint) private var secondaryTint
 
     var body: some View {
         List {
@@ -1137,8 +1215,8 @@ private struct NativePageRowDetail: View {
                                 .font(.caption)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
-                                .background((chip.tone == "primary" ? Color.accentColor : Color.primary).opacity(0.1), in: Capsule())
-                                .foregroundStyle(chip.tone == "primary" ? Color.accentColor : Color.primary)
+                                .background((chip.tone == "primary" ? primaryTint : secondaryTint).opacity(0.14), in: Capsule())
+                                .foregroundStyle(chip.tone == "primary" ? primaryTint : secondaryTint)
                         }
                     }
                     .padding(.vertical, 2)
@@ -1209,6 +1287,7 @@ private struct NativeReadOnlyField: View {
 struct NativeFormPage: View {
     let form: NativePageForm
     @ObservedObject var model: NativePageModel
+    @Environment(\.nativePrimaryTint) private var primaryTint
     @State private var values: [String: NativePageValue] = [:]
 
     /// 私有 @State 会让编译器合成的 memberwise init 变成 private，页面视图无法创建表单页。
@@ -1228,6 +1307,17 @@ struct NativeFormPage: View {
             }
             ForEach(form.fields) { field in
                 fieldSection(field)
+            }
+            if !form.actions.isEmpty {
+                Section {
+                    ForEach(form.actions) { action in
+                        Button(role: action.destructive ? ButtonRole.destructive : nil) {
+                            model.perform(action)
+                        } label: {
+                            Text(action.title).frame(maxWidth: .infinity)
+                        }
+                    }
+                }
             }
         }
         .scrollDismissesKeyboard(.interactively)
@@ -1280,7 +1370,7 @@ struct NativeFormPage: View {
                             Text(option.title).foregroundStyle(Color.primary)
                             Spacer()
                             if selected {
-                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                                Image(systemName: "checkmark").foregroundStyle(primaryTint)
                             }
                         }
                         .contentShape(Rectangle())
@@ -1473,6 +1563,8 @@ private struct NativeImageGrid: View {
 private struct NativeCalendarCard: View {
     let calendar: NativePageCalendar
     let action: (String) -> Void
+    @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativeSecondaryTint) private var secondaryTint
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
 
@@ -1511,16 +1603,16 @@ private struct NativeCalendarCard: View {
                             VStack(spacing: 1) {
                                 Text("\(day.day)").font(.subheadline)
                                 if day.count > 0 {
-                                    Text("\(day.count)").font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.accentColor)
+                                    Text("\(day.count)").font(.system(size: 9, weight: .semibold)).foregroundStyle(primaryTint)
                                 } else if day.hasDraft {
-                                    Circle().fill(Color.orange).frame(width: 4, height: 4)
+                                    Circle().fill(secondaryTint).frame(width: 4, height: 4)
                                 } else {
                                     Color.clear.frame(width: 4, height: 4)
                                 }
                             }
                             .foregroundStyle(day.selected ? Color.white : Color.primary)
                             .frame(maxWidth: .infinity, minHeight: 42)
-                            .background(day.selected ? Color.accentColor : Color.clear, in: Circle().inset(by: 1))
+                            .background(day.selected ? primaryTint : Color.clear, in: Circle().inset(by: 1))
                         }
                         .buttonStyle(.borderless)
                     }
@@ -1558,5 +1650,132 @@ enum NativePageImage {
         }
         guard let jpeg = rendered.jpegData(compressionQuality: 0.85) else { return nil }
         return jpeg.base64EncodedString()
+    }
+}
+
+// MARK: - 半屏根页与内联表单
+
+private struct NativePageGlassRowsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// 半屏面板根页：行用分组底色（不铺列表底色时，行仍要和面板玻璃分开）
+    var nativePageGlassRows: Bool {
+        get { self[NativePageGlassRowsKey.self] }
+        set { self[NativePageGlassRowsKey.self] = newValue }
+    }
+}
+
+/// 半屏面板根页：列表与导航容器都不铺底色，透出系统面板（半屏玻璃，拉到全屏由系统过渡为不透明）
+private struct NativePageGlassList: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .scrollContentBackground(.hidden)
+                .containerBackground(Color.clear, for: .navigation)
+        } else {
+            content
+        }
+    }
+}
+
+/// 直接在页面里编辑的表单（发现设置）：文字栏、开关（可依赖另一个开关）、保存按钮与其他操作，
+/// 与网页同一页的输入框与勾选框对应；保存时整份交给网页
+private struct NativeInlineEditableForm: View {
+    let form: NativePageForm
+    @ObservedObject var model: NativePageModel
+    @State private var values: [String: NativePageValue] = [:]
+    @State private var formId = ""
+
+    var body: some View {
+        Group {
+            ForEach(form.fields) { field in
+                fieldRow(field)
+            }
+            Button {
+                model.submit(form, values: collect())
+            } label: {
+                Text(form.submitTitle)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(model.loading)
+            ForEach(form.actions) { action in
+                Button(role: action.destructive ? ButtonRole.destructive : nil) {
+                    model.perform(action)
+                } label: {
+                    Text(action.title).frame(maxWidth: .infinity)
+                }
+                .disabled(model.loading)
+            }
+        }
+        .onAppear(perform: reset)
+        .onChange(of: form.id) { _, _ in reset() }
+    }
+
+    private func reset() {
+        guard formId != form.id || values.isEmpty else { return }
+        formId = form.id
+        var next: [String: NativePageValue] = [:]
+        for field in form.fields { next[field.id] = field.value }
+        values = next
+    }
+
+    @ViewBuilder
+    private func fieldRow(_ field: NativePageField) -> some View {
+        switch field.kind {
+        case "toggle":
+            let locked = !field.requires.isEmpty && !(values[field.requires]?.bool ?? false)
+            Toggle(field.label, isOn: Binding(
+                get: { !locked && (values[field.id]?.bool ?? false) },
+                set: { on in
+                    values[field.id] = .bool(on)
+                    // 关掉被依赖的开关时，依赖它的开关一起关
+                    if !on {
+                        for other in form.fields where other.requires == field.id { values[other.id] = .bool(false) }
+                    }
+                }
+            ))
+            .disabled(locked)
+        case "info":
+            Text(field.value.text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        default:
+            VStack(alignment: .leading, spacing: 4) {
+                Text(field.label)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                TextField(field.placeholder, text: Binding(
+                    get: { values[field.id]?.text ?? "" },
+                    set: { values[field.id] = .text($0) }
+                ))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                if !field.footer.isEmpty {
+                    Text(field.footer)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func collect() -> [String: Any] {
+        var out: [String: Any] = [:]
+        for field in form.fields where field.kind != "info" {
+            let value = values[field.id] ?? .none
+            if field.kind == "toggle" {
+                let locked = !field.requires.isEmpty && !(values[field.requires]?.bool ?? false)
+                out[field.id] = locked ? false : value.bool
+            } else {
+                out[field.id] = value.bridgeValue
+            }
+        }
+        return out
     }
 }

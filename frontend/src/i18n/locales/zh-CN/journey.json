@@ -158,10 +158,17 @@
     "saveSettings": "保存设置",
     "noInteractions": "暂无新增交互记录",
     "interactionsCleared": "交互记录已清除",
-    "clearInteractions": "清除交互记录"
+    "clearInteractions": "清除交互记录",
+    "clearInteractionsConfirm": "清除后这些交互记录不再用于改进地图，无法恢复。",
+    "interactionsTitle": "交互记录",
+    "editCollection": "编辑收藏夹",
+    "deleteCollection": "删除收藏夹",
+    "collectionPlaces": "收藏的地点",
+    "collectionIsPublic": "已公开，其他住民可以看到",
+    "collectionIsPrivate": "私密，只有自己能看到",
+    "collectionEmpty": "还没有地点，点“编辑收藏夹”从你的收藏里挑选。"
   },
   "composer": {
-    "nativeHint": "填写素材后先保存，再生成日记草稿或直接手动记录。地图位置请在网页端选择。",
     "sync": {
       "local": "已存本机",
       "saving": "正在同步…",
@@ -184,6 +191,8 @@
     "manualRecord": "手动记录",
     "manualNoAi": "手动整理并保存",
     "saveDraft": "存草稿",
+    "photos": "照片",
+    "uploadingNative": "照片上传中…",
     "othersUnfinished": "你有 {{othersCount}} 份未完成的内容",
     "continueLatest": "继续最近的素材",
     "viewAll": "查看全部",

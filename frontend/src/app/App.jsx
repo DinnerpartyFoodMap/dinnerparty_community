@@ -127,6 +127,8 @@ export default function App() {
     // 原生日记 · 同好：打开时由原生页接管，失败后本次改用网页工作区
     const [nativeJourneyOpen, setNativeJourneyOpen] = useState(false);
     const [nativeJourneyFailed, setNativeJourneyFailed] = useState(false);
+    // 每次打开都是新的原生会话：上一次没有正常回报关闭时（打开状态残留为 true），再点也能重新打开
+    const [nativeJourneySession, setNativeJourneySession] = useState(0);
     const lastPathRef = useRef(pathname);
     const pageDirectionRef = useRef('push');
     const siteNoticeRef = useRef(null);
@@ -564,10 +566,13 @@ export default function App() {
     const nativeAdminActive = showAdminPage && !!user?.admin_level && !nativeAdminFailed && supportsNativeAdmin();
     const nativeJourneyActive = nativeJourneyOpen && !!user && !!token && !nativeJourneyFailed && supportsNativeJourney();
     const openJourney = useCallback(() => {
-        if (!token || !user || nativeJourneyFailed || !supportsNativeJourney()) return false;
+        if (!token || !user || !supportsNativeJourney()) return false;
+        // 上一次打开失败（例如面板正忙）只回退那一次，不永久停用原生页
+        setNativeJourneyFailed(false);
+        setNativeJourneySession((value) => value + 1);
         setNativeJourneyOpen(true);
         return true;
-    }, [token, user?.id, nativeJourneyFailed]);
+    }, [token, user?.id]);
     const showSettingsBase = pathname === "/settings";
     // App 内原生住民设置：/settings 不渲染网页页面（没有推入动画与“正在打开设置”），地图留在底下，原生页直接从地图上弹起
     const nativeSettingsActive = showSettingsBase && !!user && !nativeSettingsFailed && supportsNativeSettings();
@@ -1090,6 +1095,7 @@ export default function App() {
                         {/* 原生日记 · 同好：网页构建页面模型与执行请求，原生只负责界面 */}
                         {nativeJourneyActive && (
                             <NativeJourneyHost
+                                key={nativeJourneySession}
                                 open={nativeJourneyActive}
                                 backendUrl={BACKEND_URL}
                                 token={token}

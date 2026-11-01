@@ -4,6 +4,7 @@ import { createNativeAdminSession } from '../platform/nativeAdmin.js';
 import { getPlatform, isPluginAvailable } from '../platform/env.js';
 import { t } from '../i18n/index.js';
 import { createNativeAdminController } from './nativeAdminController.js';
+import { nativeThemeColors } from '../theme/theme.js';
 
 /** 当前安装包能否用原生管理后台（iOS App 且包含插件） */
 export function supportsNativeAdmin() {
@@ -22,7 +23,7 @@ export default function useNativeAdmin({ backendUrl, token, user, dark, onBack, 
                 if (cancelled) return;
                 session = createNativeAdminSession(registerPlugin('NativeAdmin'), {
                     dashboard: controller.dashboard(),
-                    theme: { dark: !!dark },
+                    theme: { dark: !!dark, ...nativeThemeColors() },
                     labels: { close: t('common:action.close') }
                 }, {
                     onEvent: (type, event) => controller.handle(type, event),

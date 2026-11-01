@@ -107,15 +107,63 @@ struct NativeSheetBackground: View {
     }
 }
 
-/// 表单里的一个可多选标签（分类、筛选）：选中时用主题色底，与系统 Picker 的选中色一致
+// MARK: - 主题色
+
+/// 住民设置里的两种主题色在原生页面里的用法（与网页一致）：主色是整页的 tint（主要按钮、选中状态），
+/// 辅色用于标签与次要强调。辅色经 environment 传给子视图，标签默认用它。
+private struct NativeSecondaryTintKey: EnvironmentKey {
+    static let defaultValue = Color(uiColor: UIColor(red: 0x8C / 255, green: 0x6B / 255, blue: 0xB1 / 255, alpha: 1))
+}
+
+private struct NativePrimaryTintKey: EnvironmentKey {
+    static let defaultValue = Color(uiColor: UIColor(red: 0xE2 / 255, green: 0x78 / 255, blue: 0x9F / 255, alpha: 1))
+}
+
+extension EnvironmentValues {
+    /// 主色（也设为 tint）：需要具体 Color（底色、描边）时从这里取
+    var nativePrimaryTint: Color {
+        get { self[NativePrimaryTintKey.self] }
+        set { self[NativePrimaryTintKey.self] = newValue }
+    }
+
+    var nativeSecondaryTint: Color {
+        get { self[NativeSecondaryTintKey.self] }
+        set { self[NativeSecondaryTintKey.self] = newValue }
+    }
+}
+
+/// 网页下发的主色 / 辅色（#RRGGBB）；缺失时用默认主题的粉色与紫色
+struct NativeThemeColors {
+    let primary: Color
+    let secondary: Color
+
+    init(primary: String?, secondary: String?) {
+        self.primary = Color(uiColor: UIColor(cssHex: primary ?? "") ?? UIColor(red: 0xE2 / 255, green: 0x78 / 255, blue: 0x9F / 255, alpha: 1))
+        self.secondary = Color(uiColor: UIColor(cssHex: secondary ?? "") ?? UIColor(red: 0x8C / 255, green: 0x6B / 255, blue: 0xB1 / 255, alpha: 1))
+    }
+}
+
+extension View {
+    /// 整页使用住民的主题色：tint 为主色，辅色放进 environment
+    func nativeThemeColors(primary: Color, secondary: Color) -> some View {
+        self
+            .tint(primary)
+            .environment(\.nativePrimaryTint, primary)
+            .environment(\.nativeSecondaryTint, secondary)
+    }
+}
+
+/// 表单里的一个可多选标签（分类、筛选）：选中时用辅色（网页里标签用辅色）；tint 只在需要别的颜色时传
 struct NativeTagChip: View {
     let title: String
     var selected = false
-    var tint: Color = .accentColor
+    var tint: Color? = nil
     var symbol: String? = nil
     let action: () -> Void
+    @Environment(\.nativeSecondaryTint) private var secondaryTint
 
     var body: some View {
+        let tint = self.tint ?? secondaryTint
         Button(action: action) {
             HStack(spacing: 4) {
                 if let symbol {

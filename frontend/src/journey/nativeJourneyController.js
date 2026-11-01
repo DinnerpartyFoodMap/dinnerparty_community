@@ -10,6 +10,7 @@ import { nativePageLabels } from '../platform/nativePageLabels.js';
 import { diaryReportPrefill, userReportPrefill } from '../feedback/feedbackTypes.js';
 
 const MAX_PHOTOS = 12;
+const COMPOSER_TEXT_LIMIT = 12000;
 const STOP_PHOTO_LIMIT = 12;
 const TIMER_KEYS = new Set();
 
@@ -130,6 +131,11 @@ export function createNativeJourneyController({
   let generation = new Map();
   let community = null;
   let share = null;
+  // 自绘页面（图文生成、日历）当前的操作处理；每次构建页面时替换
+  let customHandler = null;
+  let capabilities = null;
+  // 合并预览的顺序规则与支出选择（同一组日记之间保留）
+  let merge = null;
   const userId = getTokenUserId(token);
   const calendarState = { month: today().slice(0, 7), day: '', search: '', tab: '' };
 
@@ -208,14 +214,20 @@ export function createNativeJourneyController({
       empty: options.empty || '',
       message: options.message || '',
       error: options.error || '',
-      loading: !!options.loading
+      loading: !!options.loading,
+      // 原生自绘页面（图文生成、日历）的数据
+      ...(options.custom ? { custom: options.custom } : {})
     };
   }
 
   async function build(type, params = {}) {
     actions.clear();
     forms.clear();
+    customHandler = null;
     switch (type) {
+      case 'address': return addressPage(params);
+      case 'merge': return mergePage(params);
+      case 'collection': return collectionPage(params);
       case 'entry': return entryPage();
       case 'composer': return composerPage(params);
       case 'generation': return generationPage(params);
@@ -333,6 +345,8 @@ export function createNativeJourneyController({
         };
         state.mediaIds = Array.isArray(payload.media_ids) ? payload.media_ids : [];
         state.revision = data.revision || 0;
+        state.job = data.job || null;
+        state.structured = data.structured_draft || null;
       } catch (error) {
         state.closed = error.status === 410 ? error.message : '';
       }
@@ -356,6 +370,7 @@ export function createNativeJourneyController({
       body: JSON.stringify(body)
     });
     state.revision = data.revision ?? state.revision;
+    if (data.job !== undefined) state.job = data.job;
     return data;
   }
 
@@ -372,89 +387,245 @@ export function createNativeJourneyController({
     return media;
   }
 
+  // ---- 素材（原生自绘页面 NativeJourneyComposerView，按网页 JourneyComposer 的顺序与规则）----
+  async function loadCapabilities() {
+    if (!capabilities) {
+      try { capabilities = await api('/api/journeys/capabilities') || {}; } catch { capabilities = {}; }
+    }
+    return capabilities;
+  }
+
+  /** 原生回传的填写内容 → 素材（日期不晚于今天、结束不早于开始；可见性只有公开 / 私密） */
+  function applyComposerValues(state, values) {
+    if (!values || typeof values !== 'object') return;
+    const day = (value) => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
+    let start = day(values.start_date) || state.payload.start_date;
+    let end = day(values.end_date) || state.payload.end_date || start;
+    if (start > today()) start = today();
+    if (end > today()) end = today();
+    if (end < start) end = start;
+    state.payload = {
+      ...state.payload,
+      text: typeof values.text === 'string' ? values.text.slice(0, COMPOSER_TEXT_LIMIT) : state.payload.text,
+      start_date: start,
+      end_date: end,
+      intended_visibility: values.visibility === 'private' ? 'private' : (values.visibility === 'public' ? 'public' : state.payload.intended_visibility)
+    };
+  }
+
+  /** 网页 nav.replace：替换当前这一级（原生原地换页，不推入） */
+  async function replaceTop(type, params = {}) {
+    clearTimers();
+    if (stack.length) stack[stack.length - 1] = { type, params };
+    else stack.push({ type, params });
+    return build(type, params);
+  }
+
   async function composerPage(params) {
     const state = await loadComposer(params);
-    const form = registerForm({
-      title: t('journey:composer.textLabel'),
-      message: t('journey:composer.nativeHint'),
-      submitTitle: t('journey:composer.saveDraft'),
-      openTitle: t('common:action.edit'),
-      fields: [
-        { id: 'text', kind: 'textarea', label: t('journey:composer.textLabel'), value: state.payload.text, placeholder: t('journey:composer.textPlaceholder') },
-        { id: 'start_date', kind: 'date', label: t('journey:composer.date.label'), value: state.payload.start_date },
-        { id: 'end_date', kind: 'date', label: t('journey:composer.date.end'), value: state.payload.end_date },
-        { id: 'visibility', kind: 'select', label: t('journey:composer.visibility.label'), value: state.payload.intended_visibility, options: [
-          { id: 'public', title: t('journey:common.label.public') },
-          { id: 'private', title: t('journey:common.label.private') }
-        ] },
-        { id: 'center', kind: 'info', label: t('journey:composer.address.label'), value: centerLabel(state.payload.center) || t('journey:composer.address.unset') }
-      ],
-      handler: async (values) => {
-        state.payload = {
-          ...state.payload,
-          text: String(values.text || ''),
-          start_date: String(values.start_date || today()),
-          end_date: String(values.end_date || values.start_date || today()),
-          intended_visibility: values.visibility === 'private' ? 'private' : 'public'
-        };
-        if (state.payload.end_date < state.payload.start_date) state.payload.end_date = state.payload.start_date;
-        await saveComposer(state);
-        return { page: await composerPage({ composeId: state.id }), message: t('journey:composer.draftSaved') };
-      }
-    });
-    const photos = state.mediaIds.map((id, index) => ({
-      id,
-      caption: t('journey:photoPicker.photoLabel', { index: index + 1, status: '', kind: '' }),
-      protectedImage: `journey:${id}`,
-      actions: [action(t('common:action.remove'), async () => {
-        state.mediaIds = state.mediaIds.filter((value) => value !== id);
-        return { page: await composerPage({ composeId: state.id }) };
-      }, { tone: 'danger', confirm: { title: t('common:action.remove'), message: t('journey:review.photos.removeFromEntry'), button: t('common:action.remove') } })]
-    }));
-    const sections = [];
-    if (state.closed) sections.push({ id: 'closed', title: '', text: state.closed });
-    if (photos.length) sections.push({ id: 'photos', title: t('journey:review.photos.title', { count: photos.length }), images: photos });
-    else sections.push({ id: 'photos-empty', title: t('journey:review.photos.empty'), text: '' });
-    sections.push({ id: 'composer-form', title: '', form });
-    const buttons = [
-      action(t('common:action.addImage'), async (payload) => {
-        try {
-          await uploadComposerPhoto(state, payload?.image);
-          return { page: await composerPage({ composeId: state.id }) };
-        } catch (error) {
-          return { error: error.message };
+    // 新建的素材在第一次打开时才分配 id：记进页面栈，返回、刷新时还是同一份
+    const top = stack[stack.length - 1];
+    if (top?.type === 'composer' && !top.params.composeId) top.params = { ...top.params, composeId: state.id };
+    const cap = await loadCapabilities();
+    const content = hasContent(state.payload, state.mediaIds);
+    const notices = [];
+    if (!params.composeId && !content) {
+      try {
+        const others = await api('/api/journeys/unfinished');
+        const othersCount = (others?.material?.length || 0) + (others?.generating?.length || 0) + (others?.review?.length || 0);
+        const latest = others?.material?.[0] || null;
+        if (othersCount) {
+          notices.push({
+            id: 'others',
+            text: t('journey:composer.othersUnfinished', { othersCount }),
+            actions: [
+              latest && { id: 'continueLatest', title: t('journey:composer.continueLatest') },
+              { id: 'viewAll', title: t('journey:composer.viewAll') }
+            ].filter(Boolean)
+          });
+          state.latestOther = latest;
         }
-      }, { kind: 'photo' }),
-      action(t('journey:common.action.generateDraft'), async () => {
-        const saved = await saveComposer(state);
-        if (!saved) return { error: t('journey:composer.blocker.empty') };
-        const job = await api(`/api/journeys/compose-drafts/${encodeURIComponent(state.id)}/generate`, {
-          method: 'POST',
-          body: JSON.stringify({ compose_revision: state.revision, request_id: newId(), text_only: false })
-        });
-        return { page: await go('generation', { composeId: state.id, jobId: job.id }) };
-      }, { tone: 'primary' }),
-      action(t('journey:composer.manualSave'), async () => {
-        await saveComposer(state);
-        const document = {
-          ...newDocument(state.payload.start_date),
-          start_date: state.payload.start_date,
-          end_date: state.payload.end_date,
-          entry_media_ids: [...state.mediaIds],
-          source_input: {
-            text: state.payload.text,
+      } catch { /* 未完成计数失败不影响填写 */ }
+    }
+    if (state.closed) notices.push({ id: 'closed', tone: 'warning', text: state.closed });
+    const generating = ['queued', 'running'].includes(state.job?.status);
+    if (generating) notices.push({ id: 'generating', text: t('journey:composer.generatingNotice'), actions: [{ id: 'viewProgress', title: t('journey:composer.viewProgress') }] });
+    if (state.structured?.status === 'active') notices.push({ id: 'draftReady', text: t('journey:composer.draftReadyNotice'), actions: [{ id: 'goReview', title: t('journey:composer.goReview') }] });
+
+    // 主按钮与网页一致：没有日记 AI 时只能手动整理；模型不能识图且有照片时只按文字生成
+    const textOnlyMode = !!cap.text_ai && state.mediaIds.length > 0 && !cap.vision_ai;
+    let buttons;
+    let note = '';
+    if (!cap.text_ai) {
+      buttons = [{ id: 'manual', title: t('journey:composer.manualSave'), style: 'primary' }];
+      note = t('journey:composer.noAiNote');
+    } else if (textOnlyMode) {
+      buttons = [
+        { id: 'generateTextOnly', title: t('journey:composer.generateTextOnly'), style: 'primary', needsText: true },
+        { id: 'manual', title: t('journey:composer.manualRecord'), style: 'secondary' }
+      ];
+      note = t('journey:composer.textOnlyNote');
+    } else {
+      buttons = [
+        { id: 'generate', title: t('journey:common.action.generateDraft'), style: 'primary', blockedWhileGenerating: true },
+        { id: 'manual', title: t('journey:composer.manualNoAi'), style: 'link' }
+      ];
+    }
+
+    customHandler = async (intent, values, payload) => {
+      applyComposerValues(state, values);
+      switch (intent) {
+        case 'sync':
+          return { silent: true };
+        case 'save': {
+          if (!hasContent(state.payload, state.mediaIds)) return { page: await back(stack.length - 1) };
+          await saveComposer(state);
+          return { page: await back(stack.length - 1), message: t('journey:composer.draftSaved') };
+        }
+        case 'addPhoto': {
+          try {
+            await uploadComposerPhoto(state, payload?.image);
+            await saveComposer(state).catch(() => null);
+            return { page: await composerPage({ composeId: state.id }) };
+          } catch (error) {
+            return { page: await composerPage({ composeId: state.id }), error: error.message };
+          }
+        }
+        case 'removePhoto':
+          state.mediaIds = state.mediaIds.filter((value) => value !== String(payload?.mediaId || ''));
+          await saveComposer(state).catch(() => null);
+          return { page: await composerPage({ composeId: state.id }) };
+        case 'address':
+          return { page: await go('address', { composeId: state.id }) };
+        case 'generate':
+        case 'generateTextOnly': {
+          const saved = await saveComposer(state);
+          if (!saved) return { error: t('journey:composer.blocker.empty') };
+          const job = await api(`/api/journeys/compose-drafts/${encodeURIComponent(state.id)}/generate`, {
+            method: 'POST',
+            body: JSON.stringify({ compose_revision: state.revision, request_id: newId(), text_only: intent === 'generateTextOnly' })
+          });
+          return { page: await replaceTop('generation', { composeId: state.id, jobId: job.id }) };
+        }
+        case 'manual': {
+          if (hasContent(state.payload, state.mediaIds)) await saveComposer(state);
+          const document = {
+            ...newDocument(state.payload.start_date),
+            title: t('journey:composer.defaultTitle'),
             start_date: state.payload.start_date,
             end_date: state.payload.end_date,
-            center: state.payload.center
-          },
-          intended_visibility: state.payload.intended_visibility
-        };
-        review = null;
-        return { page: await go('review', { journal: { id: null, revision: 0, compose_draft_id: state.id, compose_revision: state.revision, document } }) };
-      })
-    ];
+            entry_media_ids: [...state.mediaIds],
+            source_input: { text: state.payload.text, start_date: state.payload.start_date, end_date: state.payload.end_date, center: state.payload.center },
+            intended_visibility: state.payload.intended_visibility
+          };
+          review = null;
+          return { page: await replaceTop('review', { journal: { id: null, revision: 0, compose_draft_id: state.id, compose_revision: state.revision, document } }) };
+        }
+        case 'continueLatest':
+          return state.latestOther ? { page: await replaceTop('composer', { composeId: state.latestOther.id }) } : {};
+        case 'viewAll':
+          return { page: await go('unfinished', {}) };
+        case 'viewProgress':
+          return state.job ? { page: await replaceTop('generation', { composeId: state.id, jobId: state.job.id }) } : {};
+        case 'goReview':
+          return state.structured ? { page: await go('review', { draftId: state.structured.id }) } : {};
+        default:
+          return {};
+      }
+    };
+
     return basePage('journey-composer', t('journey:common.feature.generate'), {
-      subtitle: formatRange(state.payload.start_date, state.payload.end_date),
+      custom: {
+        type: 'composer',
+        key: state.id,
+        text: state.payload.text,
+        textLimit: COMPOSER_TEXT_LIMIT,
+        startDate: state.payload.start_date,
+        endDate: state.payload.end_date || state.payload.start_date,
+        maxDate: today(),
+        visibility: state.payload.intended_visibility,
+        center: centerLabel(state.payload.center) || '',
+        photos: state.mediaIds.map((id) => ({ id, image: `journey:${id}` })),
+        maxPhotos: MAX_PHOTOS,
+        notices,
+        closed: state.closed || '',
+        generating,
+        buttons,
+        note,
+        labels: {
+          photos: t('journey:composer.photos'),
+          addPhoto: t('common:action.addImage'),
+          removePhoto: t('common:action.remove'),
+          uploading: t('journey:composer.uploadingNative'),
+          text: t('journey:composer.textLabel'),
+          textPlaceholder: t('journey:composer.textPlaceholder'),
+          textHint: '',
+          address: t('journey:composer.address.label'),
+          addressUnset: t('journey:composer.address.unset'),
+          addressHint: t('journey:composer.address.hint'),
+          date: t('journey:composer.date.label'),
+          dateSingle: t('journey:composer.date.single'),
+          dateStart: t('journey:composer.date.start'),
+          dateEnd: t('journey:composer.date.end'),
+          multiDay: t('journey:composer.multiDay'),
+          visibility: t('journey:composer.visibility.label'),
+          public: t('journey:common.label.public'),
+          private: t('journey:common.label.private'),
+          privacyNote: t('journey:composer.privacyNote'),
+          saveDraft: t('journey:composer.saveDraft'),
+          blockerEmpty: t('journey:composer.blocker.empty')
+        }
+      }
+    });
+  }
+
+  // ---- 地址（搜索中心），网页 LocationPicker：当前位置、搜索地址、暂不设置 ----
+  async function addressPage(params) {
+    const state = await loadComposer({ composeId: params.composeId });
+    const query = String(params.query || '');
+    let results = null;
+    let error = '';
+    if (query) {
+      try {
+        const { searchExternalPlaces } = await import('../discovery/externalSearch.js');
+        results = await searchExternalPlaces(backendUrl, { q: query, city: state.payload.center?.city, source: 'journey_address' });
+      } catch (e) { error = e.message || ''; }
+    }
+    const choose = (center) => async () => {
+      state.payload = { ...state.payload, center };
+      await saveComposer(state).catch(() => null);
+      return { page: await back(stack.length - 1) };
+    };
+    const sections = [];
+    if (state.payload.center) sections.push({ id: 'current', title: '', text: t('journey:maps.current', { centerLabel: centerLabel(state.payload.center) }) });
+    if (results) {
+      sections.push(results.length
+        ? {
+          id: 'results',
+          title: t('journey:maps.resultsLabel'),
+          rows: results.map((place, index) => ({
+            id: String(place.id || `${place.longitude},${place.latitude},${index}`),
+            title: place.name,
+            subtitle: place.address || '',
+            actions: [action(place.name, choose({ name: place.name, city: place.city || '', lng: Number(place.longitude), lat: Number(place.latitude), source: 'search' }))]
+          }))
+        }
+        : { id: 'empty', title: '', text: t('journey:maps.noResults') });
+    }
+    const buttons = [
+      action(t('journey:maps.useCurrentLocation'), async () => {
+        const [{ getCurrentLocation }, { reverseGeocode }] = await Promise.all([import('../platform/geolocation.js'), import('./maps.jsx')]);
+        const position = await getCurrentLocation({});
+        const place = await reverseGeocode(position.lng, position.lat, backendUrl);
+        return choose({ name: place.name, city: place.city, lng: position.lng, lat: position.lat, source: 'current' })();
+      }),
+      action(t('journey:maps.skip'), choose(null))
+    ];
+    return basePage('journey-address', t('journey:maps.title'), {
+      subtitle: t('journey:maps.hint'),
+      searchPlaceholder: t('journey:maps.searchPlaceholder'),
+      searchValue: query,
+      error,
       sections,
       buttons
     });
@@ -807,101 +978,240 @@ export function createNativeJourneyController({
   }
 
   // ---- 日历 ----
+  // ---- 日历（原生自绘页面 NativeJourneyCalendarView，按网页 JourneyCalendar 的操作逻辑）----
   async function calendarPage() {
     const [from, to] = monthRange(calendarState.month);
-    let entries = [];
+    const searching = !!(calendarState.search || calendarState.tab);
+    let monthEntries = [];
     let draftDates = [];
-    if (calendarState.search || calendarState.tab) {
-      const query = new URLSearchParams({ q: calendarState.search, visibility: calendarState.tab });
-      entries = await api(`/api/journeys/search?${query}`);
-    } else {
+    let results = null;
+    let error = '';
+    try {
       const data = await api(`/api/journeys/calendar?from=${from}&to=${to}`);
-      entries = data.entries || [];
+      monthEntries = data.entries || [];
       draftDates = data.draft_dates || [];
-    }
-    const listed = calendarState.day && !calendarState.search && !calendarState.tab
-      ? entries.filter((entry) => entry.start_date <= calendarState.day && entry.end_date >= calendarState.day)
-      : entries;
+      if (searching) {
+        const query = new URLSearchParams({ q: calendarState.search, visibility: calendarState.tab });
+        results = await api(`/api/journeys/search?${query}`);
+      }
+    } catch (e) { error = e.message || ''; }
+    let unfinished = 0;
+    try { unfinished = (await api('/api/journeys/unfinished'))?.count || 0; } catch { /* 计数失败不影响日历 */ }
+    const day = calendarState.day;
+    const listed = searching ? (results || []) : (day ? monthEntries.filter((entry) => entry.start_date <= day && entry.end_date >= day) : monthEntries);
     const [y, m] = calendarState.month.split('-').map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
-    const lead = new Date(y, m - 1, 1).getDay();
     const days = [];
-    for (let i = 0; i < lead; i += 1) days.push({ id: `blank-${i}`, day: 0, action: '' });
     for (let d = 1; d <= daysInMonth; d += 1) {
       const date = `${calendarState.month}-${String(d).padStart(2, '0')}`;
-      const count = entries.filter((entry) => entry.start_date <= date && entry.end_date >= date).length;
-      const dayAction = action(String(d), async () => {
-        calendarState.day = calendarState.day === date ? '' : date;
-        return { page: await calendarPage() };
+      const count = monthEntries.filter((entry) => entry.start_date <= date && entry.end_date >= date).length;
+      const draft = draftDates.includes(date);
+      days.push({
+        date, day: d, count, draft, today: date === today(),
+        accessibility: t('journey:calendar.dayLabel', { day: d, entries: count ? t('journey:calendar.dayEntries', { n: count }) : '', draft: draft ? t('journey:calendar.dayHasDraft') : '' })
       });
-      days.push({ id: date, day: d, count, draft: draftDates.includes(date), selected: calendarState.day === date, action: dayAction.id });
     }
-    const prevMonth = action(t('journey:calendar.prevMonth'), async () => {
-      calendarState.month = shiftMonth(calendarState.month, -1);
-      calendarState.day = '';
-      return { page: await calendarPage() };
-    });
-    const nextMonth = action(t('journey:calendar.nextMonth'), async () => {
-      calendarState.month = shiftMonth(calendarState.month, 1);
-      calendarState.day = '';
-      return { page: await calendarPage() };
-    });
-    const rows = listed.map((entry) => ({
-      id: String(entry.id),
-      title: entry.title,
-      subtitle: tx('journey:calendar.entryMeta', {
-        range: formatRange(entry.start_date, entry.end_date),
-        stop_count: entry.stop_count,
-        extra: entry.places?.length ? ` · ${entry.places.join(t('common:punctuation.listSeparator'))}` : ''
-      }),
-      badge: entry.visibility === 'public' ? t('journey:common.label.public') : t('journey:common.label.private'),
-      badgeTone: entry.visibility === 'public' ? 'primary' : '',
-      protectedImage: entry.cover_media_id ? `journey:${entry.cover_media_id}` : '',
-        actions: [
-        action(t('journey:common.feature.diary'), async () => ({ page: await go('detail', { journeyId: entry.id }) }), { push: true }),
-        action(t('common:action.delete'), async () => {
-          await api(`/api/journeys/${encodeURIComponent(entry.id)}`, { method: 'DELETE', body: JSON.stringify({ base_revision: entry.revision }) });
-          return { page: await calendarPage(), message: t('journey:calendar.deleted', { count: 1 }) };
-        }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:calendar.confirmDelete', { count: 1, publicCount: '' }), button: t('common:action.delete') } })
-      ]
-    }));
-    const sections = [
-      {
-        id: 'calendar',
-        title: '',
-        calendar: {
-          monthLabel: t('journey:calendar.listTitle', { range: `${y}-${String(m).padStart(2, '0')}` }) || calendarState.month,
-          weekdays: [
-            t('journey:calendar.week.sun'), t('journey:calendar.week.mon'), t('journey:calendar.week.tue'),
-            t('journey:calendar.week.wed'), t('journey:calendar.week.thu'), t('journey:calendar.week.fri'),
-            t('journey:calendar.week.sat')
-          ],
-          days,
-          prev: prevMonth.id,
-          next: nextMonth.id
+    const listTitle = searching
+      ? t('journey:calendar.searchTitle', { count: listed.length })
+      : t('journey:calendar.listTitle', { range: day ? formatRange(day) : t('journey:calendar.monthShort', { m }) });
+    const empty = searching
+      ? { title: t('journey:calendar.searchEmpty'), hint: '' }
+      : (day ? { title: t('journey:calendar.emptyDayTitle'), hint: '' } : { title: t('journey:calendar.emptyMonthTitle'), hint: t('journey:calendar.emptyMonthHint') });
+
+    customHandler = async (intent, values, payload) => {
+      switch (intent) {
+        case 'month': {
+          const delta = Number(payload?.delta) === -1 ? -1 : 1;
+          calendarState.month = shiftMonth(calendarState.month, delta);
+          calendarState.day = '';
+          return { page: await calendarPage() };
+        }
+        case 'day': {
+          const date = String(payload?.date || '');
+          calendarState.day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
+          return { page: await calendarPage() };
+        }
+        case 'search':
+          calendarState.search = String(payload?.query || '').slice(0, 100);
+          return { page: await calendarPage() };
+        case 'filter':
+          calendarState.tab = ['public', 'private'].includes(payload?.value) ? payload.value : '';
+          return { page: await calendarPage() };
+        case 'open': {
+          const id = String(payload?.id || '');
+          return id ? { page: await go('detail', { journeyId: id }) } : {};
+        }
+        case 'unfinished':
+          return { page: await go('unfinished', {}) };
+        case 'media':
+          return { page: await go('media', {}) };
+        case 'composer':
+          return { page: await go('composer', { preset: calendarState.day ? { date: calendarState.day } : undefined }) };
+        case 'manual':
+          return { page: await go('review', { date: calendarState.day || today() }) };
+        case 'delete': {
+          // 逐篇删除并如实汇总：失败的说明原因
+          const ids = (Array.isArray(payload?.ids) ? payload.ids : []).map(String);
+          const pool = [...listed, ...monthEntries];
+          const chosen = ids.map((id) => pool.find((entry) => String(entry.id) === id)).filter(Boolean);
+          const failed = [];
+          for (const entry of chosen) {
+            try {
+              await api(`/api/journeys/${encodeURIComponent(entry.id)}`, { method: 'DELETE', body: JSON.stringify({ base_revision: entry.revision }) });
+            } catch (e) { failed.push(`「${entry.title}」${e.message}`); }
+          }
+          const done = chosen.length - failed.length;
+          return {
+            page: await calendarPage(),
+            message: done ? t('journey:calendar.deleted', { count: done }) : '',
+            error: failed.length ? t('journey:calendar.deleteFailed', { items: failed.join(t('common:punctuation.listSeparator')) }) : ''
+          };
+        }
+        case 'merge': {
+          const ids = (Array.isArray(payload?.ids) ? payload.ids : []).map(String).slice(0, 2);
+          const pool = [...listed, ...monthEntries];
+          const chosen = ids.map((id) => pool.find((entry) => String(entry.id) === id)).filter(Boolean);
+          if (chosen.length !== 2) return {};
+          return { page: await go('merge', { selection: { first_id: chosen[0].id, second_id: chosen[1].id, revisions: chosen.map((entry) => entry.revision) } }) };
+        }
+        default:
+          return {};
+      }
+    };
+
+    return basePage('journey-calendar', t('journey:common.feature.calendar'), {
+      error,
+      custom: {
+        type: 'calendar',
+        month: calendarState.month,
+        monthTitle: t('journey:calendar.monthLabel', { y, m }),
+        weekdays: [
+          t('journey:calendar.week.sun'), t('journey:calendar.week.mon'), t('journey:calendar.week.tue'),
+          t('journey:calendar.week.wed'), t('journey:calendar.week.thu'), t('journey:calendar.week.fri'),
+          t('journey:calendar.week.sat')
+        ],
+        lead: new Date(y, m - 1, 1).getDay(),
+        days,
+        selectedDay: day,
+        searching,
+        query: calendarState.search,
+        filter: calendarState.tab,
+        filters: [
+          { id: '', title: t('journey:calendar.filterAll') },
+          { id: 'public', title: t('journey:common.label.public') },
+          { id: 'private', title: t('journey:common.label.private') }
+        ],
+        unfinishedTitle: t('journey:calendar.unfinished', { badge: unfinished ? ` · ${unfinished}` : '' }),
+        listTitle,
+        emptyTitle: empty.title,
+        emptyHint: empty.hint,
+        entries: listed.map((entry) => ({
+          id: String(entry.id),
+          title: entry.title,
+          meta: t('journey:calendar.entryMeta', {
+            range: formatRange(entry.start_date, entry.end_date),
+            stop_count: entry.stop_count,
+            extra: entry.places?.length ? ` · ${entry.places.join(t('common:punctuation.listSeparator'))}` : ''
+          }),
+          badge: entry.visibility === 'public' ? t('journey:common.label.public') : t('journey:common.label.private'),
+          isPublic: entry.visibility === 'public',
+          cover: entry.cover_media_id ? `journey:${entry.cover_media_id}` : ''
+        })),
+        labels: {
+          searchPlaceholder: t('journey:calendar.searchPlaceholder'),
+          filter: t('journey:calendar.filterLabel'),
+          prevMonth: t('journey:calendar.prevMonth'),
+          nextMonth: t('journey:calendar.nextMonth'),
+          dayCount: t('journey:calendar.dayCount', { n: '%d' }),
+          draft: t('journey:calendar.draft'),
+          manage: t('journey:calendar.manage'),
+          done: t('journey:calendar.done'),
+          manageHint: t('journey:calendar.manageHint'),
+          deleteSelected: t('journey:calendar.deleteSelected', { count: '%d' }),
+          deleteTitle: t('common:action.delete'),
+          delete: t('common:action.delete'),
+          cancel: t('common:action.cancel'),
+          deleteMessage: t('journey:calendar.confirmDelete', { count: '%d', publicCount: '' }),
+          deletePublicNote: t('journey:calendar.confirmDeletePublic'),
+          mergePreview: t('journey:calendar.previewMerge'),
+          privateImages: t('journey:common.feature.privateImages'),
+          generate: t('journey:common.feature.generate'),
+          createManually: t('journey:calendar.createManually')
         }
       }
-    ];
-    if (rows.length) sections.push({ id: 'entries', title: calendarState.day || calendarState.month, rows });
+    });
+  }
+
+  // ---- 合并预览（网页 MergePreview）：顺序规则、合并后的站点、提醒与支出冲突，确认后合并为新的私密日记 ----
+  async function mergePage(params) {
+    const selection = params.selection;
+    if (!merge || merge.key !== JSON.stringify(selection)) merge = { key: JSON.stringify(selection), policy: 'constraints', resolutions: {}, requestId: null, hash: null };
+    let preview = null;
+    let error = '';
+    try {
+      preview = await api('/api/journeys/merge/preview', { method: 'POST', body: JSON.stringify({ ...selection, order_policy: merge.policy, expense_resolutions: merge.resolutions }) });
+    } catch (e) { error = e.message || ''; }
+    const sections = [];
+    if (preview) {
+      sections.push({
+        id: 'stops',
+        title: t('journey:mergePreview.label'),
+        rows: (preview.document?.stops || []).map((stop, index) => ({
+          id: String(stop.id || index),
+          title: stop.name,
+          subtitle: stop.at ? stop.at.replace('T', ' ') : t('journey:mergePreview.timeTbd'),
+          actions: []
+        }))
+      });
+      (preview.warnings || []).forEach((warning, index) => sections.push({ id: `warning-${index}`, title: '', text: warning }));
+      (preview.conflicts || []).forEach((conflict, index) => {
+        if (conflict.type !== 'expense') {
+          sections.push({ id: `conflict-${index}`, title: '', text: conflict.message });
+          return;
+        }
+        const choose = (value) => async () => {
+          merge.resolutions = { ...merge.resolutions, [conflict.id]: value };
+          return { page: await mergePage(params) };
+        };
+        const chosen = merge.resolutions[conflict.id] || '';
+        sections.push({
+          id: `conflict-${index}`,
+          title: t('journey:mergePreview.expenseChoice'),
+          text: conflict.message,
+          rows: [
+            ...(conflict.options || []).map((option) => ({
+              id: `${conflict.id}-${option.ref}`,
+              title: `${option.title} · ${option.place}`,
+              subtitle: `¥${option.amount}${option.note ? ` · ${option.note}` : ''}`,
+              selected: chosen === option.ref,
+              actions: [action(option.title, choose(option.ref))]
+            })),
+            { id: `${conflict.id}-separate`, title: t('journey:mergePreview.keepBoth'), selected: chosen === 'separate', actions: [action(t('journey:mergePreview.keepBoth'), choose('separate'))] }
+          ]
+        });
+      });
+      sections.push({ id: 'total', title: '', text: `${t('journey:mergePreview.total', { total: (preview.total_minor / 100).toFixed(2) })}\n${t('journey:mergePreview.resultNote')}` });
+    }
+    const blocked = !preview || (preview.conflicts || []).some((conflict) => conflict.type === 'expense' && !merge.resolutions[conflict.id]) || (preview.conflicts || []).some((conflict) => conflict.type !== 'expense');
     const buttons = [
-      action(t('journey:calendar.unfinished', { badge: '' }), async () => ({ page: await go('unfinished', {}) }), { push: true }),
-      action(t('journey:common.feature.privateImages'), async () => ({ page: await go('media', {}) }), { push: true }),
-      action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', { preset: calendarState.day ? { date: calendarState.day } : undefined }) }), { tone: 'primary', push: true }),
-      action(t('journey:calendar.createManually'), async () => ({ page: await go('review', { date: calendarState.day || today() }) }), { push: true }),
-      action(t('common:action.refresh'), async () => ({ page: await calendarPage() }))
+      action(t('journey:mergePreview.confirm'), async () => {
+        if (blocked) return { error: (preview?.conflicts || [])[0]?.message || t('journey:mergePreview.checking') };
+        if (merge.hash !== preview.preview_hash) merge = { ...merge, hash: preview.preview_hash, requestId: newId() };
+        const result = await api('/api/journeys/merge', { method: 'POST', body: JSON.stringify({ ...selection, order_policy: merge.policy, expense_resolutions: merge.resolutions, preview_hash: preview.preview_hash, request_id: merge.requestId }) });
+        merge = null;
+        return { page: await replaceTop('detail', { journeyId: result.id, message: t('journey:calendar.merged') }) };
+      }, { tone: 'primary' })
     ];
-    return basePage('journey-calendar', t('journey:common.feature.calendar'), {
-      subtitle: formatRange(calendarState.day || `${calendarState.month}-01`, calendarState.day || undefined),
-      searchPlaceholder: t('journey:calendar.searchPlaceholder'),
-      searchValue: calendarState.search,
+    return basePage('journey-merge', t('journey:mergePreview.label'), {
+      subtitle: t('journey:mergePreview.policyLabel'),
       tabs: [
-        { id: '', title: t('journey:calendar.filterAll') },
-        { id: 'public', title: t('journey:common.label.public') },
-        { id: 'private', title: t('journey:common.label.private') }
+        { id: 'constraints', title: t('journey:mergePreview.policy.constraints') },
+        { id: 'time', title: t('journey:mergePreview.policy.time') },
+        { id: 'source', title: t('journey:mergePreview.policy.keep') }
       ],
-      selectedTab: calendarState.tab,
+      selectedTab: merge.policy,
+      error,
       sections,
-      empty: t('journey:calendar.emptyMonthTitle'),
       buttons
     });
   }
@@ -1164,6 +1474,11 @@ export function createNativeJourneyController({
     return community;
   }
 
+  /** 住民头像：没有上传头像时服务器返回默认头像（?fallback=default） */
+  function avatarUrl(userId) {
+    return `${backendUrl}/users/${encodeURIComponent(userId)}/avatar?fallback=default`;
+  }
+
   async function communityPage(params) {
     const state = await loadCommunity();
     if (params.section) state.section = params.section;
@@ -1173,12 +1488,14 @@ export function createNativeJourneyController({
       { id: 'settings', title: t('journey:community.tab.settings') }
     ];
     const sections = [];
+    const buttons = [];
     if (state.section === 'neighbors') {
       const list = state.neighbors?.neighbors || [];
       if (list.length) {
         sections.push({
           id: 'neighbors',
-          title: state.neighbors.notice || '',
+          title: '',
+          text: state.neighbors.notice || '',
           rows: list.map((person) => ({
             id: String(person.id),
             title: person.username,
@@ -1187,6 +1504,8 @@ export function createNativeJourneyController({
               confidence: person.confidence,
               value: person.shared?.length ? ` · ${person.shared.join(' · ')}` : ''
             }),
+            image: avatarUrl(person.id),
+            imageShape: 'circle',
             actions: [action(t('journey:community.viewCollection', { username: person.username }), async () => {
               const data = await api(`/api/community/users/${encodeURIComponent(person.id)}/collections`);
               state.person = { ...data, similarity: person.similarity, shared: person.shared };
@@ -1195,7 +1514,15 @@ export function createNativeJourneyController({
           }))
         });
       } else {
-        sections.push({ id: 'neighbors-empty', title: '', text: state.neighbors?.profile_status === 'disabled' ? t('journey:community.empty.disabledHint') : t('journey:community.empty.notEnoughHint') });
+        const status = state.neighbors?.profile_status;
+        sections.push({
+          id: 'neighbors-empty',
+          title: '',
+          text: status === 'disabled' ? t('journey:community.empty.disabledHint') : (status === 'ready' ? t('journey:community.empty.noMatchHint') : t('journey:community.empty.notEnoughHint'))
+        });
+        if (status === 'disabled') {
+          buttons.push(action(t('journey:community.empty.goToSettings'), async () => ({ page: await communityPage({ section: 'settings' }) })));
+        }
       }
       if (state.person) {
         const placeRows = [];
@@ -1205,7 +1532,7 @@ export function createNativeJourneyController({
               id: `${collection.id}-${place.id}`,
               title: place.name,
               subtitle: `${collection.title} · ${place.category || t('common:label.uncategorized')}`,
-              actions: onOpenPlace ? [action(t('journey:common.feature.diary'), async () => { onOpenPlace(String(place.id)); return { close: true }; })] : []
+              actions: onOpenPlace ? [action(place.name, async () => { onOpenPlace(String(place.id)); return { close: true }; })] : []
             });
           });
         });
@@ -1214,103 +1541,148 @@ export function createNativeJourneyController({
           title: tx('journey:community.collectionOf', { username: state.person.user?.username || '' }),
           rows: placeRows.length ? placeRows : [{ id: 'empty', title: t('journey:community.noPublicCollections'), actions: [] }]
         });
+        if (onOpenFeedback && String(state.person.user?.id) !== String(userId)) {
+          buttons.push(action(t('journey:community.report'), async () => {
+            onOpenFeedback(userReportPrefill(state.person.user));
+            return { close: true };
+          }, { tone: 'danger' }));
+        }
       }
     } else if (state.section === 'collections') {
-      const rows = (state.collections || []).map((collection) => ({
-        id: String(collection.id),
-        title: collection.title,
-        subtitle: collection.is_public ? t('journey:common.label.public') : t('journey:common.label.private'),
-        badge: collection.places?.length ? String(collection.places.length) : '',
-        actions: [
-          formAction(t('journey:community.saveCollection'), () => registerForm({
-            title: collection.title,
-            submitTitle: t('journey:community.saveCollection'),
-            openTitle: t('common:action.edit'),
-            fields: [
-              { id: 'title', kind: 'text', label: t('journey:community.collectionNameLabel'), value: collection.title },
-              { id: 'is_public', kind: 'toggle', label: t('journey:community.makePublic'), value: !!collection.is_public },
-              { id: 'places', kind: 'multiselect', label: t('journey:community.tab.collections'), value: (collection.places || []).map((place) => String(place.id)), options: (state.favorites || []).map((favorite) => ({ id: String(Number(favorite.place_id || favorite.id)), title: favorite.name })) }
-            ],
-            handler: async (values) => {
-              const placeIds = (values.places || []).map(Number);
-              const places = placeIds.map((id) => {
-                const favorite = (state.favorites || []).find((item) => Number(item.place_id || item.id) === id);
-                return favorite ? { id, name: favorite.name } : { id, name: String(id) };
-              });
-              await api(`/api/community/collections/${encodeURIComponent(collection.id)}`, {
-                method: 'PUT',
-                body: JSON.stringify({ ...collection, title: String(values.title || '').trim() || collection.title, is_public: !!values.is_public, place_ids: placeIds, places })
-              });
-              community = null;
-              return { page: await communityPage({ section: 'collections' }), message: t('journey:community.collectionSaved') };
-            }
-          })),
-          action(t('common:action.delete'), async () => {
-            await api(`/api/community/collections/${encodeURIComponent(collection.id)}`, { method: 'DELETE' });
-            community = null;
-            return { page: await communityPage({ section: 'collections' }) };
-          }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:community.confirmDeleteCollection', { title: collection.title }), button: t('common:action.delete') } })
-        ]
-      }));
-      sections.push({ id: 'collections', title: t('journey:community.collectionsHint'), rows });
-    } else {
-      const consent = state.consent || {};
-      const form = registerForm({
-        title: t('journey:community.tab.settings'),
-        message: t('journey:community.settingsHint'),
-        submitTitle: t('journey:community.saveSettings'),
-        openTitle: t('common:action.edit'),
-        fields: [
-          { id: 'tags', kind: 'text', label: t('journey:community.tagsLabel'), value: (consent.tags || []).join(t('journey:community.tagSeparator')) },
-          { id: 'discovery', kind: 'toggle', label: t('journey:community.consent.discovery'), value: !!consent.discovery },
-          { id: 'feedback', kind: 'toggle', label: t('journey:community.consent.feedback'), value: !!consent.feedback },
-          { id: 'research', kind: 'toggle', label: t('journey:community.consent.research'), value: !!consent.research }
-        ],
-        handler: async (values) => {
-          const next = {
-            ...consent,
-            tags: String(values.tags || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean),
-            discovery: !!values.discovery,
-            feedback: !!values.feedback,
-            research: !!values.research
-          };
-          await api('/api/community/consent', { method: 'PUT', body: JSON.stringify({ ...next, research_choice: !!values.research }) });
-          community = null;
-          return { page: await communityPage({ section: 'settings' }), message: t('journey:community.settingsSaved') };
-        }
+      // 列表只显示名称与收藏数（右侧，无边框）；点开看收藏夹里的地点，编辑与删除在里面
+      sections.push({
+        id: 'collections',
+        title: '',
+        text: t('journey:community.collectionsHint'),
+        rows: (state.collections || []).map((collection) => ({
+          id: String(collection.id),
+          title: collection.title,
+          trailing: String(collection.places?.length || 0),
+          actions: [action(collection.title, async () => ({ page: await go('collection', { id: collection.id }) }), { push: true })]
+        }))
       });
-      sections.push({ id: 'settings', title: '', form });
-      const stats = (state.feedback?.counts || []).map((item) => `${item.kind} ${item.count}`).join(' · ');
-      sections.push({ id: 'stats', title: t('journey:community.tab.settings'), text: stats || t('journey:community.noInteractions') });
-    }
-    const buttons = [
-      action(t('common:action.refresh'), async () => { community = null; return { page: await communityPage({ section: state.section }) }; })
-    ];
-    if (state.section === 'neighbors' && state.person && onOpenFeedback) {
-      buttons.push(action(t('journey:community.report'), async () => {
-        onOpenFeedback(userReportPrefill(state.person.user));
-        return { close: true };
-      }, { tone: 'danger' }));
-    }
-    if (state.section === 'collections') {
+      if (!(state.collections || []).length) sections.push({ id: 'collections-empty', title: '', text: `${t('journey:community.noCollectionsTitle')}\n${t('journey:community.noCollectionsHint')}` });
       buttons.push(action(t('journey:community.newCollection'), async () => {
         await api('/api/community/collections', { method: 'POST', body: JSON.stringify({ title: t('journey:community.newCollectionName') }) });
         community = null;
         return { page: await communityPage({ section: 'collections' }) };
       }));
-    }
-    if (state.section === 'settings') {
+    } else {
+      // 发现设置（网页同一页的输入框与勾选框）：兴趣标签、三个开关（研究依赖互动记录），保存；下面是互动记录统计与清除
+      const consent = state.consent || {};
+      const form = registerForm({
+        title: '',
+        message: '',
+        submitTitle: t('journey:community.saveSettings'),
+        fields: [
+          { id: 'tags', kind: 'text', label: t('journey:community.tagsLabel'), value: (consent.tags || []).join(t('journey:community.tagSeparator')) },
+          { id: 'discovery', kind: 'toggle', label: t('journey:community.consent.discovery'), value: !!consent.discovery },
+          { id: 'feedback', kind: 'toggle', label: t('journey:community.consent.feedback'), value: !!consent.feedback },
+          { id: 'research', kind: 'toggle', label: t('journey:community.consent.research'), value: !!consent.research, requires: 'feedback' }
+        ],
+        handler: async (values) => {
+          const feedbackOn = !!values.feedback;
+          const research = feedbackOn && !!values.research;
+          const next = {
+            ...consent,
+            tags: String(values.tags || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 20),
+            discovery: !!values.discovery,
+            feedback: feedbackOn,
+            research
+          };
+          await api('/api/community/consent', { method: 'PUT', body: JSON.stringify({ ...next, research_choice: research !== !!consent.research }) });
+          community = null;
+          return { page: await communityPage({ section: 'settings' }), message: t('journey:community.settingsSaved') };
+        }
+      });
+      form.inline = true;
+      sections.push({ id: 'settings', title: '', text: t('journey:community.settingsHint'), form });
+      const stats = (state.feedback?.counts || []).map((item) => `${communityKindLabel(item.kind)} ${item.count}`).join(' · ');
+      sections.push({
+        id: 'stats',
+        title: t('journey:community.interactionsTitle'),
+        rows: [{ id: 'stats', title: stats || t('journey:community.noInteractions'), actions: [] }]
+      });
       buttons.push(action(t('journey:community.clearInteractions'), async () => {
         await api('/api/community/feedback', { method: 'DELETE' });
         community = null;
         return { page: await communityPage({ section: 'settings' }), message: t('journey:community.interactionsCleared') };
-      }, { tone: 'danger', confirm: { title: t('journey:community.clearInteractions'), message: t('journey:community.settingsHint'), button: t('journey:community.clearInteractions') } }));
+      }, { tone: 'danger', confirm: { title: t('journey:community.clearInteractions'), message: t('journey:community.clearInteractionsConfirm'), button: t('journey:community.clearInteractions') } }));
     }
     return basePage('journey-community', t('journey:common.feature.community'), {
       tabs,
       selectedTab: state.section,
       sections,
       buttons
+    });
+  }
+
+  function communityKindLabel(kind) {
+    const labels = {
+      search: t('common:action.search'),
+      exposure: t('journey:community.kind.exposure'),
+      click: t('journey:community.kind.click'),
+      favorite: t('journey:community.kind.favorite'),
+      unfavorite: t('journey:community.kind.unfavorite'),
+      correction: t('journey:community.kind.correction'),
+      next: t('journey:community.kind.swap'),
+      confirm_stop: t('journey:community.kind.confirmVisit')
+    };
+    return labels[kind] || kind;
+  }
+
+  // ---- 我的收藏夹详情：收藏的地点（点开回地图），编辑收藏夹（名称、公开、地点）与删除 ----
+  async function collectionPage(params) {
+    const state = await loadCommunity();
+    const collection = (state.collections || []).find((item) => String(item.id) === String(params.id));
+    if (!collection) return back(stack.length - 1);
+    const rows = (collection.places || []).map((place) => {
+      const favorite = (state.favorites || []).find((item) => Number(item.place_id || item.id) === Number(place.id));
+      return {
+        id: String(place.id),
+        title: place.name || favorite?.name || String(place.id),
+        subtitle: place.category || favorite?.category || '',
+        actions: onOpenPlace ? [action(place.name || '', async () => { onOpenPlace(String(place.id)); return { close: true }; })] : []
+      };
+    });
+    const edit = formAction(t('journey:community.editCollection'), () => {
+      const form = registerForm({
+        title: t('journey:community.editCollection'),
+        submitTitle: t('common:action.save'),
+        fields: [
+          { id: 'title', kind: 'text', label: t('journey:community.collectionNameLabel'), value: collection.title },
+          { id: 'is_public', kind: 'toggle', label: t('journey:community.makePublic'), value: !!collection.is_public },
+          { id: 'places', kind: 'multiselect', label: t('journey:community.collectionPlaces'), value: (collection.places || []).map((place) => String(place.id)), options: (state.favorites || []).map((favorite) => ({ id: String(Number(favorite.place_id || favorite.id)), title: favorite.name })) }
+        ],
+        handler: async (values) => {
+          const placeIds = (values.places || []).map(Number);
+          const places = placeIds.map((id) => {
+            const favorite = (state.favorites || []).find((item) => Number(item.place_id || item.id) === id);
+            return favorite ? { id, name: favorite.name } : { id, name: String(id) };
+          });
+          await api(`/api/community/collections/${encodeURIComponent(collection.id)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ ...collection, title: String(values.title || '').trim() || collection.title, is_public: !!values.is_public, place_ids: placeIds, places })
+          });
+          community = null;
+          await loadCommunity();
+          return { page: await collectionPage(params), message: t('journey:community.collectionSaved') };
+        }
+      });
+      form.actions = [action(t('journey:community.deleteCollection'), async () => {
+        await api(`/api/community/collections/${encodeURIComponent(collection.id)}`, { method: 'DELETE' });
+        community = null;
+        await loadCommunity();
+        return { page: await back(stack.length - 1) };
+      }, { tone: 'danger', confirm: { title: t('journey:community.deleteCollection'), message: t('journey:community.confirmDeleteCollection', { title: collection.title }), button: t('common:action.delete') } })];
+      return form;
+    });
+    return basePage('journey-collection', collection.title, {
+      subtitle: collection.is_public ? t('journey:community.collectionIsPublic') : t('journey:community.collectionIsPrivate'),
+      sections: rows.length
+        ? [{ id: 'places', title: t('journey:community.collectionPlaces'), rows }]
+        : [{ id: 'empty', title: '', text: (state.favorites || []).length ? t('journey:community.collectionEmpty') : t('journey:community.noFavorites') }],
+      buttons: [edit]
     });
   }
 
@@ -1392,6 +1764,14 @@ export function createNativeJourneyController({
   async function handle(type, payload = {}) {
     try {
       if (type === 'back') {
+        // 网页离开素材页时先存草稿；原生输入随时同步过来，这里把最新内容存到服务器
+        const leaving = stack[stack.length - 1];
+        if (leaving?.type === 'composer' && leaving.params.composeId && composerCache.has(leaving.params.composeId)) {
+          const state = composerCache.get(leaving.params.composeId);
+          if (hasContent(state.payload, state.mediaIds)) {
+            try { await saveComposer(state); } catch { /* 保存失败时内容仍在本次会话的缓存里 */ }
+          }
+        }
         if (stack[stack.length - 1]?.type === 'review' && review) {
           try {
             await persistReviewDraft();
@@ -1410,6 +1790,10 @@ export function createNativeJourneyController({
         }
         return { page: await back(Number(payload.level)) };
       }
+      if (type === 'custom') {
+        if (!customHandler) return {};
+        return await customHandler(String(payload.intent || ''), payload.values || {}, payload) || {};
+      }
       if (type === 'action') {
         const actionId = String(payload.actionId || '');
         const run = actions.get(actionId);
@@ -1421,7 +1805,17 @@ export function createNativeJourneyController({
         if (top?.type === 'community' && payload.filterId === 'tabs') {
           const value = String(payload.value || 'neighbors');
           if (community) community.section = value;
+          // 记进页面栈：从收藏夹详情返回时仍停在这个分区
+          top.params = { ...top.params, section: value };
           return { page: await communityPage({ section: value }) };
+        }
+        if (top?.type === 'address' && payload.filterId === 'search') {
+          top.params = { ...top.params, query: String(payload.value || '').slice(0, 60) };
+          return { page: await addressPage(top.params) };
+        }
+        if (top?.type === 'merge' && payload.filterId === 'tabs') {
+          if (merge) merge.policy = ['constraints', 'time', 'source'].includes(payload.value) ? payload.value : 'constraints';
+          return { page: await mergePage(top.params) };
         }
         if (top?.type !== 'calendar') return {};
         if (payload.filterId === 'search') {

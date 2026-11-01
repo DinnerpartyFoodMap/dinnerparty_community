@@ -55,6 +55,7 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             })
             let theme = call.getObject("theme") ?? [:]
             let dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
+            model.colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String)
             let host = MapChromeHostingController(rootView: NativePageView(model: model), dark: dark)
             // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
             host.view.backgroundColor = .systemGroupedBackground

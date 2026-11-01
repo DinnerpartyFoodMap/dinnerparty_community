@@ -8,6 +8,7 @@ import {
     setUserBlocked
 } from '../api/client.js';
 import { createNativeProfileSession } from '../platform/nativeProfile.js';
+import { nativeThemeColors } from '../theme/theme.js';
 import { isPluginAvailable, getPlatform } from '../platform/env.js';
 import { userReportPrefill } from '../feedback/feedbackTypes.js';
 import {
@@ -108,7 +109,7 @@ export default function useNativeProfile({
                 // 不等主页数据：原生页先滑入并显示加载中，数据到了再用 update 补上
                 session = createNativeProfileSession(registerPlugin('NativeProfile'), {
                     userId: String(userId),
-                    theme: { primary: themeColor || '#E2789F', dark: !!dark },
+                    theme: { ...nativeThemeColors(), primary: themeColor || nativeThemeColors().primary, dark: !!dark },
                     labels: profileBaseLabels(),
                     loading: true,
                     profile: { labels: profileBaseLabels() },
