@@ -174,6 +174,9 @@ export default function MapView({
     const [manageEdit, setManageEdit] = useState({ name: "", category: "", description: "", per_person_cost: null });
     const [manageSubmitting, setManageSubmitting] = useState(false);
     const [manageMessage, setManageMessage] = useState("");
+    // 新增地点的请求是否在途（见 submitPlace）
+    const [placeSubmitting, setPlaceSubmitting] = useState(false);
+    const placeSubmitRef = useRef(null);
 
     const [favoriteIds, setFavoriteIds] = useState(new Set());
     const [favoriteLoading, setFavoriteLoading] = useState(false);
@@ -1139,7 +1142,18 @@ export default function MapView({
 
     // onCreated：地点已建好（表单用它删除本机草稿），之后刷新地图失败也不影响
     // 返回 { ok, message }：iOS 原生表单据此显示结果；silent 时失败不弹网页提示（原生表单自己显示）
-    const submitPlace = async (payload, { onCreated, silent = false } = {}) => {
+    // 网络卡顿时连点提交、原生表单重复回调：同一时间只发一个请求，重复调用拿到同一个结果
+    const submitPlace = (payload, options) => {
+        if (placeSubmitRef.current) return placeSubmitRef.current;
+        setPlaceSubmitting(true);
+        const run = submitPlaceOnce(payload, options).finally(() => {
+            placeSubmitRef.current = null;
+            setPlaceSubmitting(false);
+        });
+        placeSubmitRef.current = run;
+        return run;
+    };
+    const submitPlaceOnce = async (payload, { onCreated, silent = false } = {}) => {
         if (!token) {
             onRequireAuth && onRequireAuth();
             return { ok: false, message: '' };
@@ -1150,7 +1164,13 @@ export default function MapView({
         }
 
         try {
-            await Api.postPlace(backendUrl, token, payload);
+            try {
+                await Api.postPlace(backendUrl, token, payload);
+            } catch (e) {
+                // 这个位置已有自己添加的同名地点：上一次提交其实成功了（只是回应丢了），按成功处理
+                if (e.code !== 'duplicate_place' || !e.own) throw e;
+                if (!silent) showTip(t('map:main.submitAlreadyAdded'));
+            }
             onCreated && onCreated();
             setAddingPos(null);
             setAddingPrefill(null);
@@ -1969,6 +1989,7 @@ export default function MapView({
                 addingPrefill={addingPrefill}
                 onAddCancel={() => { setAddingPos(null); setAddMode(false); setAddingPrefill(null); }}
                 onAddSubmit={submitPlace}
+                addSubmitting={placeSubmitting}
                 favoriteIds={favoriteIds}
                 favoriteLoading={favoriteLoading}
                 onToggleFavorite={handleToggleFavorite}

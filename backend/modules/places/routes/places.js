@@ -148,6 +148,10 @@ router.post("/", requireAuth, async (req, res) => {
         }, req.user.id, { source: 'web' });
         res.json(row);
     } catch (error) {
+        // own：已有的同名地点是本人添加的（多半是上一次提交其实已成功），前端按成功处理
+        if (error && error.code === 'duplicate_place') {
+            return res.status(409).json({ error: error.publicMessage, code: error.code, place_id: error.placeId, own: error.own });
+        }
         if (error && error.publicMessage) return res.status(error.status || 400).json({ error: error.publicMessage });
         res.locals.unhandledError = error;
         return res.status(500).json({ error: '地点保存失败，请稍后重试' });

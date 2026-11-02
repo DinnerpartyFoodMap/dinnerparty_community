@@ -578,6 +578,9 @@ function submitDraft(draftId, requestId, now) {
         if (fresh.length) {
             throw new SubmitRejected('附近刚出现名称相似的地点，请重新发送 !提交 查看最新预览。', { invalidatePreview: true });
         }
+        if (placeService.findSamePositionPlace(validated.value.name, validated.value.latitude, validated.value.longitude)) {
+            throw new SubmitRejected('这个位置已经有同名地点了，无需重复添加。');
+        }
         const placeId = placeService.insertPlaceSync(validated.value, draft.user_id, { source: 'qq_bot' });
         sql.prepare('INSERT INTO QQBotSubmission (request_id, draft_id, draft_version, user_id, place_id, created_at) VALUES (?, ?, ?, ?, ?, ?)')
             .run(requestId, draftId, draft.version, draft.user_id, placeId, iso(now));

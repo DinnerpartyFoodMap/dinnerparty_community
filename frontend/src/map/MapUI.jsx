@@ -289,6 +289,7 @@ export default function MapUI(props) {
         addingPrefill,
         onAddCancel,
         onAddSubmit,
+        addSubmitting,
         favoriteIds,
         favoriteLoading,
         onToggleFavorite,
@@ -3350,7 +3351,7 @@ export default function MapUI(props) {
                 bodyStyle={{ padding: 12 }}
             >
                 {addingPos && (
-                    <AddForm backendUrl={backendUrl} token={token} userId={currentUser?.id} defaultPos={addingPos} onCancel={onAddCancel} onSubmit={onAddSubmit} defaultName={addingPrefill?.name} defaultCategory={addingPrefill?.category} defaultDescription={addingPrefill?.description} defaultAddress={addingPrefill?.address} />
+                    <AddForm backendUrl={backendUrl} token={token} userId={currentUser?.id} defaultPos={addingPos} onCancel={onAddCancel} onSubmit={onAddSubmit} submitting={addSubmitting} defaultName={addingPrefill?.name} defaultCategory={addingPrefill?.category} defaultDescription={addingPrefill?.description} defaultAddress={addingPrefill?.address} />
                 )}
             </ResponsivePanel>
 

@@ -185,12 +185,35 @@ function syncCategoryRegistry(names, creatorId) {
     })(names);
 }
 
+// 同一经纬度（按表单显示的 6 位小数，约 0.1 米）同名的地点只能有一个；被驳回的不算。
+// 网络卡顿时重复提交、回应丢失后重试都会落到这里。
+const SAME_POSITION_EPSILON = 5e-7;
+function findSamePositionPlace(name, latitude, longitude) {
+    return db._raw.prepare(`SELECT id, creator_id FROM Place
+                            WHERE name = ? AND ABS(latitude - ?) < ? AND ABS(longitude - ?) < ?
+                              AND moderation_status != 'rejected'
+                            ORDER BY id LIMIT 1`).get(name, latitude, SAME_POSITION_EPSILON, longitude, SAME_POSITION_EPSILON) || null;
+}
+
+function duplicatePlaceError(existing, creatorId) {
+    return Object.assign(new Error('duplicate_place'), {
+        status: 409,
+        code: 'duplicate_place',
+        publicMessage: '这个位置已经有同名地点了',
+        placeId: existing.id,
+        own: !!creatorId && existing.creator_id === creatorId
+    });
+}
+
 /**
  * Inserts a validated place, its categories, the creator's rating and its new-place notifications.
  * Must be called inside a transaction (or wrapped by createPlace) so all rows
  * commit or roll back together. Performs no network work.
+ * Throws a 409 `duplicate_place` error when the same name already exists at the same position.
  */
 function insertPlaceSync(place, creatorId, { source }) {
+    const existing = findSamePositionPlace(place.name, place.latitude, place.longitude);
+    if (existing) throw duplicatePlaceError(existing, creatorId);
     syncCategoryRegistry(place.categoryNames, creatorId);
     const info = db._raw.prepare(`INSERT INTO Place (name, description, latitude, longitude, category, exterior_images, menu_images,
                                       per_person_cost, address, creator_id, updated_time, updated_by)
@@ -240,6 +263,9 @@ async function createPlace(input, creatorId, { source }) {
     if (validated.error) {
         throw Object.assign(new Error(validated.error), { status: 400, publicMessage: validated.error });
     }
+    // Early answer before the rating computation; insertPlaceSync checks again inside the transaction.
+    const existing = findSamePositionPlace(validated.value.name, validated.value.latitude, validated.value.longitude);
+    if (existing) throw duplicatePlaceError(existing, creatorId);
     let placeId;
     for(let attempt=0;attempt<2;attempt++){
         if(creatorId)require('../../accounts/services/userAccess').requireWritableUser(creatorId);
@@ -248,6 +274,9 @@ async function createPlace(input, creatorId, { source }) {
         const result=await require('../../../infrastructure/numericAlgorithmClient').compute('ratingsummary',{...snapshot,place_ids:[1],ratings:creatorId?[{place_id:1,user_id:creatorId,score,weight}]:[]});
         placeId=db._raw.transaction(()=>{
             if(creatorId)require('../../accounts/services/userAccess').requireWritableUser(creatorId);
+            // A duplicate that committed meanwhile also changes the snapshot; report the duplicate, not a retry.
+            const duplicate=findSamePositionPlace(validated.value.name,validated.value.latitude,validated.value.longitude);
+            if(duplicate)throw duplicatePlaceError(duplicate,creatorId);
             if(!same(snapshot.input_revision))return null;
             const id=insertPlaceSync(validated.value,creatorId,{source});
             require('../../ratings/services/ratingSummaryAdapter').writeSummary(id,result.summaries[0]);
@@ -276,6 +305,7 @@ module.exports = {
     normalizePerPersonCost,
     validateNewPlace,
     syncCategoryRegistry,
+    findSamePositionPlace,
     insertPlaceSync,
     afterPlacesCreated,
     getPlaceWithNames,

@@ -472,6 +472,8 @@
     "myLocation": "我的位置",
     "submitBanned": "通行凭证已受限，无法提交地点",
     "submitFailed": "提交失败: {{message}}",
+    "submitDuplicate": "这个位置已经有同名地点了",
+    "submitAlreadyAdded": "这个地点已经添加过了",
     "markerMissing": "这个地图标记已不存在",
     "markerLoadFailed": "地图标记加载失败，请稍后重试",
     "destination": "目的地",

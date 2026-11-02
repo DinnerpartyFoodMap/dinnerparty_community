@@ -84,6 +84,12 @@ export async function postPlace(backendUrl, token, payload) {
     });
     if (!res.ok) {
         const text = await res.text().catch(() => "");
+        let data = null;
+        try { data = JSON.parse(text); } catch (_) { /* not JSON */ }
+        // 同一经纬度已有同名地点：own 表示是自己添加的（上一次提交其实已成功）
+        if (res.status === 409 && data?.code === 'duplicate_place') {
+            throw Object.assign(new Error(t('map:main.submitDuplicate')), { code: data.code, own: !!data.own, placeId: data.place_id });
+        }
         throw new Error(t('map:api.backendError', { status: res.status, statusText: res.statusText, text }));
     }
     return res.json();
