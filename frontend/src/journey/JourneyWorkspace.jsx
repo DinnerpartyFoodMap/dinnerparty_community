@@ -96,6 +96,14 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
     }),[MapPicker,tip]);
     useEffect(()=>()=>pickerRef.current?.resolve(null),[]);
     // report：举报住民或公开日记，打开预填好的意见反馈表（叠在日记页面之上，提交或关闭后回到原页面）
+    // 页面切换方向：栈变深为 push（新页从右推入），变浅为 pop，同层替换或首次打开为 none（淡入）；顶层变化时才更新
+    const navRef=useRef({topKey:null,length:0,dir:'none'});
+    const topKey=stack.length?stack[stack.length-1].key:null;
+    if(topKey!==navRef.current.topKey){
+        const previous=navRef.current;
+        navRef.current={topKey,length:stack.length,dir:!previous.topKey||!topKey?'none':stack.length>previous.length?'push':stack.length<previous.length?'pop':'none'};
+    }
+    const navDir=navRef.current.dir;
     const ctx=useMemo(()=>({api,base,token,cap,mapRef,mapReady,selectedPlace,feedback,confirm,tip,showPlace,showJourneyOnMap,pickOnMap,report:onOpenFeedback,userId:getTokenUserId(token)}),
         [api,base,token,cap,mapRef,mapReady,selectedPlace,feedback,confirm,tip,showPlace,showJourneyOnMap,pickOnMap,onOpenFeedback]);
 
@@ -180,10 +188,10 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
         <JourneyEntrySheet open={entryOpen} counts={counts} onSelect={selectEntry} onClose={()=>setEntryOpen(false)}/>
         <ResponsivePanel open={stack.length>0&&!mapView&&!placeView} onClose={onPanelClose} label={top?LABELS[top.page]:t('journey:common.feature.diary')} kind="journey" desktop="full" mobile="full"
             draggable={false} plain showClose={false} dismissOnBackdrop={false} bodyStyle={{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-            <div className="jw-root">
+            <div className="jw-root" data-nav={navDir}>
                 {stack.map((entry,index)=>{
-                    const Page=PAGES[entry.page],isTop=index===stack.length-1;
-                    return <div key={entry.key} className={`jw-layer${isTop?' is-top':''}`} inert={isTop?undefined:''} aria-hidden={isTop?undefined:true}
+                    const Page=PAGES[entry.page],isTop=index===stack.length-1,isUnder=index===stack.length-2;
+                    return <div key={entry.key} className={`jw-layer${isTop?' is-top':isUnder?' is-under':''}`} inert={isTop?undefined:''} aria-hidden={isTop?undefined:true}
                         data-native-back-content={isTop&&stack.length>1?'':undefined} data-native-back-previous={index===stack.length-2?'':undefined}>
                         <Page ctx={ctx} nav={nav(entry.key)} params={entry.params} active={isTop}/>
                     </div>;

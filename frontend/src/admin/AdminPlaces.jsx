@@ -285,7 +285,7 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                             placeholder={t('admin:places.searchPlaceholder')}
                             style={{ flex: 1 }}
                         />
-                        <Button themeAware onClick={fetchRequests} disabled={loading}>{t('common:action.refresh')}</Button>
+                        <Button variant="secondary" size="sm" onClick={fetchRequests} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
                     </div>
                     {loading ? (
                         <div>{t('common:status.loading')}</div>

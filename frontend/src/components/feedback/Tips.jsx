@@ -46,29 +46,19 @@ export function TipsProvider({ children }) {
 
     const preset = getPreset('toast', flags);
 
-    const overlayStyle = {
-        position: 'fixed',
-        left: 0,
-        top: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: 10000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        pointerEvents: 'none'
-    };
-
+    // 位置在 overlay.css 的 .fm-toast-layer：底部居中，窄屏在底部工具栏之上（设计参考 11.7，与 iOS 原生 toast 相同）
     const tipStyle = {
         pointerEvents: 'auto',
-        minWidth: 200,
-        maxWidth: '80%',
+        minWidth: 160,
+        maxWidth: 'min(560px, 100%)',
         background: 'var(--color-bg-surface)',
         color: 'var(--color-text-primary)',
-        padding: '12px 16px',
-        paddingRight: tip && tip.closable ? '44px' : '16px',
-        borderRadius: 8,
+        padding: '10px 18px',
+        paddingRight: tip && tip.closable ? '44px' : '18px',
+        borderRadius: 'var(--radius-full)',
         textAlign: 'center',
+        fontSize: 'var(--text-body-size)',
+        lineHeight: 1.45,
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-surface)',
         position: 'relative',
@@ -78,7 +68,7 @@ export function TipsProvider({ children }) {
     const closeStyle = {
         position: 'absolute',
         top: '50%',
-        right: 10,
+        right: 14,
         transform: 'translateY(-50%)',
         border: 'none',
         background: 'transparent',
@@ -92,7 +82,7 @@ export function TipsProvider({ children }) {
     return (
         <TipsContext.Provider value={{ showTip, hideTip }}>
             {children}
-            <div style={overlayStyle} aria-live="polite">
+            <div className="fm-toast-layer" aria-live="polite">
                 <AnimatePresence mode="popLayout">
                     {tip && (
                         <motion.div key={tip.id} role="status" className="fm-glass" style={tipStyle} initial={preset.initial} animate={preset.animate} exit={preset.exit}>

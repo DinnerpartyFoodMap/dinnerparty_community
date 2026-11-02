@@ -8,11 +8,26 @@
 /* ---- 全屏页面框架：页面栈中只有最上层可见可交互，下层保持挂载以保留状态与滚动位置 ---- */
 .jw-root{position:relative;overflow:hidden;flex:1 1 auto;min-height:0;height:100%;background:var(--color-bg-base);color:var(--color-text-primary);font-size:15px;line-height:1.5}
 .jw-root *,.jw-place-diaries *{box-sizing:border-box}
-.jw-layer{position:absolute;inset:0;visibility:hidden;pointer-events:none}
-.jw-layer.is-top{visibility:visible;pointer-events:auto;animation:jw-page-in .22s cubic-bezier(.05,.7,.1,1)}
-@keyframes jw-page-in{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
-@media(prefers-reduced-motion:reduce){.jw-layer.is-top{animation:jw-fade .12s linear}}
-:root[data-motion='reduced'] .jw-layer.is-top{animation:jw-fade .12s linear}
+.jw-layer{position:absolute;inset:0;visibility:hidden;pointer-events:none;background:var(--color-bg-base)}
+.jw-layer.is-top{visibility:visible;pointer-events:auto;animation:jw-fade .16s linear}
+/* 页面栈的方向与路由页、iOS 原生一致（设计参考 11.2）：触屏从右侧整页推入、下层向左让出，返回时下层从左侧回来；
+   宽屏只用 12px 位移。下层只在动画进行中可见（不用 forwards），结束后回到隐藏，iOS 左边缘返回手势仍可改它的可见性 */
+.jw-root[data-nav=push] .jw-layer.is-top{animation:jw-push-in .34s cubic-bezier(.32,.72,0,1);box-shadow:-8px 0 24px rgba(0,0,0,.08)}
+.jw-root[data-nav=push] .jw-layer.is-under{animation:jw-under-out .34s cubic-bezier(.32,.72,0,1)}
+.jw-root[data-nav=pop] .jw-layer.is-top{animation:jw-pop-in .34s cubic-bezier(.32,.72,0,1)}
+@keyframes jw-push-in{from{transform:translateX(100%)}to{transform:none}}
+@keyframes jw-under-out{from{visibility:visible;transform:none}to{visibility:visible;transform:translateX(-28%)}}
+@keyframes jw-pop-in{from{transform:translateX(-28%)}to{transform:none}}
+@media(hover:hover) and (pointer:fine){
+    .jw-root[data-nav=push] .jw-layer.is-top{animation:jw-nudge-push .22s cubic-bezier(.05,.7,.1,1);box-shadow:none}
+    .jw-root[data-nav=push] .jw-layer.is-under{animation:none}
+    .jw-root[data-nav=pop] .jw-layer.is-top{animation:jw-nudge-pop .22s cubic-bezier(.05,.7,.1,1)}
+}
+@keyframes jw-nudge-push{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+@keyframes jw-nudge-pop{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.jw-root .jw-layer.is-top.is-top{animation:jw-fade .12s linear;box-shadow:none}.jw-root .jw-layer.is-under.is-under{animation:none}}
+:root[data-motion='reduced'] .jw-root[data-nav] .jw-layer.is-top{animation:jw-fade .12s linear;box-shadow:none}
+:root[data-motion='reduced'] .jw-root[data-nav] .jw-layer.is-under{animation:none}
 @keyframes jw-fade{from{opacity:0}to{opacity:1}}
 .jw-page{display:flex;flex-direction:column;height:100%;min-height:0}
 .jw-root .jw-header__action{border:0;background:transparent;color:var(--theme-primary-text);font-weight:600;min-height:44px;padding:6px 8px}

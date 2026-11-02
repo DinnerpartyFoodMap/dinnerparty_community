@@ -70,7 +70,7 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
 
     const setBlocked = async (blocked) => {
         if (!token) { onRequireAuth?.(); return; }
-        if (blocked && !(await confirm(t('profile:blockConfirm', { name: user.username })))) return;
+        if (blocked && !(await confirm(t('profile:blockConfirm', { name: user.username }), { destructive: true }))) return;
         setBusy(true);
         try {
             await setUserBlocked(backendUrl, token, user.id, blocked);

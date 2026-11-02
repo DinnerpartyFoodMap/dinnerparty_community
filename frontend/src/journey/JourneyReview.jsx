@@ -133,7 +133,7 @@ export default function JourneyReview({ctx,nav,params}) {
         if(busy)return;
         if(!drafts.isSynced()){
             if(!drafts.hasPendingSave()&&await drafts.saveLocalNow()){tip(t('journey:review.savedLocally'));nav.pop();return;}
-            if(!(await confirm(t('journey:review.confirmLeave'))))return;
+            if(!(await confirm(t('journey:review.confirmLeave'), { destructive: true })))return;
         }else if(dirty&&drafts.currentId())tip(t('journey:review.draftSaved'));
         nav.pop();
     };
@@ -257,7 +257,7 @@ export default function JourneyReview({ctx,nav,params}) {
             </section>
             {stops.map((s,i)=><JourneyStopCard key={s.id} stop={s} index={i} total={stops.length} dates={[document.start_date,document.end_date]} expanded={expanded===s.id}
                 onToggle={open=>setExpanded(open?s.id:null)} editStop={patch=>editStop(s.id,patch)} editingSaved={editingSaved}
-                removeStop={async()=>{if(await confirm(t('journey:review.confirmRemoveStop', { name: s.name })))edit(d=>({stops:d.stops.filter(x=>x.id!==s.id)}));}}
+                removeStop={async()=>{if(await confirm(t('journey:review.confirmRemoveStop', { name: s.name }), { destructive: true, confirmLabel: t('common:action.remove') }))edit(d=>({stops:d.stops.filter(x=>x.id!==s.id)}));}}
                 moveStop={delta=>edit(d=>{const list=[...d.stops],k=list.findIndex(x=>x.id===s.id);if(k+delta<0||k+delta>=list.length)return {};[list[k],list[k+delta]]=[list[k+delta],list[k]];return {stops:list};})}
                 addBelow={()=>addBelow(i)} link={links.get(s.id)} visibility={visibility} ctx={ctx}
                 center={center} onChooseShop={()=>s.candidates?.length?setShopFor(s.id):pickFor(s.id)} onAddPhotos={()=>{setPhotoNotice('');setPhotosFor(s.id);}}/>)}

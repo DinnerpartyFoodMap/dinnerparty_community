@@ -155,7 +155,7 @@ export default function AdminNotices({ backendUrl = null }) {
     };
 
     const clearCurrentNotice = async () => {
-        if (!(await confirm(t('admin:notices.confirmUnpublish')))) return;
+        if (!(await confirm(t('admin:notices.confirmUnpublish'), { destructive: true }))) return;
         setClearing(true);
         const thisFetchId = ++fetchIdRef.current;
         const authToken = token;
@@ -206,7 +206,7 @@ export default function AdminNotices({ backendUrl = null }) {
         <div style={{ marginTop: 12 }}>
             <h3>{t('admin:notices.title')}</h3>
             <div style={{ marginBottom: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Button themeAware onClick={fetchNotices} disabled={loading}>{t('common:action.refresh')}</Button>
+                <Button variant="secondary" size="sm" onClick={fetchNotices} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
                 <Button themeAware onClick={clearCurrentNotice} disabled={clearing || !currentNotice}>{t('admin:notices.unpublish')}</Button>
             </div>
 

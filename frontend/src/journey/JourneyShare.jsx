@@ -63,7 +63,7 @@ export default function JourneyShare({ctx,nav,params}) {
 
     const run=async fn=>{setBusy(true);setError('');try{await fn();}catch(e){setError(e.message);}finally{setBusy(false);}};
     const generate=()=>run(async()=>{
-        if(share&&text!==share.text&&!(await ctx.confirm(t('journey:share.confirmReplaceEdited'))))return;
+        if(share&&text!==share.text&&!(await ctx.confirm(t('journey:share.confirmReplaceEdited'), { destructive: true })))return;
         const data=await api(`/${journal.id}/share`,{method:'POST',body:JSON.stringify({...options,base_revision:journal.revision})});
         // 贴文与图片来自同一份结果：图片按新结果重画，画好之前不能导出旧图
         setShare(data);setText(data.text);setDone({});

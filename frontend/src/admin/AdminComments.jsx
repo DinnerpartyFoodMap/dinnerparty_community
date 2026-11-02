@@ -109,7 +109,7 @@ export default function AdminComments({ backendUrl = null }) {
     };
 
     const deleteComment = async (id) => {
-        if (!(await confirm(t('admin:comments.confirmDelete')))) return;
+        if (!(await confirm(t('admin:comments.confirmDelete'), { destructive: true, confirmLabel: t('common:action.delete') }))) return;
         setProcessing(p => ({ ...p, [id]: true }));
         const thisFetchId = ++fetchIdRef.current;
         const authToken = token;
@@ -160,7 +160,7 @@ export default function AdminComments({ backendUrl = null }) {
                     placeholder={t('admin:comments.searchPlaceholder')}
                     style={{ flex: 1 }}
                 />
-                <Button themeAware onClick={fetchComments} disabled={loading}>{t('common:action.refresh')}</Button>
+                <Button variant="secondary" size="sm" onClick={fetchComments} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
             </div>
 
             {loading ? (

@@ -11,7 +11,7 @@ import { t } from "../../i18n/index.js";
 import { RATING_TIERS, tierLabel, tierHint } from "../rating";
 import { emptyPlaceContent, placeDraftSource, openPlaceDraft, placeContentKey, persistPlaceDraft, discardPlaceDraft } from "../addPlaceDraft";
 
-export default function AddForm({ backendUrl, token, userId, defaultPos, defaultName = "", defaultCategory = "", defaultDescription = "", defaultAddress = "", onCancel, onSubmit, submitting = false }) {
+export default function AddForm({ backendUrl, token, userId, defaultPos, defaultName = "", defaultCategory = "", defaultDescription = "", defaultAddress = "", onCancel, onSubmit, submitting = false, actionRef = null }) {
     // 打开时读一次本机草稿（addPlaceDraft.js）：同一来源直接恢复，从另一个高德地点收录时只提示可以恢复
     const [opening] = useState(() => {
         const baseline = emptyPlaceContent({ name: defaultName, category: defaultCategory, description: defaultDescription });
@@ -56,10 +56,15 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
         setDraftNotice('restored');
     };
     const clearDraft = async () => {
-        if (!(await confirm(t('map:addForm.draft.clearConfirm')))) return;
+        if (!(await confirm(t('map:addForm.draft.clearConfirm'), { destructive: true }))) return;
         applyContent(opening.baseline);
         setDraftNotice(null);
     };
+
+    // 提交按钮在面板标题栏右侧（设计参考 11.4），由外层经 actionRef 调用
+    useEffect(() => {
+        if (actionRef) actionRef.current = () => handle();
+    });
 
     const handle = () => {
         if (submitting) return;
@@ -92,8 +97,8 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                             : opening.pending.name ? t('map:addForm.draft.pendingNamed', { name: opening.pending.name }) : t('map:addForm.draft.pending')}
                     </span>
                     {draftNotice === 'restored'
-                        ? <Button themeAware onClick={clearDraft} style={{ padding: '4px 10px', fontSize: 13, flexShrink: 0 }}>{t('map:addForm.draft.clear')}</Button>
-                        : <Button themeAware onClick={restoreDraft} style={{ padding: '4px 10px', fontSize: 13, flexShrink: 0 }}>{t('map:addForm.draft.restore')}</Button>}
+                        ? <Button variant="secondary" size="sm" onClick={clearDraft} style={{ flexShrink: 0 }}>{t('map:addForm.draft.clear')}</Button>
+                        : <Button variant="secondary" size="sm" onClick={restoreDraft} style={{ flexShrink: 0 }}>{t('map:addForm.draft.restore')}</Button>}
                 </div>
             )}
             <div><strong style={{ color: 'var(--color-text-primary)' }}>{t('map:addForm.coordinates')}</strong><span style={{ color: 'var(--color-text-primary)' }}>{defaultPos[1].toFixed(6)}, {defaultPos[0].toFixed(6)}</span></div>
@@ -160,11 +165,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                 <PlaceImageInputs backendUrl={backendUrl} token={token} images={exteriorImages} setImages={setExteriorImages} label={t('map:addForm.exteriorImages')} />
                 <PlaceImageInputs backendUrl={backendUrl} token={token} images={menuImages} setImages={setMenuImages} label={t('map:addForm.menuImages')} />
             </ScrollableView>
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-                {draftSaved && <span style={{ marginRight: 'auto', fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:addForm.draft.saved')}</span>}
-                <Button themeAware onClick={onCancel}>{t('common:action.cancel')}</Button>
-                <Button themeAware onClick={handle} disabled={submitting}>{submitting ? t('map:placeForm.submitting') : t('map:addForm.submit')}</Button>
-            </div>
+            {draftSaved && <div role="status" style={{ marginTop: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:addForm.draft.saved')}</div>}
         </div>
     );
 }

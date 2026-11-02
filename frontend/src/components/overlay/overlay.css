@@ -211,6 +211,33 @@ button,
     border-radius: calc(var(--radius-lg) - 6px);
 }
 
+.fm-icon-button:disabled {
+    cursor: default;
+}
+
+.fm-icon-button__spin {
+    animation: yuyuko-thinking-spin 0.9s linear infinite;
+}
+
+/* 提示（Tips）：底部居中；窄屏抬到底部工具栏之上 */
+.fm-toast-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0 16px calc(var(--safe-bottom, 0px) + 32px);
+    pointer-events: none;
+}
+
+@media (max-width: 640px) {
+    .fm-toast-layer {
+        padding-bottom: calc(var(--safe-bottom, 0px) + 96px);
+    }
+}
+
 /* 底部面板 */
 .fm-sheet-host {
     position: absolute;
@@ -284,7 +311,8 @@ button,
     overflow-wrap: anywhere;
 }
 
-.fm-panel__close {
+.fm-panel__close,
+.fm-icon-button {
     flex-shrink: 0;
     width: 44px;
     height: 44px;
@@ -300,12 +328,14 @@ button,
     -webkit-tap-highlight-color: transparent;
 }
 
-.fm-panel__close .material-symbols-outlined {
+.fm-panel__close .material-symbols-outlined,
+.fm-icon-button .material-symbols-outlined {
     font-size: 20px;
     font-variation-settings: 'wght' 600;
 }
 
-.fm-panel__close:hover {
+.fm-panel__close:hover,
+.fm-icon-button:not(:disabled):hover {
     background: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
 }
 
@@ -434,7 +464,7 @@ button,
 }
 
 /* 关闭按钮：嵌在玻璃里的小玻璃圆钮 */
-:root:is([data-platform='ios'], [data-platform='android']) .fm-panel__close {
+:root:is([data-platform='ios'], [data-platform='android']) :is(.fm-panel__close, .fm-panel__header .fm-icon-button) {
     width: 44px;
     height: 44px;
     background: var(--glass-sheen), color-mix(in srgb, var(--color-text-primary) 7%, transparent);

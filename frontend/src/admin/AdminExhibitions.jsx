@@ -136,7 +136,7 @@ export default function AdminExhibitions({ backendUrl }) {
     }
 
     async function unpublish() {
-        if (disabled || !current || !await confirm(t('admin:exhibitions.confirmUnpublish'))) return;
+        if (disabled || !current || !await confirm(t('admin:exhibitions.confirmUnpublish'), { destructive: true })) return;
         setBusy(true);
         setError('');
         try {
@@ -206,7 +206,7 @@ export default function AdminExhibitions({ backendUrl }) {
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <Button type="submit" themeAware disabled={disabled}>{busy ? t('admin:exhibitions.saving') : current ? t('admin:exhibitions.save') : t('admin:exhibitions.publish')}</Button>
                 {current && <Button themeAware disabled={disabled} onClick={unpublish}>{t('admin:exhibitions.unpublish')}</Button>}
-                {loadFailed && <Button themeAware onClick={() => setReload(value => value + 1)}>{t('admin:exhibitions.retry')}</Button>}
+                {loadFailed && <Button variant="secondary" onClick={() => setReload(value => value + 1)}>{t('admin:exhibitions.retry')}</Button>}
             </div>
         </form>
         <FullScreenMapPicker open={pickerOpen} title={t('admin:exhibitions.pickLocation')} context="exhibition"

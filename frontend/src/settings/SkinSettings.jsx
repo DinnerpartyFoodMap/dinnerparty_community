@@ -112,7 +112,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                 ) : loadError && !state ? (
                     <div style={{ marginTop: 8 }}>
                         <div role="alert" style={{ color: 'var(--color-danger)', fontSize: 13 }}>{t('settings:skins.loadFailed', { message: loadError })}</div>
-                        <Button themeAware onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('settings:skins.retry')}</Button>
+                        <Button variant="secondary" onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('settings:skins.retry')}</Button>
                     </div>
                 ) : (
                     <div role="radiogroup" aria-label={t('settings:skins.mine')} style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>

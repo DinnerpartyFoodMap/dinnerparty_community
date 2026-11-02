@@ -36,7 +36,7 @@ export default function JourneyDetail({ctx,nav,params,active}) {
             run(async()=>{await api(`/${journey.id}/publication`,{method:'DELETE',body:JSON.stringify({version:pub.version})});setMessage(t('journey:detail.madePrivate'));await load();});
         }
         if(choice==='delete'){
-            if(!await confirm(t('journey:detail.confirmDelete')))return;
+            if(!await confirm(t('journey:detail.confirmDelete'), { destructive: true, confirmLabel: t('common:action.delete') }))return;
             run(async()=>{await api(`/${journey.id}`,{method:'DELETE',body:JSON.stringify({base_revision:journey.revision})});tip(t('journey:detail.deleted'));nav.pop();});
         }
     };

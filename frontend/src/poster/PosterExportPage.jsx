@@ -406,8 +406,10 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
                                         <span>{previewError}</span>
                                         <Button
                                             type="button"
+                                            variant="secondary"
+                                            size="sm"
                                             onClick={() => setPreviewRetryKey((value) => value + 1)}
-                                            style={{ flexShrink: 0, background: 'transparent', color: 'var(--color-danger)' }}
+                                            style={{ flexShrink: 0 }}
                                         >
                                             {t('poster:page.retry')}
                                         </Button>

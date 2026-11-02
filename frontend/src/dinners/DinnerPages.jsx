@@ -377,7 +377,7 @@ export function DinnerDetailPage({ backendUrl, dinnerId, token, currentUserId, i
 
     const handleDelete = async () => {
         if (!item || !token || !canDelete || deleting) return;
-        const ok = await confirm(t('dinner:detail.confirmDelete'));
+        const ok = await confirm(t('dinner:detail.confirmDelete'), { destructive: true, confirmLabel: t('common:action.delete') });
         if (!ok) return;
         setDeleting(true);
         try {

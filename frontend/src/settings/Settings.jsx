@@ -49,7 +49,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
             if (onLogout) onLogout();
             return;
         }
-        if (confirmed !== true && !(await confirm(t('settings:main.confirmDeleteAccount')))) return;
+        if (confirmed !== true && !(await confirm(t('settings:main.confirmDeleteAccount'), { destructive: true }))) return;
         setDeleting(true);
         try {
             const res = await fetch(`${backendUrl}/users/me`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });

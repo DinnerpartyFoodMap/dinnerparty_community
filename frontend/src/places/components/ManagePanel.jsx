@@ -8,13 +8,20 @@ import CategorySelector from './CategorySelector';
 import ResponsivePanel from "../../components/overlay/ResponsivePanel";
 import { t } from "../../i18n/index.js";
 
-// 管理地点：宽屏居中表单，窄屏底部面板
+// 管理地点：宽屏居中表单，窄屏底部面板。保存（或提交修改申请）在标题栏右侧，左侧关闭钮即取消；删除在内容最下方（设计参考 11.4）
 export default function ManagePanel({ open = true, onClose, selectedPlace, ...rest }) {
+    const direct = !!selectedPlace && typeof rest.canDirectManage === 'function' && rest.canDirectManage();
     return (
         <ResponsivePanel
             open={open && !!selectedPlace}
             onClose={onClose}
             title={selectedPlace ? t('map:manage.titleWithName', { name: selectedPlace.name }) : t('map:manage.title')}
+            headerExtra={selectedPlace && (
+                <Button variant="plain" onClick={direct ? rest.onSave : rest.onSubmitRequest} disabled={rest.manageSubmitting}
+                    style={{ padding: '0 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {direct ? t('common:action.save') : t('map:manage.submitRequest')}
+                </Button>
+            )}
             kind="manage-place"
             desktop="center"
             mobile="sheet"
@@ -107,25 +114,13 @@ function ManageForm({
                     <PlaceImageInputs backendUrl={backendUrl} token={token} images={manageEdit.exterior_images || []} setImages={(imgs) => setManageEdit(me => ({ ...me, exterior_images: imgs }))} label={t('map:manage.field.exteriorImages')} />
                     <PlaceImageInputs backendUrl={backendUrl} token={token} images={manageEdit.menu_images || []} setImages={(imgs) => setManageEdit(me => ({ ...me, menu_images: imgs }))} label={t('map:manage.field.menuImages')} />
                 </ScrollableView>
-                <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between", alignItems: "center" }}>
-                    {!canDirectManage() && (
-                        <div style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>{t('map:manage.needsReview')}</div>
-                    )}
-                    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
-                        <Button themeAware onClick={onClose} style={{ whiteSpace: 'nowrap' }}>{t('common:action.cancel')}</Button>
-
-                        {canDirectManage() ? (
-                            <>
-                                <Button themeAware onClick={onSave} disabled={manageSubmitting} style={{ whiteSpace: 'nowrap' }}>{t('common:action.save')}</Button>
-                                <Button themeAware onClick={onDelete} disabled={manageSubmitting} style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', borderColor: 'var(--color-danger)', whiteSpace: 'nowrap' }}>{t('common:action.delete')}</Button>
-                            </>
-                        ) : (
-                            <Button themeAware onClick={onSubmitRequest} disabled={manageSubmitting} style={{ whiteSpace: 'nowrap' }}>{t('map:manage.submitRequest')}</Button>
-                        )}
-                    </div>
-                </div>
-
-                {manageMessage && <div style={{ marginTop: 8, color: 'var(--color-danger)' }}>{manageMessage}</div>}
+                {!canDirectManage() && (
+                    <div style={{ marginTop: 10, color: 'var(--color-text-secondary)', fontSize: 12 }}>{t('map:manage.needsReview')}</div>
+                )}
+                {manageMessage && <div role="alert" style={{ marginTop: 8, color: 'var(--color-danger-text)' }}>{manageMessage}</div>}
+                {canDirectManage() && (
+                    <Button variant="destructive" full onClick={onDelete} disabled={manageSubmitting} style={{ marginTop: 16 }}>{t('common:action.delete')}</Button>
+                )}
             </div>
         </div>
     );

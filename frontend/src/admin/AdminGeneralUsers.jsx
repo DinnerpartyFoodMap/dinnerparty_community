@@ -101,7 +101,7 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
     const deleteUser = async (target) => {
         if (isProcessing) return;
         const id = target.id;
-        if (!(await confirm(t('admin:generalUsers.confirmDelete', { username: target.username || id })))) return;
+        if (!(await confirm(t('admin:generalUsers.confirmDelete', { username: target.username || id }), { destructive: true, confirmLabel: t('common:action.delete') }))) return;
         setProcessing(p => ({ ...p, [id]: true }));
         const thisFetchId = ++fetchIdRef.current;
         const authToken = token;
@@ -205,7 +205,7 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                         style={{ padding: '6px 12px', width: '100%', boxSizing: 'border-box', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)', borderRadius: 'var(--radius-sm)' }}
                     />
                 </div>
-                <Button themeAware onClick={fetchUsers} disabled={loading || isProcessing}>{t('common:action.refresh')}</Button>
+                <Button variant="secondary" size="sm" onClick={fetchUsers} disabled={loading || isProcessing}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
             </div>
 
 

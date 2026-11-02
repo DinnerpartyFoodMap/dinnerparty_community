@@ -159,7 +159,7 @@ export default function AdminUsers({ backendUrl = null }) {
 
     const deleteUser = async (target) => {
         const id = target.id;
-        if (!(await confirm(t('admin:users.confirmDelete', { username: target.username || id })))) return;
+        if (!(await confirm(t('admin:users.confirmDelete', { username: target.username || id }), { destructive: true, confirmLabel: t('common:action.delete') }))) return;
         setProcessing(current => ({ ...current, [id]: true }));
         const thisFetchId = ++fetchIdRef.current;
         const authToken = token;
@@ -365,7 +365,7 @@ export default function AdminUsers({ backendUrl = null }) {
                     placeholder={t('admin:users.searchPlaceholder')}
                     style={{ flex: 1 }}
                 />
-                <Button themeAware onClick={fetchUsers} disabled={loading}>{t('common:action.refresh')}</Button>
+                <Button variant="secondary" size="sm" onClick={fetchUsers} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
             </div>
             {loading ? (
                 <div>{t('common:status.loading')}</div>

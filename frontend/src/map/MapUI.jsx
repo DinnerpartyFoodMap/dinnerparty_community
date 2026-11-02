@@ -556,6 +556,8 @@ export default function MapUI(props) {
     const pendingNativeTextsRef = useRef([]);
     const [searchTextVersion, setSearchTextVersion] = useState(0);
     const popupRef = useRef(null);
+    // 添加地点表单的提交函数：提交按钮在面板标题栏右侧
+    const addFormActionRef = useRef(null);
     const popupOpenedAtRef = useRef(0);
     const searchBarRef = useRef(null);
     const dinnerBtnRef = useRef(null);
@@ -2178,8 +2180,7 @@ export default function MapUI(props) {
                             {failed && (
                                 <div role="alert" style={{ padding: '12px 12px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 10, fontSize: 13, color: 'var(--color-text-secondary)' }}>
                                     <span>{t('map:ui.search.failed')}</span>
-                                    <Button type="button" onClick={() => (searchFailed ? submitSearch(searchTerm) : retrySpSearch())} disabled={searching}
-                                        style={{ minHeight: 36, padding: '6px 16px', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => (searchFailed ? submitSearch(searchTerm) : retrySpSearch())} disabled={searching}>
                                         {t('map:ui.search.retry')}
                                     </Button>
                                 </div>
@@ -3341,6 +3342,11 @@ export default function MapUI(props) {
                 open={!hideNonSearchButtons && !pickerMode && !!addingPos && !nativePlaceFormActive}
                 onClose={onAddCancel}
                 title={t('map:ui.addPlace')}
+                headerExtra={(
+                    <Button variant="plain" onClick={() => addFormActionRef.current && addFormActionRef.current()} disabled={addSubmitting} style={{ padding: '0 8px', fontWeight: 600 }}>
+                        {addSubmitting ? t('map:placeForm.submitting') : t('map:addForm.submit')}
+                    </Button>
+                )}
                 kind="add-place"
                 desktop="center"
                 mobile="sheet"
@@ -3351,7 +3357,7 @@ export default function MapUI(props) {
                 bodyStyle={{ padding: 12 }}
             >
                 {addingPos && (
-                    <AddForm backendUrl={backendUrl} token={token} userId={currentUser?.id} defaultPos={addingPos} onCancel={onAddCancel} onSubmit={onAddSubmit} submitting={addSubmitting} defaultName={addingPrefill?.name} defaultCategory={addingPrefill?.category} defaultDescription={addingPrefill?.description} defaultAddress={addingPrefill?.address} />
+                    <AddForm backendUrl={backendUrl} token={token} userId={currentUser?.id} defaultPos={addingPos} onCancel={onAddCancel} onSubmit={onAddSubmit} submitting={addSubmitting} actionRef={addFormActionRef} defaultName={addingPrefill?.name} defaultCategory={addingPrefill?.category} defaultDescription={addingPrefill?.description} defaultAddress={addingPrefill?.address} />
                 )}
             </ResponsivePanel>
 
@@ -3493,7 +3499,7 @@ export default function MapUI(props) {
                                 {userPlacesMessage(userFilter)}
                                 {userFilter.status === 'error' && (
                                     <div style={{ marginTop: 10 }}>
-                                        <Button type="button" onClick={() => runUserPlacesRow('retry')} style={{ padding: '6px 16px' }}>{t('map:userPlaces.retry')}</Button>
+                                        <Button type="button" variant="secondary" onClick={() => runUserPlacesRow('retry')}>{t('map:userPlaces.retry')}</Button>
                                     </div>
                                 )}
                             </div>

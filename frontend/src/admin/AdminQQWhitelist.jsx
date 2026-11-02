@@ -153,7 +153,7 @@ export default function AdminQQWhitelist({ backendUrl = null }) {
     };
 
     const deleteEntry = async (id) => {
-        if (!(await confirm(t('admin:qqWhitelist.confirmRemove')))) return;
+        if (!(await confirm(t('admin:qqWhitelist.confirmRemove'), { destructive: true, confirmLabel: t('common:action.remove') }))) return;
         setProcessing(p => ({ ...p, [id]: true }));
         const thisFetchId = ++fetchIdRef.current;
         const authToken = token;
@@ -217,7 +217,7 @@ export default function AdminQQWhitelist({ backendUrl = null }) {
                     placeholder={t('admin:qqWhitelist.searchPlaceholder')}
                     style={{ flex: 1 }}
                 />
-                <Button themeAware onClick={fetchEntries} disabled={loading}>{t('common:action.refresh')}</Button>
+                <Button variant="secondary" size="sm" onClick={fetchEntries} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
             </div>
 
             <div style={{ marginBottom: 12, padding: 8, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-bg-overlay)' }}>

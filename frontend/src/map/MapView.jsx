@@ -1436,7 +1436,7 @@ export default function MapView({
         const current = userFilterRef.current;
         if (!current || !token) return;
         const { id, name } = current.user;
-        if (blocked && !(await confirm(t('map:userPlaces.blockConfirm', { name })))) return;
+        if (blocked && !(await confirm(t('map:userPlaces.blockConfirm', { name }), { destructive: true }))) return;
         try {
             await Api.setUserBlocked(backendUrl, token, id, blocked);
         } catch (e) {
@@ -1749,7 +1749,7 @@ export default function MapView({
         if (!selectedPlace) return { ok: false, message: '' };
         if (!token) { onRequireAuth && onRequireAuth(); return { ok: false, message: '' }; }
         if (isBanned) { showTip(t('map:main.deleteBanned')); return { ok: false, message: t('map:main.deleteBanned') }; }
-        if (confirmed !== true && !(await confirm(t('map:main.confirmDelete')))) return { ok: false, message: '' };
+        if (confirmed !== true && !(await confirm(t('map:main.confirmDelete'), { destructive: true, confirmLabel: t('common:action.delete') }))) return { ok: false, message: '' };
         setManageSubmitting(true);
         try {
             await Api.deletePlace(backendUrl, token, selectedPlace.id);

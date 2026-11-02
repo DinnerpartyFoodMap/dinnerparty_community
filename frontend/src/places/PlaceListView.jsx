@@ -77,7 +77,7 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
             {state.error && !state.items.length && (
                 <div className="fm-place-list__message" role="alert">
                     {state.error}
-                    <Button themeAware onClick={() => load(0)} style={{ marginLeft: 8 }}>{t('places:list.retry')}</Button>
+                    <Button variant="secondary" onClick={() => load(0)} style={{ marginLeft: 8 }}>{t('places:list.retry')}</Button>
                 </div>
             )}
             {!state.loading && !state.error && !state.items.length && (
@@ -91,7 +91,7 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
             <div ref={sentinelRef} className="fm-place-list__more">
                 {state.loading && state.items.length > 0 && <span role="status">{t('common:status.loading')}</span>}
                 {state.error && state.items.length > 0 && (
-                    <Button themeAware onClick={() => load(state.items.length)}>{t('places:list.retry')}</Button>
+                    <Button variant="secondary" onClick={() => load(state.items.length)}>{t('places:list.retry')}</Button>
                 )}
                 {!state.loading && !state.error && !state.done && state.items.length > 0 && (
                     <Button themeAware onClick={() => load(state.items.length)}>{t('places:list.loadMore')}</Button>

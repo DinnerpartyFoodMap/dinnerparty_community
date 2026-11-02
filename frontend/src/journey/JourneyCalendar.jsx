@@ -43,7 +43,7 @@ export default function JourneyCalendar({ctx,nav,params,active}) {
     const chosen=selected.map(id=>listed.find(j=>j.id===id)).filter(Boolean);
     // 逐篇删除并如实汇总：已删除的不再显示，失败的保留勾选并说明原因
     const removeSelected=async()=>{
-        if(!chosen.length||!(await confirm(t('journey:calendar.confirmDelete', { count: chosen.length, publicCount: chosen.filter(j=>j.visibility==='public').length?t('journey:calendar.confirmDeletePublic'):'' }))))return;
+        if(!chosen.length||!(await confirm(t('journey:calendar.confirmDelete', { count: chosen.length, publicCount: chosen.filter(j=>j.visibility==='public').length?t('journey:calendar.confirmDeletePublic'):'' }), { destructive: true, confirmLabel: t('common:action.delete') })))return;
         setBusy(true);setError('');
         const failed=[];
         for(const j of chosen){

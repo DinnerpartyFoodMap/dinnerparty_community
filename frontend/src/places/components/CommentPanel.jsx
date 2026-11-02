@@ -1,5 +1,6 @@
 import React from 'react';
 import Button from "../../components/primitives/Button";
+import IconButton from "../../components/primitives/IconButton";
 import TextArea from "../../components/forms/TextArea";
 import ScrollableView from "../../components/layout/ScrollableView";
 import ResponsivePanel from "../../components/overlay/ResponsivePanel";
@@ -17,7 +18,7 @@ export default function CommentPanel({ open = true, place, onClose, onRefresh, l
             mobile="sheet"
             width="min(440px, calc(100vw - 80px))"
             sideInset={64}
-            headerExtra={<Button themeAware onClick={onRefresh} disabled={loading}>{t('common:action.refresh')}</Button>}
+            headerExtra={<IconButton icon="refresh" label={t('common:action.refresh')} onClick={onRefresh} disabled={loading} spinning={loading} />}
             bodyStyle={{ padding: 12 }}
         >
             {place && <CommentBody place={place} loading={loading} {...rest} />}

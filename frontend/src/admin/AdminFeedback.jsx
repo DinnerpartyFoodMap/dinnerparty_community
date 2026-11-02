@@ -107,7 +107,7 @@ export default function AdminFeedback({ backendUrl }) {
     }
 
     async function remove(item) {
-        if (busyId || !await confirm(t('admin:feedback.confirmDelete'))) return;
+        if (busyId || !await confirm(t('admin:feedback.confirmDelete'), { destructive: true, confirmLabel: t('common:action.delete') })) return;
         setBusyId(item.id);
         try {
             await request(`/admin/feedback/${item.id}`, { method: 'DELETE' });
@@ -153,7 +153,7 @@ export default function AdminFeedback({ backendUrl }) {
         ) : loadError ? (
             <div>
                 <div role="alert" style={{ color: 'var(--color-danger)' }}>{t('admin:feedback.loadFailed', { message: loadError })}</div>
-                <Button themeAware onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('admin:feedback.retry')}</Button>
+                <Button variant="secondary" onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('admin:feedback.retry')}</Button>
             </div>
         ) : items.length === 0 ? (
             <p style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('admin:feedback.empty')}</p>

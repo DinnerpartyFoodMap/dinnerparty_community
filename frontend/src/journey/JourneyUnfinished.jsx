@@ -32,7 +32,7 @@ export default function JourneyUnfinished({ctx,nav,active}) {
     },[api,userId]);
     useEffect(()=>{if(active)load();},[active,load]);
     const run=async fn=>{setBusy(true);setError('');try{await fn();await load();}catch(e){setError(e.message);}finally{setBusy(false);}};
-    const discard=(label,fn)=>run(async()=>{if(await confirm(t('journey:unfinished.confirmDiscard', { label })))await fn();});
+    const discard=(label,fn)=>run(async()=>{if(await confirm(t('journey:unfinished.confirmDiscard', { label }), { destructive: true }))await fn();});
     const row=(item,{title,meta,open,openLabel,remove})=><div key={`${item.kind||'local'}-${item.id||item.draftId}`} className="jw-entry-row">
         <button type="button" className="jw-entry" onClick={open} aria-label={t('journey:unfinished.openItem', { openLabel, title })}>
             {item.cover_media_id?<PrivatePhoto id={item.cover_media_id} base={base} token={token} className="jw-entry__cover" alt=""/>:<span className="jw-entry__cover jw-entry__cover--empty" aria-hidden="true">✎</span>}
@@ -89,7 +89,7 @@ export function JourneyMedia({ctx,nav,active}) {
             <div className="jw-photo-choice">{(media||[]).map(m=><figure key={m.id} className="jw-entry-photo">
                 <PrivatePhoto id={m.id} base={base} token={token} alt=""/>
                 <button type="button" className="jw-entry-photo__remove" disabled={busy} aria-label={t('journey:unfinished.media.deleteLabel')} onClick={async()=>{
-                    if(!await confirm(t('journey:unfinished.media.confirmDelete')))return;
+                    if(!await confirm(t('journey:unfinished.media.confirmDelete'), { destructive: true, confirmLabel: t('common:action.delete') }))return;
                     setBusy(true);setError('');
                     try{await api(`/media/${m.id}`,{method:'DELETE'});await load();}catch(e){setError(e.message);}finally{setBusy(false);}
                 }}>×</button>

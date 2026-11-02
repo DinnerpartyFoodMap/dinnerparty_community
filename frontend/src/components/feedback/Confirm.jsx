@@ -5,13 +5,15 @@ import { t } from "../../i18n/index.js";
 
 const ConfirmContext = createContext(null);
 
-// 短确认在所有布局下都保留居中提示框；返回键、Escape 与点击遮罩等同于“取消”。
+// 短确认在所有布局下都保留居中提示框；返回键、Escape 与点击遮罩等同于“取消”（设计参考 11.6）。
+// confirm(message, { destructive, confirmLabel })：会删除、下架、撤销、丢弃的操作传 destructive，确认按钮显示为危险色；
+// confirmLabel 写动作本身（「删除」「移除」），不传时为「确认」。
 export function ConfirmProvider({ children }) {
     const [confirmState, setConfirmState] = useState(null);
     const [open, setOpen] = useState(false);
     const settledRef = useRef(false);
 
-    const confirm = useCallback((message) => {
+    const confirm = useCallback((message, options = {}) => {
         return new Promise((resolve) => {
             settledRef.current = false;
             const settle = (value) => {
@@ -20,7 +22,13 @@ export function ConfirmProvider({ children }) {
                 setOpen(false);
                 resolve(value);
             };
-            setConfirmState({ message, onConfirm: () => settle(true), onCancel: () => settle(false) });
+            setConfirmState({
+                message,
+                destructive: !!options.destructive,
+                confirmLabel: options.confirmLabel,
+                onConfirm: () => settle(true),
+                onCancel: () => settle(false)
+            });
             setOpen(true);
         });
     }, []);
@@ -43,10 +51,12 @@ export function ConfirmProvider({ children }) {
             >
                 {confirmState && (
                     <>
-                        <div style={{ fontSize: 16, marginBottom: 24 }}>{confirmState.message}</div>
+                        <div style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 24, whiteSpace: 'pre-line' }}>{confirmState.message}</div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                            <Button themeAware onClick={confirmState.onCancel}>{t('common:action.cancel')}</Button>
-                            <Button themeAware style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', borderColor: 'var(--color-danger)' }} onClick={confirmState.onConfirm}>{t('common:confirm.confirm')}</Button>
+                            <Button variant="secondary" onClick={confirmState.onCancel}>{t('common:action.cancel')}</Button>
+                            <Button variant={confirmState.destructive ? 'destructive' : 'primary'} onClick={confirmState.onConfirm}>
+                                {confirmState.confirmLabel || t('common:confirm.confirm')}
+                            </Button>
                         </div>
                     </>
                 )}

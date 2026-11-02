@@ -97,7 +97,7 @@ export default function AdminSkinCodes({ backendUrl }) {
     }
 
     async function revoke(item) {
-        if (busy || !await confirm(t('admin:skinCodes.confirmRevoke', { code: item.code }))) return;
+        if (busy || !await confirm(t('admin:skinCodes.confirmRevoke', { code: item.code }), { destructive: true })) return;
         setBusy(true);
         try {
             const data = await request(`/admin/skin-codes/${item.id}`, { method: 'DELETE' });
@@ -122,7 +122,7 @@ export default function AdminSkinCodes({ backendUrl }) {
         ) : loadError ? (
             <div>
                 <div role="alert" style={{ color: 'var(--color-danger)' }}>{t('admin:skinCodes.loadFailed', { message: loadError })}</div>
-                <Button themeAware onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('admin:skinCodes.retry')}</Button>
+                <Button variant="secondary" onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('admin:skinCodes.retry')}</Button>
             </div>
         ) : !catalog.length ? (
             <p style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('admin:skinCodes.emptyCatalog')}</p>

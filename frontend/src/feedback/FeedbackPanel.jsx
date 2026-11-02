@@ -101,14 +101,11 @@ export default function FeedbackPanel({ open, onClose, backendUrl, token, onRequ
             mobile="sheet"
             width="min(520px, calc(100vw - 24px))"
             bodyStyle={{ padding: 0 }}
-            footer={(
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {error && <div role="alert" style={{ fontSize: 13, color: 'var(--color-danger)', lineHeight: 1.5 }}>{error}</div>}
-                    <Button full disabled={!canSubmit} onClick={submit}
-                        style={{ minHeight: 44, border: 0, borderRadius: 'var(--radius-sm)', fontSize: 15, fontWeight: 700, color: '#FFFFFF', opacity: canSubmit ? 1 : 0.55 }}>
-                        {submitting ? t('feedback:submitting') : t('feedback:submit')}
-                    </Button>
-                </div>
+            // 表单面板：提交在标题栏右侧，左侧关闭钮即取消（设计参考 11.4，与 iOS 原生反馈页相同）
+            headerExtra={(
+                <Button variant="plain" disabled={!canSubmit} onClick={submit} style={{ padding: '0 8px', fontWeight: 600 }}>
+                    {submitting ? t('feedback:submitting') : t('feedback:submit')}
+                </Button>
             )}
         >
             <div style={{ padding: '0 20px 16px', color: 'var(--color-text-primary)' }}>
@@ -168,6 +165,7 @@ export default function FeedbackPanel({ open, onClose, backendUrl, token, onRequ
                     )}
                 </div>
                 <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>{t('feedback:imagesHint', { max: FEEDBACK_LIMITS.images })}</div>
+                {error && <div role="alert" style={{ marginTop: 16, fontSize: 13, color: 'var(--color-danger-text)', lineHeight: 1.5 }}>{error}</div>}
             </div>
         </ResponsivePanel>
     );
