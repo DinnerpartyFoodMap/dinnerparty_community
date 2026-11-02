@@ -174,14 +174,13 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
     },[mapView,mapReady,mapRef,palette]);
     useOverlayEntry(mapView?{onClose:()=>setMapView(null),modal:false,kind:'journey-map-view',label:t('journey:workspace.mapViewLabel'),suspendNative:false}:false);
 
-    const style={'--journey-on-primary':palette.onPrimary};
     return <>
-        {!entryOpen&&(!stack.length||placeView)&&!mapView&&<button type="button" className="journey-launch" data-tour="journey" style={style} onClick={openEntry}>{t('journey:workspace.launcher')}</button>}
-        {mapView&&<button type="button" className="journey-launch journey-launch--visible" style={style} onClick={()=>setMapView(null)}>{tx('journey:workspace.backToDiary', { title: mapView.document.title })}</button>}
+        {!entryOpen&&(!stack.length||placeView)&&!mapView&&<button type="button" className="journey-launch" data-tour="journey" onClick={openEntry}>{t('journey:workspace.launcher')}</button>}
+        {mapView&&<button type="button" className="journey-launch journey-launch--visible" onClick={()=>setMapView(null)}>{tx('journey:workspace.backToDiary', { title: mapView.document.title })}</button>}
         <JourneyEntrySheet open={entryOpen} counts={counts} onSelect={selectEntry} onClose={()=>setEntryOpen(false)}/>
         <ResponsivePanel open={stack.length>0&&!mapView&&!placeView} onClose={onPanelClose} label={top?LABELS[top.page]:t('journey:common.feature.diary')} kind="journey" desktop="full" mobile="full"
             draggable={false} plain showClose={false} dismissOnBackdrop={false} bodyStyle={{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-            <div className="jw-root" style={style}>
+            <div className="jw-root">
                 {stack.map((entry,index)=>{
                     const Page=PAGES[entry.page],isTop=index===stack.length-1;
                     return <div key={entry.key} className={`jw-layer${isTop?' is-top':''}`} inert={isTop?undefined:''} aria-hidden={isTop?undefined:true}

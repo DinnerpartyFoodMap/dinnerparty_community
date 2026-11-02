@@ -14,7 +14,7 @@
     place-items: center;
     background: var(--consent-bg);
     color: var(--consent-text);
-    font: 16px/1.8 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font: 16px/1.8 var(--font-sans);
 }
 .fm-consent-status { max-width: 440px; text-align: center; }
 .fm-consent-brand { color: var(--consent-accent); font-weight: 700; }

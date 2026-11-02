@@ -37,7 +37,8 @@ body {
 body {
     background: radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--home-primary) 18%, transparent), transparent 45%), var(--home-bg);
     color: var(--home-text);
-    font: 16px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    /* 与 src/styles/tokens.json 的 font.sans 相同（下载页不加载主应用的令牌） */
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, "Noto Sans CJK SC", sans-serif;
 }
 
 .home {

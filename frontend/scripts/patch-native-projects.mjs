@@ -323,6 +323,7 @@ function patchIos() {
 // 新增本地插件后还必须在该文件的列表之外，到 FoodMapBridgeViewController.capacitorDidLoad()
 // 里 registerPluginInstance(...)；否则网页 isPluginAvailable 为 false，会静默回退网页界面。
 const IOS_NATIVE_SOURCES = [
+    ['DesignTokens.swift', 'A7F1C0DE0000000000000033', 'A7F1C0DE0000000000000034'],
     ['NativePageEngine.swift', 'A7F1C0DE000000000000001D', 'A7F1C0DE000000000000002D'],
     ['NativeAdminPlugin.swift', 'A7F1C0DE000000000000001E', 'A7F1C0DE000000000000002E'],
     ['NativeJourneyPlugin.swift', 'A7F1C0DE000000000000001F', 'A7F1C0DE000000000000002F'],

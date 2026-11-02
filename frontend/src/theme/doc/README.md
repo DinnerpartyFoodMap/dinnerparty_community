@@ -1,6 +1,6 @@
 # 主题与深色模式
 
-theme.js 保存颜色解析、对比色、默认值、系统偏好与主题应用函数；useDarkMode 订阅当前模式。App 将用户设置和本机选择应用到 CSS 变量，业务只读变量或使用既有辅助函数。
+theme.js 保存颜色解析、对比色、默认值、系统偏好与主题应用函数；useDarkMode 订阅当前模式。App 将用户设置和本机选择应用到 CSS 变量，业务只读变量或使用既有辅助函数。应用主色时同时算出 `--theme-on-primary`（主色底上的文字）与 `--theme-primary-text`（主色当文字用、对卡片和输入框底都 ≥ 4.5:1 的版本），原生页面经 `nativeThemeColors()` 拿到同样的值；默认值写在 [tokens.json](../../styles/tokens.json)。
 
 ```mermaid
 flowchart LR

@@ -122,6 +122,56 @@ export function pickContrastTextColor(bgColor) {
     return contrastWithBlack >= contrastWithWhite ? '#2B2533' : '#F3EFEF';
 }
 
+function relativeLuminance(rgb) {
+    return 0.2126 * srgbToLinear(rgb.r) + 0.7152 * srgbToLinear(rgb.g) + 0.0722 * srgbToLinear(rgb.b);
+}
+
+function rgbContrast(a, b) {
+    const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+    return (high + 0.05) / (low + 0.05);
+}
+
+export function contrastRatio(foreground, background) {
+    const a = parseColorToRgb(foreground);
+    const b = parseColorToRgb(background);
+    return a && b ? rgbContrast(a, b) : 1;
+}
+
+/**
+ * 颜色当文字用时的可读版本（主色做链接、文字按钮）：对每个底色都达到 minRatio 就原样返回，
+ * 否则按 2% 一步向黑（浅色底）或向白（深色底）混合，直到都达标。默认粉色在浅色下得到 #9E546F（tokens.json 的 theme.primary-text）。
+ */
+export function readableTextColor(color, backgrounds, minRatio = 4.5) {
+    const rgb = parseColorToRgb(color);
+    const bgs = (backgrounds || []).map(parseColorToRgb).filter(Boolean);
+    if (!rgb || !bgs.length) return color;
+    const passes = (candidate) => bgs.every((bg) => rgbContrast(candidate, bg) >= minRatio);
+    if (passes(rgb)) return color;
+    const lightBackground = bgs.reduce((sum, bg) => sum + relativeLuminance(bg), 0) / bgs.length > 0.18;
+    const target = lightBackground ? 0 : 255;
+    for (let step = 1; step <= 50; step++) {
+        const t = step / 50;
+        const mixed = {
+            r: Math.round(rgb.r + (target - rgb.r) * t),
+            g: Math.round(rgb.g + (target - rgb.g) * t),
+            b: Math.round(rgb.b + (target - rgb.b) * t)
+        };
+        if (passes(mixed) || step === 50) {
+            return `#${[mixed.r, mixed.g, mixed.b].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+        }
+    }
+    return color;
+}
+
+function readRootVar(name) {
+    try {
+        const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+        return value ? value.trim() : '';
+    } catch (e) {
+        return '';
+    }
+}
+
 // Resolve the effective primary color: user overrides or dark/light default
 export function resolveThemePrimary(userSettings) {
     const ms = userSettings || {};
@@ -145,10 +195,15 @@ export function applyThemeColor(color) {
             root.style.setProperty('--theme-primary', val);
             root.style.setProperty('--theme-primary-0-2', hexToRgba(val, 0.2));
             root.style.setProperty('--theme-primary-0-25', hexToRgba(val, 0.25));
+            // 主色底上的文字、主色当文字用的可读版本；底色取当前浅 / 深模式的卡片与输入框底
+            root.style.setProperty('--theme-on-primary', pickContrastTextColor(val));
+            root.style.setProperty('--theme-primary-text', readableTextColor(val, [readRootVar('--color-bg-surface'), readRootVar('--color-bg-overlay')]));
         } else {
             root.style.removeProperty('--theme-primary');
             root.style.removeProperty('--theme-primary-0-2');
             root.style.removeProperty('--theme-primary-0-25');
+            root.style.removeProperty('--theme-on-primary');
+            root.style.removeProperty('--theme-primary-text');
         }
     } catch (e) { /* ignore */ }
 }
@@ -212,9 +267,18 @@ export function getThemeSecondary() {
     }
 }
 
-/** iOS 原生页面用的两种主题色（住民设置里的主色 / 辅色）：主色用于主要按钮与选中，辅色用于标签与次要强调 */
+/**
+ * iOS 原生页面用的主题色（住民设置里的主色 / 辅色）：主色用于主要按钮与选中，辅色用于标签与次要强调；
+ * onPrimary 是主色底上的文字，primaryText 是主色当文字用的可读版本
+ */
 export function nativeThemeColors() {
-    return { primary: getThemeColor() || '#E2789F', secondary: getThemeSecondary() || '#8C6BB1' };
+    const primary = getThemeColor() || DEFAULT_PRIMARY;
+    return {
+        primary,
+        secondary: getThemeSecondary() || DEFAULT_SECONDARY,
+        onPrimary: readRootVar('--theme-on-primary') || pickContrastTextColor(primary),
+        primaryText: readRootVar('--theme-primary-text') || primary
+    };
 }
 
 export default { applyDarkMode, isDarkMode };

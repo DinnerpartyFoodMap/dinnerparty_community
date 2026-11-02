@@ -1,9 +1,9 @@
 /* 地图左下角入口（宽屏）；窄屏入口在工具栏「更多」中 */
-.journey-launch{position:absolute;left:12px;bottom:30px;z-index:2100;padding:12px 18px;border:1px solid var(--theme-primary);border-radius:24px;background:var(--theme-primary);color:var(--journey-on-primary,var(--color-on-emphasis));box-shadow:var(--shadow-surface);cursor:pointer;font-size:15px}
+.journey-launch{position:absolute;left:12px;bottom:30px;z-index:2100;padding:12px 18px;border:1px solid var(--theme-primary);border-radius:24px;background:var(--theme-primary);color:var(--theme-on-primary);box-shadow:var(--shadow-surface);cursor:pointer;font-size:15px}
 .journey-launch:hover{box-shadow:var(--shadow-surface),0 0 0 3px var(--theme-primary-0-25)}
 .journey-launch:focus-visible{outline:3px solid var(--theme-secondary);outline-offset:3px}
 @media(max-width:640px){.journey-launch{display:none}.journey-launch--visible{display:block;left:12px;right:12px;bottom:calc(16px + var(--safe-bottom,0px));text-align:center}}
-.jw-map-dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:2px solid var(--color-bg-surface);box-shadow:var(--shadow-surface);background:var(--theme-primary);color:var(--journey-on-primary,#fff);cursor:pointer;padding:0}
+.jw-map-dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:2px solid var(--color-bg-surface);box-shadow:var(--shadow-surface);background:var(--theme-primary);color:var(--theme-on-primary);cursor:pointer;padding:0}
 .jw-map-dot.is-active{background:var(--theme-secondary);transform:scale(1.12)}
 
 /* ---- 全屏页面框架：页面栈中只有最上层可见可交互，下层保持挂载以保留状态与滚动位置 ---- */
@@ -36,7 +36,7 @@
 .jw-root :is(button,input,select,textarea,[role=button]):focus-visible,.jw-pad :is(button,input):focus-visible,.jw-entry-sheet button:focus-visible,.jw-place-diaries button:focus-visible{outline:3px solid var(--theme-secondary);outline-offset:2px}
 .jw-root input:not([type=checkbox]),.jw-root select,.jw-root textarea,.jw-pad input{width:100%;border:1px solid var(--color-border);border-radius:10px;padding:10px;background:var(--color-bg-surface);min-height:44px}
 .jw-root textarea{resize:vertical;min-height:96px;line-height:1.6}
-.jw-root .jw-primary,.jw-pad .jw-primary{background:var(--theme-primary);border-color:var(--theme-primary);color:var(--journey-on-primary,var(--color-on-emphasis));font-weight:600}
+.jw-root .jw-primary,.jw-pad .jw-primary{background:var(--theme-primary);border-color:var(--theme-primary);color:var(--theme-on-primary);font-weight:600}
 .jw-wide{width:100%;min-height:48px!important}
 .jw-root .jw-danger,.jw-pad .jw-danger{color:var(--color-danger);border-color:color-mix(in srgb,var(--color-danger) 45%,var(--color-border))}
 .jw-root .jw-link,.jw-place-diaries .jw-link{border:0;background:transparent;color:var(--theme-primary);padding:4px 0;min-height:32px;text-decoration:underline;text-underline-offset:3px}
@@ -142,7 +142,7 @@
 .jw-stop{border:1px solid var(--color-border);border-radius:16px;padding:14px;background:var(--color-bg-surface);display:flex;flex-direction:column;gap:10px;scroll-margin-top:12px}
 .jw-stop.is-pending{border-color:color-mix(in srgb,var(--color-warning) 60%,var(--color-border))}
 .jw-stop__head{display:flex;gap:10px;align-items:flex-start}
-.jw-stop__index{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;background:var(--theme-primary);color:var(--journey-on-primary,#fff);flex-shrink:0}
+.jw-stop__index{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;background:var(--theme-primary);color:var(--theme-on-primary);flex-shrink:0}
 .jw-stop__title{display:flex;flex-direction:column;gap:5px;min-width:0}.jw-stop__title strong{font-size:16px;overflow-wrap:anywhere}
 .jw-stop__chips{display:flex;flex-wrap:wrap;gap:4px}
 .jw-stop__place{margin:0;font-size:13px;color:var(--color-text-secondary)}
@@ -171,7 +171,7 @@
 .jw-photo-choice>img,.jw-photo-choice>span,.jw-photo-choice img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}
 .jw-root .jw-photo-choice>button{position:relative;padding:0;border-radius:10px;overflow:hidden;min-height:0;aspect-ratio:1}
 .jw-photo-choice>button[aria-pressed=true]{outline:3px solid var(--theme-primary);outline-offset:-3px}
-.jw-photo-choice>button>span{position:absolute;right:4px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--theme-primary);color:var(--journey-on-primary,#fff);display:flex;align-items:center;justify-content:center;font-size:13px}
+.jw-photo-choice>button>span{position:absolute;right:4px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--theme-primary);color:var(--theme-on-primary);display:flex;align-items:center;justify-content:center;font-size:13px}
 .jw-entry-photo{position:relative;margin:0}.jw-entry-photo figcaption{position:absolute;left:4px;bottom:4px;font-size:10.5px;border-radius:6px;padding:1px 5px;background:rgba(0,0,0,.55);color:#fff}
 .jw-root .jw-entry-photo__remove{position:absolute;right:3px;top:3px;width:26px;height:26px;min-height:0;padding:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:0;font-size:15px;line-height:1}
 .jw-unassigned{display:grid;grid-template-columns:1fr minmax(110px,40%);gap:8px;align-items:center;padding:6px 0;border-top:1px dashed var(--color-border)}
@@ -224,7 +224,7 @@
 .jw-md-field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .jw-md-field__bar{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .jw-root .jw-md-toggle{flex-shrink:0;min-height:26px;padding:2px 10px;border-radius:999px;font-size:12px}
-.jw-root .jw-md-toggle[aria-pressed=true]{background:var(--theme-primary);border-color:var(--theme-primary);color:var(--journey-on-primary,#fff)}
+.jw-root .jw-md-toggle[aria-pressed=true]{background:var(--theme-primary);border-color:var(--theme-primary);color:var(--theme-on-primary)}
 .jw-md-preview{display:block;min-height:64px;border:1px solid var(--color-border);border-radius:10px;padding:10px;background:var(--color-bg-surface);overflow-wrap:anywhere}
 
 /* ---- 照片：读取失败可重试、点按放大 ---- */
