@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const TOKENS_PATH = path.join(root, 'src/styles/tokens.json');
 export const CSS_PATH = path.join(root, 'src/styles/tokens.generated.css');
+export const SYSTEM_CSS_PATH = path.join(root, 'src/styles/tokens.system.css');
 export const SWIFT_PATH = path.join(root, 'ios/App/App/DesignTokens.swift');
 
 // 原生页面的主色 / 辅色以网页下发的住民设置为准，这些品牌色只以 theme* 默认值出现在 Swift 里
@@ -47,6 +48,11 @@ export function renderCss(tokens) {
     light.push('', '/* 层级 */');
     for (const [key, value] of entries(tokens.z)) light.push(`--z-${key}: ${value}`);
 
+    return '/* 由 src/styles/tokens.json 生成（npm run tokens），不要手改。规格见 frontend/doc/DESIGN_SYSTEM.md */\n\n'
+        + cssBlock(':root', light) + '\n' + cssBlock(":root[data-theme='dark']", darkLines(tokens));
+}
+
+function darkLines(tokens) {
     const dark = [];
     for (const [prefix, group] of [['color', tokens.color], ['theme', tokens.theme], ['shadow', tokens.shadow]]) {
         for (const [key, value] of entries(group)) {
@@ -54,8 +60,15 @@ export function renderCss(tokens) {
             if (darkValue !== lightValue) dark.push(`--${prefix}-${key}: ${darkValue}`);
         }
     }
-    return '/* 由 src/styles/tokens.json 生成（npm run tokens），不要手改。规格见 frontend/doc/DESIGN_SYSTEM.md */\n\n'
-        + cssBlock(':root', light) + '\n' + cssBlock(":root[data-theme='dark']", dark);
+    return dark;
+}
+
+// 没有住民深色开关的静态页（下载页、协议、隐私、技术支持）：同一组变量，深浅跟随系统
+export function renderSystemCss(tokens) {
+    const dark = cssBlock(':root', darkLines(tokens)).trimEnd().split('\n').map((line) => `    ${line}`).join('\n');
+    return '/* 由 src/styles/tokens.json 生成（npm run tokens），不要手改。静态页用：深浅跟随系统，不看 data-theme */\n'
+        + "@import './tokens.generated.css';\n\n"
+        + `@media (prefers-color-scheme: dark) {\n${dark}\n}\n`;
 }
 
 function parseColor(value) {
@@ -131,6 +144,7 @@ private func fmColor(_ value: UInt32, _ alpha: CGFloat) -> UIColor {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const tokens = loadTokens();
     fs.writeFileSync(CSS_PATH, renderCss(tokens));
+    fs.writeFileSync(SYSTEM_CSS_PATH, renderSystemCss(tokens));
     fs.writeFileSync(SWIFT_PATH, renderSwift(tokens));
-    console.log(`已生成 ${path.relative(root, CSS_PATH)} 与 ${path.relative(root, SWIFT_PATH)}`);
+    console.log(`已生成 ${[CSS_PATH, SYSTEM_CSS_PATH, SWIFT_PATH].map((file) => path.relative(root, file)).join('、')}`);
 }

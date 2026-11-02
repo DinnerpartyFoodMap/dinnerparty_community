@@ -147,7 +147,7 @@ function RatingLine({ rating, onOpen }) {
             style={{ marginTop: 10, padding: 0, border: 0, background: 'transparent', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer', textAlign: 'left' }}
         >
             <SkinIcon slot={tier ? `rating.${tier.key}` : 'rating.none'} size={20}>
-                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, color: tier ? tier.tone : 'var(--color-text-muted)' }}>{tier ? tier.icon : 'rate_review'}</span>
+                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, color: tier ? tier.tone : 'var(--color-text-muted)', fontVariationSettings: tier?.fill ? "'FILL' 1" : undefined }}>{tier ? tier.icon : 'rate_review'}</span>
             </SkinIcon>
             <span>
                 {summary.count > 0

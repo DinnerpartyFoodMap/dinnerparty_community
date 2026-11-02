@@ -60,7 +60,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             let host = MapChromeHostingController(rootView: NativeProfileView(model: model), dark: model.dark)
             // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
-            host.view.backgroundColor = .systemGroupedBackground
+            host.view.backgroundColor = FM.UI.bgBase
             // 侧滑拖回取消：页面仍在，恢复为可再次关闭
             self.screenPresenter.onDismissCancelled = { [weak self] in
                 self?.finishing = false
@@ -553,11 +553,12 @@ private struct NativeProfileView: View {
                              ? model.text("unblock", "解除屏蔽")
                              : model.text("blockAndReport", "屏蔽并举报"))
                             .font(.subheadline.weight(.medium))
+                            // 文字色要设在 nativeChip 里层，否则会被它的默认文字色盖住
+                            .foregroundStyle(model.view.blocked ? Color.primary : FM.dangerText)
                             .frame(maxWidth: .infinity, minHeight: 38)
                             .nativeChip(selected: false)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(model.view.blocked ? Color.primary : Color.red)
                     .disabled(model.busy)
                 }
             }
@@ -685,6 +686,7 @@ private struct NativeProfileView: View {
                     }
                 }
             }
+            .nativePageBackground()
             .navigationTitle(model.text("widgetsEdit", "调整小组件"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

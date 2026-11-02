@@ -92,26 +92,37 @@ button,
     height: 100%;
     color: var(--color-text-primary);
 }
+/* 整页标题栏（FullPageHeader）：左 44 圆形返回钮、标题居中、右文字操作，两侧等宽（设计参考 7.6） */
 .fm-full-page__header {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(44px, 1fr) minmax(0, auto) minmax(44px, 1fr);
     flex: 0 0 auto;
     align-items: center;
-    gap: 10px;
-    padding: 12px 14px;
+    gap: 8px;
+    padding: 6px 12px;
     border-bottom: 1px solid var(--color-border);
     background: var(--color-bg-surface);
 }
-.fm-full-page__heading { flex: 1; min-width: 0; }
-.fm-full-page__heading h2 { margin: 0; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fm-full-page__heading small { display: block; margin-top: 2px; font-size: 11px; color: var(--color-text-secondary); }
-.fm-full-page__header .fm-full-page__back,
-.fm-full-page__header .jw-header__action {
+.fm-full-page__side { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fm-full-page__actions { justify-content: flex-end; }
+.fm-full-page__heading { min-width: 0; text-align: center; }
+.fm-full-page__heading h2 { margin: 0; font: var(--text-headline); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-full-page__heading small { display: block; margin-top: 1px; font: var(--text-caption); color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-full-page__header .fm-full-page__back {
+    flex-shrink: 0; width: 44px; height: 44px; padding: 0;
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 44px; min-height: 44px; padding: 4px;
-    border: 0; border-radius: 0; background: transparent;
+    border: 0; border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
     color: var(--color-text-primary); box-shadow: none; cursor: pointer;
 }
-.fm-full-page__actions { display: flex; gap: 6px; flex-shrink: 0; }
+.fm-full-page__back .material-symbols-outlined { font-size: 26px; font-variation-settings: 'wght' 600; }
+.fm-full-page__header .jw-header__action {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 44px; min-height: 44px; padding: 4px 8px;
+    border: 0; border-radius: var(--radius-full); background: transparent;
+    color: var(--theme-primary-text); font: inherit; font-weight: 600; box-shadow: none; cursor: pointer;
+}
+.fm-full-page__header .jw-header__action:disabled { opacity: 0.45; cursor: default; }
 .fm-route-page__content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-bottom: var(--safe-bottom, 0px); }
 .fm-route-page__content > :is(main, div) { min-height: 100% !important; height: auto !important; padding: 14px !important; background: var(--color-bg-surface) !important; }
 .fm-route-page .fm-legacy-page-heading { display: none !important; }
@@ -233,34 +244,46 @@ button,
     background: var(--color-border);
 }
 
+/* 面板标题栏（PanelHeader）：左边 44 圆形关闭钮、标题居中、右边操作；两侧等宽，标题始终居中。
+   浏览器、App 内网页面板与 iOS 原生面板同一布局（设计参考 7.6） */
 .fm-panel__header {
     flex-shrink: 0;
+    display: grid;
+    grid-template-columns: minmax(44px, 1fr) minmax(0, auto) minmax(44px, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.fm-panel__header-side {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--color-border);
+    gap: 6px;
+    min-width: 0;
+}
+
+.fm-panel__header-side--end {
+    justify-content: flex-end;
 }
 
 .fm-panel__title {
     margin: 0;
-    font-size: 16px;
-    font-weight: 700;
+    font: var(--text-title3);
+    text-align: center;
     min-width: 0;
     overflow-wrap: anywhere;
 }
 
 .fm-panel__close {
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    border-radius: 999px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: var(--radius-full);
     border: 0;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 22px;
-    line-height: 1;
+    background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+    color: var(--color-text-primary);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -268,8 +291,13 @@ button,
     -webkit-tap-highlight-color: transparent;
 }
 
+.fm-panel__close .material-symbols-outlined {
+    font-size: 20px;
+    font-variation-settings: 'wght' 600;
+}
+
 .fm-panel__close:hover {
-    background: var(--color-bg-overlay);
+    background: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
 }
 
 .fm-panel__body {
@@ -390,14 +418,10 @@ button,
     background: color-mix(in srgb, var(--color-text-primary) 26%, transparent);
 }
 
-/* 系统面板的标题区没有分隔线，标题更大 */
+/* 系统面板的标题区没有分隔线（与原生 NativeSheetHeader 相同的留白） */
 :root:is([data-platform='ios'], [data-platform='android']) .fm-panel__header {
     border-bottom-color: transparent;
-    padding: 12px 18px 8px 22px;
-}
-
-:root:is([data-platform='ios'], [data-platform='android']) .fm-sheet .fm-panel__title {
-    font-size: 20px;
+    padding: 12px 16px 8px;
 }
 
 /* 关闭按钮：嵌在玻璃里的小玻璃圆钮 */

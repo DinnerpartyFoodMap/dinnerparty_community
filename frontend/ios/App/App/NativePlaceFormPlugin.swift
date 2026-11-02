@@ -62,7 +62,7 @@ public class NativePlaceFormPlugin: CAPPlugin, CAPBridgedPlugin {
             if #available(iOS 26.0, *) {
                 host.view.backgroundColor = .clear
             } else {
-                host.view.backgroundColor = .systemGroupedBackground
+                host.view.backgroundColor = FM.UI.bgBase
             }
             if let sheet = host.sheetPresentationController {
                 if model.isCreate {
@@ -315,13 +315,13 @@ final class NativePlaceFormModel: ObservableObject {
     var hasChanges: Bool { contentKey != initialKey || (exterior + menu).contains { $0.state != .done } }
     /// 修改地点有改动或正在提交时不能直接下滑关掉；新增地点的内容会存成草稿，可以直接关
     var isLocked: Bool { submitting || (!isCreate && hasChanges) }
-    /// 评价选项的颜色：强烈推荐绿、均线之上主题色、均线之下橙、强烈拒绝红
+    /// 评价选项的颜色（与网页 rating.js 相同）：强烈推荐成功色、均线之上主题色、均线之下警告色、强烈拒绝危险色
     func color(for tier: Tier) -> Color {
         if let color = tier.color { return Color(uiColor: color) }
         switch tier.id {
-        case 4: return .green
-        case 2: return .orange
-        case 1: return .red
+        case 4: return FM.success
+        case 2: return FM.warning
+        case 1: return FM.danger
         default: return tint
         }
     }
@@ -594,7 +594,7 @@ private struct NativePlaceFormView: View {
                                 row {
                                     Text(model.text("delete", "删除地点"))
                                         .frame(maxWidth: .infinity)
-                                        .foregroundStyle(Color.red)
+                                        .foregroundStyle(FM.dangerText)
                                 }
                                 .contentShape(Rectangle())
                             }
@@ -843,7 +843,7 @@ private struct NativePlaceFormView: View {
         let selectedTier = model.tiers.first(where: { $0.id == model.rating })
         return formSection(model.text("rating", "我的评价"),
                            footer: selectedTier?.hint ?? (model.ratingMissing ? model.text("ratingRequired", "请选择你的评价") : nil),
-                           footerColor: selectedTier == nil && model.ratingMissing ? .red : .secondary) {
+                           footerColor: selectedTier == nil && model.ratingMissing ? FM.dangerText : .secondary) {
             HStack(spacing: 8) {
                 ForEach(model.tiers) { tier in
                     ratingOption(tier)
@@ -858,7 +858,7 @@ private struct NativePlaceFormView: View {
         let selected = model.rating == tier.id
         let color = model.color(for: tier)
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-        let border: Color = selected ? color : (model.ratingMissing ? Color.red.opacity(0.6) : color.opacity(0.35))
+        let border: Color = selected ? color : (model.ratingMissing ? FM.danger.opacity(0.6) : color.opacity(0.35))
         return Button {
             model.rating = tier.id
             model.ratingMissing = false

@@ -43,13 +43,16 @@ extension View {
             .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    /// 玻璃卡片内部的胶囊按钮 / 标签底色；不再叠加第二层玻璃。
+    /// 胶囊标签 / 按钮的唯一样式（NativeTagChip 也用它），与网页筛选标签一致：未选为浅底，
+    /// 选中为 tint 16% 底 + tint 描边与文字；不再叠加第二层玻璃。要别的文字色时在内容上先设 foregroundStyle。
     func nativeChip(selected: Bool = false, tint: Color = .accentColor) -> some View {
         self
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(selected ? tint : Color.primary.opacity(0.08), in: Capsule())
-            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.vertical, 7)
+            .background(selected ? tint.opacity(0.16) : Color.primary.opacity(0.07), in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? tint : Color.clear, lineWidth: 1))
+            .foregroundStyle(selected ? tint : Color.primary)
+            .contentShape(Capsule())
     }
 }
 
@@ -96,14 +99,24 @@ struct NativeFlowLayout: Layout {
     }
 }
 
-/// 系统 sheet 的背景：iOS 26 由系统提供 Liquid Glass，内容保持透明；更早系统用分组底色。
+/// 系统 sheet 的背景：iOS 26 由系统提供 Liquid Glass，内容保持透明；更早系统用整页底色（与网页 bg-base 一致）。
 struct NativeSheetBackground: View {
     var body: some View {
         if #available(iOS 26.0, *) {
             Color.clear
         } else {
-            Color(uiColor: .systemGroupedBackground)
+            FM.bgBase
         }
+    }
+}
+
+extension View {
+    /// 不透明整页（住民设置、后台、个人主页、表单页）的列表 / 表单底色：设计令牌的 bg-base，与网页整页相同，
+    /// 替代系统分组灰（深色下是纯黑）。分组行仍用系统行底色（浅色同为白色）。玻璃半屏面板不要用。
+    func nativePageBackground() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(FM.bgBase.ignoresSafeArea())
     }
 }
 
@@ -111,12 +124,21 @@ struct NativeSheetBackground: View {
 
 /// 住民设置里的两种主题色在原生页面里的用法（与网页一致）：主色是整页的 tint（主要按钮、选中状态），
 /// 辅色用于标签与次要强调。辅色经 environment 传给子视图，标签默认用它。
+/// 另有两个由网页算好的派生色：onPrimary（主色底上的文字）与 primaryText（主色当文字用的可读版本，网页 --theme-primary-text）。
 private struct NativeSecondaryTintKey: EnvironmentKey {
-    static let defaultValue = Color(uiColor: UIColor(red: 0x8C / 255, green: 0x6B / 255, blue: 0xB1 / 255, alpha: 1))
+    static let defaultValue = FM.themeSecondary
 }
 
 private struct NativePrimaryTintKey: EnvironmentKey {
-    static let defaultValue = Color(uiColor: UIColor(red: 0xE2 / 255, green: 0x78 / 255, blue: 0x9F / 255, alpha: 1))
+    static let defaultValue = FM.themePrimary
+}
+
+private struct NativeOnPrimaryKey: EnvironmentKey {
+    static let defaultValue = FM.themeOnPrimary
+}
+
+private struct NativePrimaryTextKey: EnvironmentKey {
+    static let defaultValue = FM.themePrimaryText
 }
 
 extension EnvironmentValues {
@@ -130,26 +152,52 @@ extension EnvironmentValues {
         get { self[NativeSecondaryTintKey.self] }
         set { self[NativeSecondaryTintKey.self] = newValue }
     }
+
+    /// 主色底上的文字与图标
+    var nativeOnPrimary: Color {
+        get { self[NativeOnPrimaryKey.self] }
+        set { self[NativeOnPrimaryKey.self] = newValue }
+    }
+
+    /// 主色当小字用（徽章、浅色底上的强调文字）
+    var nativePrimaryText: Color {
+        get { self[NativePrimaryTextKey.self] }
+        set { self[NativePrimaryTextKey.self] = newValue }
+    }
 }
 
-/// 网页下发的主色 / 辅色（#RRGGBB）；缺失时用默认主题的粉色与紫色
+/// 网页下发的主题色（#RRGGBB，见 theme.js nativeThemeColors）；缺失时用设计令牌里的默认主题
 struct NativeThemeColors {
     let primary: Color
     let secondary: Color
+    let onPrimary: Color
+    let primaryText: Color
 
-    init(primary: String?, secondary: String?) {
-        self.primary = Color(uiColor: UIColor(cssHex: primary ?? "") ?? UIColor(red: 0xE2 / 255, green: 0x78 / 255, blue: 0x9F / 255, alpha: 1))
-        self.secondary = Color(uiColor: UIColor(cssHex: secondary ?? "") ?? UIColor(red: 0x8C / 255, green: 0x6B / 255, blue: 0xB1 / 255, alpha: 1))
+    init(primary: String?, secondary: String?, onPrimary: String? = nil, primaryText: String? = nil) {
+        let primaryColor = UIColor(cssHex: primary ?? "")
+        self.primary = Color(uiColor: primaryColor ?? FM.UI.themePrimary)
+        self.secondary = Color(uiColor: UIColor(cssHex: secondary ?? "") ?? FM.UI.themeSecondary)
+        self.onPrimary = Color(uiColor: UIColor(cssHex: onPrimary ?? "") ?? FM.UI.themeOnPrimary)
+        // 没下发 primaryText 时：有自定义主色就退回主色本身，否则用默认主题的计算值
+        self.primaryText = Color(uiColor: UIColor(cssHex: primaryText ?? "") ?? primaryColor ?? FM.UI.themePrimaryText)
     }
 }
 
 extension View {
-    /// 整页使用住民的主题色：tint 为主色，辅色放进 environment
-    func nativeThemeColors(primary: Color, secondary: Color) -> some View {
+    /// 整页使用住民的主题色：tint 为主色，辅色与派生色放进 environment（未传派生色时文字用主色本身）
+    func nativeThemeColors(primary: Color, secondary: Color, onPrimary: Color = FM.themeOnPrimary,
+                           primaryText: Color? = nil) -> some View {
         self
             .tint(primary)
             .environment(\.nativePrimaryTint, primary)
             .environment(\.nativeSecondaryTint, secondary)
+            .environment(\.nativeOnPrimary, onPrimary)
+            .environment(\.nativePrimaryText, primaryText ?? primary)
+    }
+
+    func nativeThemeColors(_ colors: NativeThemeColors) -> some View {
+        nativeThemeColors(primary: colors.primary, secondary: colors.secondary,
+                          onPrimary: colors.onPrimary, primaryText: colors.primaryText)
     }
 }
 
@@ -171,12 +219,7 @@ struct NativeTagChip: View {
                 }
                 Text(title).font(.subheadline)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(selected ? tint.opacity(0.18) : Color.primary.opacity(0.07), in: Capsule())
-            .overlay(Capsule().strokeBorder(selected ? tint : Color.clear, lineWidth: 1))
-            .foregroundStyle(selected ? tint : Color.primary)
-            .contentShape(Capsule())
+            .nativeChip(selected: selected, tint: tint)
         }
         .buttonStyle(.borderless)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -186,10 +229,10 @@ struct NativeTagChip: View {
 // MARK: - 半屏面板里的分组（添加地点、顺路吃）
 
 extension Color {
-    /// 半屏面板里分组的底色：与收藏面板、地点卡片一致；iOS 26 以前面板不是玻璃，用系统分组行底色
+    /// 半屏面板里分组的底色：与收藏面板、地点卡片一致；iOS 26 以前面板不是玻璃，用卡片底色（网页 bg-surface）
     static var nativeSheetGroupFill: Color {
         if #available(iOS 26.0, *) { return Color(uiColor: .tertiarySystemFill) }
-        return Color(uiColor: .secondarySystemGroupedBackground)
+        return FM.bgSurface
     }
 }
 

@@ -63,7 +63,8 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
             })
             let theme = call.getObject("theme") ?? [:]
             let dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
-            model.colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String)
+            model.colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String,
+                                             onPrimary: theme["onPrimary"] as? String, primaryText: theme["primaryText"] as? String)
             model.presentation = "sheet"
             model.customRenderer = { spec, model in NativeJourneyScreens.view(for: spec, model: model) }
             let host = MapChromeHostingController(rootView: NativePageView(model: model), dark: dark)
@@ -72,7 +73,7 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
             if #available(iOS 26.0, *) {
                 host.view.backgroundColor = .clear
             } else {
-                host.view.backgroundColor = .systemGroupedBackground
+                host.view.backgroundColor = FM.UI.bgBase
             }
             if let sheet = host.sheetPresentationController {
                 let entry = UISheetPresentationController.Detent.Identifier("journey.entry")
@@ -479,6 +480,7 @@ private struct NativeJourneyComposerView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .nativePageBackground()
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -739,6 +741,7 @@ private struct NativeJourneyCalendarView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .nativePageBackground()
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {

@@ -3,7 +3,7 @@
 
 import React from 'react';
 import MotionSurface from '../components/overlay/MotionSurface';
-import ResponsivePanel from '../components/overlay/ResponsivePanel';
+import ResponsivePanel, { PanelHeader } from '../components/overlay/ResponsivePanel';
 import { useLayoutPolicy } from '../motion/MotionProvider';
 import { t } from '../i18n/index.js';
 
@@ -26,10 +26,8 @@ export default function MapPanel({ open, onClose, title, desktopStyle, children,
             className="fm-surface"
             style={{ position: 'absolute', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 5000, transformOrigin: origin, ...desktopStyle }}
         >
-            <div className="fm-panel__header">
-                <h3 className="fm-panel__title">{title}</h3>
-                <button type="button" className="fm-panel__close fm-pressable" aria-label={t('map:panel.close', { title: typeof title === 'string' ? title : '' })} onClick={() => onClose && onClose('button')}>×</button>
-            </div>
+            <PanelHeader title={title} titleAs="h3" onClose={() => onClose && onClose('button')}
+                closeLabel={t('map:panel.close', { title: typeof title === 'string' ? title : '' })} />
             <div className="fm-panel__body">{children}</div>
         </MotionSurface>
     );

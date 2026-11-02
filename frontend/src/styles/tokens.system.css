@@ -1,0 +1,39 @@
+/* 由 src/styles/tokens.json 生成（npm run tokens），不要手改。静态页用：深浅跟随系统，不看 data-theme */
+@import './tokens.generated.css';
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-bg-base: #121016;
+        --color-bg-surface: #1A1625;
+        --color-bg-overlay: #251F34;
+        --color-border: #382E47;
+        --color-text-primary: #F3EFEF;
+        --color-text-secondary: #9E97A9;
+        --color-text-muted: #7D748A;
+        --color-primary: #FF8FB1;
+        --color-primary-hover: #FFA6C1;
+        --color-primary-active: #E87A9C;
+        --color-secondary: #A882DD;
+        --color-glow: rgba(255, 143, 177, 0.3);
+        --color-success: #5CD698;
+        --color-success-text: #5CD698;
+        --color-warning: #FFB049;
+        --color-warning-text: #FFB049;
+        --color-danger: #FF6B6B;
+        --color-danger-text: #FF6B6B;
+        --color-info: #64B5F6;
+        --color-info-text: #64B5F6;
+        --color-backdrop: rgba(8, 6, 12, 0.68);
+        --theme-primary: #FF8FB1;
+        --theme-primary-text: #FF8FB1;
+        --theme-secondary: #A882DD;
+        --theme-icon: #A882DD;
+        --theme-primary-0-2: rgba(255, 143, 177, 0.2);
+        --theme-primary-0-25: rgba(255, 143, 177, 0.25);
+        --theme-secondary-0-12: rgba(168, 130, 221, 0.12);
+        --theme-secondary-0-2: rgba(168, 130, 221, 0.2);
+        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.40);
+        --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.44);
+        --shadow-surface: 0 10px 32px rgba(0, 0, 0, 0.48), 0 0 18px rgba(255, 143, 177, 0.08);
+    }
+}

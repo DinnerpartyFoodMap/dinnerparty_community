@@ -1,5 +1,4 @@
 import React,{useEffect,useState} from 'react';
-import {getPlatform} from '../platform/env';
 import FullPageHeader from "../components/layout/FullPageHeader";
 import Markdown from '../components/markdown/Markdown';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
@@ -71,14 +70,9 @@ export function PhotoViewer({photos,index,onIndex,render}) {
         </figure>}
     </ResponsivePanel>;
 }
-/** 全屏页顶栏：返回 · 标题 · 右侧操作。 */
+/** 全屏页顶栏：返回 · 标题 · 右侧操作（与其他整页同一个 FullPageHeader；右侧按钮用 jw-header__action）。 */
 export function PageHeader({title,onBack,backLabel=t('common:action.back'),right,subtitle}) {
-    if (getPlatform() === 'ios') return <FullPageHeader title={title} onBack={onBack} backLabel={backLabel} right={right} subtitle={subtitle}/>;
-    return <header className="jw-header">
-        <button type="button" className="jw-header__back" onClick={onBack} aria-label={backLabel}><span aria-hidden="true">‹</span><span>{backLabel}</span></button>
-        <div className="jw-header__title"><h2>{title}</h2>{subtitle&&<small>{subtitle}</small>}</div>
-        <div className="jw-header__right">{right}</div>
-    </header>;
+    return <FullPageHeader title={title} onBack={onBack} backLabel={backLabel} right={right} subtitle={subtitle}/>;
 }
 /** 列表行：标题、当前值与说明，整行可点。 */
 export function SettingRow({label,value,hint,onClick,expanded,children,ariaLabel}) {

@@ -99,6 +99,26 @@ function outerStyle(mode, { width, maxHeight, sheetHeight, sideInset = 20, sideT
     };
 }
 
+/**
+ * 面板标题栏（弹窗、侧面板、底部面板，浏览器与 App 相同，与 iOS 原生 NativeSheetHeader 一致）：
+ * 左边 44 圆形关闭钮，标题居中，右边放操作（没有时留出与关闭钮等宽的位置，标题保持居中）。
+ */
+export function PanelHeader({ title, onClose, closeLabel = t('common:action.close'), right = null, titleAs: Title = 'h2', style }) {
+    return (
+        <div className="fm-panel__header" data-sheet-header="" style={style}>
+            <div className="fm-panel__header-side">
+                {onClose && (
+                    <button type="button" className="fm-panel__close fm-pressable" aria-label={closeLabel} onClick={onClose}>
+                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                    </button>
+                )}
+            </div>
+            {title ? <Title className="fm-panel__title">{title}</Title> : <span />}
+            <div className="fm-panel__header-side fm-panel__header-side--end">{right}</div>
+        </div>
+    );
+}
+
 function PanelChrome({ mode, onClose, title, children, footer, showClose = true, closeLabel = t('common:action.close'), snap = null, bodyStyle, surfaceStyle, surfaceClassName, headerExtra, bodyProps, plain = false, draggable = true }) {
     const flags = useMotionFlags();
     const sheetRef = useRef(null);
@@ -136,15 +156,8 @@ function PanelChrome({ mode, onClose, title, children, footer, showClose = true,
             {mode === 'sheet' && <div className="fm-sheet__grabber" data-sheet-grabber="" aria-hidden="true" />}
             {iosFull && !plain && <FullPageHeader title={title} onBack={showClose ? () => onClose?.('button') : undefined} backLabel={closeLabel} right={headerExtra} />}
             {!iosFull && !plain && (title || showClose || headerExtra) && (
-                <div className="fm-panel__header" data-sheet-header="" style={mode === 'sheet' ? { paddingTop: 4 } : undefined}>
-                    {title ? <h2 className="fm-panel__title">{title}</h2> : <span />}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {headerExtra}
-                        {showClose && (
-                            <button type="button" className="fm-panel__close fm-pressable" aria-label={closeLabel} onClick={() => onClose && onClose('button')}>×</button>
-                        )}
-                    </div>
-                </div>
+                <PanelHeader title={title} onClose={showClose ? () => onClose && onClose('button') : undefined} closeLabel={closeLabel}
+                    right={headerExtra} style={mode === 'sheet' ? { paddingTop: 4 } : undefined} />
             )}
             <div className="fm-panel__body" data-sheet-scroll="" style={bodyStyle} {...bodyProps}>
                 {children}

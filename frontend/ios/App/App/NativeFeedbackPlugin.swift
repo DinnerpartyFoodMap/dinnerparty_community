@@ -354,6 +354,7 @@ private struct NativeFeedbackView: View {
                 imagesSection
             }
             .disabled(model.submitting)
+            .nativePageBackground()
             .navigationTitle(model.text("title", "意见反馈"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

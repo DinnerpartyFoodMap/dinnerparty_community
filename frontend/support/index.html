@@ -7,11 +7,12 @@
     <meta name="referrer" content="no-referrer">
     <meta name="theme-color" content="#f9f8fa">
     <title>技术支持 Support · 东方饭联地图</title>
+    <link rel="stylesheet" href="/src/styles/tokens.system.css">
     <style>
-        :root { color-scheme: light dark; --bg: #f9f8fa; --surface: #fff; --text: #2b2533; --muted: #6e6578; --border: #e6dceb; --accent: #864064; --soft: #faf0f5; }
+        :root { color-scheme: light dark; --bg: var(--color-bg-base); --surface: var(--color-bg-surface); --text: var(--color-text-primary); --muted: var(--color-text-secondary); --border: var(--color-border); --accent: var(--theme-primary-text); --soft: color-mix(in srgb, var(--theme-primary) 8%, var(--color-bg-surface)); }
         * { box-sizing: border-box; }
         html { scroll-padding-top: 24px; }
-        body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.9 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; overflow-wrap: anywhere; }
+        body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.9 var(--font-sans); overflow-wrap: anywhere; }
         main { max-width: 880px; margin: 32px auto; padding: 36px 44px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; }
         h1 { margin: 18px 0 10px; font-size: clamp(28px, 5vw, 36px); line-height: 1.4; }
         h2 { margin: 32px 0 12px; font-size: 22px; line-height: 1.6; }
@@ -30,7 +31,6 @@
         details { padding: 16px 0; border-bottom: 1px solid var(--border); }
         summary { cursor: pointer; font-weight: 600; }
         footer { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--border); }
-        @media (prefers-color-scheme: dark) { :root { --bg: #121016; --surface: #1a1625; --text: #f3efef; --muted: #bab0c5; --border: #44364f; --accent: #ffa6c1; --soft: #2b2032; } }
         @media (max-width: 640px) { main { margin: 12px; padding: 24px 18px; border-radius: 14px; } .contact { padding: 18px; } h2 { font-size: 20px; } }
     </style>
 </head>

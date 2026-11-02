@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadCategoryDirectory, peekCategoryDirectory } from '../places/categoryDirectory.js';
 import { createNativeAlongRouteSession } from '../platform/nativeAlongRoute.js';
+import { nativeThemeColors } from '../theme/theme.js';
 import {
     alongRouteDistanceOptions,
     alongRouteModeOptions,
@@ -118,7 +119,12 @@ export default function useNativeAlongRoute({
             const cached = peekCategoryDirectory();
             const categories = cached || [];
             const snapshot = {
-                theme: { primary: latest.current.themeColor || '#E2789F', secondary: latest.current.themeSecondary || '#8C6BB1', dark: !!latest.current.dark },
+                theme: {
+                    ...nativeThemeColors(),
+                    ...(latest.current.themeColor ? { primary: latest.current.themeColor } : null),
+                    ...(latest.current.themeSecondary ? { secondary: latest.current.themeSecondary } : null),
+                    dark: !!latest.current.dark
+                },
                 labels: buildLabels(),
                 modes: alongRouteModeOptions(),
                 distances: alongRouteDistanceOptions(),

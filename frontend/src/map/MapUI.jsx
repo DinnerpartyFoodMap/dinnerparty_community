@@ -1857,7 +1857,7 @@ export default function MapUI(props) {
                 }}
             >
                 <SkinIcon slot={tier ? `rating.${tier.key}` : 'rating.none'} size={20}>
-                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, flexShrink: 0, color: tier ? tier.tone : 'var(--color-text-muted)' }}>{tier ? tier.icon : 'rate_review'}</span>
+                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, flexShrink: 0, color: tier ? tier.tone : 'var(--color-text-muted)', fontVariationSettings: tier?.fill ? "'FILL' 1" : undefined }}>{tier ? tier.icon : 'rate_review'}</span>
                 </SkinIcon>
                 <span style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', columnGap: 8, rowGap: 2, alignItems: 'baseline' }}>
                     <span style={{ whiteSpace: 'nowrap' }}>
@@ -2045,7 +2045,7 @@ export default function MapUI(props) {
                             style={{ ...popupActionButtonStyle, color: myRatingTier ? myRatingTier.tone : popupActionButtonStyle.color }}
                         >
                             <SkinIcon slot={myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none'} size={20}>
-                                <span className="material-symbols-outlined" style={popupActionIconStyle}>{myRatingTier ? myRatingTier.icon : 'rate_review'}</span>
+                                <span className="material-symbols-outlined" style={{ ...popupActionIconStyle, fontVariationSettings: myRatingTier?.fill ? "'FILL' 1" : undefined }}>{myRatingTier ? myRatingTier.icon : 'rate_review'}</span>
                             </SkinIcon>
                             <span style={popupActionLabelStyle}>{myRatingTier ? tierLabel(myRatingTier) : t('map:rating.card.rate')}</span>
                         </Button>

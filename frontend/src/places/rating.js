@@ -2,12 +2,13 @@
 import { t } from '../i18n/index.js';
 
 // 从高到低。tone 对应颜色变量；hint 让大家对同一档的理解一致（参考鸭觅“值得专程去 / 顺路去”的写法）
+// 图标两端同一含义：赞 / 踩，强烈的一档用实心（网页 icon + fill 对应 Material Symbols 的 FILL，原生 symbol 是 SF Symbols）
 // 语言在启动时确定，模块顶层调用 t() 是安全的（见 i18n/index.js）
 export const RATING_TIERS = Object.freeze([
-    { score: 4, key: 'strongYes', label: t('map:rating.tier.strongYes'), hint: t('map:rating.hint.strongYes'), tone: 'var(--color-success)', icon: 'sentiment_very_satisfied', symbol: 'hand.thumbsup.fill' },
-    { score: 3, key: 'aboveAverage', label: t('map:rating.tier.aboveAverage'), hint: t('map:rating.hint.aboveAverage'), tone: 'var(--theme-primary)', icon: 'sentiment_satisfied', symbol: 'hand.thumbsup' },
-    { score: 2, key: 'belowAverage', label: t('map:rating.tier.belowAverage'), hint: t('map:rating.hint.belowAverage'), tone: 'var(--color-warning)', icon: 'sentiment_dissatisfied', symbol: 'hand.thumbsdown' },
-    { score: 1, key: 'strongNo', label: t('map:rating.tier.strongNo'), hint: t('map:rating.hint.strongNo'), tone: 'var(--color-danger)', icon: 'sentiment_very_dissatisfied', symbol: 'hand.thumbsdown.fill' }
+    { score: 4, key: 'strongYes', label: t('map:rating.tier.strongYes'), hint: t('map:rating.hint.strongYes'), tone: 'var(--color-success)', icon: 'thumb_up', fill: true, symbol: 'hand.thumbsup.fill' },
+    { score: 3, key: 'aboveAverage', label: t('map:rating.tier.aboveAverage'), hint: t('map:rating.hint.aboveAverage'), tone: 'var(--theme-primary)', icon: 'thumb_up', fill: false, symbol: 'hand.thumbsup' },
+    { score: 2, key: 'belowAverage', label: t('map:rating.tier.belowAverage'), hint: t('map:rating.hint.belowAverage'), tone: 'var(--color-warning)', icon: 'thumb_down', fill: false, symbol: 'hand.thumbsdown' },
+    { score: 1, key: 'strongNo', label: t('map:rating.tier.strongNo'), hint: t('map:rating.hint.strongNo'), tone: 'var(--color-danger)', icon: 'thumb_down', fill: true, symbol: 'hand.thumbsdown.fill' }
 ].map(Object.freeze));
 
 // 评价人数少于这个数时注明“评价较少”（大众点评要攒够 10 条精选评价才显示星级；这里社区小，用 3）

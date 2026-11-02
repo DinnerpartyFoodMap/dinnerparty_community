@@ -249,7 +249,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
 
         // Capacitor 8 的根 view 就是 WKWebView，必须先创建容器才能成为兄弟视图。
         let container = UIView(frame: webView.frame)
-        container.backgroundColor = .systemBackground
+        container.backgroundColor = FM.UI.bgBase
         view = container
         // Keyboard 插件的 native 模式直接修改 WebView.frame，不能用四边约束覆盖它。
         webView.translatesAutoresizingMaskIntoConstraints = true

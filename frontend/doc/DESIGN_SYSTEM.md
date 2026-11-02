@@ -76,7 +76,7 @@
 | 2 均线之下 | warning | 空心踩 |
 | 1 强烈拒绝 | danger | 实心踩 |
 
-网页 Material Symbols `thumb_up` / `thumb_down`（实心用 `FILL 1`），iOS `hand.thumbsup(.fill)` / `hand.thumbsdown(.fill)`。皮肤的"评价表情"槽位照旧覆盖。（现状网页 `rating.js` 的 `icon` 还是笑脸，待改。）
+网页 Material Symbols `thumb_up` / `thumb_down`（实心用 `FILL 1`），iOS `hand.thumbsup(.fill)` / `hand.thumbsdown(.fill)`。皮肤的"评价表情"槽位照旧覆盖。两端的定义都在 `src/places/rating.js`（`icon` + `fill`、`symbol`）。
 
 ## 2. 字体
 
@@ -204,7 +204,9 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 | 场景 | 布局 |
 |---|---|
 | 所有面板：弹窗、侧面板、底部面板（浏览器、App 内网页、iOS 原生一致） | 左：44 圆形关闭钮（`close` / `xmark`，底 `text-primary` 8–10%）；中：标题 title3，居中单行；右：主操作或 44 占位 |
-| 整页标题栏（两端） | 左：返回（chevron + 文字，`--theme-primary-text`）；中：标题 headline 居中；右：文字操作，`--theme-primary-text` 600；下边 1px `border` |
+| 整页标题栏（两端） | 左：44 圆形返回钮（`chevron_left` / `chevron.backward`，与关闭钮同样式，对应 iOS 26 导航栏的玻璃圆钮）；中：标题 headline 居中，可带一行 caption 小字；右：文字操作，`--theme-primary-text` 600；下边 1px `border` |
+
+网页实现：面板是 `ResponsivePanel` 导出的 `PanelHeader`（地图列表面板 `MapPanel` 也用它），整页是 `components/layout/FullPageHeader`（日记 · 同好的 `PageHeader` 直接用它，右侧按钮加 `jw-header__action`）。
 
 拖动条：36 × 5，胶囊，`border` 色，上下 8 / 4。
 
@@ -233,10 +235,11 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 frontend/src/styles/tokens.json       ← 唯一来源（字体、颜色含 light/dark、主题色默认值、阴影、圆角、间距、字号、字重、层级）
         │  npm run tokens（scripts/build-design-tokens.mjs）
         ├─► src/styles/tokens.generated.css   :root 与 :root[data-theme='dark'] 的 CSS 变量，经 tokens.css 的 @import 由 main.jsx 引入
+        ├─► src/styles/tokens.system.css      静态页用：引入上一份，深色改由 prefers-color-scheme 切换（下载、协议、隐私、技术支持页）
         └─► ios/App/App/DesignTokens.swift    enum FM：FM.bgBase（Color）、FM.UI.bgBase（UIColor）、FM.Radius.lg、FM.Space.s4
 ```
 
-- 生成文件不要手改；改 tokens.json 后运行 `npm run tokens`，两份一起提交。
+- 生成文件不要手改；改 tokens.json 后运行 `npm run tokens`，生成的三份一起提交。备案页只有浅色，直接引用 tokens.generated.css。
 - Swift 里不生成品牌主色 / 辅色（原生以网页下发的住民设置为准），只有 `themePrimary` 等缺省值；字号用 Dynamic Type，不生成。
 - 主题色（住民可改）仍由 `theme.js` 运行时写入，并负责算出 `--theme-primary-text`、`--theme-on-primary`；原生从主题快照拿。
 - `npm run test:design-tokens`：两份生成文件与 tokens.json 同步、主题色默认值与 `theme.js` 一致、文字配色对比度（正文与语义色文字 ≥ 4.5:1、muted ≥ 3:1）、Swift 文件已加入 Xcode 工程。

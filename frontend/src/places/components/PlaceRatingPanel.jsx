@@ -154,7 +154,7 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
                             }}
                         >
                             <SkinIcon slot={`rating.${item.key}`} size={24}>
-                                <span className="material-symbols-outlined" style={{ fontSize: 24, color: item.tone, flexShrink: 0 }}>{item.icon}</span>
+                                <span className="material-symbols-outlined" style={{ fontSize: 24, color: item.tone, flexShrink: 0, fontVariationSettings: item.fill ? "'FILL' 1" : undefined }}>{item.icon}</span>
                             </SkinIcon>
                             <span style={{ minWidth: 0 }}>
                                 <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: selected ? item.tone : undefined }}>{tierLabel(item)}</span>

@@ -64,7 +64,7 @@ public class NativeAlongRoutePlugin: CAPPlugin, CAPBridgedPlugin {
             if #available(iOS 26.0, *) {
                 host.view.backgroundColor = .clear
             } else {
-                host.view.backgroundColor = .systemGroupedBackground
+                host.view.backgroundColor = FM.UI.bgBase
             }
             if let sheet = host.sheetPresentationController {
                 let compact = UISheetPresentationController.Detent.Identifier("alongRoute.compact")

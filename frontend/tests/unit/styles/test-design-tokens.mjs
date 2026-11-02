@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CSS_PATH, SWIFT_PATH, loadTokens, renderCss, renderSwift } from '../../../scripts/build-design-tokens.mjs';
+import { CSS_PATH, SWIFT_PATH, SYSTEM_CSS_PATH, loadTokens, renderCss, renderSwift, renderSystemCss } from '../../../scripts/build-design-tokens.mjs';
 import {
     DEFAULT_DARK_PRIMARY, DEFAULT_DARK_SECONDARY, DEFAULT_PRIMARY, DEFAULT_SECONDARY,
     contrastRatio, pickContrastTextColor, readableTextColor
@@ -14,6 +14,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const tokens = loadTokens();
 
 assert.equal(fs.readFileSync(CSS_PATH, 'utf8'), renderCss(tokens), 'tokens.generated.css 与 tokens.json 不同步：运行 npm run tokens');
+assert.equal(fs.readFileSync(SYSTEM_CSS_PATH, 'utf8'), renderSystemCss(tokens), 'tokens.system.css 与 tokens.json 不同步：运行 npm run tokens');
 assert.equal(fs.readFileSync(SWIFT_PATH, 'utf8'), renderSwift(tokens), 'DesignTokens.swift 与 tokens.json 不同步：运行 npm run tokens');
 
 // 令牌只有一份来源：index.html 不再自带颜色变量，入口经 tokens.css 引入生成文件
@@ -21,6 +22,14 @@ assert.ok(!/--color-bg-base\s*:/.test(read('index.html')), 'index.html 不应再
 assert.match(read('index.html'), /font-family:\s*var\(--font-sans\)/);
 assert.match(read('src/main.jsx'), /import ["']\.\/styles\/tokens\.css["']/);
 assert.match(read('src/styles/tokens.css'), /@import '\.\/tokens\.generated\.css';/);
+
+// 静态页引用同一份令牌：协议、隐私、技术支持、下载页跟随系统深浅，备案页只有浅色
+for (const page of ['terms/index.html', 'privacy/index.html', 'support/index.html']) {
+    assert.ok(read(page).includes('href="/src/styles/tokens.system.css"'), `${page} 要引用 tokens.system.css`);
+    assert.ok(!/prefers-color-scheme:\s*dark\)\s*\{\s*:root/.test(read(page)), `${page} 不应再自带深色色值`);
+}
+assert.ok(read('beian/index.html').includes('href="/src/styles/tokens.generated.css"'));
+assert.match(read('src/home/main.jsx'), /import '\.\.\/styles\/tokens\.system\.css';/);
 
 // Swift 文件加入了 Xcode 工程，重新生成工程时补丁脚本也会补上
 const pbxproj = read('ios/App/App.xcodeproj/project.pbxproj');

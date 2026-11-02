@@ -52,7 +52,7 @@ async function main(){
     const snap=async name=>{if(out){fs.mkdirSync(out,{recursive:true});await page.screenshot({path:path.join(out,`${name}.png`)});}};
     const top=page.locator('.jw-layer.is-top');
     const count=(table,where='user_id=?')=>sql.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`).get(id).n;
-    const synced=()=>page.waitForFunction(()=>document.querySelector('.jw-layer.is-top .jw-header__title small')?.textContent==='草稿已同步');
+    const synced=()=>page.waitForFunction(()=>document.querySelector('.jw-layer.is-top .fm-full-page__heading small')?.textContent==='草稿已同步');
     const noOverflow=async()=>{
         const wide=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth?[...document.querySelectorAll('body *')].filter(el=>!el.closest('.jw-layer:not(.is-top)')).filter(el=>el.getBoundingClientRect().right>window.innerWidth+1).slice(0,5).map(el=>`${el.tagName}.${el.className} ${Math.round(el.getBoundingClientRect().right)}`):[]);
         assert.deepEqual(wide,[],'no horizontal overflow at phone width');

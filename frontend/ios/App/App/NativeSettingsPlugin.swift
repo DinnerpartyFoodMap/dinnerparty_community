@@ -87,7 +87,7 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
             host.transitioningDelegate = self.screenTransition
             host.modalPresentationCapturesStatusBarAppearance = true
             host.overrideUserInterfaceStyle = store.dark ? .dark : .light
-            host.view.backgroundColor = .systemGroupedBackground
+            host.view.backgroundColor = FM.UI.bgBase
             // 在“个性化主题”里切换暗黑模式：设置页本身立即跟着切换
             store.onDarkChange = { [weak host] dark in
                 host?.overrideUserInterfaceStyle = dark ? .dark : .light
@@ -628,7 +628,7 @@ private struct NativeSettingsView: View {
                 }
                 Section {
                     Button(role: .destructive) { confirmation = .deleteAccount } label: {
-                        settingLabel(store.text("deleteAccount", "从幻想乡名册除名"), symbol: "person.crop.circle.badge.minus", color: .red)
+                        settingLabel(store.text("deleteAccount", "从幻想乡名册除名"), symbol: "person.crop.circle.badge.minus", color: FM.danger)
                     }
                 } footer: {
                     Text(store.text("deleteAccountHint", "删除账号和个人数据，无法恢复。"))
@@ -647,6 +647,7 @@ private struct NativeSettingsView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .nativePageBackground()
             .navigationTitle(store.text("title", "住民设置"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -698,7 +699,7 @@ private struct NativeSettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(.white)
                 .frame(width: 30, height: 30).background(color, in: RoundedRectangle(cornerRadius: 7))
-            Text(title).foregroundStyle(color == .red ? Color.red : Color.primary)
+            Text(title).foregroundStyle(color == FM.danger ? FM.dangerText : Color.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minHeight: 44)
@@ -758,6 +759,7 @@ private struct SettingsPageChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .nativePageBackground()
             .disabled(store.isBusy(busyType))
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)

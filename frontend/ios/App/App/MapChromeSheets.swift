@@ -316,7 +316,7 @@ struct MapChromeMenuPanel: View {
             Text(row.title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
-                .foregroundStyle(row.tone == "danger" ? Color.red : accent)
+                .foregroundStyle(row.tone == "danger" ? FM.dangerText : accent)
                 .padding(.horizontal, 14)
                 .frame(height: 44)
                 .background(Capsule().fill(Color.primary.opacity(0.1)))
@@ -413,7 +413,7 @@ struct MapChromeMenuPanel: View {
                 ProgressView()
             }
             Text(message)
-                .foregroundStyle(sheet.messageTone == "danger" ? Color.red : Color.secondary)
+                .foregroundStyle(sheet.messageTone == "danger" ? FM.dangerText : Color.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, minHeight: 44)
@@ -472,7 +472,7 @@ struct MapChromeMenuPanel: View {
                 if let symbol = row.symbol {
                     Image(systemName: symbol)
                         .font(footnote ? Font.footnote : Font.body.weight(.semibold))
-                        .foregroundStyle(row.tone == "danger" ? Color.red : (footnote ? Color.secondary : accent))
+                        .foregroundStyle(row.tone == "danger" ? FM.dangerText : (footnote ? Color.secondary : accent))
                         .frame(width: footnote ? 20 : 28)
                 }
                 VStack(alignment: .leading, spacing: 2) {
@@ -483,7 +483,7 @@ struct MapChromeMenuPanel: View {
                     if let subtitle = row.subtitle {
                         Text(subtitle)
                             .font(.footnote)
-                            .foregroundStyle(row.tone == "warning" ? Color.orange : Color.secondary)
+                            .foregroundStyle(row.tone == "warning" ? FM.warningText : Color.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -497,8 +497,8 @@ struct MapChromeMenuPanel: View {
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .foregroundStyle(Color.red)
-                            .background(Capsule().stroke(Color.red.opacity(0.6), lineWidth: 1))
+                            .foregroundStyle(FM.dangerText)
+                            .background(Capsule().stroke(FM.danger.opacity(0.6), lineWidth: 1))
                     }
                 }
             }
@@ -513,12 +513,12 @@ struct MapChromeMenuPanel: View {
         .accessibilityLabel(Text(row.subtitle.map { "\(row.title), \($0)" } ?? row.title))
     }
 
-    /// 标签：未选为浅底；include 绿、exclude 红、accent 主题色（描边 + 浅色底），选中时带图标
+    /// 标签：未选为浅底；include 成功色、exclude 危险色（与网页筛选面板相同）、accent 主题色（描边 + 浅色底），选中时带图标
     private func chipButton(_ row: MapChromeSheetRow) -> some View {
         let tint: Color? = {
             switch row.tone {
-            case "include": return .green
-            case "exclude": return .red
+            case "include": return FM.success
+            case "exclude": return FM.danger
             case "accent": return accent
             default: return nil
             }
@@ -563,7 +563,7 @@ struct MapChromeMenuPanel: View {
     }
 
     private func titleStyle(_ row: MapChromeSheetRow, footnote: Bool) -> Color {
-        if row.tone == "danger" { return .red }
+        if row.tone == "danger" { return FM.dangerText }
         if row.tone == "muted" || footnote { return .secondary }
         return .primary
     }

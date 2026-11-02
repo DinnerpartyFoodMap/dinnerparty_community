@@ -442,7 +442,7 @@ struct MapChromeView: View {
                     Image(systemName: row.symbol ?? "circle")
                         .font(.system(size: 22, weight: .semibold))
                 }
-                .foregroundStyle(row.tone == "danger" ? Color.red : accent)
+                .foregroundStyle(row.tone == "danger" ? FM.dangerText : accent)
                 .frame(width: 56, height: 56)
                 .background(Circle().fill(accent.opacity(0.14)))
                 Text(row.title)
@@ -814,7 +814,7 @@ struct MapChromeView: View {
     }
 
     private func foreground(for item: MapChromeItem) -> Color {
-        if item.tone == "danger" { return .red }
+        if item.tone == "danger" { return FM.dangerText }
         if item.selected || item.tone == "accent" { return accent }
         return .primary
     }
@@ -1034,7 +1034,7 @@ struct MapChromeSwipeHint: View {
 struct MapChromeBadgeDot: View {
     var body: some View {
         Circle()
-            .fill(Color.red)
+            .fill(FM.danger)
             .frame(width: 10, height: 10)
             .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
             .accessibilityHidden(true)

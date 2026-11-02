@@ -796,7 +796,7 @@ struct NativePageView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: model.toast)
-        .nativeThemeColors(primary: model.colors.primary, secondary: model.colors.secondary)
+        .nativeThemeColors(model.colors)
         .alert(model.confirming?.action.confirmTitle ?? "", isPresented: Binding(
             get: { model.confirming != nil },
             set: { if !$0 { model.confirming = nil } }
@@ -826,7 +826,7 @@ struct NativePageView: View {
             ProgressView()
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+                .background(FM.bgBase.ignoresSafeArea())
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
         case .row(let row, _)?:
@@ -834,7 +834,7 @@ struct NativePageView: View {
         case .form(let form, _)?:
             NativeFormPage(form: form, model: model)
         case nil:
-            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+            FM.bgBase.ignoresSafeArea()
         }
     }
 }
@@ -911,7 +911,7 @@ private struct NativePageList: View {
                 Section {
                     Label(spec.error, systemImage: "exclamationmark.triangle.fill")
                         .font(.subheadline)
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(FM.dangerText)
                 }
             }
             if !spec.tabs.isEmpty {
@@ -1139,6 +1139,7 @@ private struct NativePageRowButton: View {
     @ObservedObject var model: NativePageModel
     let row: NativePageRow
     @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativeOnPrimary) private var onPrimary
     @Environment(\.nativePageGlassRows) private var glassRows
 
     /// 选中行用主色浅底；半屏面板根页的行用与收藏面板相同的分组底色
@@ -1180,7 +1181,7 @@ private struct NativePageRowButton: View {
                     Text(action.title)
                 }
                 // 非危险操作（继续编辑）用住民主色
-                .tint(action.destructive ? Color.red : primaryTint)
+                .tint(action.destructive ? FM.danger : primaryTint)
             }
         }
     }
@@ -1188,9 +1189,10 @@ private struct NativePageRowButton: View {
     private var content: some View {
         HStack(alignment: .center, spacing: 12) {
             if !row.symbol.isEmpty {
+                // 主色底上的图标用网页算好的对比色（默认粉色上白色不够清楚）
                 Image(systemName: row.symbol)
                     .font(.system(size: 18))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(onPrimary)
                     .frame(width: 30, height: 30)
                     .background(primaryTint, in: RoundedRectangle(cornerRadius: 7))
             }
@@ -1386,27 +1388,34 @@ private struct NativeHTMLView: UIViewRepresentable {
     }
 }
 
+/// 徽章：tone 与网页同名同义（primary 主色、secondary 辅色、success / warning / danger / info 语义色、空为次要文字），
+/// 底色是 tone 的 14%，文字用 tone 的文字色（浅色模式下更深，保证对比度）
 private struct NativePageBadge: View {
     let text: String
     let tone: String
     @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativePrimaryText) private var primaryText
     @Environment(\.nativeSecondaryTint) private var secondaryTint
 
     var body: some View {
+        let colors = self.colors
         Text(text)
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(color.opacity(0.14), in: Capsule())
-            .foregroundStyle(color)
+            .background(colors.fill.opacity(0.14), in: Capsule())
+            .foregroundStyle(colors.text)
     }
 
-    private var color: Color {
+    private var colors: (fill: Color, text: Color) {
         switch tone {
-        case "danger": return .red
-        case "warning": return secondaryTint
-        case "success", "primary": return primaryTint
-        default: return .secondary
+        case "danger": return (FM.danger, FM.dangerText)
+        case "warning": return (FM.warning, FM.warningText)
+        case "success": return (FM.success, FM.successText)
+        case "info": return (FM.info, FM.infoText)
+        case "primary": return (primaryTint, primaryText)
+        case "secondary": return (secondaryTint, secondaryTint)
+        default: return (Color.secondary, Color.secondary)
         }
     }
 }
@@ -1542,6 +1551,7 @@ private struct NativePageRowDetail: View {
             }
         }
         .listStyle(.insetGrouped)
+        .nativePageBackground()
         .navigationTitle(row.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1643,6 +1653,7 @@ struct NativeFormPage: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
+        .nativePageBackground()
         .disabled(model.loading)
         .navigationTitle(form.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -1999,7 +2010,7 @@ private struct NativePageGlassList: ViewModifier {
                 .scrollContentBackground(.hidden)
                 .containerBackground(Color.clear, for: .navigation)
         } else {
-            content
+            content.nativePageBackground()
         }
     }
 }
