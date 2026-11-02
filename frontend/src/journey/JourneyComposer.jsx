@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import Segmented from "../components/forms/Segmented";
 import {eventId} from './feedback';
 import useComposeDraft from './useComposeDraft';
 import JourneyPhotoPicker from './JourneyPhotoPicker';
@@ -122,9 +123,8 @@ export default function JourneyComposer({ctx,nav,params}) {
                 </div>
                 <SettingRow label={t('journey:composer.visibility.label')} value={payload.intended_visibility==='public'?t('journey:common.label.public'):t('journey:common.label.private')} expanded={visibilityOpen} onClick={()=>setVisibilityOpen(v=>!v)} ariaLabel={t('journey:composer.visibility.ariaLabel')}>
                     {visibilityOpen&&<div className="jw-row-body">
-                        <div className="jw-segmented" role="radiogroup" aria-label={t('journey:composer.visibility.label')}>
-                            {[['public',t('journey:common.label.public')],['private',t('journey:common.label.private')]].map(([value,label])=><button type="button" key={value} role="radio" aria-checked={payload.intended_visibility===value} onClick={()=>setPayload({intended_visibility:value})}>{label}</button>)}
-                        </div>
+                        <Segmented label={t('journey:composer.visibility.label')} value={payload.intended_visibility} onChange={value=>setPayload({intended_visibility:value})}
+                            options={[['public',t('journey:common.label.public')],['private',t('journey:common.label.private')]]}/>
                         <p className="jw-muted">{t('journey:composer.privacyNote')}</p>
                     </div>}
                 </SettingRow>

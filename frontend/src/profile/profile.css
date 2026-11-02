@@ -26,7 +26,7 @@
     gap: 12px;
     padding: 16px;
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     background: var(--color-bg-surface);
 }
 .fm-profile__identity {
@@ -125,7 +125,7 @@
 .fm-profile__axis {
     padding: 14px 16px;
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     background: var(--color-bg-surface);
 }
 .fm-profile__axis-title {
@@ -137,7 +137,7 @@
 .fm-profile__axis-tag {
     font-size: 11px;
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-full);
     border: 1px solid var(--color-border);
     color: var(--color-text-secondary);
 }
@@ -182,7 +182,7 @@
 .fm-profile__chip {
     min-height: 32px;
     padding: 4px 12px;
-    border-radius: 16px;
+    border-radius: var(--radius-full);
     border: 1px solid var(--color-border);
     background: transparent;
     color: var(--color-text-primary);
@@ -209,7 +209,7 @@
 }
 .fm-profile__widget-select select {
     min-height: 32px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
     background: var(--color-bg-overlay);
     color: var(--color-text-primary);
@@ -217,7 +217,7 @@
 .fm-profile__widget {
     padding: 14px 16px;
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     background: var(--color-bg-surface);
     min-width: 0;
 }

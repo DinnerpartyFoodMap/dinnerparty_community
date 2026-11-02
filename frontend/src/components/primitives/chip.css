@@ -1,0 +1,52 @@
+/* 芯片（Chip.jsx）：可点的筛选 / 分类标签，与 iOS 原生 nativeChip 同一样式。规格见 frontend/doc/DESIGN_SYSTEM.md 7.4。
+   未选：透明底 + 细边框；选中：色调 16% 底 + 色调描边 + 色调文字（文字用加深的文字色），600。默认色调是辅色。 */
+.fm-chip {
+    --chip-tone: var(--theme-secondary);
+    --chip-text: var(--theme-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    box-sizing: border-box;
+    min-height: 32px;
+    padding: 4px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--text-footnote-size);
+    line-height: 1.3;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fm-chip--primary {
+    --chip-tone: var(--theme-primary);
+    --chip-text: var(--theme-primary-text);
+}
+
+.fm-chip--success {
+    --chip-tone: var(--color-success);
+    --chip-text: var(--color-success-text);
+}
+
+.fm-chip--danger {
+    --chip-tone: var(--color-danger);
+    --chip-text: var(--color-danger-text);
+}
+
+.fm-chip.is-selected {
+    border-color: var(--chip-tone);
+    background: color-mix(in srgb, var(--chip-tone) 16%, transparent);
+    color: var(--chip-text);
+    font-weight: var(--weight-semibold);
+}
+
+.fm-chip .material-symbols-outlined {
+    font-size: 15px;
+}
+
+.fm-chip:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}

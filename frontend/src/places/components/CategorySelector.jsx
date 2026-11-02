@@ -7,7 +7,7 @@ import { useConfirm } from "../../components/feedback/Confirm";
 import { useTips } from "../../components/feedback/Tips";
 import { useAuth } from "../../auth/AuthContext";
 import useDarkMode from "../../theme/useDarkMode";
-import { getThemeColor, pickContrastTextColor } from "../../theme/theme";
+import { getThemeColor } from "../../theme/theme";
 import "../../components/forms/field.css";
 import {
     createCategory as createCategoryRecord,
@@ -85,16 +85,16 @@ function getMatchScore(option, rawQuery) {
 }
 
 function tagStyle(dark, themeColor, selected) {
-    const background = selected ? themeColor : 'var(--color-bg-overlay)';
     return {
         display: 'inline-flex',
         alignItems: 'center',
         height: 28,
         padding: '0 10px',
-        borderRadius: 'var(--radius-md)',
-        border: `1px solid ${selected ? themeColor : 'var(--color-border)'}`,
-        background,
-        color: selected ? pickContrastTextColor(background) : 'var(--color-text-primary)',
+        borderRadius: 'var(--radius-full)',
+        border: `1px solid ${selected ? 'var(--theme-secondary)' : 'var(--color-border)'}`,
+        background: selected ? 'color-mix(in srgb, var(--theme-secondary) 16%, transparent)' : 'var(--color-bg-overlay)',
+        color: selected ? 'var(--theme-secondary)' : 'var(--color-text-primary)',
+        fontWeight: selected ? 600 : undefined,
         fontSize: 12,
         lineHeight: '28px',
         whiteSpace: 'nowrap',
@@ -302,7 +302,7 @@ export default function CategorySelector({ backendUrl, token, value, onChange, p
                     alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: 6,
-                    borderRadius: 22,
+                    borderRadius: 'var(--radius-md)',
                     cursor: 'text'
                 }}
             >

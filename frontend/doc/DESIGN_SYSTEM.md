@@ -119,15 +119,34 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 
 | 令牌 | 值 | 用途 |
 |---|---|---|
-| `--radius-xs` | 6 | ≤ 40 的小缩略图、行内代码、设置项图标底（原生 30×30 图标底现为 7） |
-| `--radius-sm` | 8 | 卡片里的图片、菜单项高亮、表格 |
-| `--radius-md` | 12 | 输入框（单行与多行同一值）、提示条、小卡片、分段控件外框 |
+| `--radius-xs` | 6 | 行内代码、30×30 的设置项 / 列表图标底 |
+| `--radius-sm` | 8 | ≤ 44 的小图、日历格、表格 |
+| `--radius-md` | 12 | 输入框（单行与多行同一值）、提示条、分段控件外框、56–148 的图片格 |
 | `--radius-lg` | 20 | 内容卡片、列表分组、宽屏地图店卡、原生 `NativeSheetGroup` |
-| `--radius-xl` | 28 | 浮层：弹窗、侧面板、下拉菜单、浏览器里的底部面板顶角、App 内网页玻璃浮层 |
+| `--radius-xl` | 28 | 浮层：弹窗、侧面板、搜索结果、浏览器里的底部面板顶角、App 内网页玻璃浮层 |
+| `--radius-lg`（菜单） | 20 | 下拉菜单（比弹窗小，用 lg） |
 | `--radius-sheet` | 40 | 仅 App 内底部面板（与 iPhone 屏幕圆角同心，对应 iOS 26 系统 sheet） |
 | `--radius-full` | 999 | 按钮、标签/筛选芯片、徽章、搜索框、圆形图标按钮、工具栏 |
 
-嵌套规则：内层圆角 = 外层圆角 − 内边距（例如 lg 卡片 16 内边距里的图片用 sm 或 xs）。
+### 3.1 嵌套：同心圆角
+
+圆角套圆角时，里外两层的圆角本来就不一样：贴着外层角的内层元素，圆角 = 外层圆角 − 两者之间的距离（内边距加边框），
+这样两条弧线同心、间距处处相等。不要把外层的令牌直接套在内层上，也不要让内层比外层还圆。
+
+- 只对贴着外层角的元素算：分段控件的选中块、卡片里贴边的图片和按钮、面板里贴边的分组。不靠近角的独立元素按自身尺寸取上表的令牌。
+- 算出来小于 4 时直接用 0 或改小内边距；网页里可以写 `calc(var(--radius-lg) - 12px)` 让它跟着外层令牌走。
+- iOS 26 有 `ConcentricRectangle` / `.containerConcentric`，目前最低支持 iOS 18，先按同样的减法手写。
+
+| 外层 | 间距 | 内层 | 实例 |
+|---|---|---|---|
+| 分段控件 12 | 边框 1 + 内边距 3 | 8 | `components/forms/segmented.css` |
+| 下拉菜单 20 | 内边距 6 | 14 | 菜单项高亮（`overlay.css` 的 `.fm-surface.fm-menu`） |
+| 宽屏店卡 20 | 内边距 12 | 8 | 店卡底部的操作按钮（`radius-sm`） |
+| 列表卡片 20 | 内边距 12 | 8 | `.fm-place-card__image` |
+| 日记入口卡片 20 | 内边距 10 | 10 | `.jw-entry__cover`（iOS 原生同为 10） |
+| 日记警告框 20 | 内边距 12 | 8 | `.jw-issues` 里的按钮 |
+| 图片格 12 | 4 | 8 | 缩略图上的状态条（`.jw-thumb__status`） |
+| 原生分组 20 | 内边距 6 | 14 | 顺路吃的出行方式选中块 |
 
 ## 4. 间距与尺寸
 
@@ -147,7 +166,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 | e2 | `--shadow-md` `0 4px 14px rgba(43,37,51,.14)` | 店卡、下拉菜单、侧面板 | `--glass-shadow` |
 | e3 | `--shadow-surface` | 弹窗、底部面板 | `--glass-shadow` |
 
-- 深色模式的阴影值已在 `--shadow-surface` 里给出；e1/e2 的深色值同样要补（目前只有浅色）。
+- 三档阴影都有深色值（tokens.json）。整页卡片不再用主色光晕阴影。底部面板向上的阴影（顺路吃面板、窄屏工具栏）暂时保留各自的写法。
 - 玻璃（`overlay.css` 的 `--glass-*`，iOS 26 的 `glassEffect`）只用在第 0 节第 3 条说的地图浮层上；iOS 26 以前用 `.regularMaterial`。
 - 层级 `z-index` 继续用 `tokens.css` 的 `--z-*`。
 
@@ -169,9 +188,10 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 | plain | 透明、`--theme-primary-text` 字 | `.borderless` |
 | destructive | `danger` 字；需要底时 danger 14% 底 | `role: .destructive` |
 
-- 形状：胶囊（`--radius-full`）。尺寸 sm 32 高 / 13 号字，md 44 高 / 15 号字（默认），lg 50 高 / 17 号 600（整宽主操作）。左右内边距 16（sm 12）。
+- 形状：胶囊（`--radius-full`）。尺寸 sm 32 高 / 13 号字，md 44 高 / 15 号字（默认），lg 50 高 / 17 号 600（整宽主操作）。左右内边距 16（sm 12）。字重：primary / destructive 600，其余 500。
 - 一组按钮里只放一个 primary。禁用：透明度 0.45，不改颜色。
 - 按压：`.fm-pressable`（缩放 0.97）；原生系统按压效果。
+- 网页实现：`components/primitives/Button.jsx` + `button.css`（`variant`、`size`、`full`；另有 `menu` 变体给菜单行）。调用方用 `style` 自定义了底色时自动按 secondary 的基础样式（正文色文字、细边框），避免主色上的文字色落到别的底色上。日记模块的裸 `<button>` 由 `journey.css` 给同一规格（胶囊、44 高），整行 / 列表式按钮单独用矩形圆角。
 
 ### 7.2 图标按钮
 
@@ -191,13 +211,15 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 | 徽章 | 胶囊，11 号 600，左右 7、上下 3；底 tone 14%，字用 tone 的文字变体 |
 | 链接型芯片（展开全部） | 无描边，`--theme-primary-text` 字 |
 
-原生只保留一个芯片实现（`NativeTagChip`），`nativeChip` 并入它。
+网页实现：`components/primitives/Chip.jsx` + `chip.css`（`selected`、`tone` 为 secondary / primary / success / danger、`icon`）。分类选择器的标签与列表页的距离档用同一种选中样式。
+原生：`nativeChip` 是唯一样式，`NativeTagChip` 用它。
 
 ### 7.5 卡片与分组
 
 - 整页里的卡片：`bg-surface`、圆角 lg 20、内边距 16、e0（描边不加阴影）。
 - 列表分组：同上，行之间 1px 分隔线（缩进 16）；组标题在组外，footnote、`text-secondary`，左右 16。
-- 宽屏地图店卡：圆角 lg 20、e2，内边距 12。
+- 宽屏地图店卡：圆角 lg 20、e2，内边距 12（里面贴角的元素见 3.1）。
+- 图片格不在卡片角上时按尺寸取：≤ 44 用 sm 8，56–148 用 md 12。
 
 ### 7.6 面板标题栏
 
@@ -212,7 +234,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 
 ### 7.7 分段控件
 
-外框 `bg-overlay`、圆角 md 12、内边距 3；选中块 `bg-surface`、圆角 9、`--shadow-sm`、主色文字 600；高 38（小号 32）。iOS 用 `.pickerStyle(.segmented)`。
+外框 `bg-overlay`、圆角 md 12、1px 边框 + 内边距 3；选中块 `bg-surface`、圆角 8（同心，见 3.1）、`--shadow-sm`、`--theme-primary-text` 文字 600；高 38（小号 32）。网页实现 `components/forms/Segmented.jsx`（`role` 为 radiogroup 或 tablist），日记与登录页都用它。iOS 用 `.pickerStyle(.segmented)`。
 
 ### 7.8 提示与反馈
 

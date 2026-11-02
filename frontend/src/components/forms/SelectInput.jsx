@@ -7,7 +7,7 @@ const SelectInput = forwardRef(({ style = {}, className, children, ...rest }, re
         padding: '6px 12px',
         height: 44,
         boxSizing: 'border-box',
-        borderRadius: 22
+        borderRadius: 'var(--radius-md)'
     };
 
     const merged = { ...base, ...style };

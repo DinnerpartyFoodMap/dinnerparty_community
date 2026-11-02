@@ -1,4 +1,5 @@
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import Segmented from "../components/forms/Segmented";
 import useJourneyDraft from './useJourneyDraft';
 import JourneyStopCard from './JourneyStopCard';
 import JourneyStopPhotos,{STOP_PHOTO_LIMIT} from './JourneyStopPhotos';
@@ -283,9 +284,8 @@ export default function JourneyReview({ctx,nav,params}) {
             </details>
             <section className="jw-card jw-stack" aria-label={t('journey:review.saveSectionLabel')}>
                 <strong>{t('journey:review.visibility')}</strong>
-                <div className="jw-segmented" role="radiogroup" aria-label={t('journey:review.visibility')}>
-                    {[['public',t('journey:common.label.public')],['private',t('journey:common.label.private')]].map(([value,label])=><button type="button" key={value} role="radio" aria-checked={visibility===value} onClick={()=>edit({intended_visibility:value})}>{label}</button>)}
-                </div>
+                <Segmented label={t('journey:review.visibility')} value={visibility} onChange={value=>edit({intended_visibility:value})}
+                    options={[['public',t('journey:common.label.public')],['private',t('journey:common.label.private')]]}/>
                 {visibility==='public'?<>
                     <p role="status">{counts?t('journey:review.publicCounts', { link: counts.link, create: counts.create, conflicts: counts.conflict?t('journey:review.publicConflicts', { conflict: counts.conflict }):'' }):previewState==='loading'||previewState==='stale'?t('journey:review.previewUpdating'):t('journey:review.previewOnSave')}</p>
                     {counts&&<p className="jw-muted">{tx('journey:review.publicScope', { public_stops: counts.public_stops, public_photos: counts.public_photos, private_photos: counts.private_photos })}</p>}

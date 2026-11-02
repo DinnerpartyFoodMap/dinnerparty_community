@@ -7,7 +7,8 @@ struct NativeGlassCard<Content: View>: View {
     var padding: CGFloat
     let content: Content
 
-    init(cornerRadius: CGFloat = 24, padding: CGFloat = 16, @ViewBuilder content: () -> Content) {
+    /// 页内卡片默认 lg 20（设计参考第 3 节）；卡片里贴边的元素按 外层 − 内边距 取同心圆角
+    init(cornerRadius: CGFloat = FM.Radius.lg, padding: CGFloat = 16, @ViewBuilder content: () -> Content) {
         self.cornerRadius = cornerRadius
         self.padding = padding
         self.content = content()
@@ -24,7 +25,7 @@ struct NativeGlassCard<Content: View>: View {
 extension View {
     /// 液态玻璃底板（iOS 26+）；更早的系统使用 regularMaterial，避免在深色地图上变成纯色块。
     @ViewBuilder
-    func nativeGlassSurface(cornerRadius: CGFloat = 24) -> some View {
+    func nativeGlassSurface(cornerRadius: CGFloat = FM.Radius.lg) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(iOS 26.0, *) {
             self.glassEffect(Glass.regular, in: shape)

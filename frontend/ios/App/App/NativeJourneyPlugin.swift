@@ -573,7 +573,7 @@ private struct NativeJourneyComposerView: View {
             }
             .frame(height: 84)
             .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
             Button {
                 syncWork?.cancel()
                 model.custom("removePhoto", values: values(), extra: ["mediaId": photo.string("id")])
@@ -924,6 +924,7 @@ private struct NativeJourneyCalendarView: View {
 
     @ViewBuilder
     private func cover(_ imageId: String) -> some View {
+        // 与网页日记入口的封面相同（网页那里是卡片 20 − 内边距 10 的同心圆角）
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         if !imageId.isEmpty, let image = model.images[imageId] {
             Image(uiImage: image).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(shape)

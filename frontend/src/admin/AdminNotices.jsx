@@ -215,7 +215,7 @@ export default function AdminNotices({ backendUrl = null }) {
                     <div style={{ marginBottom: 8, fontWeight: 700 }}>{t('admin:notices.currentTitle')}</div>
                     <Notice
                         title={currentNotice.title}
-                        backgroundColor={getNoticeColorOption(currentNotice.color_key).backgroundColor}
+                        backgroundColor={getNoticeColorOption(currentNotice.color_key).background}
                         style={{ position: 'relative', top: 'auto', left: 'auto', transform: 'none', width: '96.5%', maxWidth: 'none', minWidth: 0, marginBottom: 0, textAlign: 'center' }}
                     >
                         <div style={{ whiteSpace: 'pre-wrap' }}>{currentNotice.content}</div>
@@ -257,7 +257,7 @@ export default function AdminNotices({ backendUrl = null }) {
                                         padding: 0,
                                         borderRadius: '50%',
                                         border: colorKey === option.key ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                                        background: option.backgroundColor,
+                                        background: option.background,
                                         boxSizing: 'border-box',
                                         cursor: 'pointer'
                                     }}
@@ -270,7 +270,7 @@ export default function AdminNotices({ backendUrl = null }) {
                         <div style={{ marginBottom: 8, fontWeight: 600 }}>{t('admin:notices.preview')}</div>
                         <Notice
                             title={previewNotice.title}
-                            backgroundColor={getNoticeColorOption(colorKey).backgroundColor}
+                            backgroundColor={getNoticeColorOption(colorKey).background}
                             style={{ position: 'relative', top: 'auto', left: 'auto', transform: 'none', width: '96.5%', maxWidth: 'none', minWidth: 0, textAlign: 'center' }}
                         >
                             <div style={{ whiteSpace: 'pre-wrap' }}>{previewNotice.content}</div>

@@ -61,10 +61,9 @@ function pageStyle(dark) {
 
 function cardStyle(dark) {
     return {
-        borderRadius: 'var(--radius-md)',
+        borderRadius: 'var(--radius-lg)',
         border: '1px solid var(--color-border)',
         background: 'var(--color-bg-surface)',
-        boxShadow: '0 8px 24px var(--color-glow)',
         padding: 20
     };
 }

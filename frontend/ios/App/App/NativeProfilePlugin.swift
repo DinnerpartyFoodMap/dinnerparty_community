@@ -659,7 +659,7 @@ private struct NativeProfileView: View {
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
-                    .nativeGlassSurface(cornerRadius: 22)
+                    .nativeGlassSurface(cornerRadius: FM.Radius.full)
             }
             .buttonStyle(.plain)
             .foregroundStyle(model.tint)
@@ -731,8 +731,8 @@ private struct NativeProfileView: View {
                     }
                 }
                 .frame(width: 42, height: 42)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: FM.Radius.sm, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: FM.Radius.sm, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.name)
                         .font(.subheadline.weight(.medium))

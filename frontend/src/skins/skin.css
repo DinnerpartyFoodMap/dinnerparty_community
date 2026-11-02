@@ -18,7 +18,7 @@
 
 :root[data-skin] .fm-skin-card.fm-sheet {
     border-bottom-width: 0;
-    border-radius: var(--skin-card-radius, 16px) var(--skin-card-radius, 16px) 0 0;
+    border-radius: var(--skin-card-radius, var(--radius-xl)) var(--skin-card-radius, var(--radius-xl)) 0 0;
 }
 
 :root[data-skin] .fm-skin-panel.fm-surface {

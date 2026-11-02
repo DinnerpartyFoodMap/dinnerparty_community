@@ -977,7 +977,7 @@ export default function App() {
                             <Notice
                                 ref={siteNoticeRef}
                                 title={siteNotice.title}
-                                backgroundColor={getNoticeColorOption(siteNotice.color_key).backgroundColor}
+                                backgroundColor={getNoticeColorOption(siteNotice.color_key).background}
                                 canClose
                                 onClose={() => {
                                     const nextId = String(siteNotice.id);

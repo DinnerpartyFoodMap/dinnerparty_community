@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import TextInput from "../components/forms/TextInput";
+import Segmented from "../components/forms/Segmented";
+import { PanelHeader } from "../components/overlay/ResponsivePanel";
 import ScrollableView from "../components/layout/ScrollableView";
 import Button from "../components/primitives/Button";
 import qrcodeImg from "../img/qrcode.png";
 import useDarkMode from "../theme/useDarkMode";
-import { getThemeColor, getThemeSecondary, colorToRgba, darkenColor } from "../theme/theme";
+import { getThemeColor, colorToRgba, darkenColor } from "../theme/theme";
 import { reportAuthStage } from "./services/authDiagnostics";
 import { getClientInfo } from "../platform/env";
 import { t, tx } from "../i18n/index.js";
@@ -31,44 +33,24 @@ function getStaticColors(dark) {
         textStrong: 'var(--color-text-primary)',
         textMuted: 'var(--color-text-secondary)',
         border: 'var(--color-border)',
-        tabGroupBackground: 'var(--color-bg-overlay)',
         inputBackground: 'var(--color-bg-overlay)',
-        successText: 'var(--color-success)',
-        successBackground: dark ? 'rgba(92, 214, 152, 0.12)' : 'rgba(61, 153, 112, 0.10)',
-        errorText: 'var(--color-danger)',
-        errorBackground: dark ? 'rgba(255, 107, 107, 0.12)' : 'rgba(217, 83, 79, 0.10)'
+        successText: 'var(--color-success-text)',
+        successBackground: 'color-mix(in srgb, var(--color-success) 12%, transparent)',
+        errorText: 'var(--color-danger-text)',
+        errorBackground: 'color-mix(in srgb, var(--color-danger) 12%, transparent)'
     };
 }
 
 function getThemeUIColors(themeColor) {
     const primary = themeColor || '#E2789F';
-    const secondary = getThemeSecondary() || primary;
     const primaryBorder = darkenColor(primary, 0.18);
     const primaryDisabled = colorToRgba(primary, 0.5);
-    const tabActiveBg = colorToRgba(secondary, 0.15);
-    const tabActiveBorder = colorToRgba(secondary, 0.4);
     const tabActiveText = primary;
     return {
         primaryAction: primary,
         primaryActionBorder: primaryBorder,
         primaryActionDisabled: primaryDisabled,
-        tabActiveBackground: tabActiveBg,
-        tabActiveBorder: tabActiveBorder,
         tabActiveText: tabActiveText
-    };
-}
-
-function getTabButtonStyle(isActive, disabled, uiColors) {
-    return {
-        border: `1px solid ${isActive ? uiColors.tabActiveBorder : "transparent"}`,
-        background: isActive ? uiColors.tabActiveBackground : "transparent",
-        color: isActive ? uiColors.tabActiveText : uiColors.textMuted,
-        borderRadius: 8,
-        padding: "7px 14px",
-        lineHeight: 1.2,
-        fontWeight: isActive ? 700 : 500,
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.7 : 1
     };
 }
 
@@ -731,7 +713,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                                 height: 44,
                                 boxSizing: 'border-box',
                                 padding: '0 14px',
-                                borderRadius: 22,
+                                borderRadius: 'var(--radius-full)',
                                 border: `1px solid ${uiColors.primaryActionBorder}`,
                                 fontWeight: 600,
                                 whiteSpace: 'nowrap',
@@ -782,37 +764,14 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                 padding: 18
             }}
         >
-            <h2 id="auth-modal-title" style={{ margin: "0 0 10px 0", fontSize: 20, color: uiColors.textStrong }}>{t('auth:page.title')}</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-                <div className="fm-auth-tabs" style={{ display: "inline-flex", gap: 4, padding: 4, borderRadius: 'var(--radius-md)', border: `1px solid ${uiColors.border}`, background: uiColors.tabGroupBackground }}>
-                    <Button
-                        type="button"
-                        aria-pressed={tab !== "register"}
-                        disabled={loading}
-                        onClick={() => switchTab("login")}
-                        style={getTabButtonStyle(tab !== "register", loading, uiColors)}
-                    >
-                        {t('auth:page.tab.login')}
-                    </Button>
-                    <Button
-                        type="button"
-                        aria-pressed={tab === "register"}
-                        disabled={loading}
-                        onClick={() => switchTab("register")}
-                        style={getTabButtonStyle(tab === "register", loading, uiColors)}
-                    >
-                        {t('auth:page.tab.register')}
-                    </Button>
-                </div>
-                <div style={{ marginLeft: "auto" }}>
-                    <Button
-                        type="button"
-                        onClick={handleClose}
-                        style={{ border: `1px solid ${uiColors.border}`, borderRadius: 8, padding: "7px 10px" }}
-                    >
-                        {loading ? t('auth:page.cancelAndClose') : t('common:action.close')}
-                    </Button>
-                </div>
+            {/* 与其他面板同一种标题栏：左边圆形关闭钮、标题居中（设计参考 7.6） */}
+            <PanelHeader title={t('auth:page.title')} titleId="auth-modal-title" onClose={handleClose}
+                closeLabel={loading ? t('auth:page.cancelAndClose') : t('common:action.close')}
+                style={{ padding: 0, border: 0, margin: '0 0 12px' }} />
+            <div style={{ marginBottom: 8 }}>
+                <Segmented className="fm-auth-tabs" size="sm" label={t('auth:page.title')} disabled={loading}
+                    value={tab === "register" ? "register" : "login"} onChange={switchTab}
+                    options={[["login", t('auth:page.tab.login')], ["register", t('auth:page.tab.register')]]} />
             </div>
 
             <p style={{ margin: "0 0 12px 0", fontSize: 13, color: uiColors.textMuted }}>

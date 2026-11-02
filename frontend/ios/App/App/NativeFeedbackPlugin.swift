@@ -430,7 +430,7 @@ private struct NativeFeedbackView: View {
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 76, height: 76)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
                                 .overlay(alignment: .topTrailing) {
                                     // 图标仍是 20pt、位置不变，点按范围 44×44
                                     Button { model.removeImage(image.id) } label: {

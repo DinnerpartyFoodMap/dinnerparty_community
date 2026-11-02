@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import Segmented from "../components/forms/Segmented";
 import {request} from './feedback';
 import {PageHeader,Notice,Empty} from './shared';
 import {userReportPrefill} from '../feedback/feedbackTypes';
@@ -50,18 +51,16 @@ export default function JourneyCommunity({ctx,nav,params}) {
     return <div className="jw-page">
         <PageHeader title={t('journey:common.feature.community')} onBack={nav.pop}/>
         <div className="jw-scroll" ref={scrollRef}><div className="jw-content jw-stack" aria-busy={busy}>
-            <div className="jw-segmented" role="tablist" aria-label={t('journey:community.tabsLabel')}>
-                {[['neighbors',t('journey:common.feature.community')],['collections',t('journey:community.tab.collections')],['settings',t('journey:community.tab.settings')]].map(([id,label])=><button type="button" key={id} role="tab" aria-selected={section===id} onClick={()=>{setSection(id);setSaved('');}}>{label}</button>)}
-            </div>
+            <Segmented role="tablist" label={t('journey:community.tabsLabel')} value={section} onChange={id=>{setSection(id);setSaved('');}}
+                options={[['neighbors',t('journey:common.feature.community')],['collections',t('journey:community.tab.collections')],['settings',t('journey:community.tab.settings')]]}/>
             {error&&<Notice tone="error" onClose={()=>setError('')}>{error}</Notice>}
             {saved&&<Notice tone="success" onClose={()=>setSaved('')}>{saved}</Notice>}
             {!settings&&!error&&<p className="jw-muted">{t('journey:community.loading')}</p>}
             {settings&&section==='neighbors'&&<>
                 {list.length?<>
                     <div className="jw-row-between"><p className="jw-muted">{neighbors.notice}</p>
-                        <div className="jw-segmented jw-segmented--small" role="radiogroup" aria-label={t('journey:community.viewModeLabel')}>
-                            {[['list',t('journey:community.viewMode.list')],['map',t('journey:community.viewMode.map')]].map(([id,label])=><button type="button" key={id} role="radio" aria-checked={view===id} onClick={()=>setView(id)}>{label}</button>)}
-                        </div>
+                        <Segmented size="sm" label={t('journey:community.viewModeLabel')} value={view} onChange={setView}
+                            options={[['list',t('journey:community.viewMode.list')],['map',t('journey:community.viewMode.map')]]}/>
                     </div>
                     {view==='map'?<>
                         <svg viewBox="-1.2 -1.2 2.4 2.4" className="jw-taste" role="img" aria-label={t('journey:community.mapLabel')}>

@@ -1256,7 +1256,7 @@ export default function MapUI(props) {
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                         // 颜色不随状态变化，只换图标（列表 / 地图）
                         background: customThemeColor,
-                        color: '#FFFFFF', border: 'none', boxShadow: '0 4px 12px var(--color-glow)', opacity: mapReady ? 1 : 0.6
+                        color: '#FFFFFF', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
                     }}
                 >
                     <span className="material-symbols-outlined" style={{ fontSize: size }}>{listShown ? 'map' : 'view_list'}</span>
@@ -1279,7 +1279,7 @@ export default function MapUI(props) {
                         width: 44, height: 44, padding: 0, borderRadius: '50%', position: 'relative',
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                         background: filterActive || filterOpen ? 'var(--color-primary-active)' : customThemeColor,
-                        color: '#FFFFFF', border: 'none', boxShadow: '0 4px 12px var(--color-glow)', opacity: mapReady ? 1 : 0.6
+                        color: '#FFFFFF', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
                     }}
                 >
                     <span className="material-symbols-outlined" style={{ fontSize: size }}>filter_list</span>
@@ -1688,7 +1688,7 @@ export default function MapUI(props) {
         if (!items || items.length === 0) return null;
         return (
             <div style={{ marginBottom: 12 }}>
-                <div style={{ padding: '4px 12px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ padding: '4px 12px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
                     <span>{title}</span>
                     {hasMore && onMore && (
                         <span onClick={onMore} style={{ cursor: 'pointer', color: customThemeSecondary || customThemeColor }}>{t('map:ui.seeMore')}</span>
@@ -1721,8 +1721,8 @@ export default function MapUI(props) {
                                         border: '1px solid var(--theme-secondary)',
                                         background: 'var(--color-bg-surface)',
                                         color: 'var(--theme-secondary)',
-                                        fontSize: 10,
-                                        fontWeight: 700
+                                        fontSize: 11,
+                                        fontWeight: 600
                                     }}>{t('map:ui.nav.amap')}</span>
                                 )}
                             </div>
@@ -1904,8 +1904,8 @@ export default function MapUI(props) {
                     backgroundColor: 'var(--skin-card-bg, var(--color-bg-surface))',
                     backgroundImage: 'var(--skin-card-texture, none)',
                     backgroundSize: 'var(--skin-card-texture-size, auto)',
-                    color: 'var(--color-text-primary)', padding: 10,
-                    borderRadius: 'var(--skin-card-radius, var(--radius-md))',
+                    color: 'var(--color-text-primary)', padding: 12,
+                    borderRadius: 'var(--skin-card-radius, var(--radius-lg))',
                     border: 'var(--skin-card-border-width, 1px) solid var(--skin-card-border-color, var(--color-border))',
                     boxShadow: 'var(--skin-card-shadow, var(--shadow-surface))',
                     minWidth: 200, width: 'min(92vw, 320px)', maxWidth: 'min(92vw, 320px)', boxSizing: 'border-box',
@@ -2133,7 +2133,7 @@ export default function MapUI(props) {
                 transformOrigin: isNarrow ? '50% 100%' : '50% 0%',
                 background: 'var(--color-bg-surface)',
                 borderRadius: 'var(--radius-md)',
-                boxShadow: `0 4px 12px ${hexToRgba(customThemeColor, 0.2)}`,
+                boxShadow: 'var(--shadow-sm)',
                 border: `1px solid ${dark ? 'var(--color-border)' : hexToRgba(customThemeColor, 0.5)}`,
                 zIndex: 2002,
                 display: 'flex',
@@ -2351,7 +2351,7 @@ export default function MapUI(props) {
                             right: isNarrow ? 56 : 108,
                             boxSizing: 'border-box',
                             padding: '6px 34px 6px 12px',
-                            borderRadius: 22,
+                            borderRadius: 'var(--radius-full)',
                             // 底栏展开后的搜索框：边框与底纹默认延续底栏的皮肤（见 skins/slots.js）。
                             // 平时中性边框（浮在地图上，只留一层投影）；聚焦时主题色边框加一圈淡色描边
                             border: `1px solid ${searchFocused ? customThemeColor : 'var(--skin-search-border-color, var(--color-border))'}`,
@@ -2419,7 +2419,7 @@ export default function MapUI(props) {
                                     background: customThemeColor,
                                     color: searchButtonIconColor,
                                     border: 'none',
-                                    boxShadow: `0 4px 12px ${hexToRgba(customThemeColor, 0.2)}`,
+                                    boxShadow: 'var(--shadow-sm)',
                                     transition: 'background 180ms ease, transform 220ms ease',
                                     cursor: (!mapReady || authPending) ? 'not-allowed' : 'pointer',
                                     opacity: (!mapReady || authPending) ? 0.6 : 1
@@ -2514,7 +2514,7 @@ export default function MapUI(props) {
                                     background: locating ? 'var(--color-success)' : customThemeColor,
                                     color: locating ? 'var(--color-on-emphasis)' : '#FFFFFF',
                                     border: 'none',
-                                    boxShadow: `0 4px 12px ${hexToRgba(customThemeColor, 0.2)}`,
+                                    boxShadow: 'var(--shadow-sm)',
                                     opacity: (!mapReady || locating) ? 0.65 : 1
                                 }}
                             >
@@ -2537,7 +2537,7 @@ export default function MapUI(props) {
                     style={{
                         position: 'absolute', zIndex: 2000, height: 44, boxSizing: 'border-box',
                         display: 'flex', alignItems: 'center', gap: 2, padding: '0 4px 0 6px',
-                        borderRadius: 22, background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)',
+                        borderRadius: 'var(--radius-full)', background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)',
                         border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-surface)',
                         ...(nativeChrome
                             ? { left: 12, right: 76, bottom: chrome.bottomOccupied + 17 }
@@ -2592,7 +2592,7 @@ export default function MapUI(props) {
                                     background: customThemeColor,
                                     color: '#FFFFFF',
                                     border: 'none',
-                                    boxShadow: `0 4px 12px ${hexToRgba(customThemeColor, 0.2)}`,
+                                    boxShadow: 'var(--shadow-sm)',
                                     transition: 'background 180ms ease, transform 220ms ease',
                                     cursor: 'pointer'
                                 }}
@@ -2719,7 +2719,7 @@ export default function MapUI(props) {
                                             background: 'var(--color-bg-surface)',
                                             color: customThemeColor,
                                             border: `1px solid ${customThemeColor}`,
-                                            fontSize: 10,
+                                            fontSize: 11,
                                             fontWeight: 700
                                         }}>
                                             {normalizedPickedPlaces.length}

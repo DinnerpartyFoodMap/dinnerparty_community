@@ -1,4 +1,5 @@
 import React,{useCallback,useEffect,useState} from 'react';
+import Segmented from "../components/forms/Segmented";
 import MergePreview from './MergePreview';
 import {PageHeader,Notice,PrivatePhoto,Empty,formatRange,visibilityBadge,today} from './shared';
 import {newDocument} from './reviewUtils';
@@ -63,10 +64,8 @@ export default function JourneyCalendar({ctx,nav,params,active}) {
             <div className="jw-calendar-search" role="search">
                 <label className="jw-field"><span className="jw-visually-hidden">{t('journey:calendar.searchLabel')}</span>
                     <input type="search" value={query} maxLength={100} placeholder={t('journey:calendar.searchPlaceholder')} onChange={e=>{setQuery(e.target.value);setSelected([]);}}/></label>
-                <div className="jw-segmented" role="radiogroup" aria-label={t('journey:calendar.filterLabel')}>
-                    {[['',t('journey:calendar.filterAll')],['public',t('journey:common.label.public')],['private',t('journey:common.label.private')]].map(([value,label])=>
-                        <button type="button" key={value||'all'} role="radio" aria-checked={filter===value} onClick={()=>{setFilter(value);setSelected([]);}}>{label}</button>)}
-                </div>
+                <Segmented label={t('journey:calendar.filterLabel')} value={filter} onChange={value=>{setFilter(value);setSelected([]);}}
+                    options={[['',t('journey:calendar.filterAll')],['public',t('journey:common.label.public')],['private',t('journey:common.label.private')]]}/>
             </div>
             {!searching&&<>
             <div className="jw-month">

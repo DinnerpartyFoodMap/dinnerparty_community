@@ -1,0 +1,48 @@
+/* 分段控件（Segmented.jsx），规格见 frontend/doc/DESIGN_SYSTEM.md 7.7。
+   外框 12 圆角、1px 边框 + 3px 内边距；选中块贴着外框，按同心圆角取 12 − (1 + 3) = 8。 */
+.fm-segmented {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-overlay);
+}
+
+.fm-segmented > .fm-segmented__item {
+    flex: 1;
+    min-width: 0;
+    min-height: 38px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: calc(var(--radius-md) - 4px);
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    line-height: 1.3;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fm-segmented > .fm-segmented__item:is([aria-checked='true'], [aria-selected='true']) {
+    background: var(--color-bg-surface);
+    box-shadow: var(--shadow-sm);
+    color: var(--theme-primary-text);
+    font-weight: var(--weight-semibold);
+}
+
+.fm-segmented > .fm-segmented__item:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.fm-segmented--sm {
+    display: inline-flex;
+}
+
+.fm-segmented--sm > .fm-segmented__item {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: var(--text-footnote-size);
+}

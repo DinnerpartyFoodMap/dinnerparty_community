@@ -1194,7 +1194,7 @@ private struct NativePageRowButton: View {
                     .font(.system(size: 18))
                     .foregroundStyle(onPrimary)
                     .frame(width: 30, height: 30)
-                    .background(primaryTint, in: RoundedRectangle(cornerRadius: 7))
+                    .background(primaryTint, in: RoundedRectangle(cornerRadius: FM.Radius.xs, style: .continuous))
             }
             NativePageRowImage(model: model, row: row, size: row.imageShape == "circle" ? 40 : 44)
             VStack(alignment: .leading, spacing: 3) {
@@ -1759,7 +1759,7 @@ struct NativeFormPage: View {
                 }
             }
             .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
             VStack(alignment: .leading, spacing: 8) {
                 PhotosPicker(selection: Binding(
                     get: { nil as PhotosPickerItem? },
@@ -1868,7 +1868,7 @@ private struct NativeImageGrid: View {
                     }
                     .frame(height: 92)
                     .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
                     if !item.caption.isEmpty {
                         Text(item.caption)
                             .font(.caption2)

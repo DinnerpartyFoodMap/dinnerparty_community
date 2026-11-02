@@ -103,7 +103,7 @@ function outerStyle(mode, { width, maxHeight, sheetHeight, sideInset = 20, sideT
  * 面板标题栏（弹窗、侧面板、底部面板，浏览器与 App 相同，与 iOS 原生 NativeSheetHeader 一致）：
  * 左边 44 圆形关闭钮，标题居中，右边放操作（没有时留出与关闭钮等宽的位置，标题保持居中）。
  */
-export function PanelHeader({ title, onClose, closeLabel = t('common:action.close'), right = null, titleAs: Title = 'h2', style }) {
+export function PanelHeader({ title, titleId, onClose, closeLabel = t('common:action.close'), right = null, titleAs: Title = 'h2', style }) {
     return (
         <div className="fm-panel__header" data-sheet-header="" style={style}>
             <div className="fm-panel__header-side">
@@ -113,7 +113,7 @@ export function PanelHeader({ title, onClose, closeLabel = t('common:action.clos
                     </button>
                 )}
             </div>
-            {title ? <Title className="fm-panel__title">{title}</Title> : <span />}
+            {title ? <Title id={titleId} className="fm-panel__title">{title}</Title> : <span />}
             <div className="fm-panel__header-side fm-panel__header-side--end">{right}</div>
         </div>
     );

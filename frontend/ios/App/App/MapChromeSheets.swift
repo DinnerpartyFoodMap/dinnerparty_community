@@ -848,7 +848,7 @@ struct MapChromePlaceCard: View {
             }
         }
         .frame(width: 44, height: 44)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: FM.Radius.sm, style: .continuous))
         .accessibilityHidden(true)
     }
 
@@ -941,7 +941,7 @@ struct MapChromePlaceCard: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(groupFill, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
             } else {
                 // 展会时间已在摘要显示；详情从地点开始，随后按网页下发顺序显示信息与简介。
                 if let caption = sheet.caption {
@@ -962,7 +962,7 @@ struct MapChromePlaceCard: View {
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(groupFill, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
                 }
             }
 
@@ -991,7 +991,7 @@ struct MapChromePlaceCard: View {
                         detailRow(row)
                     }
                 }
-                .background(groupFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(groupFill, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
             }
             if let footer = section.footer {
                 Text(footer)
@@ -1076,8 +1076,8 @@ struct MapChromePlaceCard: View {
                             }
                             .frame(width: 148, height: 148)
                             .background(groupFill)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(Text(model.text("imageNumber", "{title} 第 {index} 张")

@@ -4,7 +4,7 @@ import Button from "../components/primitives/Button";
 import TextInput from "../components/forms/TextInput";
 import SelectInput from "../components/forms/SelectInput";
 import { useTips } from "../components/feedback/Tips";
-import { applyDarkMode, applyThemeColors, resolveThemePrimary, resolveThemeSecondary, getSystemPrefersDark, DEFAULT_PRIMARY, DEFAULT_SECONDARY, DEFAULT_DARK_PRIMARY, DEFAULT_DARK_SECONDARY } from "../theme/theme";
+import { applyDarkMode, applyThemeColors, resolveThemePrimary, resolveThemeSecondary, getSystemPrefersDark, DEFAULT_PRIMARY, DEFAULT_SECONDARY, DEFAULT_DARK_PRIMARY, DEFAULT_DARK_SECONDARY, pickContrastTextColor } from "../theme/theme";
 import useDarkMode from "../theme/useDarkMode";
 import { t } from '../i18n/index.js';
 import { patchMapSettings } from './accountSettings';
@@ -214,16 +214,7 @@ export default function CustomThemes({ user, onBack, backendUrl, token, onUpdate
                     <Button
                         onClick={() => persistThemeColors(themeColor, themeSecondary)}
                         disabled={loading}
-                        style={{
-                            background: themeColor,
-                            color: '#2B2533',
-                            border: 'none',
-                            padding: '8px 12px',
-                            borderRadius: 'var(--radius-sm)',
-                            boxShadow: '0 4px 12px var(--color-glow)',
-                            cursor: loading ? 'not-allowed' : 'pointer',
-                            opacity: loading ? 0.6 : 1
-                        }}
+                        style={{ background: themeColor, color: pickContrastTextColor(themeColor), border: 'none' }}
                     >
                         {t('common:action.save')}
                     </Button>

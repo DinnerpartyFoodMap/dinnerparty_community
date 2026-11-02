@@ -984,7 +984,7 @@ private struct NativePlaceFormView: View {
             }
         }
         .frame(width: 76, height: 76)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
         .overlay(alignment: .topTrailing) {
             // 图标仍是 20pt、位置不变（中心距右上角 14pt），点按范围扩大到 44×44
             Button {

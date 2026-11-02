@@ -111,7 +111,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
             </div>
             <div style={{ marginTop: 8 }}>
                 {/* 描述可以写多行，支持基础 Markdown（与后端一致最多 1000 字） */}
-                <TextArea markdown rows={3} maxLength={1000} placeholder={t('map:common.label.description')} value={description} onChange={(e) => setDescription(e.target.value)} style={{ width: "100%", borderRadius: 16, minHeight: 72 }} />
+                <TextArea markdown rows={3} maxLength={1000} placeholder={t('map:common.label.description')} value={description} onChange={(e) => setDescription(e.target.value)} style={{ width: "100%", minHeight: 72 }} />
             </div>
             <div style={{ marginTop: 8 }}>
                 <TextInput

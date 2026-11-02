@@ -1,0 +1,90 @@
+/* 按钮（Button.jsx）：胶囊形，sm 32 / md 44 / lg 50 高；颜色走主题变量，主题改了立即生效。
+   规格见 frontend/doc/DESIGN_SYSTEM.md 7.1。调用方的 style 仍可覆盖（行内样式优先）。 */
+.fm-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-full);
+    font: inherit;
+    font-size: var(--text-body-size);
+    font-weight: var(--weight-medium);
+    line-height: 1.25;
+    text-align: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease, transform 120ms ease;
+}
+
+.fm-button--sm {
+    min-height: 32px;
+    padding: 0 12px;
+    font-size: var(--text-footnote-size);
+}
+
+.fm-button--lg {
+    min-height: 50px;
+    padding: 0 20px;
+    font-size: var(--text-headline-size);
+    font-weight: var(--weight-semibold);
+}
+
+.fm-button--full {
+    display: flex;
+    width: 100%;
+}
+
+/* 主要操作：一组按钮里只放一个 */
+.fm-button--primary {
+    background: var(--theme-primary);
+    color: var(--theme-on-primary);
+    font-weight: var(--weight-semibold);
+}
+
+.fm-button--secondary {
+    background: var(--color-bg-overlay);
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+}
+
+.fm-button--plain {
+    background: transparent;
+    color: var(--theme-primary-text);
+}
+
+.fm-button--destructive {
+    background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    color: var(--color-danger-text);
+    font-weight: var(--weight-semibold);
+}
+
+/* 菜单行：整行可点、左对齐，不是胶囊 */
+.fm-button--menu {
+    justify-content: flex-start;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-weight: var(--weight-regular);
+    text-align: left;
+}
+
+@media (hover: hover) {
+    .fm-button:not(.fm-button--menu):not(:disabled):hover {
+        opacity: 0.9;
+    }
+
+    .fm-button--menu:not(:disabled):hover {
+        background: var(--color-bg-overlay);
+    }
+}
+
+.fm-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}

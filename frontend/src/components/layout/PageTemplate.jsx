@@ -28,7 +28,7 @@ export default function PageTemplate({ title, onBack, breadcrumb = [], children,
     };
 
     const breadcrumbStyle = { color: 'var(--color-text-secondary)', fontSize: 16, marginBottom: 12 };
-    const cardStyle = { background: 'var(--color-bg-surface)', borderRadius: 'var(--radius-md)', padding: 16, border: '1px solid var(--color-border)', boxShadow: '0 8px 24px var(--color-glow)' };
+    const cardStyle = { background: 'var(--color-bg-surface)', borderRadius: 'var(--radius-lg)', padding: 16, border: '1px solid var(--color-border)' };
 
     return (
         <div style={rootStyle}>

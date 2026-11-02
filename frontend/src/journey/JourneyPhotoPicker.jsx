@@ -1,4 +1,5 @@
 import React,{useRef,useState} from 'react';
+import Segmented from "../components/forms/Segmented";
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import {requestActionSheet,hasActionSheetHost} from '../components/overlay/ActionSheet';
 import {pickImages,MediaError} from '../platform/mediaPicker';
@@ -84,9 +85,8 @@ export default function JourneyPhotoPicker({draft,base,token,onError}) {
             {preview&&<div className="jw-stack jw-pad">
                 <div className="jw-photo-large">{preview.url?<img src={preview.url} alt={t('journey:photoPicker.previewAlt')}/>:preview.mediaId?<PrivatePhoto id={preview.mediaId} base={base} token={token} alt={t('journey:photoPicker.previewAlt')}/>:null}</div>
                 {preview.status==='failed'&&<p className="jw-error-text" role="alert">{preview.error||t('common:error.uploadFailed')}</p>}
-                <div className="jw-segmented" role="radiogroup" aria-label={t('journey:photoPicker.kindLabel')}>
-                    {[['',t('journey:photoPicker.kind.none')],['dish',t('journey:photoPicker.kind.dish')],['menu',t('common:label.menu')],['other',t('journey:photoPicker.kind.other')]].map(([value,label])=><button type="button" key={value} role="radio" aria-checked={(preview.kind||'')===value} onClick={()=>draft.setPhotoKind(preview.key,value)}>{label}</button>)}
-                </div>
+                <Segmented label={t('journey:photoPicker.kindLabel')} value={preview.kind||''} onChange={value=>draft.setPhotoKind(preview.key,value)}
+                    options={[['',t('journey:photoPicker.kind.none')],['dish',t('journey:photoPicker.kind.dish')],['menu',t('common:label.menu')],['other',t('journey:photoPicker.kind.other')]]}/>
                 <div className="jw-actions">
                     {(()=>{const index=photos.indexOf(preview);return <>
                         <button type="button" disabled={index<=0} onClick={()=>draft.movePhoto(index,index-1)}>{t('journey:photoPicker.moveEarlier')}</button>

@@ -105,7 +105,7 @@ export function createIosBackGesture({ dispatch = dispatchBack, duration = 180 }
                 Object.assign(indicator.style, {
                     position: 'fixed', zIndex: '2147483646', left: '6px', top: '45%', width: '38px', height: '38px',
                     display: 'grid', placeItems: 'center', borderRadius: '50%', fontSize: '32px', lineHeight: '1',
-                    color: 'var(--color-text-primary, #222)', boxShadow: '0 2px 12px #0002', pointerEvents: 'none'
+                    color: 'var(--color-text-primary, #222)', boxShadow: 'var(--shadow-sm)', pointerEvents: 'none'
                 });
                 document.body.appendChild(indicator);
                 const previous = target?.parentElement?.querySelector('[data-native-back-previous]');

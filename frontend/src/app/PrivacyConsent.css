@@ -27,13 +27,13 @@
     max-height: calc(100% - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     padding: 28px;
     border: 1px solid var(--consent-border);
-    border-radius: 18px;
+    border-radius: var(--radius-xl);
     background: var(--consent-surface);
     color: var(--consent-text);
     font: inherit;
     overflow: auto;
     overscroll-behavior: contain;
-    box-shadow: 0 16px 64px #2b253326;
+    box-shadow: var(--shadow-surface);
 }
 .fm-consent-dialog::backdrop { background: #17101d55; }
 .fm-consent-dialog h1 { margin: 0 0 16px; font-size: 24px; line-height: 1.5; }
@@ -45,7 +45,7 @@
     min-height: 48px;
     padding: 10px 20px;
     border: 1px solid var(--consent-accent);
-    border-radius: 10px;
+    border-radius: var(--radius-full);
     background: var(--consent-surface);
     color: var(--consent-accent);
     font: inherit;
@@ -54,7 +54,7 @@
 }
 .fm-consent-accept { background: var(--consent-accent); color: #fff; }
 .fm-consent-button:hover { filter: brightness(0.94); }
-.fm-consent-shell :focus-visible { outline: 3px solid var(--consent-accent); outline-offset: 4px; }
+.fm-consent-shell :focus-visible { outline: 2px solid var(--consent-accent); outline-offset: 2px; }
 .fm-consent-dialog h1:focus { outline: none; }
 @media (max-width: 480px) { .fm-consent-dialog { padding: 22px 20px; } .fm-consent-actions { flex-wrap: nowrap; } .fm-consent-button { padding: 10px 12px; } }
 @media (prefers-color-scheme: dark) {

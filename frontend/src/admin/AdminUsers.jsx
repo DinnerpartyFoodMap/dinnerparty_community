@@ -375,7 +375,7 @@ export default function AdminUsers({ backendUrl = null }) {
                 isMobile ? (
                     <div style={{ display: 'grid', gap: 10 }}>
                         {pageItems.map((target) => (
-                            <article key={target.id} style={{ padding: 12, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-surface)', boxShadow: '0 3px 12px rgba(18,16,22,.06)' }}>
+                            <article key={target.id} style={{ padding: 12, borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', background: 'var(--color-bg-surface)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                     {renderAvatar(target)}
                                     <div style={{ minWidth: 0, flex: 1 }}>

@@ -447,7 +447,7 @@ export default function AlongRoutePanel({
                 position: 'absolute', left: 0, right: 0, bottom: 0,
                 maxHeight: selectedRouteIndex == null ? '32%' : '44%',
                 borderTop: '1px solid var(--color-border)',
-                borderRadius: '18px 18px 0 0',
+                borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
                 background: 'var(--color-bg-surface)',
                 boxShadow: '0 -8px 30px rgba(0,0,0,.16)',
                 paddingBottom: 'env(safe-area-inset-bottom)',

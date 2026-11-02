@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Button from '../../components/primitives/Button';
+import Chip from '../../components/primitives/Chip';
 import RangeSlider from '../../components/forms/RangeSlider';
 import { loadCategoryDirectory } from '../categoryDirectory';
 import { COST_SLIDER, EMPTY_PLACE_FILTER, cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState } from '../placeFilter';
@@ -24,7 +25,8 @@ export function describePlaceFilter(raw) {
 }
 
 // 标签的三种状态：未选 / 包含（绿）/ 排除（红）
-const TAG_TONES = { include: 'var(--color-success)', exclude: 'var(--color-danger)' };
+// 包含为成功色、排除为危险色（iOS 原生筛选面板相同）
+const TAG_TONES = { include: 'success', exclude: 'danger' };
 
 /**
  * 筛选内容：标签（常用在前，可展开全部）与人均拉杆。value / onChange 是 placeFilter.js 的筛选对象，改动立即生效。
@@ -66,26 +68,18 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
                 <div role="group" aria-label={t('places:filter.tagsTitle')} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: showAll ? 220 : undefined, overflowY: showAll ? 'auto' : undefined }}>
                     {shown.map((tag) => {
                         const state = placeFilterTagState(filter, tag);
-                        const tone = state ? TAG_TONES[state] : null;
                         return (
-                            <button
+                            <Chip
                                 key={tag}
-                                type="button"
-                                className="fm-pressable"
+                                selected={state !== null}
+                                tone={state ? TAG_TONES[state] : undefined}
+                                icon={state ? (state === 'include' ? 'check' : 'block') : undefined}
                                 aria-pressed={state === null ? false : (state === 'include' ? true : 'mixed')}
                                 aria-label={state === 'include' ? t('places:filter.tagIncluded', { tag }) : state === 'exclude' ? t('places:filter.tagExcluded', { tag }) : tag}
                                 onClick={() => toggleTag(tag)}
-                                style={{
-                                    minHeight: 32, padding: '4px 12px', borderRadius: 16, cursor: 'pointer', fontSize: 13,
-                                    display: 'inline-flex', alignItems: 'center', gap: 3,
-                                    border: `1px solid ${tone || 'var(--color-border)'}`,
-                                    background: tone ? `color-mix(in srgb, ${tone} 16%, transparent)` : 'transparent',
-                                    color: tone || 'var(--color-text-primary)', fontWeight: state ? 700 : 400
-                                }}
                             >
-                                {state && <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 15 }}>{state === 'include' ? 'check' : 'block'}</span>}
                                 {tag}
-                            </button>
+                            </Chip>
                         );
                     })}
                 </div>

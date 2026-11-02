@@ -11,7 +11,7 @@ const TextArea = forwardRef(({ style = {}, className, rows, markdown = false, ..
     const base = {
         padding: '6px 12px',
         boxSizing: 'border-box',
-        borderRadius: 22,
+        borderRadius: 'var(--radius-md)',
         // Chrome gives <textarea> a different user-agent font by default.
         // Inherit the application font so edit descriptions match labels and other fields.
         fontFamily: 'inherit',

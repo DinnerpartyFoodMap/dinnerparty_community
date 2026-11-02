@@ -79,7 +79,7 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
             <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px 10px' }}>
                 {summary.count > 0 ? (
                     <>
-                        <span style={{ fontSize: 24, fontWeight: 800, color: tier.tone }}>{tierLabel(tier)}</span>
+                        <span style={{ fontSize: 22, fontWeight: 700, color: tier.tone }}>{tierLabel(tier)}</span>
                         <span style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{formatAverage(summary.average)}</span>
                         <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{t('map:rating.panel.count', { count: summary.count })}</span>
                     </>

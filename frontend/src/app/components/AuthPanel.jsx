@@ -149,7 +149,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                 gap: 16,
                 background: 'color-mix(in srgb, var(--color-bg-surface) 92%, transparent)',
                 borderBottom: '1px solid var(--color-border)',
-                boxShadow: '0 4px 18px rgba(18, 16, 22, 0.08)',
+                boxShadow: 'var(--shadow-sm)',
                 backdropFilter: 'blur(14px)'
             }}
         >

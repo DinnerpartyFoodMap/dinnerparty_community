@@ -196,10 +196,19 @@ button,
     background: var(--color-bg-surface);
     color: var(--color-text-primary);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md, 12px);
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow-surface);
     box-sizing: border-box;
     outline: none;
+}
+
+/* 菜单（AnchoredPopover）：lg 20；内边距 6，菜单项的高亮按同心圆角 20 − 6 = 14 */
+.fm-surface.fm-menu {
+    border-radius: var(--radius-lg);
+}
+
+.fm-surface.fm-menu :is(.fm-button--menu, .fm-map-list__menu-item) {
+    border-radius: calc(var(--radius-lg) - 6px);
 }
 
 /* 底部面板 */
@@ -220,7 +229,7 @@ button,
     pointer-events: auto;
     display: flex;
     flex-direction: column;
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     border-bottom: 0;
     padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
     overflow: hidden;
@@ -384,15 +393,15 @@ button,
 }
 
 :root:is([data-platform='ios'], [data-platform='android']) :is(.fm-surface, .fm-glass) {
-    border-radius: 30px;
+    border-radius: var(--radius-xl);
 }
 
 :root:is([data-platform='ios'], [data-platform='android']) .fm-menu.fm-surface {
-    border-radius: 22px;
+    border-radius: var(--radius-lg);
 }
 
 :root:is([data-platform='ios'], [data-platform='android']) .fm-search-results {
-    border-radius: 26px !important;
+    border-radius: var(--radius-xl) !important;
 }
 
 /* 遮罩更轻：让玻璃透出地图的颜色 */
@@ -409,7 +418,7 @@ button,
 
 /* 圆角与机身圆角同心（机身约 55pt，面板内缩 8pt） */
 :root:is([data-platform='ios'], [data-platform='android']) .fm-sheet {
-    border-radius: 40px;
+    border-radius: var(--radius-sheet);
     padding-bottom: 8px;
 }
 
@@ -441,7 +450,7 @@ button,
 
 :root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page input:not([type='checkbox']):not([type='radio']) {
     border: 1px solid transparent !important;
-    border-radius: 14px !important;
+    border-radius: var(--radius-md) !important;
     background: color-mix(in srgb, var(--color-text-primary) 7%, transparent) !important;
     box-shadow: inset 0 0.5px 1px rgba(0, 0, 0, 0.06) !important;
     font-size: 16px;
@@ -462,7 +471,7 @@ button,
     border-radius: 999px !important;
 }
 
-:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page .fm-auth-tabs > button[aria-pressed='true'] {
+:root:is([data-platform='ios'], [data-platform='android']) .fm-surface .fm-auth-page .fm-auth-tabs > button[aria-checked='true'] {
     border-color: transparent !important;
     background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-surface) 70%, transparent) !important;
     box-shadow: var(--glass-rim), 0 1px 4px rgba(15, 20, 32, 0.1) !important;

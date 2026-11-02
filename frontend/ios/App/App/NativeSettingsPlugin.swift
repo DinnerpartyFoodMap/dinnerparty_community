@@ -698,7 +698,7 @@ private struct NativeSettingsView: View {
     private func settingLabel(_ title: String, symbol: String, color: Color) -> some View {
         HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(.white)
-                .frame(width: 30, height: 30).background(color, in: RoundedRectangle(cornerRadius: 7))
+                .frame(width: 30, height: 30).background(color, in: RoundedRectangle(cornerRadius: FM.Radius.xs, style: .continuous))
             Text(title).foregroundStyle(color == FM.danger ? FM.dangerText : Color.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
