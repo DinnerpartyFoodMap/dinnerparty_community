@@ -554,6 +554,7 @@ export function createNativeJourneyController({
         note,
         labels: {
           photos: t('journey:composer.photos'),
+          keyboardDone: t('journey:composer.keyboardDone'),
           addPhoto: t('common:action.addImage'),
           removePhoto: t('common:action.remove'),
           uploading: t('journey:composer.uploadingNative'),
@@ -1303,6 +1304,11 @@ export function createNativeJourneyController({
   }
 
   // ---- 未完成 ----
+  /** 未完成列表的一行：点按就是“继续”，左滑出现“继续”与“删除” */
+  function swipeRow(resume, remove) {
+    return { actions: [resume], swipe: [resume, remove] };
+  }
+
   async function unfinishedPage() {
     const sections = [];
     const buttons = [];
@@ -1322,13 +1328,14 @@ export function createNativeJourneyController({
           newer: '',
           lastError: ''
         }),
-        actions: [
+        // 点按继续编辑；左滑出现“继续”“删除”，不再进入这一行的详情页
+        ...swipeRow(
           action(t('journey:unfinished.continue'), async () => ({ page: await go('composer', { composeId: item.id }) }), { push: true }),
           action(t('common:action.delete'), async () => {
             await api(`/api/journeys/compose-drafts/${encodeURIComponent(item.id)}`, { method: 'DELETE', body: JSON.stringify({ revision: item.revision }) });
             return { page: await unfinishedPage() };
           }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:unfinished.confirmDiscard', { label: item.title }), button: t('common:action.delete') } })
-        ]
+        )
       }));
       group(t('journey:unfinished.section.generating'), data.generating || [], (item) => ({
         id: String(item.id),
@@ -1358,16 +1365,16 @@ export function createNativeJourneyController({
           id: 'local',
           title: localEditor.journal.document?.title || t('journey:unfinished.untitledDiary'),
           subtitle: t('journey:unfinished.savedAt', { time: new Date(localEditor.updatedAt).toLocaleString() }),
-          actions: [
+          ...swipeRow(
             action(t('journey:unfinished.restore'), async () => {
               review = null;
               return { page: await go('review', { journal: localEditor.journal }) };
-            }),
+            }, { push: true }),
             action(t('common:action.delete'), async () => {
               await deleteLocalDraft(userId, 'active');
               return { page: await unfinishedPage() };
             }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:unfinished.confirmDiscard', { label: t('journey:unfinished.discard.localEdits') }), button: t('common:action.delete') } })
-          ]
+          )
         }]
       });
     }
@@ -1454,19 +1461,17 @@ export function createNativeJourneyController({
   // ---- 同好 ----
   async function loadCommunity() {
     if (community) return community;
-    const [consent, collections, favorites, neighbors, feedback] = await Promise.all([
+    const [consent, collections, favorites, neighbors] = await Promise.all([
       api('/api/community/consent'),
       api('/api/community/collections'),
       api('/api/favorites'),
-      api('/api/community/neighbors'),
-      api('/api/community/feedback')
+      api('/api/community/neighbors')
     ]);
     community = {
       consent,
       collections: collections || [],
       favorites: favorites || [],
       neighbors: neighbors || {},
-      feedback: feedback || {},
       section: 'neighbors',
       person: null,
       researchChoice: false
@@ -1484,7 +1489,7 @@ export function createNativeJourneyController({
     if (params.section) state.section = params.section;
     const tabs = [
       { id: 'neighbors', title: t('journey:common.feature.community') },
-      { id: 'collections', title: t('journey:community.tab.collections') },
+      { id: 'collections', title: t('journey:community.tab.collectionsShort') },
       { id: 'settings', title: t('journey:community.tab.settings') }
     ];
     const sections = [];
@@ -1597,17 +1602,6 @@ export function createNativeJourneyController({
       });
       form.inline = true;
       sections.push({ id: 'settings', title: '', text: t('journey:community.settingsHint'), form });
-      const stats = (state.feedback?.counts || []).map((item) => `${communityKindLabel(item.kind)} ${item.count}`).join(' · ');
-      sections.push({
-        id: 'stats',
-        title: t('journey:community.interactionsTitle'),
-        rows: [{ id: 'stats', title: stats || t('journey:community.noInteractions'), actions: [] }]
-      });
-      buttons.push(action(t('journey:community.clearInteractions'), async () => {
-        await api('/api/community/feedback', { method: 'DELETE' });
-        community = null;
-        return { page: await communityPage({ section: 'settings' }), message: t('journey:community.interactionsCleared') };
-      }, { tone: 'danger', confirm: { title: t('journey:community.clearInteractions'), message: t('journey:community.clearInteractionsConfirm'), button: t('journey:community.clearInteractions') } }));
     }
     return basePage('journey-community', t('journey:common.feature.community'), {
       tabs,
@@ -1615,20 +1609,6 @@ export function createNativeJourneyController({
       sections,
       buttons
     });
-  }
-
-  function communityKindLabel(kind) {
-    const labels = {
-      search: t('common:action.search'),
-      exposure: t('journey:community.kind.exposure'),
-      click: t('journey:community.kind.click'),
-      favorite: t('journey:community.kind.favorite'),
-      unfavorite: t('journey:community.kind.unfavorite'),
-      correction: t('journey:community.kind.correction'),
-      next: t('journey:community.kind.swap'),
-      confirm_stop: t('journey:community.kind.confirmVisit')
-    };
-    return labels[kind] || kind;
   }
 
   // ---- 我的收藏夹详情：收藏的地点（点开回地图），编辑收藏夹（名称、公开、地点）与删除 ----
@@ -1678,7 +1658,6 @@ export function createNativeJourneyController({
       return form;
     });
     return basePage('journey-collection', collection.title, {
-      subtitle: collection.is_public ? t('journey:community.collectionIsPublic') : t('journey:community.collectionIsPrivate'),
       sections: rows.length
         ? [{ id: 'places', title: t('journey:community.collectionPlaces'), rows }]
         : [{ id: 'empty', title: '', text: (state.favorites || []).length ? t('journey:community.collectionEmpty') : t('journey:community.noFavorites') }],

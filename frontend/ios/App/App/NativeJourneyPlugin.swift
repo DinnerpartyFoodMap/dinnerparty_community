@@ -77,21 +77,36 @@ public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
             if let sheet = host.sheetPresentationController {
                 let entry = UISheetPresentationController.Detent.Identifier("journey.entry")
                 // 入口三行加标题：约 340pt；屏幕更矮时不超过一半
-                sheet.detents = [
+                let entryDetents: [UISheetPresentationController.Detent] = [
                     .custom(identifier: entry) { context in min(340, context.maximumDetentValue * 0.55) },
                     .large()
                 ]
+                sheet.detents = entryDetents
                 sheet.selectedDetentIdentifier = entry
                 sheet.largestUndimmedDetentIdentifier = entry
                 sheet.prefersGrabberVisible = true
                 sheet.prefersScrollingExpandsWhenScrolledToEdge = true
-                // 进入子功能展开到全屏、回到入口收回半屏；子页上不能下滑关掉（防止丢失正在写的内容）
+                // 进入子功能展开到全屏、回到入口收回半屏；子页上不能下滑关掉（防止丢失正在写的内容）。
+                // 子页只保留全屏一档：否则列表滚到顶时继续下拉，系统面板会和列表抢手势（日历上表现为抖动、拉不动）
                 model.onDepthChange = { [weak sheet, weak host] depth in
                     host?.isModalInPresentation = depth > 0
                     guard let sheet else { return }
-                    let target: UISheetPresentationController.Detent.Identifier = depth > 0 ? .large : entry
-                    guard sheet.selectedDetentIdentifier != target else { return }
-                    sheet.animateChanges { sheet.selectedDetentIdentifier = target }
+                    let sub = depth > 0
+                    let target: UISheetPresentationController.Detent.Identifier = sub ? .large : entry
+                    let detentsChanged = sheet.detents.count != (sub ? 1 : entryDetents.count)
+                    guard detentsChanged || sheet.selectedDetentIdentifier != target else { return }
+                    sheet.animateChanges {
+                        if sub {
+                            sheet.selectedDetentIdentifier = .large
+                            sheet.largestUndimmedDetentIdentifier = nil
+                            sheet.detents = [.large()]
+                        } else {
+                            sheet.detents = entryDetents
+                            sheet.selectedDetentIdentifier = entry
+                            sheet.largestUndimmedDetentIdentifier = entry
+                        }
+                        sheet.prefersScrollingExpandsWhenScrolledToEdge = !sub
+                    }
                 }
             }
             host.presentationController?.delegate = self.sheetDelegate
@@ -295,7 +310,7 @@ private struct JourneyNotice: View {
     }
 }
 
-/// 页面底部的操作区（网页 jw-footer）：说明 + 主按钮 + 次按钮，键盘弹出时自动让位
+/// 页面末尾的操作区（网页 jw-footer）：说明 + 主按钮 + 次按钮；放在列表最后一段，跟着内容滚动（不固定在底部）
 private struct JourneyFooter: View {
     let note: String
     let buttons: [JourneyData]
@@ -326,10 +341,18 @@ private struct JourneyFooter: View {
                 .disabled(busy || !enabled(button))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-        .background(.bar)
+        .padding(.top, 4)
+        .padding(.bottom, 12)
+    }
+}
+
+private extension View {
+    /// 操作区所在的列表段：不铺行底色、不留行边距
+    func journeyFooterRow() -> some View {
+        self
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            .listRowSeparator(.hidden)
     }
 }
 
@@ -364,6 +387,8 @@ private struct NativeJourneyComposerView: View {
     @State private var uploadQueue: [String] = []
     @State private var preparing = false
     @State private var syncWork: DispatchWorkItem?
+    /// 描述是多行输入，回车是换行：键盘上方的“完成”收起键盘
+    @FocusState private var textFocused: Bool
 
     private var maxDate: Date { NativeJourneyScreens.date(data.string("maxDate")) ?? Date() }
     private var photos: [JourneyData] { data.objects("photos").map { JourneyData(raw: $0) } }
@@ -387,6 +412,7 @@ private struct NativeJourneyComposerView: View {
             Section {
                 TextField(data.label("textPlaceholder", "写下这一顿或这一天"), text: $text, axis: .vertical)
                     .lineLimit(5...14)
+                    .focused($textFocused)
             } header: {
                 Text(data.label("text", "描述"))
             } footer: {
@@ -438,27 +464,37 @@ private struct NativeJourneyComposerView: View {
                     Text(data.string("note"))
                 }
             }
+            Section {
+                JourneyFooter(note: blocker, buttons: data.objects("buttons").map { JourneyData(raw: $0) },
+                              enabled: { button in
+                                  blocker.isEmpty && (!button.bool("needsText") || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                      && !(button.bool("blockedWhileGenerating") && data.bool("generating"))
+                              },
+                              busy: model.loading) { button in
+                    syncWork?.cancel()
+                    textFocused = false
+                    model.custom(button.string("id"), values: values())
+                }
+                .journeyFooterRow()
+            }
         }
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom) {
-            JourneyFooter(note: blocker, buttons: data.objects("buttons").map { JourneyData(raw: $0) },
-                          enabled: { button in
-                              blocker.isEmpty && (!button.bool("needsText") || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                  && !(button.bool("blockedWhileGenerating") && data.bool("generating"))
-                          },
-                          busy: model.loading) { button in
-                syncWork?.cancel()
-                model.custom(button.string("id"), values: values())
-            }
-        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button(data.label("saveDraft", "存草稿")) {
                     syncWork?.cancel()
+                    textFocused = false
                     model.custom("save", values: values())
                 }
                 .disabled(model.loading)
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(data.label("keyboardDone", "完成")) {
+                    textFocused = false
+                }
+                .fontWeight(.semibold)
             }
         }
         .onAppear(perform: reset)
@@ -486,9 +522,19 @@ private struct NativeJourneyComposerView: View {
         let maxPhotos = data.int("maxPhotos", 12)
         return Section {
             if !photos.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
-                    ForEach(photos.indices, id: \.self) { index in
-                        photoTile(photos[index])
+                // 列表行里不用 Lazy 网格：懒加载的高度在滚动中反复变化，会让列表跳动
+                let columns = 4
+                let rows = stride(from: 0, to: photos.count, by: columns).map { Array(photos[$0..<min($0 + columns, photos.count)]) }
+                VStack(spacing: 8) {
+                    ForEach(rows.indices, id: \.self) { row in
+                        HStack(spacing: 8) {
+                            ForEach(rows[row].indices, id: \.self) { column in
+                                photoTile(rows[row][column])
+                            }
+                            ForEach(rows[row].count..<columns, id: \.self) { _ in
+                                Color.clear.frame(maxWidth: .infinity, maxHeight: 84)
+                            }
+                        }
                     }
                 }
                 .padding(.vertical, 6)
@@ -679,21 +725,21 @@ private struct NativeJourneyCalendarView: View {
             entriesSection
             if manage {
                 manageSection
+            } else {
+                Section {
+                    JourneyFooter(note: "", buttons: [
+                        JourneyData(raw: ["id": "composer", "title": data.label("generate", "图文生成"), "style": "primary"]),
+                        JourneyData(raw: ["id": "manual", "title": data.label("createManually", "手动新建"), "style": "secondary"])
+                    ], enabled: { _ in true }, busy: model.loading) { button in
+                        let id = button.string("id")
+                        model.custom(id, push: button.string("title"))
+                    }
+                    .journeyFooterRow()
+                }
             }
         }
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom) {
-            if !manage {
-                JourneyFooter(note: "", buttons: [
-                    JourneyData(raw: ["id": "composer", "title": data.label("generate", "图文生成"), "style": "primary"]),
-                    JourneyData(raw: ["id": "manual", "title": data.label("createManually", "手动新建"), "style": "secondary"])
-                ], enabled: { _ in true }, busy: model.loading) { button in
-                    let id = button.string("id")
-                    model.custom(id, push: button.string("title"))
-                }
-            }
-        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button(manage ? data.label("done", "完成") : data.label("manage", "管理")) {
@@ -744,53 +790,67 @@ private struct NativeJourneyCalendarView: View {
         }
     }
 
+    /// 月历：固定的周行（不用 LazyVGrid——列表行里的懒加载网格高度会在滚动中变化，部分机型上表现为抖动、拉不动）
     private var monthGrid: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
-        let lead = data.int("lead")
+        let lead = max(0, min(6, data.int("lead")))
         let days = data.objects("days").map { JourneyData(raw: $0) }
-        let selectedDay = data.string("selectedDay")
-        return LazyVGrid(columns: columns, spacing: 4) {
-            ForEach(Array(data.strings("weekdays").enumerated()), id: \.offset) { _, weekday in
-                Text(weekday).font(.caption2).foregroundStyle(.secondary)
+        // nil 为月初前 / 月末后的空格
+        let cells: [JourneyData?] = Array(repeating: nil, count: lead) + days.map { Optional($0) }
+        let padded = cells + Array(repeating: nil, count: (7 - cells.count % 7) % 7)
+        let weeks = stride(from: 0, to: padded.count, by: 7).map { Array(padded[$0..<$0 + 7]) }
+        return VStack(spacing: 4) {
+            HStack(spacing: 2) {
+                ForEach(Array(data.strings("weekdays").enumerated()), id: \.offset) { _, weekday in
+                    Text(weekday).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                }
             }
-            ForEach(0..<lead, id: \.self) { _ in
-                Color.clear.frame(height: 46)
-            }
-            ForEach(days.indices, id: \.self) { index in
-                let day = days[index]
-                let date = day.string("date")
-                let isSelected = date == selectedDay
-                let isToday = day.bool("today")
-                let count = day.int("count")
-                Button {
-                    model.custom("day", extra: ["date": isSelected ? "" : date])
-                } label: {
-                    VStack(spacing: 2) {
-                        Text("\(day.int("day"))")
-                            .font(.subheadline.weight(isToday || isSelected ? .bold : .regular))
-                            .foregroundStyle(isSelected ? Color.white : (isToday ? primaryTint : Color.primary))
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(isSelected ? primaryTint : Color.clear))
-                        if count > 0 {
-                            Text(String(format: data.label("dayCount", "%d篇"), count))
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(primaryTint)
-                        } else if day.bool("draft") {
-                            Text(data.label("draft", "草稿"))
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(secondaryTint)
+            ForEach(weeks.indices, id: \.self) { week in
+                HStack(spacing: 2) {
+                    ForEach(0..<7, id: \.self) { column in
+                        if let day = weeks[week][column] {
+                            dayCell(day)
                         } else {
-                            Text(" ").font(.system(size: 9))
+                            Color.clear.frame(maxWidth: .infinity, minHeight: 46)
                         }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 46)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(Text(day.string("accessibility")))
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func dayCell(_ day: JourneyData) -> some View {
+        let selectedDay = data.string("selectedDay")
+        let date = day.string("date")
+        let isSelected = date == selectedDay
+        let isToday = day.bool("today")
+        let count = day.int("count")
+        return Button {
+            model.custom("day", extra: ["date": isSelected ? "" : date])
+        } label: {
+            VStack(spacing: 2) {
+                Text("\(day.int("day"))")
+                    .font(.subheadline.weight(isToday || isSelected ? .bold : .regular))
+                    .foregroundStyle(isSelected ? Color.white : (isToday ? primaryTint : Color.primary))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(isSelected ? primaryTint : Color.clear))
+                if count > 0 {
+                    Text(String(format: data.label("dayCount", "%d篇"), count))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(primaryTint)
+                } else if day.bool("draft") {
+                    Text(data.label("draft", "草稿"))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(secondaryTint)
+                } else {
+                    Text(" ").font(.system(size: 9))
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text(day.string("accessibility")))
     }
 
     @ViewBuilder

@@ -1179,6 +1179,8 @@ private struct NativePageRowButton: View {
                 } label: {
                     Text(action.title)
                 }
+                // 非危险操作（继续编辑）用住民主色
+                .tint(action.destructive ? Color.red : primaryTint)
             }
         }
     }

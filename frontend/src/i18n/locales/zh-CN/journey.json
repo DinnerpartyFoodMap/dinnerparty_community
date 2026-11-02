@@ -120,7 +120,8 @@
     "tabsLabel": "同好页面",
     "tab": {
       "collections": "我的公开收藏夹",
-      "settings": "发现设置"
+      "settings": "发现设置",
+      "collectionsShort": "公开收藏夹"
     },
     "loading": "正在载入同好与收藏夹…",
     "viewModeLabel": "显示方式",
@@ -159,13 +160,9 @@
     "noInteractions": "暂无新增交互记录",
     "interactionsCleared": "交互记录已清除",
     "clearInteractions": "清除交互记录",
-    "clearInteractionsConfirm": "清除后这些交互记录不再用于改进地图，无法恢复。",
-    "interactionsTitle": "交互记录",
     "editCollection": "编辑收藏夹",
     "deleteCollection": "删除收藏夹",
     "collectionPlaces": "收藏的地点",
-    "collectionIsPublic": "已公开，其他住民可以看到",
-    "collectionIsPrivate": "私密，只有自己能看到",
     "collectionEmpty": "还没有地点，点“编辑收藏夹”从你的收藏里挑选。"
   },
   "composer": {
@@ -234,7 +231,8 @@
     "textOnlyNote": "当前模型不能识别图片，只会根据文字生成，照片仍会保存在日记中。",
     "multiDay": "展开为多日范围",
     "confirmLeaveUnsaved": "素材还没能存到本机或服务器，离开可能会丢失。确定离开？",
-    "leftSavedNoPhotos": "文字已存本机；还没上传的图片没能一起存下，下次需要重新添加。"
+    "leftSavedNoPhotos": "文字已存本机；还没上传的图片没能一起存下，下次需要重新添加。",
+    "keyboardDone": "完成"
   },
   "detail": {
     "history": "历史版本",
