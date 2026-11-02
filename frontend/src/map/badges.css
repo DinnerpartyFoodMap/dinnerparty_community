@@ -19,7 +19,7 @@
 .fm-rejected-badge {
     flex-shrink: 0;
     padding: 1px 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-full);
     border: 1px solid color-mix(in srgb, var(--color-danger) 60%, transparent);
     color: var(--color-danger-text);
     font-size: 11px;

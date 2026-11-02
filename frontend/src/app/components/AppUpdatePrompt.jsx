@@ -64,13 +64,13 @@ export default function AppUpdatePrompt({ backendUrl }) {
                         {release.version ? t('platform:appUpdate.version', { version: release.version }) : t('platform:appUpdate.versionUnknown')}
                     </div>
                     {release.notes && (
-                        <div style={{ maxHeight: '40vh', overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
+                        <div style={{ maxHeight: '40vh', overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 15, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
                             {release.notes}
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                        <Button themeAware onClick={() => setOpen(false)}>{t('platform:appUpdate.later')}</Button>
-                        <Button themeAware onClick={update}>{t('platform:appUpdate.update')}</Button>
+                        <Button onClick={() => setOpen(false)}>{t('platform:appUpdate.later')}</Button>
+                        <Button onClick={update}>{t('platform:appUpdate.update')}</Button>
                     </div>
                 </div>
             )}

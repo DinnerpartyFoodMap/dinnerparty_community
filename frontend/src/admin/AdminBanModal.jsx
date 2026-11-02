@@ -35,7 +35,7 @@ export default function AdminBanModal({ open, onClose, onConfirm, targetUser }) 
             bodyStyle={{ padding: 12 }}
         >
                 <div>
-                    <div style={{ marginBottom: 10, padding: 9, borderRadius: 8, background: 'var(--color-bg-overlay)', color: 'var(--color-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
+                    <div style={{ marginBottom: 10, padding: 9, borderRadius: 'var(--radius-md)', background: 'var(--color-bg-overlay)', color: 'var(--color-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
                         {t('admin:banModal.targetLabel')}<strong style={{ color: 'var(--color-text-primary)' }}>{targetUser?.username || targetUser?.id || t('admin:banModal.unknownUser')}</strong>{t('admin:banModal.effect')}
                     </div>
                     <div style={{ marginBottom: 8 }}>
@@ -54,8 +54,8 @@ export default function AdminBanModal({ open, onClose, onConfirm, targetUser }) 
                     </div>
 
                     <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                        <Button themeAware onClick={onClose} style={{ background: 'var(--color-bg-overlay)', border: '1px solid var(--color-border)' }}>{t('common:action.cancel')}</Button>
-                        <Button themeAware onClick={handleConfirm} style={{ background: 'var(--color-warning)', color: 'var(--color-on-emphasis)', borderColor: 'var(--color-warning)' }}>{t('admin:banModal.confirm')}</Button>
+                        <Button variant="secondary" onClick={onClose}>{t('common:action.cancel')}</Button>
+                        <Button variant="destructive" onClick={handleConfirm}>{t('admin:banModal.confirm')}</Button>
                     </div>
                 </div>
         </ResponsivePanel>

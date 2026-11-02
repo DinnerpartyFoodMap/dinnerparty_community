@@ -107,7 +107,7 @@ export default function EditAvatar({ user, onBack, backendUrl, token, onUpdateUs
 
                 {previewUrl && (
                     <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ fontSize: 14 }}>{t('settings:editAvatar.zoom')}</span>
+                        <span style={{ fontSize: 15 }}>{t('settings:editAvatar.zoom')}</span>
                         <input
                             type="range"
                             min={1}
@@ -121,7 +121,6 @@ export default function EditAvatar({ user, onBack, backendUrl, token, onUpdateUs
                 )}
                 <div>
                     <Button
-                        themeAware
                         onClick={handlePickImage}
                         style={{ padding: '8px 16px', background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)' }}
                     >
@@ -129,11 +128,10 @@ export default function EditAvatar({ user, onBack, backendUrl, token, onUpdateUs
                     </Button>
                 </div>
 
-                {error && <div style={{ color: 'var(--color-danger)', fontSize: 14 }}>{error}</div>}
+                {error && <div style={{ color: 'var(--color-danger)', fontSize: 15 }}>{error}</div>}
 
                 <div style={{ marginTop: 10, width: '100%' }}>
                     <Button
-                        themeAware
                         onClick={handleUpload}
                         disabled={uploading || !file}
                         style={{

@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { getSkin } from '../skins/registry';
 import { copyText } from '../platform/share';
 import { t } from '../i18n/index.js';
+import StateMessage from '../components/feedback/StateMessage';
 
 const EMPTY_FORM = { skin_id: '', count: '10', max_uses: '1', expires_days: '', note: '' };
 const STATUS_LABELS = {
@@ -97,7 +98,7 @@ export default function AdminSkinCodes({ backendUrl }) {
     }
 
     async function revoke(item) {
-        if (busy || !await confirm(t('admin:skinCodes.confirmRevoke', { code: item.code }), { destructive: true })) return;
+        if (busy || !await confirm(t('admin:skinCodes.confirmRevoke', { code: item.code }), { destructive: true, confirmLabel: t('admin:skinCodes.revoke') })) return;
         setBusy(true);
         try {
             const data = await request(`/admin/skin-codes/${item.id}`, { method: 'DELETE' });
@@ -118,14 +119,13 @@ export default function AdminSkinCodes({ backendUrl }) {
         <h3 id="skin-codes-title" style={{ marginTop: 0 }}>{t('admin:skinCodes.title')}</h3>
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, lineHeight: 1.6 }}>{t('admin:skinCodes.intro')}</p>
         {loading ? (
-            <p role="status" style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('admin:skinCodes.loading')}</p>
+            <StateMessage kind="loading">{t('admin:skinCodes.loading')}</StateMessage>
         ) : loadError ? (
-            <div>
-                <div role="alert" style={{ color: 'var(--color-danger)' }}>{t('admin:skinCodes.loadFailed', { message: loadError })}</div>
-                <Button variant="secondary" onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('admin:skinCodes.retry')}</Button>
-            </div>
+            <StateMessage kind="error" onRetry={() => setReload((value) => value + 1)} retryLabel={t('admin:skinCodes.retry')}>
+                {t('admin:skinCodes.loadFailed', { message: loadError })}
+            </StateMessage>
         ) : !catalog.length ? (
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('admin:skinCodes.emptyCatalog')}</p>
+            <StateMessage>{t('admin:skinCodes.emptyCatalog')}</StateMessage>
         ) : (
             <form onSubmit={generate} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, alignItems: 'end' }}>
                 <label style={{ display: 'grid', gap: 6 }}>
@@ -154,7 +154,7 @@ export default function AdminSkinCodes({ backendUrl }) {
                 </label>
                 {error && <div role="alert" style={{ color: 'var(--color-danger)', gridColumn: '1 / -1' }}>{error}</div>}
                 <div style={{ gridColumn: '1 / -1' }}>
-                    <Button type="submit" themeAware disabled={disabled}>{busy ? t('admin:skinCodes.generating') : t('admin:skinCodes.generate')}</Button>
+                    <Button type="submit" disabled={disabled}>{busy ? t('admin:skinCodes.generating') : t('admin:skinCodes.generate')}</Button>
                 </div>
             </form>
         )}
@@ -163,9 +163,9 @@ export default function AdminSkinCodes({ backendUrl }) {
             <div style={{ marginTop: 16, padding: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <strong>{t('admin:skinCodes.newCodes')}</strong>
-                    <Button themeAware onClick={copyCreated}>{t('admin:skinCodes.copyAll')}</Button>
+                    <Button onClick={copyCreated}>{t('admin:skinCodes.copyAll')}</Button>
                 </div>
-                <pre style={{ margin: '10px 0 0', whiteSpace: 'pre-wrap', fontSize: 14, userSelect: 'all' }}>{created.map((item) => item.code).join('\n')}</pre>
+                <pre style={{ margin: '10px 0 0', whiteSpace: 'pre-wrap', fontSize: 15, userSelect: 'all' }}>{created.map((item) => item.code).join('\n')}</pre>
             </div>
         )}
 
@@ -173,7 +173,7 @@ export default function AdminSkinCodes({ backendUrl }) {
             <div style={{ marginTop: 18 }}>
                 <h4 style={{ margin: '0 0 8px' }}>{t('admin:skinCodes.listTitle')}</h4>
                 {codes.length === 0 ? (
-                    <div style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('admin:skinCodes.empty')}</div>
+                    <StateMessage>{t('admin:skinCodes.empty')}</StateMessage>
                 ) : (
                     <ResponsiveTable minWidth={720} cellPadding="8" style={{ border: '1px solid var(--color-border)' }}>
                         <thead>
@@ -198,7 +198,7 @@ export default function AdminSkinCodes({ backendUrl }) {
                                     <td>{item.note || '-'}</td>
                                     <td>
                                         {item.status !== 'revoked' && (
-                                            <Button themeAware onClick={() => revoke(item)} disabled={busy}
+                                            <Button onClick={() => revoke(item)} disabled={busy}
                                                 style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', fontSize: 12, padding: '4px 6px' }}>
                                                 {t('admin:skinCodes.revoke')}
                                             </Button>

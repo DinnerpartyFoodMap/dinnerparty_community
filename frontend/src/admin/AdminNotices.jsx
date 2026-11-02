@@ -155,7 +155,7 @@ export default function AdminNotices({ backendUrl = null }) {
     };
 
     const clearCurrentNotice = async () => {
-        if (!(await confirm(t('admin:notices.confirmUnpublish'), { destructive: true }))) return;
+        if (!(await confirm(t('admin:notices.confirmUnpublish'), { destructive: true, confirmLabel: t('admin:notices.unpublish') }))) return;
         setClearing(true);
         const thisFetchId = ++fetchIdRef.current;
         const authToken = token;
@@ -207,7 +207,7 @@ export default function AdminNotices({ backendUrl = null }) {
             <h3>{t('admin:notices.title')}</h3>
             <div style={{ marginBottom: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button variant="secondary" size="sm" onClick={fetchNotices} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
-                <Button themeAware onClick={clearCurrentNotice} disabled={clearing || !currentNotice}>{t('admin:notices.unpublish')}</Button>
+                <Button onClick={clearCurrentNotice} disabled={clearing || !currentNotice}>{t('admin:notices.unpublish')}</Button>
             </div>
 
             {currentNotice ? (
@@ -225,7 +225,7 @@ export default function AdminNotices({ backendUrl = null }) {
                 <div style={{ marginBottom: 16, color: 'var(--color-text-secondary)' }}>{t('admin:notices.noCurrent')}</div>
             )}
 
-            <div style={{ marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-bg-overlay)' }}>
+            <div style={{ marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-overlay)' }}>
                 <div style={{ marginBottom: 10, fontWeight: 700 }}>{t('admin:notices.newTitle')}</div>
                 <div style={{ display: 'grid', gap: 10 }}>
                     <TextInput
@@ -278,7 +278,7 @@ export default function AdminNotices({ backendUrl = null }) {
                     </div>
 
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <Button themeAware onClick={publishNotice} disabled={submitting}>{t('admin:notices.publish')}</Button>
+                        <Button onClick={publishNotice} disabled={submitting}>{t('admin:notices.publish')}</Button>
                     </div>
                 </div>
             </div>

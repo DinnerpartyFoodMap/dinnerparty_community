@@ -45,8 +45,8 @@ export default function AdminQqModal({ open, onClose, onConfirm, targetUser, sav
                     {valid ? t('admin:qqModal.hint') : t('admin:qqModal.invalid')}
                 </div>
                 <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <Button themeAware onClick={onClose} style={{ background: 'var(--color-bg-overlay)', border: '1px solid var(--color-border)' }}>{t('common:action.cancel')}</Button>
-                    <Button themeAware onClick={() => onConfirm && onConfirm(value)} disabled={!valid || unchanged || saving}>{t('admin:qqModal.confirm')}</Button>
+                    <Button variant="secondary" onClick={onClose}>{t('common:action.cancel')}</Button>
+                    <Button onClick={() => onConfirm && onConfirm(value)} disabled={!valid || unchanged || saving}>{t('admin:qqModal.confirm')}</Button>
                 </div>
             </div>
         </ResponsivePanel>

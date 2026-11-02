@@ -54,7 +54,7 @@ export default function PageTemplate({ title, onBack, breadcrumb = [], children,
                                 </span>
                             );
                         })}
-                        <Button themeAware onClick={onBack || (breadcrumb[0] && breadcrumb[0].onClick)} style={{ padding: '0 8px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-base)', color: 'var(--color-text-primary)', textAlign: 'right', float: 'right' }}>
+                        <Button variant="plain" onClick={onBack || (breadcrumb[0] && breadcrumb[0].onClick)} style={{ float: 'right' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <span className="material-symbols-outlined" style={{ fontSize: 18, marginRight: 4 }}>arrow_back</span>
                                 <span>{t('common:pageTemplate.backToSettings')}</span>

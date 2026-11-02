@@ -49,7 +49,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
             if (onLogout) onLogout();
             return;
         }
-        if (confirmed !== true && !(await confirm(t('settings:main.confirmDeleteAccount'), { destructive: true }))) return;
+        if (confirmed !== true && !(await confirm(t('settings:main.confirmDeleteAccount'), { destructive: true, confirmLabel: t('settings:main.deleteAccount.button') }))) return;
         setDeleting(true);
         try {
             const res = await fetch(`${backendUrl}/users/me`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
@@ -91,11 +91,10 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                 <div className="fm-legacy-page-heading" style={{ ...titleRow, marginTop: 50 }}>
                     <h2 style={{ margin: 0 }}>{t('common:nav.accountSettings')}</h2>
                     <Button
-                        themeAware
                         onClick={onBack}
                         style={{ minHeight: 40, padding: '7px 11px', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
                     >
-                        <span className="material-symbols-outlined" style={{ fontSize: 19 }}>arrow_back</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_back</span>
                         {t('common:action.backToMap')}
                     </Button>
                 </div>
@@ -116,7 +115,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                         </div>
                         <div>
                             <Tooltip text={t('common:nav.editAvatar')} placement="top">
-                                <Button themeAware onClick={onOpenEditAvatar} style={{ padding: '8px 12px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}>
+                                <Button variant="secondary" size="sm" onClick={onOpenEditAvatar}>
                                     <span className="material-symbols-outlined">chevron_right</span>
                                 </Button>
                             </Tooltip>
@@ -129,7 +128,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                         <div><strong>{t('settings:main.currentUsername')}</strong>{user ? user.username : '-'}</div>
                         <div>
                             <Tooltip text={t('common:nav.editUsername')} placement="top">
-                                <Button themeAware onClick={onOpenEditUsername} style={{ padding: '8px 12px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}>
+                                <Button variant="secondary" size="sm" onClick={onOpenEditUsername}>
                                     <span className="material-symbols-outlined">chevron_right</span>
                                 </Button>
                             </Tooltip>
@@ -142,7 +141,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                         <div><strong>{t('common:nav.editPassword')}</strong></div>
                         <div>
                             <Tooltip text={t('common:nav.editPassword')} placement="top">
-                                <Button themeAware onClick={onOpenEditPassword} style={{ padding: '8px 12px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}>
+                                <Button variant="secondary" size="sm" onClick={onOpenEditPassword}>
                                     <span className="material-symbols-outlined">chevron_right</span>
                                 </Button>
                             </Tooltip>
@@ -155,7 +154,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                         <div><strong>{t('common:nav.customThemes')}</strong></div>
                         <div>
                             <Tooltip text={t('common:nav.customThemes')} placement="top">
-                                <Button themeAware onClick={onOpenThemes} style={{ padding: '8px 12px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}>
+                                <Button variant="secondary" size="sm" onClick={onOpenThemes}>
                                     <span className="material-symbols-outlined">chevron_right</span>
                                 </Button>
                             </Tooltip>
@@ -169,7 +168,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                             <div><strong>{t('common:nav.skins')}</strong></div>
                             <div>
                                 <Tooltip text={t('common:nav.skins')} placement="top">
-                                    <Button themeAware onClick={onOpenSkins} style={{ padding: '8px 12px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}>
+                                    <Button variant="secondary" size="sm" onClick={onOpenSkins}>
                                         <span className="material-symbols-outlined">chevron_right</span>
                                     </Button>
                                 </Tooltip>
@@ -183,7 +182,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                         <div><strong>{t('common:nav.personalizeMap')}</strong></div>
                         <div>
                             <Tooltip text={t('common:nav.personalizeMap')} placement="top">
-                                <Button themeAware onClick={onOpenPersonalize} style={{ padding: '8px 12px', border: 0, alignItems: 'center', display: 'inline-flex', gap: 4, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}>
+                                <Button variant="secondary" size="sm" onClick={onOpenPersonalize}>
                                     <span className="material-symbols-outlined">chevron_right</span>
                                 </Button>
                             </Tooltip>
@@ -197,7 +196,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                             <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{t('settings:main.logoutAll.hint')}</div>
                         </div>
                         <div>
-                            <Button themeAware onClick={handleLogoutAll} style={{ padding: '8px 12px', border: 0, background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)', whiteSpace: 'nowrap' }} disabled={loggingOutAll}>
+                            <Button variant="secondary" onClick={handleLogoutAll} style={{ whiteSpace: 'nowrap' }} disabled={loggingOutAll}>
                                 {loggingOutAll ? t('settings:main.logoutAll.processing') : t('settings:main.logoutAll.button')}
                             </Button>
                         </div>
@@ -212,7 +211,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                         </div>
                         <div>
                             <Tooltip text={t('settings:main.deleteAccount.tooltip')} placement="top">
-                                <Button themeAware onClick={handleDeleteAccount} style={{ padding: '8px 12px', border: 0, background: 'var(--color-danger)', color: 'var(--color-on-emphasis)' }} disabled={deleting}>
+                                <Button variant="destructive" onClick={handleDeleteAccount} disabled={deleting}>
                                     {deleting ? t('settings:main.deleteAccount.deleting') : t('settings:main.deleteAccount.button')}
                                 </Button>
                             </Tooltip>

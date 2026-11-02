@@ -84,7 +84,7 @@ export default function ActionSheet({ open, title, actions, cancelLabel = t('com
                         style={{
                             padding: 14,
                             fontSize: 16,
-                            borderRadius: 10,
+                            borderRadius: 'var(--radius-md)',
                             border: '1px solid var(--color-border)',
                             background: 'var(--color-bg-overlay)',
                             color: action.tone === 'danger' ? 'var(--color-danger)' : 'var(--color-text-primary)',
@@ -99,7 +99,7 @@ export default function ActionSheet({ open, title, actions, cancelLabel = t('com
                     type="button"
                     className="fm-pressable"
                     onClick={onClose}
-                    style={{ padding: 14, fontSize: 16, borderRadius: 10, border: 0, background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+                    style={{ padding: 14, fontSize: 16, borderRadius: 'var(--radius-full)', border: 0, background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
                 >
                     {cancelLabel}
                 </button>

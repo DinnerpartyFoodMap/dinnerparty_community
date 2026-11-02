@@ -73,7 +73,7 @@ function ManageForm({
                                 latitude: Number(manageEdit.latitude).toFixed(6)
                             })}
                         </span>
-                        <Button themeAware onClick={onPickPosition} disabled={manageSubmitting}>{t('map:manage.modifyPosition')}</Button>
+                        <Button onClick={onPickPosition} disabled={manageSubmitting}>{t('map:manage.modifyPosition')}</Button>
                     </div>
                 </div>
                 <div style={{ marginTop: 8 }}>

@@ -245,7 +245,7 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
                                     maxLength={240}
                                     rows={5}
                                     style={{
-                                        borderRadius: 12,
+                                        borderRadius: 'var(--radius-md)',
                                         padding: 12
                                     }}
                                 />
@@ -266,7 +266,7 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
 
                             <div style={{
                                 border: '1px solid var(--color-border)',
-                                borderRadius: 12,
+                                borderRadius: 'var(--radius-md)',
                                 overflow: 'hidden',
                                 background: 'var(--color-bg-surface)'
                             }}>
@@ -342,7 +342,7 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
 
                             <div style={{
                                 border: '1px solid var(--color-border)',
-                                borderRadius: 12,
+                                borderRadius: 'var(--radius-md)',
                                 overflow: 'hidden',
                                 background: 'var(--color-bg-surface)'
                             }}>
@@ -368,7 +368,7 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
                                             padding: 24,
                                             textAlign: 'center',
                                             color: 'var(--color-text-secondary)',
-                                            fontSize: 14
+                                            fontSize: 15
                                         }}>
                                             {previewError ? t('poster:page.previewUnavailable') : t('poster:page.previewHint')}
                                         </div>
@@ -385,7 +385,7 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
                                                 justifyContent: 'center',
                                                 background: 'var(--color-scrim)',
                                                 color: 'var(--color-on-scrim)',
-                                                fontSize: 14
+                                                fontSize: 15
                                             }}
                                         >
                                             {t('poster:page.previewGenerating')}

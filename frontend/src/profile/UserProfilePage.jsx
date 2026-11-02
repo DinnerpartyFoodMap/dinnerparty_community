@@ -56,7 +56,7 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
             <ProfileShell onBack={onBack}>
                 <div className="fm-profile__message" role="alert">
                     {error}
-                    <Button themeAware onClick={load} style={{ marginLeft: 8 }}>{t('profile:retry')}</Button>
+                    <Button variant="secondary" onClick={load} style={{ marginLeft: 8 }}>{t('profile:retry')}</Button>
                 </div>
             </ProfileShell>
         );
@@ -70,7 +70,7 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
 
     const setBlocked = async (blocked) => {
         if (!token) { onRequireAuth?.(); return; }
-        if (blocked && !(await confirm(t('profile:blockConfirm', { name: user.username }), { destructive: true }))) return;
+        if (blocked && !(await confirm(t('profile:blockConfirm', { name: user.username }), { destructive: true, confirmLabel: t('common:action.block') }))) return;
         setBusy(true);
         try {
             await setUserBlocked(backendUrl, token, user.id, blocked);
@@ -123,7 +123,7 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                     {relation.can_block && (
                         <div className="fm-profile__actions">
                             {relation.blocked
-                                ? <Button themeAware onClick={() => setBlocked(false)} disabled={busy}>{t('profile:unblock')}</Button>
+                                ? <Button onClick={() => setBlocked(false)} disabled={busy}>{t('profile:unblock')}</Button>
                                 : <Button onClick={() => setBlocked(true)} disabled={busy} style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', border: 0 }}>{t('profile:blockAndReport')}</Button>}
                         </div>
                     )}
@@ -173,11 +173,11 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                                             </select>
                                         </label>
                                     ))}
-                                    <Button themeAware onClick={() => setEditingWidgets(null)} disabled={busy}>{t('common:action.cancel')}</Button>
-                                    <Button themeAware onClick={saveWidgets} disabled={busy}>{t('common:action.save')}</Button>
+                                    <Button onClick={() => setEditingWidgets(null)} disabled={busy}>{t('common:action.cancel')}</Button>
+                                    <Button onClick={saveWidgets} disabled={busy}>{t('common:action.save')}</Button>
                                 </>
                             ) : (
-                                <Button themeAware onClick={() => setEditingWidgets([...widgets])}>{t('profile:widgets.edit')}</Button>
+                                <Button onClick={() => setEditingWidgets([...widgets])}>{t('profile:widgets.edit')}</Button>
                             )}
                         </div>
                     )}

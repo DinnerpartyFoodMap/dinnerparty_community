@@ -5,6 +5,7 @@ import { NOTICE_COLOR_OPTIONS, getNoticeColorOption } from '../components/feedba
 import { feedbackTypeLabel } from '../feedback/feedbackTypes.js';
 import { TASTE_AXES, axisLabel } from '../profile/tasteAxes.js';
 import { nativePageLabels } from '../platform/nativePageLabels.js';
+import { sfSymbol } from '../platform/iconRegistry.js';
 
 const PAGE_SIZE = 10;
 const QQ_PATTERN = /^\d{5,15}$/;
@@ -23,15 +24,15 @@ const SECTION_TITLES = {
 };
 // 首页各管理项的图标（与住民设置一样画在主色方块里）
 const SECTION_SYMBOLS = {
-  users: 'person.2.fill',
-  generalUsers: 'person.2.fill',
-  places: 'mappin.and.ellipse',
-  tasteAxes: 'fork.knife',
-  qqWhitelist: 'checklist',
-  notices: 'megaphone.fill',
-  exhibitions: 'ticket.fill',
-  feedback: 'bubble.left.and.bubble.right.fill',
-  audit: 'doc.text.magnifyingglass'
+  users: sfSymbol('adminUsers'),
+  generalUsers: sfSymbol('adminUsers'),
+  places: sfSymbol('place'),
+  tasteAxes: sfSymbol('adminTasteAxes'),
+  qqWhitelist: sfSymbol('adminWhitelist'),
+  notices: sfSymbol('adminNotices'),
+  exhibitions: sfSymbol('adminExhibitions'),
+  feedback: sfSymbol('adminFeedback'),
+  audit: sfSymbol('adminAudit')
 };
 
 // 皮肤兑换码不在 iOS 后台里管理（App 内不出现兑换码，见 App Store 3.1.1），在网页后台生成
@@ -184,7 +185,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
         image: avatarUrl(backendUrl, user.id),
         title: user.username || String(user.id),
         subtitle: `${t('admin:dashboard.adminLevel')}${level || t('admin:dashboard.regularUser')}`,
-        symbol: 'checkmark.shield.fill'
+        symbol: sfSymbol('adminBadge')
       } : null,
       canGoBack: false,
       closeTitle: t('common:action.close'),

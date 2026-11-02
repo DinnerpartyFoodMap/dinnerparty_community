@@ -13,6 +13,7 @@ import defaultAvatar from '../img/default.png';
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
+import StateMessage from "../components/feedback/StateMessage";
 
 function resolveBackendUrl() {
     return getApiBaseUrl();
@@ -370,7 +371,7 @@ export default function AdminUsers({ backendUrl = null }) {
             {loading ? (
                 <div>{t('common:status.loading')}</div>
             ) : filtered.length === 0 ? (
-                <div>{t('admin:users.noMatch')}</div>
+                <StateMessage>{t('admin:users.noMatch')}</StateMessage>
             ) : (
                 isMobile ? (
                     <div style={{ display: 'grid', gap: 10 }}>
@@ -428,10 +429,10 @@ export default function AdminUsers({ backendUrl = null }) {
                 <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <div>{tx('admin:common.pagination.summary', { count: filtered.length, page, totalPages })}</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <Button themeAware onClick={() => setPage(1)} disabled={page === 1}>{t('admin:common.pagination.first')}</Button>
-                        <Button themeAware onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>{t('admin:common.pagination.prev')}</Button>
-                        <Button themeAware onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>{t('admin:common.pagination.next')}</Button>
-                        <Button themeAware onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
+                        <Button onClick={() => setPage(1)} disabled={page === 1}>{t('admin:common.pagination.first')}</Button>
+                        <Button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>{t('admin:common.pagination.prev')}</Button>
+                        <Button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>{t('admin:common.pagination.next')}</Button>
+                        <Button onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
                     </div>
                 </div>
             )}

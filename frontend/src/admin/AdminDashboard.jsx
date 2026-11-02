@@ -83,7 +83,7 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
                         <div>
                             <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 {canViewAudit && (
-                                    <Button themeAware onClick={() => setAuditOpen(true)}>{t('admin:dashboard.viewAudit')}</Button>
+                                    <Button onClick={() => setAuditOpen(true)}>{t('admin:dashboard.viewAudit')}</Button>
                                 )}
                             </div>
                         </div>

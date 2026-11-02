@@ -134,7 +134,7 @@ function OnboardingTour({ steps, primaryRef, onClose, nativeTour, onStepChange }
             {spot && <div
                 className={`fm-onboarding__spot${hole ? '' : ' is-empty'}${geometry.native ? ' is-native' : ''}`}
                 aria-hidden="true"
-                style={{ left: spot.left, top: spot.top, width: spot.width, height: spot.height, borderRadius: spot.radius }}
+                style={{ left: spot.left, top: spot.top, width: spot.width, height: spot.height, borderRadius: spot.radius /* 与被圈出的按钮同形，design-token-ignore */ }}
             />}
             <section
                 ref={cardRef}

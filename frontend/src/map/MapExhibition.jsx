@@ -140,7 +140,7 @@ export function ExhibitionPanel({ open, exhibition, backendUrl, onClose, onRando
                         <span>{locationName}</span>
                     </p>}
                 {canRandom && <div style={{ marginTop: 14 }}>
-                    <Button full style={{ minHeight: 44 }} onClick={() => onRandomNearby(exhibition)}>
+                    <Button full onClick={() => onRandomNearby(exhibition)}>
                         <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, marginRight: 6, verticalAlign: '-4px' }}>casino</span>
                         {t('map:exhibition.randomNearby')}
                     </Button>

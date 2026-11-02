@@ -79,8 +79,8 @@ export default function PersonalizeMap({ user, onBack, backendUrl, token, onUpda
                 </label>
 
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <Button themeAware type="submit" disabled={loading} style={{ padding: '8px 12px' }}>{loading ? t('settings:common.status.saving') : t('common:action.save')}</Button>
-                    <Button themeAware type="button" onClick={() => { if (typeof onBack === 'function') onBack(); }} style={{ padding: '8px 12px' }}>{t('common:action.cancel')}</Button>
+                    <Button type="submit" disabled={loading}>{loading ? t('settings:common.status.saving') : t('common:action.save')}</Button>
+                    <Button type="button" onClick={() => { if (typeof onBack === 'function') onBack(); }} style={{ padding: '8px 12px' }}>{t('common:action.cancel')}</Button>
                 </div>
             </form>
             <MotionSettings />

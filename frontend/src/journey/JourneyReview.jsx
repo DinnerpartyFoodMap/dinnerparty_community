@@ -133,7 +133,7 @@ export default function JourneyReview({ctx,nav,params}) {
         if(busy)return;
         if(!drafts.isSynced()){
             if(!drafts.hasPendingSave()&&await drafts.saveLocalNow()){tip(t('journey:review.savedLocally'));nav.pop();return;}
-            if(!(await confirm(t('journey:review.confirmLeave'), { destructive: true })))return;
+            if(!(await confirm(t('journey:review.confirmLeave'), { destructive: true, confirmLabel: t('common:action.leave') })))return;
         }else if(dirty&&drafts.currentId())tip(t('journey:review.draftSaved'));
         nav.pop();
     };

@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import { FEEDBACK_TYPES, feedbackTypeLabel } from '../feedback/feedbackTypes';
 import Markdown from '../components/markdown/Markdown';
 import { t } from '../i18n/index.js';
+import StateMessage from '../components/feedback/StateMessage';
 
 const STATUS_TABS = [
     { value: 'open', label: t('admin:feedback.status.open') },
@@ -135,7 +136,7 @@ export default function AdminFeedback({ backendUrl }) {
                     const count = tabCount(tab.value);
                     const selected = status === tab.value;
                     return (
-                        <Button key={tab.value} themeAware role="tab" aria-selected={selected} onClick={() => changeFilter(setStatus)(tab.value)}
+                        <Button key={tab.value} role="tab" aria-selected={selected} onClick={() => changeFilter(setStatus)(tab.value)}
                             style={selected ? undefined : { background: 'var(--color-bg-overlay)' }}>
                             {count == null ? tab.label : t('admin:feedback.tabWithCount', { label: tab.label, count })}
                         </Button>
@@ -149,14 +150,13 @@ export default function AdminFeedback({ backendUrl }) {
         </div>
 
         {loading && !data ? (
-            <p role="status" style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('admin:feedback.loading')}</p>
+            <StateMessage kind="loading">{t('admin:feedback.loading')}</StateMessage>
         ) : loadError ? (
-            <div>
-                <div role="alert" style={{ color: 'var(--color-danger)' }}>{t('admin:feedback.loadFailed', { message: loadError })}</div>
-                <Button variant="secondary" onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('admin:feedback.retry')}</Button>
-            </div>
+            <StateMessage kind="error" onRetry={() => setReload((value) => value + 1)} retryLabel={t('admin:feedback.retry')}>
+                {t('admin:feedback.loadFailed', { message: loadError })}
+            </StateMessage>
         ) : items.length === 0 ? (
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('admin:feedback.empty')}</p>
+            <StateMessage>{t('admin:feedback.empty')}</StateMessage>
         ) : (
             <div style={{ display: 'grid', gap: 10, opacity: loading ? 0.6 : 1 }}>
                 {items.map((item) => (
@@ -184,10 +184,10 @@ export default function AdminFeedback({ backendUrl }) {
                                 {item.status === 'resolved' && t('admin:feedback.handledBy', { name: item.handler_username || '-', time: formatTime(item.handled_time) })}
                             </span>
                             <span style={{ display: 'flex', gap: 6 }}>
-                                <Button themeAware onClick={() => toggleStatus(item)} disabled={!!busyId} style={{ fontSize: 12, padding: '4px 8px' }}>
+                                <Button onClick={() => toggleStatus(item)} disabled={!!busyId} style={{ fontSize: 12, padding: '4px 8px' }}>
                                     {item.status === 'resolved' ? t('admin:feedback.reopen') : t('admin:feedback.resolve')}
                                 </Button>
-                                <Button themeAware onClick={() => remove(item)} disabled={!!busyId}
+                                <Button onClick={() => remove(item)} disabled={!!busyId}
                                     style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', fontSize: 12, padding: '4px 8px' }}>
                                     {t('admin:feedback.delete')}
                                 </Button>
@@ -200,9 +200,9 @@ export default function AdminFeedback({ backendUrl }) {
 
         {data && data.total > data.pageSize && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 12 }}>
-                <Button themeAware onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={loading || page <= 1}>{t('admin:feedback.prevPage')}</Button>
+                <Button onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={loading || page <= 1}>{t('admin:feedback.prevPage')}</Button>
                 <span style={meta}>{t('admin:feedback.pageInfo', { page, total: totalPages })}</span>
-                <Button themeAware onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={loading || page >= totalPages}>{t('admin:feedback.nextPage')}</Button>
+                <Button onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={loading || page >= totalPages}>{t('admin:feedback.nextPage')}</Button>
             </div>
         )}
     </section>;

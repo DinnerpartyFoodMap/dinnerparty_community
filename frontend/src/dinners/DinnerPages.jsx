@@ -129,7 +129,7 @@ export function DinnerListPage({ backendUrl, onGoCreate, onOpenDetail, onGoHome 
 
                 <div className="fm-page-card" style={cardStyle(dark)}>
                     <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                        <Button onClick={onGoCreate} style={{ border: 0 }}>{t('dinner:list.create')}</Button>
+                        <Button onClick={onGoCreate}>{t('dinner:list.create')}</Button>
                     </div>
 
                     {loading && <div>{t('dinner:list.loading')}</div>}
@@ -141,7 +141,7 @@ export function DinnerListPage({ backendUrl, onGoCreate, onOpenDetail, onGoHome 
                     {!loading && !error && sortedItems.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                             {sortedItems.map((item) => (
-                                <div key={item.id} style={{ border: '1px solid var(--color-border)', borderRadius: 12, padding: 14, background: 'var(--color-bg-overlay)' }}>
+                                <div key={item.id} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: 14, background: 'var(--color-bg-overlay)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                         <strong style={{ fontSize: 18 }}>{item.title}</strong>
                                         <Button onClick={() => onOpenDetail(item.id)} style={{ padding: '6px 12px', border: 0 }}>{t('dinner:list.viewDetail')}</Button>
@@ -293,7 +293,7 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
                             maxLength={1200}
                             rows={5}
                             style={{
-                                borderRadius: 12,
+                                borderRadius: 'var(--radius-md)',
                                 padding: 12
                             }}
                         />
@@ -301,7 +301,7 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
                         {!!error && <div style={{ color: 'var(--color-danger)' }}>{error}</div>}
 
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            <Button type="submit" disabled={submitting} style={{ border: 0 }}>{submitting ? t('dinner:create.submitting') : t('dinner:create.submit')}</Button>
+                            <Button type="submit" disabled={submitting}>{submitting ? t('dinner:create.submitting') : t('dinner:create.submit')}</Button>
                         </div>
                     </form>
                 </div>
@@ -425,12 +425,12 @@ export function DinnerDetailPage({ backendUrl, dinnerId, token, currentUserId, i
                                 <div style={{ fontWeight: 700, marginBottom: 6 }}>{t('dinner:detail.shareTitle')}</div>
                                 <div style={{ wordBreak: 'break-all', color: 'var(--color-text-primary)' }}>{shareUrl}</div>
                                 <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                                    <Button onClick={copyLink} style={{ border: 0 }}>{t('dinner:detail.copyLink')}</Button>
+                                    <Button onClick={copyLink}>{t('dinner:detail.copyLink')}</Button>
                                     <a href={shareUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
-                                        <Button style={{ border: 0 }}>{t('dinner:detail.openSharePage')}</Button>
+                                        <Button variant="secondary">{t('dinner:detail.openSharePage')}</Button>
                                     </a>
                                     {canDelete && (
-                                        <Button onClick={handleDelete} disabled={deleting} style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', border: 0 }}>
+                                        <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
                                             {deleting ? t('dinner:detail.deleting') : t('dinner:detail.delete')}
                                         </Button>
                                     )}
@@ -440,12 +440,12 @@ export function DinnerDetailPage({ backendUrl, dinnerId, token, currentUserId, i
 
                             <div style={{ marginTop: 14 }}>
                                 <div style={{ fontWeight: 700, marginBottom: 8 }}>{t('dinner:detail.ogTitle')}</div>
-                                <img src={ogImageUrl} alt={t('dinner:detail.ogAlt')} style={{ width: '100%', borderRadius: 12, border: 0 }} />
+                                <img src={ogImageUrl} alt={t('dinner:detail.ogAlt')} style={{ width: '100%', borderRadius: 'var(--radius-md)', border: 0 }} />
                             </div>
 
                             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-                                <Button onClick={onBackList} style={{ border: 0 }}>{t('dinner:detail.backToList')}</Button>
-                                <Button onClick={onGoHome} style={{ border: 0 }}>{t('common:action.backToMap')}</Button>
+                                <Button variant="secondary" onClick={onBackList}>{t('dinner:detail.backToList')}</Button>
+                                <Button variant="secondary" onClick={onGoHome}>{t('common:action.backToMap')}</Button>
                             </div>
                         </>
                     )}

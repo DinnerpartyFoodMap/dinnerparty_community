@@ -54,7 +54,7 @@
     width: min(340px, calc(100% - 24px));
     box-sizing: border-box;
     padding: 14px 16px 14px;
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     background: var(--color-bg-surface);
     color: var(--color-text-primary);
     border: 1px solid var(--color-border);
@@ -111,7 +111,7 @@
 
 .fm-onboarding__body {
     margin: 0;
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.6;
     color: var(--color-text-secondary);
 }
@@ -123,7 +123,7 @@
     gap: 6px;
     margin: 10px 0 0;
     padding: 8px 10px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--onboarding-accent, var(--theme-primary)) 12%, transparent);
     color: var(--color-text-primary);
     font-size: 13px;
@@ -168,7 +168,7 @@
 .fm-onboarding__dots span {
     width: 6px;
     height: 6px;
-    border-radius: 3px;
+    border-radius: var(--radius-full);
     background: var(--color-border);
     transition: width 200ms ease, background-color 200ms ease;
 }
@@ -191,7 +191,7 @@
     border-radius: var(--radius-full, 999px);
     background: transparent;
     color: var(--color-text-primary);
-    font-size: 14px;
+    font-size: 15px;
     cursor: pointer;
     touch-action: manipulation;
 }
@@ -210,7 +210,7 @@
 }
 
 :root:is([data-platform='ios'], [data-platform='android']) .fm-onboarding__card {
-    border-radius: 26px;
+    border-radius: var(--radius-xl);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -38,7 +38,7 @@ export default function MotionSettings() {
             {MOTION_ITEMS.filter((item) => !item.iosOnly || platform === 'ios').map((item) => (
                 <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', cursor: 'pointer' }}>
                     <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 14 }}>{item.label}</span>
+                        <span style={{ display: 'block', fontSize: 15 }}>{item.label}</span>
                         <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>{item.hint}</span>
                         {item.key === 'nativeGlass' && policy.preferences.nativeGlass && (
                             <span role="status" style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4, overflowWrap: 'anywhere' }}>

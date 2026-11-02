@@ -620,7 +620,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
     const submitButtonStyle = {
         marginTop: 14,
         padding: "10px 12px",
-        borderRadius: 8,
+        borderRadius: 'var(--radius-full)',
         border: `1px solid ${uiColors.primaryActionBorder}`,
         fontWeight: 700,
         letterSpacing: "0.02em"
@@ -856,7 +856,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                 </form>
             ) : registerStep === "qrcode" ? (
                 <div style={{ textAlign: 'center' }}>
-                    <p style={{ margin: "0 0 12px 0", fontSize: 14, color: uiColors.textStrong, lineHeight: 1.6 }}>
+                    <p style={{ margin: "0 0 12px 0", fontSize: 15, color: uiColors.textStrong, lineHeight: 1.6 }}>
                         {t('auth:page.register.qrLine1')}<br />{t('auth:page.register.qrLine2')}
                     </p>
                     <img
@@ -868,10 +868,10 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                             display: 'block',
                             margin: '0 auto 16px auto',
                             border: `1px solid ${uiColors.border}`,
-                            borderRadius: 8
+                            borderRadius: 'var(--radius-md)'
                         }}
                     />
-                    <p style={{ margin: "0 0 12px 0", fontSize: 14, color: uiColors.textStrong, lineHeight: 1.6 }}>
+                    <p style={{ margin: "0 0 12px 0", fontSize: 15, color: uiColors.textStrong, lineHeight: 1.6 }}>
                         {t('auth:page.register.qqGroup')}
                     </p>
                     <Button
@@ -953,7 +953,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     style={{
                         marginTop: 12,
                         padding: "10px 11px",
-                        borderRadius: 8,
+                        borderRadius: 'var(--radius-md)',
                         border: "1px solid var(--color-warning)",
                         color: "var(--color-text-primary)",
                         background: "color-mix(in srgb, var(--color-warning) 12%, var(--color-bg-surface))",
@@ -979,7 +979,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                     style={{
                         marginTop: 12,
                         padding: "9px 11px",
-                        borderRadius: 8,
+                        borderRadius: 'var(--radius-md)',
                         border: `1px solid ${isSuccessMessage ? 'var(--color-success)' : 'var(--color-danger)'}`,
                         color: isSuccessMessage ? uiColors.successText : uiColors.errorText,
                         background: isSuccessMessage ? uiColors.successBackground : uiColors.errorBackground,

@@ -1,5 +1,6 @@
 import { t, tx } from '../i18n/index.js';
 import { markdownToPlainText } from '../components/markdown/markdownText.js';
+import { sfSymbol } from '../platform/iconRegistry.js';
 
 export function randomFoodChromeSheet({ result, activeOrigin, busy, error }) {
     const place = result?.place;
@@ -22,9 +23,9 @@ export function randomFoodChromeSheet({ result, activeOrigin, busy, error }) {
             { id: 'candidates', text: [result.personalized && t('map:randomFood.personalized'), tx('map:randomFood.candidates', { candidateCount: result.candidateCount })].filter(Boolean).join('\n') }
         ].filter(Boolean) : [],
         actions: [
-            place && { id: 'view', title: t('map:randomFood.viewPlace'), symbol: 'mappin.and.ellipse', tone: 'accent', disabled: busy, keepsOpen: true },
-            { id: 'another', title: busy ? t('map:randomFood.pickingShort') : place ? t('map:randomFood.another') : t('map:randomFood.tryAgain'), symbol: 'dice', disabled: busy, keepsOpen: true },
-            { id: 'redraw', title: t('map:randomFood.redraw'), symbol: 'scope', disabled: busy, keepsOpen: true }
+            place && { id: 'view', title: t('map:randomFood.viewPlace'), symbol: sfSymbol('place'), tone: 'accent', disabled: busy, keepsOpen: true },
+            { id: 'another', title: busy ? t('map:randomFood.pickingShort') : place ? t('map:randomFood.another') : t('map:randomFood.tryAgain'), symbol: sfSymbol('random'), disabled: busy, keepsOpen: true },
+            { id: 'redraw', title: t('map:randomFood.redraw'), symbol: sfSymbol('redraw'), disabled: busy, keepsOpen: true }
         ].filter(Boolean)
     };
 }

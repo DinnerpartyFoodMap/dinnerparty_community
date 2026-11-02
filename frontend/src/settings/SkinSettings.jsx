@@ -10,6 +10,7 @@ import { rememberSkin } from "../skins/useSkinSession";
 import { fetchSkinState, redeemSkinCode, saveActiveSkin } from "../skins/skinApi";
 import { getPlatform } from "../platform/env";
 import { t } from '../i18n/index.js';
+import StateMessage from "../components/feedback/StateMessage";
 
 // iOS App 不提供兑换码：App Store 审核（3.1.1）不允许 App 内用兑换码这类自有机制解锁内容。
 // 那里只列出已拥有的皮肤并切换，页面上也不提兑换
@@ -110,10 +111,9 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                 {loading && !state ? (
                     <div role="status" style={hintStyle}>{t('settings:skins.loading')}</div>
                 ) : loadError && !state ? (
-                    <div style={{ marginTop: 8 }}>
-                        <div role="alert" style={{ color: 'var(--color-danger)', fontSize: 13 }}>{t('settings:skins.loadFailed', { message: loadError })}</div>
-                        <Button variant="secondary" onClick={() => setReload((value) => value + 1)} style={{ marginTop: 8 }}>{t('settings:skins.retry')}</Button>
-                    </div>
+                    <StateMessage kind="error" onRetry={() => setReload((value) => value + 1)} retryLabel={t('settings:skins.retry')}>
+                        {t('settings:skins.loadFailed', { message: loadError })}
+                    </StateMessage>
                 ) : (
                     <div role="radiogroup" aria-label={t('settings:skins.mine')} style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                         {tiles.map((tile) => {
@@ -133,7 +133,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                                     <div style={{ aspectRatio: '3 / 2', borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: 'var(--color-bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         {tile.preview
                                             ? <img src={tile.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                            : <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 36, color: tile.available ? 'var(--theme-icon)' : 'var(--color-text-muted)' }}>{tile.available ? 'palette' : 'hourglass_empty'}</span>}
+                                            : <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 32, color: tile.available ? 'var(--theme-icon)' : 'var(--color-text-muted)' }}>{tile.available ? 'palette' : 'hourglass_empty'}</span>}
                                     </div>
                                     <div style={{ minWidth: 0 }}>
                                         <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{tile.name}</div>
@@ -143,7 +143,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                                     {selected ? (
                                         <div style={{ marginTop: 'auto', fontSize: 13, fontWeight: 700, color: 'var(--theme-primary)' }}>{t('settings:skins.inUse')}</div>
                                     ) : (
-                                        <Button themeAware disabled={busy || !tile.available} onClick={() => choose(tile.id, tile.name)} style={{ marginTop: 'auto' }}>
+                                        <Button disabled={busy || !tile.available} onClick={() => choose(tile.id, tile.name)} style={{ marginTop: 'auto' }}>
                                             {t('settings:skins.use')}
                                         </Button>
                                     )}
@@ -171,7 +171,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                         disabled={busy}
                         style={{ flex: '1 1 220px', minWidth: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: 1 }}
                     />
-                    <Button type="submit" themeAware disabled={busy || !token}>
+                    <Button type="submit" disabled={busy || !token}>
                         {busy ? t('settings:skins.redeeming') : t('settings:skins.redeem')}
                     </Button>
                 </div>

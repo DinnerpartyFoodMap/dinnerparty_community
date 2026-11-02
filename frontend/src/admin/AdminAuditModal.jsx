@@ -5,6 +5,7 @@ import JsonTable from "../components/data/JsonTable";
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import { t } from '../i18n/index.js';
+import StateMessage from "../components/feedback/StateMessage";
 
 export default function AdminAuditModal({ open, onClose, backendUrl, token }) {
     const [logs, setLogs] = useState([]);
@@ -54,7 +55,7 @@ export default function AdminAuditModal({ open, onClose, backendUrl, token }) {
                     ) : (
                         <div>
                             {logs.length === 0 ? (
-                                <div style={{ color: 'var(--color-text-secondary)' }}>{t('admin:auditModal.empty')}</div>
+                                <StateMessage>{t('admin:auditModal.empty')}</StateMessage>
                             ) : (
                                 <ResponsiveTable minWidth={1240} cellPadding="8" style={{ border: '1px solid var(--color-border)' }}>
                                     <thead>

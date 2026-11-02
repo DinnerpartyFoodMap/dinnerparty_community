@@ -10,6 +10,7 @@ import { getThemeColor } from "../theme/theme";
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
+import StateMessage from "../components/feedback/StateMessage";
 
 function resolveBackendUrl() {
     return getApiBaseUrl();
@@ -168,7 +169,7 @@ export default function AdminComments({ backendUrl = null }) {
             ) : (
                 <div>
                     {comments.length === 0 ? (
-                        <div>{t('admin:comments.empty')}</div>
+                        <StateMessage>{t('admin:comments.empty')}</StateMessage>
                     ) : (
                         (() => {
                             const q = (searchQuery || '').trim().toLowerCase();
@@ -180,7 +181,7 @@ export default function AdminComments({ backendUrl = null }) {
                             if (page > totalPages) setPage(totalPages);
                             const pageItems = (filtered || []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-                            if (filtered.length === 0) return <div>{t('admin:comments.noMatch')}</div>;
+                            if (filtered.length === 0) return <StateMessage>{t('admin:comments.noMatch')}</StateMessage>;
 
                             return (
                                 <div>
@@ -206,7 +207,7 @@ export default function AdminComments({ backendUrl = null }) {
                                                     </td>
                                                     <td>{c.created_time || c.createdTime || '-'}</td>
                                                     <td style={{ minWidth: 100 }}>
-                                                        <Button themeAware onClick={() => deleteComment(c.id)} disabled={processing[c.id]} style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', fontSize: 12, padding: '4px 6px' }}>{t('common:action.delete')}</Button>
+                                                        <Button onClick={() => deleteComment(c.id)} disabled={processing[c.id]} style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', fontSize: 12, padding: '4px 6px' }}>{t('common:action.delete')}</Button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -216,10 +217,10 @@ export default function AdminComments({ backendUrl = null }) {
                                     <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>{tx('admin:common.pagination.summary', { count: filtered.length, page, totalPages })}</div>
                                         <div>
-                                            <Button themeAware onClick={() => setPage(1)} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.first')}</Button>
-                                            <Button themeAware onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.prev')}</Button>
-                                            <Button themeAware onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ marginRight: 6 }}>{t('admin:common.pagination.next')}</Button>
-                                            <Button themeAware onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
+                                            <Button onClick={() => setPage(1)} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.first')}</Button>
+                                            <Button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.prev')}</Button>
+                                            <Button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ marginRight: 6 }}>{t('admin:common.pagination.next')}</Button>
+                                            <Button onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
                                         </div>
                                     </div>
                                 </div>

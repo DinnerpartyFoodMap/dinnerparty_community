@@ -13,6 +13,7 @@ import { getThemeColor } from "../theme/theme";
 import { getApiBaseUrl, imageThumbnailUrl, resolveResourceUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
+import StateMessage from "../components/feedback/StateMessage";
 
 function resolveBackendUrl() {
     return getApiBaseUrl();
@@ -260,13 +261,13 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                             <a key={index + url} href={resolveResourceUrl(url)} target="_blank" rel="noopener noreferrer"
                                 title={flagged.has(url) ? label + ' · ' + t('admin:places.moderation.flaggedImage') : label}>
                                 <img src={imageThumbnailUrl(url, 160)} alt={label} loading="lazy"
-                                    style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, display: 'block', border: flagged.has(url) ? '3px solid var(--color-danger)' : '1px solid var(--color-border)' }} />
+                                    style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 'var(--radius-md)', display: 'block', border: flagged.has(url) ? '3px solid var(--color-danger)' : '1px solid var(--color-border)' }} />
                             </a>
                         ))}
                     </div>
                 )}
                 {onOpenPlace && (
-                    <div><Button themeAware onClick={() => onOpenPlace(request.place_id)}>{t('admin:places.openOnMap')}</Button></div>
+                    <div><Button onClick={() => onOpenPlace(request.place_id)}>{t('admin:places.openOnMap')}</Button></div>
                 )}
             </div>
         );
@@ -292,12 +293,12 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                     ) : (
                         <div>
                             {filtered.length === 0 ? (
-                                <div>{t('admin:places.empty')}</div>
+                                <StateMessage>{t('admin:places.empty')}</StateMessage>
                             ) : isMobile ? (
                                 <div>
                                     <div style={{ display: 'grid', gap: 10 }}>
                                         {pageItems.map((request) => (
-                                            <article key={request.id} style={{ padding: 12, border: '1px solid var(--color-border)', borderRadius: 12, background: 'var(--color-bg-surface)' }}>
+                                            <article key={request.id} style={{ padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-surface)' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                                                     <div style={{ minWidth: 0 }}>
                                                         <div style={{ fontWeight: 700 }}>{isCreateRequest(request) ? tx('admin:places.createTitle', { id: request.id }) : tx('admin:places.requestTitle', { id: request.id })}</div>
@@ -325,8 +326,8 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                                     <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                         <div style={{ fontSize: 13 }}>{tx('admin:places.pageSummary', { count: filtered.length, page, totalPages })}</div>
                                         <div style={{ display: 'flex', gap: 6 }}>
-                                            <Button themeAware onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>{t('admin:common.pagination.prev')}</Button>
-                                            <Button themeAware onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>{t('admin:common.pagination.next')}</Button>
+                                            <Button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>{t('admin:common.pagination.prev')}</Button>
+                                            <Button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>{t('admin:common.pagination.next')}</Button>
                                         </div>
                                     </div>
                                 </div>
@@ -372,10 +373,10 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                                     <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>{tx('admin:common.pagination.summary', { count: filtered.length, page, totalPages })}</div>
                                         <div>
-                                            <Button themeAware onClick={() => setPage(1)} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.first')}</Button>
-                                            <Button themeAware onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.prev')}</Button>
-                                            <Button themeAware onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ marginRight: 6 }}>{t('admin:common.pagination.next')}</Button>
-                                            <Button themeAware onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
+                                            <Button onClick={() => setPage(1)} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.first')}</Button>
+                                            <Button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.prev')}</Button>
+                                            <Button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ marginRight: 6 }}>{t('admin:common.pagination.next')}</Button>
+                                            <Button onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
                                         </div>
                                     </div>
                                 </div>

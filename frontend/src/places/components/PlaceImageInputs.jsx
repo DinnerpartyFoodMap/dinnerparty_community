@@ -87,7 +87,7 @@ export default function PlaceImageInputs({ backendUrl, token, images, setImages,
     const uploading = !!progress;
     return (
         <div style={{ marginBottom: "15px" }}>
-            <div style={{ marginBottom: "6px", fontSize: "14px", fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            <div style={{ marginBottom: "6px", fontSize: "13px", fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 {label}
             </div>
 

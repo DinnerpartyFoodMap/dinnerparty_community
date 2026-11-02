@@ -12,5 +12,5 @@ export default function ExhibitionIcon({ url, backendUrl, ...props }) {
     const source = url && failedUrl !== url ? exhibitionIconSource(url, backendUrl) : '/favicon.png';
     return <img {...props} src={source} width={44} height={44} alt=""
         onError={() => { if (url && failedUrl !== url) setFailedUrl(url); }}
-        style={{ width: 44, height: 44, objectFit: 'contain', borderRadius: 10, display: 'block', ...props.style }} />;
+        style={{ width: 44, height: 44, objectFit: 'contain', borderRadius: 'var(--radius-sm)', display: 'block', ...props.style }} />;
 }

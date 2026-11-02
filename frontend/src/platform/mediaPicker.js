@@ -80,7 +80,7 @@ function chooseSourceFallback() {
             button.type = 'button';
             button.textContent = label;
             Object.assign(button.style, {
-                padding: '14px', fontSize: '16px', borderRadius: '10px', border: '1px solid var(--color-border)',
+                padding: '14px', fontSize: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)',
                 background: value ? 'var(--color-bg-overlay)' : 'transparent', color: 'inherit'
             });
             button.addEventListener('click', () => finish(value));

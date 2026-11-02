@@ -56,7 +56,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
         setDraftNotice('restored');
     };
     const clearDraft = async () => {
-        if (!(await confirm(t('map:addForm.draft.clearConfirm'), { destructive: true }))) return;
+        if (!(await confirm(t('map:addForm.draft.clearConfirm'), { destructive: true, confirmLabel: t('map:addForm.draft.clear') }))) return;
         applyContent(opening.baseline);
         setDraftNotice(null);
     };

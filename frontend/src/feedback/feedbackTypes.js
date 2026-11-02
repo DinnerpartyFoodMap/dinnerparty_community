@@ -2,15 +2,16 @@
 // symbol 是 iOS 原生反馈页下拉菜单里用的 SF Symbol。
 import { t } from '../i18n/index.js';
 import { buildPublicUrl } from '../platform/runtimeConfig.js';
+import { sfSymbol } from '../platform/iconRegistry.js';
 
 export const FEEDBACK_LIMITS = Object.freeze({ contentLength: 2000, images: 4 });
 
 export const FEEDBACK_TYPES = Object.freeze([
-    { value: 'bug', label: t('feedback:types.bug.label'), symbol: 'ladybug' },
-    { value: 'suggestion', label: t('feedback:types.suggestion.label'), symbol: 'lightbulb' },
-    { value: 'report', label: t('feedback:types.report.label'), symbol: 'exclamationmark.shield' },
-    { value: 'account', label: t('feedback:types.account.label'), symbol: 'person.crop.circle.badge.questionmark' },
-    { value: 'other', label: t('feedback:types.other.label'), symbol: 'ellipsis.bubble' }
+    { value: 'bug', label: t('feedback:types.bug.label'), symbol: sfSymbol('feedbackBug') },
+    { value: 'suggestion', label: t('feedback:types.suggestion.label'), symbol: sfSymbol('feedbackSuggestion') },
+    { value: 'report', label: t('feedback:types.report.label'), symbol: sfSymbol('feedbackReport') },
+    { value: 'account', label: t('feedback:types.account.label'), symbol: sfSymbol('feedbackAccount') },
+    { value: 'other', label: t('feedback:types.other.label'), symbol: sfSymbol('feedbackOther') }
 ]);
 
 export const FEEDBACK_TYPE_VALUES = Object.freeze(FEEDBACK_TYPES.map((item) => item.value));

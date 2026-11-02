@@ -3,10 +3,12 @@
 //   单行确实需要时在同一行写 design-token-ignore 并说明原因。
 // - 字号不在阶梯里、圆角不是令牌的写法只减不增：数量按文件记在 design-lint-baseline.json，比基线多就失败。
 //   改小了以后运行 node tests/unit/styles/test-design-lint.mjs --update 更新基线。
+// - 图标名经 src/platform/iconRegistry.js 取：别处不直接写 symbol: '…'，也不写对照表里带点的 SF Symbol 名。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ICON_NAMES, materialIcon, sfSymbol } from '../../../src/platform/iconRegistry.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const srcRoot = path.join(root, 'src');
@@ -16,8 +18,8 @@ const SKIP_DIRS = ['i18n', path.join('skins', 'packs'), path.join('poster', 'ren
 const SKIP_FILES = new Set(['styles/tokens.generated.css', 'styles/tokens.system.css']);
 // 画布与原生需要具体色值的文件
 const HEX_ALLOWED = new Set(['journey/cover.js', 'places/shareCard.js', 'theme/theme.js', 'components/feedback/noticeColors.js']);
-// 字号阶梯（设计参考 2.2）加上输入框 16 与图标常用的 18 / 24
-const FONT_SIZES = new Set([11, 12, 13, 15, 16, 17, 18, 20, 22, 24, 28]);
+// 字号阶梯（设计参考 2.2）、输入框 16，加上图标阶梯 16 / 18 / 20 / 24 / 28 / 32 / 40（设计参考第 6 节）
+const FONT_SIZES = new Set([11, 12, 13, 15, 16, 17, 18, 20, 22, 24, 28, 32, 40]);
 const RADIUS_PLAIN = /^(0|0px|50%|100%|999|999px|9999|inherit)$/;
 
 function walk(dir) {
@@ -35,7 +37,15 @@ function radiusOk(raw) {
     return value.split(/\s+/).every((part) => RADIUS_PLAIN.test(part));
 }
 
+// 对照表的每一项都有网页与原生两个名字
+for (const name of ICON_NAMES) {
+    assert.ok(/^[a-z][a-z0-9_]*$/.test(materialIcon(name)), `iconRegistry ${name} 的 Material 名不合法`);
+    assert.ok(/^[a-z][a-z0-9]*(\.[a-z0-9]+)*$/.test(sfSymbol(name)), `iconRegistry ${name} 的 SF Symbol 名不合法`);
+}
+const DOTTED_SF = new Set(ICON_NAMES.map(sfSymbol).filter((name) => name.includes('.')));
+
 const hexHits = [];
+const iconHits = [];
 const counts = { fontSize: {}, radius: {} };
 for (const file of walk(srcRoot)) {
     const rel = path.relative(srcRoot, file).split(path.sep).join('/');
@@ -43,6 +53,12 @@ for (const file of walk(srcRoot)) {
     const lines = fs.readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, index) => {
         if (line.includes('design-token-ignore')) return;
+        if (rel !== 'platform/iconRegistry.js' && /\.jsx?$/.test(rel)) {
+            if (/\bsymbol\s*:\s*['"]/.test(line)) iconHits.push(`${rel}:${index + 1} symbol 字面量`);
+            for (const match of line.matchAll(/['"]([a-z][a-z0-9]*(?:\.[a-z0-9]+)+)['"]/g)) {
+                if (DOTTED_SF.has(match[1])) iconHits.push(`${rel}:${index + 1} ${match[1]}`);
+            }
+        }
         if (!HEX_ALLOWED.has(rel)) {
             for (const match of line.matchAll(/(?<![\w&$-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b/g)) {
                 hexHits.push(`${rel}:${index + 1} ${match[0]}`);
@@ -65,6 +81,7 @@ if (process.argv.includes('--update')) {
     process.exit(0);
 }
 
+assert.deepEqual(iconHits, [], `图标名改为经 iconRegistry.js 取（sfSymbol / materialIcon）：\n${iconHits.join('\n')}`);
 assert.deepEqual(hexHits, [], `组件里出现十六进制颜色，改用设计令牌（或同一行写 design-token-ignore 说明原因）：\n${hexHits.join('\n')}`);
 
 const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));

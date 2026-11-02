@@ -13,11 +13,10 @@ export default function PageHeading({ title, onBack, className = '', style }) {
             <h2 style={{ margin: 0, minWidth: 0 }}>{title}</h2>
             {onBack && (
                 <Button
-                    themeAware
                     onClick={onBack}
                     style={{ minHeight: 40, padding: '7px 11px', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
                 >
-                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 19 }}>arrow_back</span>
+                    <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20 }}>arrow_back</span>
                     {t('common:action.backToMap')}
                 </Button>
             )}

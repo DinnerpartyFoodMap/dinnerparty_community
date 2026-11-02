@@ -58,7 +58,7 @@ export default function JourneyComposer({ctx,nav,params}) {
             if(draft.isSynced())tip(t('journey:composer.draftSaved'));
             else{
                 const local=await draft.saveLocalNow();
-                if(!local.saved&&!(await ctx.confirm(t('journey:composer.confirmLeaveUnsaved'), { destructive: true })))return;
+                if(!local.saved&&!(await ctx.confirm(t('journey:composer.confirmLeaveUnsaved'), { destructive: true, confirmLabel: t('common:action.leave') })))return;
                 if(local.saved)tip(local.blobs||!draft.pendingPhotos?t('journey:composer.leftSaved'):t('journey:composer.leftSavedNoPhotos'));
             }
             draft.flush().catch(()=>{});

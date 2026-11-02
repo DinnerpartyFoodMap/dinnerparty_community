@@ -115,7 +115,7 @@ button,
     background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
     color: var(--color-text-primary); box-shadow: none; cursor: pointer;
 }
-.fm-full-page__back .material-symbols-outlined { font-size: 26px; font-variation-settings: 'wght' 600; }
+.fm-full-page__back .material-symbols-outlined { font-size: 24px; font-variation-settings: 'wght' 600; }
 .fm-full-page__header .jw-header__action {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 44px; min-height: 44px; padding: 4px 8px;
@@ -217,6 +217,23 @@ button,
 
 .fm-icon-button__spin {
     animation: yuyuko-thinking-spin 0.9s linear infinite;
+}
+
+/* 内容区的加载中 / 空 / 出错（StateMessage） */
+.fm-state-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 24px 16px;
+    text-align: center;
+    font-size: var(--text-footnote-size);
+    line-height: 1.5;
+}
+
+.fm-state-message > .material-symbols-outlined {
+    font-size: 32px;
+    color: var(--color-text-muted);
 }
 
 /* 提示（Tips）：底部居中；窄屏抬到底部工具栏之上 */
@@ -514,7 +531,7 @@ button,
 :root:is([data-platform='ios'], [data-platform='android']) .fm-map-search__input {
     left: 0 !important;
     font-size: 16px;
-    border-radius: 24px !important;
+    border-radius: var(--radius-full) !important;
 }
 
 :root:is([data-platform='ios'], [data-platform='android']) .fm-map-search__input:focus-visible {
@@ -614,7 +631,7 @@ button,
     height: 52px;
     box-sizing: border-box;
     padding: 0 4px 0 14px;
-    border-radius: 26px;
+    border-radius: var(--radius-full);
     display: flex;
     align-items: center;
     gap: 6px;

@@ -9,6 +9,7 @@ import ResponsiveTable from "../components/data/ResponsiveTable";
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
+import StateMessage from "../components/feedback/StateMessage";
 
 function resolveBackendUrl() {
     return getApiBaseUrl();
@@ -220,7 +221,7 @@ export default function AdminQQWhitelist({ backendUrl = null }) {
                 <Button variant="secondary" size="sm" onClick={fetchEntries} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}</Button>
             </div>
 
-            <div style={{ marginBottom: 12, padding: 8, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-bg-overlay)' }}>
+            <div style={{ marginBottom: 12, padding: 8, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-overlay)' }}>
                 <div style={{ marginBottom: 8 }}><strong>{t('admin:qqWhitelist.addTitle')}</strong></div>
                 <div style={{ marginBottom: 8 }}>
                     <label style={{ marginRight: 8, color: 'var(--color-text-secondary)' }}>{t('admin:qqWhitelist.singleLabel')}</label>
@@ -243,16 +244,16 @@ export default function AdminQQWhitelist({ backendUrl = null }) {
                             maxWidth: 400,
                             boxSizing: 'border-box',
                             padding: '8px 10px',
-                            borderRadius: 8,
+                            borderRadius: 'var(--radius-md)',
                             border: '1px solid var(--color-border)',
                             background: 'var(--color-bg-overlay)',
                             color: 'var(--color-text-primary)',
                             resize: 'vertical',
-                            fontSize: 14
+                            fontSize: 16
                         }}
                     />
                 </div>
-                <Button themeAware onClick={addQQ} disabled={adding || (!qqInput.trim() && !batchInput.trim())}>
+                <Button onClick={addQQ} disabled={adding || (!qqInput.trim() && !batchInput.trim())}>
                     {adding ? t('admin:qqWhitelist.adding') : t('admin:qqWhitelist.add')}
                 </Button>
             </div>
@@ -262,7 +263,7 @@ export default function AdminQQWhitelist({ backendUrl = null }) {
             ) : (
                 <div>
                     {filteredEntries.length === 0 ? (
-                        <div>{t('admin:qqWhitelist.empty')}</div>
+                        <StateMessage>{t('admin:qqWhitelist.empty')}</StateMessage>
                     ) : (
                         <ResponsiveTable minWidth={600} cellPadding="8" style={{ border: '1px solid var(--color-border)' }}>
                             <thead>
@@ -281,7 +282,6 @@ export default function AdminQQWhitelist({ backendUrl = null }) {
                                         <td>{entry.created_time || "-"}</td>
                                         <td>
                                             <Button
-                                                themeAware
                                                 onClick={() => deleteEntry(entry.id)}
                                                 disabled={processing[entry.id]}
                                                 style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', fontSize: 12, padding: '4px 6px' }}
@@ -301,10 +301,10 @@ export default function AdminQQWhitelist({ backendUrl = null }) {
                 <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>{tx('admin:common.pagination.summary', { count: filteredEntries.length, page, totalPages })}</div>
                     <div>
-                        <Button themeAware onClick={() => setPage(1)} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.first')}</Button>
-                        <Button themeAware onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.prev')}</Button>
-                        <Button themeAware onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ marginRight: 6 }}>{t('admin:common.pagination.next')}</Button>
-                        <Button themeAware onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
+                        <Button onClick={() => setPage(1)} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.first')}</Button>
+                        <Button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ marginRight: 6 }}>{t('admin:common.pagination.prev')}</Button>
+                        <Button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ marginRight: 6 }}>{t('admin:common.pagination.next')}</Button>
+                        <Button onClick={() => setPage(totalPages)} disabled={page === totalPages}>{t('admin:common.pagination.last')}</Button>
                     </div>
                 </div>
             )}

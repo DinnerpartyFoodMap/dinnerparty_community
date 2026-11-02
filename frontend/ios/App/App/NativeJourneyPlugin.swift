@@ -409,6 +409,7 @@ private struct NativeJourneyComposerView: View {
                         model.custom(id, values: values(), push: id == "viewAll" || id == "goReview" ? title : nil)
                     }
                 }
+                .listRowBackground(FM.bgSurface)
             }
             photosSection
             Section {
@@ -421,6 +422,7 @@ private struct NativeJourneyComposerView: View {
                 let limit = data.int("textLimit", 12000)
                 Text(data.label("textHint", "") + (text.count > limit - 1000 ? "  \(text.count) / \(limit)" : ""))
             }
+            .listRowBackground(FM.bgSurface)
             Section {
                 Button {
                     model.custom("address", values: values(), push: data.label("address", "地址"))
@@ -437,6 +439,7 @@ private struct NativeJourneyComposerView: View {
             } footer: {
                 Text(data.label("addressHint", ""))
             }
+            .listRowBackground(FM.bgSurface)
             Section {
                 DatePicker(multiDay ? data.label("dateStart", "开始日期") : data.label("dateSingle", "日期"),
                            selection: $start, in: ...maxDate, displayedComponents: .date)
@@ -447,6 +450,7 @@ private struct NativeJourneyComposerView: View {
             } header: {
                 Text(data.label("date", "日期"))
             }
+            .listRowBackground(FM.bgSurface)
             Section {
                 Picker(data.label("visibility", "可见性"), selection: $visibility) {
                     Text(data.label("public", "公开")).tag("public")
@@ -465,6 +469,7 @@ private struct NativeJourneyComposerView: View {
                 } footer: {
                     Text(data.string("note"))
                 }
+                .listRowBackground(FM.bgSurface)
             }
             Section {
                 JourneyFooter(note: blocker, buttons: data.objects("buttons").map { JourneyData(raw: $0) },
@@ -560,6 +565,7 @@ private struct NativeJourneyComposerView: View {
         } header: {
             Text("\(data.label("photos", "照片")) \(photos.count)/\(maxPhotos)")
         }
+        .listRowBackground(FM.bgSurface)
     }
 
     private func photoTile(_ photo: JourneyData) -> some View {
@@ -692,6 +698,7 @@ private struct NativeJourneyCalendarView: View {
                     .contentShape(Rectangle())
                 }
             }
+            .listRowBackground(FM.bgSurface)
             Section {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -723,11 +730,13 @@ private struct NativeJourneyCalendarView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            .listRowBackground(FM.bgSurface)
             if !searching {
                 Section {
                     monthHeader
                     monthGrid
                 }
+                .listRowBackground(FM.bgSurface)
             }
             entriesSection
             if manage {
@@ -889,6 +898,7 @@ private struct NativeJourneyCalendarView: View {
                 Text(data.label("manageHint", "勾选日记后可删除；选两篇可预览合并"))
             }
         }
+        .listRowBackground(FM.bgSurface)
     }
 
     private func entryRow(_ entry: JourneyData) -> some View {
@@ -974,6 +984,7 @@ private struct NativeJourneyCalendarView: View {
                 .contentShape(Rectangle())
             }
         }
+        .listRowBackground(FM.bgSurface)
     }
 
     private func syncQuery() {

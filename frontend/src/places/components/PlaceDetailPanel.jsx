@@ -71,7 +71,7 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
                         aria-label={t('map:placeDetail.zoomImage', { title, index: index + 1 })}
                         style={{ padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in', display: 'block', width: '100%' }}
                     >
-                        <img src={imageThumbnailUrl(url, 800)} alt={`${title} ${index + 1}`} style={{ width: '100%', borderRadius: 8, display: 'block' }} loading="lazy" />
+                        <img src={imageThumbnailUrl(url, 800)} alt={`${title} ${index + 1}`} style={{ width: '100%', borderRadius: 'var(--radius-md)', display: 'block' }} loading="lazy" />
                     </button>
                 ))}
             </div>
@@ -88,11 +88,10 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
                 {rating && onOpenRating && <RatingLine rating={rating} onOpen={onOpenRating} />}
                 {onNavigate && (
                     <Button
-                        themeAware
                         onClick={() => onNavigate(place)}
                         style={{ width: isMobile ? '100%' : 'auto', marginTop: 12, minHeight: 42, padding: '8px 16px', fontWeight: 700 }}
                     >
-                        <span className="material-symbols-outlined" style={{ fontSize: 19, verticalAlign: 'middle', marginRight: 5 }}>navigation</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 20, verticalAlign: 'middle', marginRight: 5 }}>navigation</span>
                         {t('map:placeDetail.navigateHere')}
                     </Button>
                 )}
@@ -144,7 +143,7 @@ function RatingLine({ rating, onOpen }) {
             aria-label={t('map:rating.card.openLabel', { summary: summaryText(summary) })}
             title={t('map:placeDetail.rateLabel')}
             className="fm-pressable"
-            style={{ marginTop: 10, padding: 0, border: 0, background: 'transparent', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer', textAlign: 'left' }}
+            style={{ marginTop: 10, padding: 0, border: 0, background: 'transparent', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, cursor: 'pointer', textAlign: 'left' }}
         >
             <SkinIcon slot={tier ? `rating.${tier.key}` : 'rating.none'} size={20}>
                 <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, color: tier ? tier.tone : 'var(--color-text-muted)', fontVariationSettings: tier?.fill ? "'FILL' 1" : undefined }}>{tier ? tier.icon : 'rate_review'}</span>
@@ -189,14 +188,14 @@ function ImagePreview({ preview, onClose }) {
                         src={preview.url}
                         alt={t('map:placeDetail.imagePreview')}
                         onClick={onClose}
-                        style={{ maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(var(--app-height, 100vh) - 96px)', objectFit: 'contain', borderRadius: 8, userSelect: 'none', boxShadow: '0 12px 40px rgba(0,0,0,0.35)' }}
+                        style={{ maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(var(--app-height, 100vh) - 96px)', objectFit: 'contain', borderRadius: 'var(--radius-md)', userSelect: 'none', boxShadow: '0 12px 40px rgba(0,0,0,0.35)' }}
                     />
                     <button
                         type="button"
                         onClick={onClose}
                         aria-label={t('map:placeDetail.closePreview')}
                         className="fm-pressable"
-                        style={{ position: 'absolute', top: 8, right: 8, width: 44, height: 44, borderRadius: 999, border: 'none', background: 'var(--color-scrim)', color: 'var(--color-on-scrim)', fontSize: 26, cursor: 'pointer' }}
+                        style={{ position: 'absolute', top: 8, right: 8, width: 44, height: 44, borderRadius: 999, border: 'none', background: 'var(--color-scrim)', color: 'var(--color-on-scrim)', fontSize: 24, cursor: 'pointer' }}
                     >×</button>
                 </div>
             )}

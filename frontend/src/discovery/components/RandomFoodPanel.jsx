@@ -4,6 +4,7 @@ import { Exposure } from "../../journey/feedback";
 import MotionSurface from "../../components/overlay/MotionSurface";
 import { markdownToPlainText } from "../../components/markdown/markdownText";
 import { t, tx } from "../../i18n/index.js";
+import IconButton from "../../components/primitives/IconButton";
 
 // 随机美食卡片：宽屏从按钮附近展开，窄屏浮在搜索框上方；非模态，地图仍可操作。
 // 抽取由 MapUI 持有的 useRandomFood 会话负责，网页和原生共享，关闭时立即取消请求。
@@ -47,14 +48,11 @@ function RandomFoodContent({ session, onClose, feedback }) {
     const distance = result?.distanceKm;
     const distanceText = place ? (distance < 1 ? t('map:randomFood.meters', { distance: Math.round(distance * 1000) }) : t('map:randomFood.kilometers', { distance: distance.toFixed(1) })) : '';
     const category = place ? place.category || t('common:label.uncategorized') : '';
-    const secondaryStyle = { background: 'transparent', color: 'var(--color-text-primary)', minHeight: 40 };
-
     return (
         <div aria-busy={busy}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <h3 id="random-food-title" style={{ margin: 0, fontSize: 18 }}>{t('map:randomFood.title')}</h3>
-                <button ref={closeRef} type="button" onClick={onClose} aria-label={t('map:randomFood.close')}
-                    style={{ ...secondaryStyle, border: 'none', cursor: 'pointer', minWidth: 40, fontSize: 22 }}>×</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <IconButton ref={closeRef} icon="close" label={t('map:randomFood.close')} onClick={onClose} />
+                <h3 id="random-food-title" style={{ margin: 0, fontSize: 'var(--text-title3-size)', fontWeight: 700 }}>{t('map:randomFood.title')}</h3>
             </div>
             <p style={{ margin: '4px 0 16px', fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {activeOrigin ? t('map:randomFood.introOrigin', { name: activeOrigin.label }) : t('map:randomFood.intro')}
@@ -75,18 +73,18 @@ function RandomFoodContent({ session, onClose, feedback }) {
                         {Number(place.per_person_cost) > 0 && t('common:label.perPersonCost', { per_person_cost: place.per_person_cost })}
                     </p>
                     {/* 只显示三行摘要：去掉 Markdown 标记 */}
-                    {place.description && <p style={{ fontSize: 14, lineHeight: 1.6, overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{markdownToPlainText(place.description)}</p>}
+                    {place.description && <p style={{ fontSize: 13, lineHeight: 1.6, overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{markdownToPlainText(place.description)}</p>}
                     <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{tx('map:randomFood.candidates', { candidateCount: result.candidateCount })}</p>
                 </Exposure>}
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                {place && <Button disabled={busy} style={{ flex: 1, minHeight: 40 }}
+                {place && <Button disabled={busy} style={{ flex: 1 }}
                     onClick={selectPlace}>{t('map:randomFood.viewPlace')}</Button>}
-                <Button disabled={busy} style={{ ...secondaryStyle, flex: 1 }} onClick={drawNext}>
+                <Button variant="secondary" disabled={busy} style={{ flex: 1 }} onClick={drawNext}>
                     {busy ? t('map:randomFood.pickingShort') : place ? t('map:randomFood.another') : t('map:randomFood.tryAgain')}
                 </Button>
             </div>
-            <Button disabled={busy} full style={{ ...secondaryStyle, marginTop: 8 }} onClick={redrawAtMapCenter}>
+            <Button variant="plain" disabled={busy} full style={{ marginTop: 8 }} onClick={redrawAtMapCenter}>
                 {t('map:randomFood.redraw')}
             </Button>
         </div>

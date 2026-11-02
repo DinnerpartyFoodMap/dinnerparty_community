@@ -157,7 +157,7 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
                                 <span className="material-symbols-outlined" style={{ fontSize: 24, color: item.tone, flexShrink: 0, fontVariationSettings: item.fill ? "'FILL' 1" : undefined }}>{item.icon}</span>
                             </SkinIcon>
                             <span style={{ minWidth: 0 }}>
-                                <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: selected ? item.tone : undefined }}>{tierLabel(item)}</span>
+                                <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: selected ? item.tone : undefined }}>{tierLabel(item)}</span>
                                 <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 1 }}>{tierHint(item)}</span>
                             </span>
                         </button>

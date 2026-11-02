@@ -23,7 +23,7 @@ export default function PlaceListPage({ backendUrl, token, onOpenPlace, onBack }
                     filter={filter}
                     onOpenPlace={onOpenPlace}
                     toolbar={(
-                        <Button themeAware onClick={() => setFilterOpen((open) => !open)} aria-expanded={filterOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Button onClick={() => setFilterOpen((open) => !open)} aria-expanded={filterOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>filter_list</span>
                             {active ? t('places:filter.buttonActive') : t('places:filter.button')}
                         </Button>

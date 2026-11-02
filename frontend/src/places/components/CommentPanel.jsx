@@ -62,7 +62,7 @@ function CommentBody({
                 {message && <div style={{ color: 'var(--color-danger)', marginBottom: 8 }}>{message}</div>}
                 <TextArea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder={canPost ? t('map:comments.placeholder') : t('map:comments.loginRequired')} disabled={!canPost} style={{ width: '100%', minHeight: 80, padding: 8, boxSizing: 'border-box' }} />
                 <div style={{ marginTop: 8, textAlign: 'right' }}>
-                    <Button themeAware onClick={onSubmit} disabled={!canPost || submitting || !newComment || !newComment.trim()} style={{ marginRight: 8 }}>{t('map:comments.post')}</Button>
+                    <Button onClick={onSubmit} disabled={!canPost || submitting || !newComment || !newComment.trim()} style={{ marginRight: 8 }}>{t('map:comments.post')}</Button>
                 </div>
             </div>
         </div>

@@ -40,7 +40,7 @@ function ConfigErrorScreen({ errors }) {
         <div style={{ minHeight: '100vh', padding: '48px 24px', boxSizing: 'border-box', background: 'var(--color-bg-base)', color: 'var(--color-text-primary)', fontFamily: 'system-ui, sans-serif' }}>
             <h2 style={{ marginTop: 0 }}>{t('common:app.configError.title')}</h2>
             <p style={{ color: 'var(--color-text-secondary)' }}>{t('common:app.configError.body')}</p>
-            <ul style={{ color: 'var(--color-danger)', fontSize: 14 }}>
+            <ul style={{ color: 'var(--color-danger)', fontSize: 15 }}>
                 {errors.map((item) => <li key={item}>{item}</li>)}
             </ul>
         </div>

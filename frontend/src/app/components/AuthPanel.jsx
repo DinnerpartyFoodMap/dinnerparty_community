@@ -213,7 +213,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                                 </div>
                                 {divider}
                                 {onOpenMyPlaces && (
-                                    <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenMyPlaces(); }}
+                                    <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenMyPlaces(); }}
                                         aria-label={rejectedCount ? t('map:ui.myPlacesRejected', { count: rejectedCount }) : undefined}>
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                             {t('map:ui.myPlaces')}
@@ -222,11 +222,11 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                                     </Button>
                                 )}
                                 {onOpenProfile && (
-                                    <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenProfile(); }}>{t('map:ui.myProfile')}</Button>
+                                    <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenProfile(); }}>{t('map:ui.myProfile')}</Button>
                                 )}
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); isOnSettings ? onGoHome?.() : onOpenSettings?.(); }}>{isOnSettings ? t('common:action.backToMap') : t('auth:panel.settings')}</Button>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); isOnSettings ? onGoHome?.() : onOpenSettings?.(); }}>{isOnSettings ? t('common:action.backToMap') : t('auth:panel.settings')}</Button>
                                 {divider}
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onLogout?.(); }} style={{ color: 'var(--color-danger)' }}>{t('auth:panel.logout')}</Button>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onLogout?.(); }} style={{ color: 'var(--color-danger)' }}>{t('auth:panel.logout')}</Button>
                         </AnchoredPopover>
                     </div>
                 )}
@@ -244,15 +244,15 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                     onClick={() => { if (!interactionDisabled) { setMoreOpen((value) => !value); setUserOpen(false); } }}
                     aria-haspopup="menu"
                     aria-expanded={moreOpen}
-                    style={{ width: 44, height: 44, fontSize: 14, padding: 0, borderRadius: '50%', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}
+                    style={{ width: 44, height: 44, fontSize: 15, padding: 0, borderRadius: '50%', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}
                 >
                     <span className="material-symbols-outlined">more_horiz</span>
                 </Button>
                 <AnchoredPopover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreAnchorRef} placement="bottom-end" label={t('auth:panel.moreMenu')} style={menuStyle}>
-                        {onOpenAlongRoute && <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenAlongRoute(); }}>{t('map:ui.alongRoute')}</Button>}
+                        {onOpenAlongRoute && <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenAlongRoute(); }}>{t('map:ui.alongRoute')}</Button>}
                         {onOpenRandomFood && (
                             <>
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenRandomFood(); }}>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenRandomFood(); }}>
                                     {t('auth:panel.randomFood')}
                                 </Button>
                                 {divider}
@@ -260,7 +260,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                         )}
                         {isAuth && (
                             <>
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnDinners ? onGoHome?.() : onOpenDinners?.(); }}>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnDinners ? onGoHome?.() : onOpenDinners?.(); }}>
                                     {isOnDinners ? t('common:action.backToMap') : t('auth:panel.dinners')}
                                 </Button>
                                 {divider}
@@ -268,19 +268,19 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                         )}
                         {isAuth && (
                             <>
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnPosterExport ? onGoHome?.() : onOpenPosterExport?.(); }}>{isOnPosterExport ? t('common:action.backToMap') : t('auth:panel.posterExport')}</Button>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnPosterExport ? onGoHome?.() : onOpenPosterExport?.(); }}>{isOnPosterExport ? t('common:action.backToMap') : t('auth:panel.posterExport')}</Button>
                                 {divider}
                             </>
                         )}
                         {isAuth && (isAdmin || isOnAdmin) && (
                             <>
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnAdmin ? onGoHome?.() : onOpenAdmin?.(); }}>{isOnAdmin ? t('common:action.backToMap') : t('auth:panel.admin')}</Button>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnAdmin ? onGoHome?.() : onOpenAdmin?.(); }}>{isOnAdmin ? t('common:action.backToMap') : t('auth:panel.admin')}</Button>
                                 {divider}
                             </>
                         )}
                         {onOpenGuide && (
                             <>
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenGuide(); }}>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenGuide(); }}>
                                     {t('auth:panel.guide')}
                                 </Button>
                                 {divider}
@@ -288,7 +288,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                         )}
                         {onOpenFeedback && (
                             <>
-                                <Button themeAware variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenFeedback(); }}>
+                                <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); onOpenFeedback(); }}>
                                     {t('feedback:menuEntry')}
                                 </Button>
                                 {divider}

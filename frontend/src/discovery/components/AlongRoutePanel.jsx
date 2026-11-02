@@ -7,6 +7,7 @@ import MotionSurface from "../../components/overlay/MotionSurface";
 import FullPageHeader from "../../components/layout/FullPageHeader";
 import { getPlatform } from "../../platform/env";
 import { t, tx } from "../../i18n/index.js";
+import IconButton from "../../components/primitives/IconButton";
 
 const MODE_OPTIONS = [
     { value: 'driving', label: t('map:alongRoute.mode.driving'), icon: 'directions_car' },
@@ -374,7 +375,7 @@ export default function AlongRoutePanel({
         color: 'var(--color-text-primary)',
         padding: '10px 11px',
         outline: 'none',
-        fontSize: 14
+        fontSize: 15
     };
     const tripName = (point, fallback) => point?.name || fallback;
     const mobileRoutePreview = isNarrow && !!routeSummary;
@@ -420,6 +421,7 @@ export default function AlongRoutePanel({
                     boxShadow: 'var(--shadow-surface)', backdropFilter: 'blur(12px)', pointerEvents: 'auto'
                 } : (isNarrow ? { paddingTop: 'calc(12px + env(safe-area-inset-top))' } : {}))
             }}>
+                <IconButton icon="close" label={t('map:alongRoute.closeLabel')} onClick={closePanel} />
                 {mobileRoutePreview ? (
                     <Button
                         type="button"
@@ -440,7 +442,6 @@ export default function AlongRoutePanel({
                         {mobileRoutePreview ? t('map:alongRoute.compareHint') : t('map:alongRoute.subtitle')}
                     </div>
                 </div>
-                <Button type="button" onClick={closePanel} aria-label={t('map:alongRoute.closeLabel')} style={{ border: 0, background: 'transparent', color: 'var(--color-text-secondary)', fontSize: 20, padding: '2px 7px' }}>×</Button>
             </header>}
 
             <ScrollableView style={mobileRoutePreview ? {
@@ -507,7 +508,7 @@ export default function AlongRoutePanel({
                                         fontSize: 11
                                     }}
                                 >
-                                    <span className="material-symbols-outlined" style={{ fontSize: 19 }}>{option.icon}</span>
+                                    <span className="material-symbols-outlined" style={{ fontSize: 20 }}>{option.icon}</span>
                                     {option.label}
                                 </Button>
                             );
@@ -636,7 +637,7 @@ export default function AlongRoutePanel({
                         background: mobileRoutePreview ? 'var(--color-bg-surface)' : 'var(--color-bg-overlay)',
                         fontSize: 12
                     }}>
-                        {mobileRoutePreview && <div aria-hidden="true" style={{ width: 38, height: 4, margin: '0 auto 9px', borderRadius: 4, background: 'var(--color-border)' }} />}
+                        {mobileRoutePreview && <div aria-hidden="true" style={{ width: 38, height: 4, margin: '0 auto 9px', borderRadius: 'var(--radius-full)', background: 'var(--color-border)' }} />}
                         <strong>
                             {selectedRouteIndex == null
                                 ? t('map:alongRoute.routesFound', { count: routeSummary.routes.length })
@@ -703,7 +704,7 @@ export default function AlongRoutePanel({
                             color: 'var(--theme-on-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700
                         }}>{index + 1}</span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.name}</span>
+                            <span style={{ display: 'block', fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.name}</span>
                             <span style={{ display: 'block', marginTop: 3, color: 'var(--color-text-secondary)', fontSize: 11, lineHeight: 1.45 }}>
                                 {[place.category, place.per_person_cost ? t('map:alongRoute.perPersonAbout', { per_person_cost: place.per_person_cost }) : '', t('map:alongRoute.distanceFromRoute', { distance: formatDistance(place.distance_to_route) })].filter(Boolean).join(' · ')}
                             </span>

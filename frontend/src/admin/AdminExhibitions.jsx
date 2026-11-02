@@ -136,7 +136,7 @@ export default function AdminExhibitions({ backendUrl }) {
     }
 
     async function unpublish() {
-        if (disabled || !current || !await confirm(t('admin:exhibitions.confirmUnpublish'), { destructive: true })) return;
+        if (disabled || !current || !await confirm(t('admin:exhibitions.confirmUnpublish'), { destructive: true, confirmLabel: t('admin:exhibitions.unpublish') })) return;
         setBusy(true);
         setError('');
         try {
@@ -159,21 +159,21 @@ export default function AdminExhibitions({ backendUrl }) {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
             <label htmlFor="exhibition-select">{t('admin:exhibitions.select')}</label>
             <select id="exhibition-select" value={current?.id || ''} disabled={disabled} onChange={event => selectExhibition(event.target.value)}
-                style={{ minHeight: 44, maxWidth: '100%', flex: '1 1 180px', background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                style={{ minHeight: 44, maxWidth: '100%', flex: '1 1 180px', background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
                 <option value="">{t('admin:exhibitions.newActivity')}</option>
                 {exhibitions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
-            <Button themeAware disabled={disabled} onClick={() => selectExhibition('')}>{t('admin:exhibitions.add')}</Button>
+            <Button disabled={disabled} onClick={() => selectExhibition('')}>{t('admin:exhibitions.add')}</Button>
         </div>
         <form onSubmit={publish} style={{ display: 'grid', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <ExhibitionIcon url={form.icon_url} backendUrl={backendUrl} />
                 <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif"
                     aria-label={t('admin:exhibitions.addIcon')} hidden disabled={disabled} onChange={uploadIcon} />
-                <Button themeAware disabled={disabled} onClick={() => fileRef.current?.click()}>
+                <Button disabled={disabled} onClick={() => fileRef.current?.click()}>
                     <span aria-hidden="true">＋ </span>{t('admin:exhibitions.addIcon')}
                 </Button>
-                {form.icon_url && <Button themeAware disabled={disabled} onClick={() => setForm(prev => ({ ...prev, icon_url: '' }))}>
+                {form.icon_url && <Button disabled={disabled} onClick={() => setForm(prev => ({ ...prev, icon_url: '' }))}>
                     {t('admin:exhibitions.removeIcon')}
                 </Button>}
                 <small style={{ color: 'var(--color-text-secondary)' }}>{t('admin:exhibitions.iconHint')}</small>
@@ -191,11 +191,11 @@ export default function AdminExhibitions({ backendUrl }) {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <TextInput id="exhibition-location" value={form.location_name} onChange={change('location_name')} maxLength={80} disabled={disabled}
                     placeholder={t('admin:exhibitions.locationPlaceholder')} style={{ flex: '1 1 220px' }} />
-                <Button themeAware disabled={disabled} onClick={() => setPickerOpen(true)}>
+                <Button disabled={disabled} onClick={() => setPickerOpen(true)}>
                     <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18, marginRight: 4, verticalAlign: '-3px' }}>location_on</span>
                     {t('admin:exhibitions.pickLocation')}
                 </Button>
-                {center && <Button themeAware disabled={disabled} onClick={() => setForm(prev => ({ ...prev, latitude: null, longitude: null }))}>
+                {center && <Button disabled={disabled} onClick={() => setForm(prev => ({ ...prev, latitude: null, longitude: null }))}>
                     {t('admin:exhibitions.clearLocation')}
                 </Button>}
             </div>
@@ -204,8 +204,8 @@ export default function AdminExhibitions({ backendUrl }) {
             </small>
             {error && <div role="alert" style={{ color: 'var(--color-danger)' }}>{error}</div>}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <Button type="submit" themeAware disabled={disabled}>{busy ? t('admin:exhibitions.saving') : current ? t('admin:exhibitions.save') : t('admin:exhibitions.publish')}</Button>
-                {current && <Button themeAware disabled={disabled} onClick={unpublish}>{t('admin:exhibitions.unpublish')}</Button>}
+                <Button type="submit" disabled={disabled}>{busy ? t('admin:exhibitions.saving') : current ? t('admin:exhibitions.save') : t('admin:exhibitions.publish')}</Button>
+                {current && <Button disabled={disabled} onClick={unpublish}>{t('admin:exhibitions.unpublish')}</Button>}
                 {loadFailed && <Button variant="secondary" onClick={() => setReload(value => value + 1)}>{t('admin:exhibitions.retry')}</Button>}
             </div>
         </form>

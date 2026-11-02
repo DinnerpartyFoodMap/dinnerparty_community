@@ -94,7 +94,7 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
                     <Button variant="secondary" onClick={() => load(state.items.length)}>{t('places:list.retry')}</Button>
                 )}
                 {!state.loading && !state.error && !state.done && state.items.length > 0 && (
-                    <Button themeAware onClick={() => load(state.items.length)}>{t('places:list.loadMore')}</Button>
+                    <Button onClick={() => load(state.items.length)}>{t('places:list.loadMore')}</Button>
                 )}
                 {state.done && state.items.length > 0 && <span>{t('places:list.end')}</span>}
             </div>

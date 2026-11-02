@@ -136,6 +136,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 圆角套圆角时，里外两层的圆角本来就不一样：贴着外层角的内层元素，圆角 = 外层圆角 − 两者之间的距离（内边距加边框），
 这样两条弧线同心、间距处处相等。不要把外层的令牌直接套在内层上，也不要让内层比外层还圆。
 
+- 网页里写成 `calc(var(--radius-md) - 4px)` 这样，外层令牌改了内层跟着变（日记缩略图上的状态条、入口卡片的封面就是这样写的）。
 - 只对贴着外层角的元素算：分段控件的选中块、卡片里贴边的图片和按钮、面板里贴边的分组。不靠近角的独立元素按自身尺寸取上表的令牌。
 - 算出来小于 4 时直接用 0 或改小内边距；网页里可以写 `calc(var(--radius-lg) - 12px)` 让它跟着外层令牌走。
 - iOS 26 有 `ConcentricRectangle` / `.containerConcentric`，目前最低支持 iOS 18，先按同样的减法手写。
@@ -178,7 +179,8 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 
 - 网页：Material Symbols Outlined。主应用在隐私同意后从自有的 `cdn.mccolor.cc` 加载，下载页用站内同一份文件（`/fonts/material-symbols.css`）。默认 `wght 400`、`FILL 0`；选中 / 已收藏用 `FILL 1`。尺寸 20（行内、卡片操作）或 24（工具栏）。
 - iOS：SF Symbols，默认 `.regular`，与文字同行时跟随文字样式；选中用 `.fill` 变体。
-- 两端的对应关系集中在一张表（建议 `src/platform/iconRegistry.js`：语义名 → `{ material, sfSymbol }`），业务里写语义名，不各写各的。
+- 两端的对应关系集中在 `src/platform/iconRegistry.js`（语义名 → Material 名 + SF 名）：业务里写 `sfSymbol('share')` / `materialIcon('share')`，不各写各的；`npm run test:design-lint` 拦下在别处直接写的 `symbol: '…'` 与对照表里的 SF 名。
+- 图标尺寸阶梯：16 / 18 / 20 / 24 / 28 / 32 / 40（行内 18–20、工具栏 24、地图浮动圆钮 28–32、空状态 32–40）。
 - 颜色：普通图标用 `text-secondary`，强调图标用 `--theme-icon`（辅色），危险操作用 danger。
 
 ## 7. 组件规格
@@ -248,7 +250,7 @@ iOS 原生：半屏面板用 `NativeSheetHeader`；地图上的玻璃面板（`M
 
 - 行内提示条：圆角 md，tone 10% 底（`color-mix`），左侧图标，15 号字。
 - Toast：胶囊或 md 圆角，e3，屏幕底部安全区上方 16。
-- 空状态：图标 40（`text-muted`）+ headline + footnote 说明 + 可选 md 按钮，居中。
+- 加载中 / 空 / 出错：`components/feedback/StateMessage.jsx`（居中的图标 + footnote 说明，出错时带 secondary「重试」），后台各分区与皮肤页在用。
 - AI 标签：保持 `AiLabel` 现样式（徽章规格）。
 
 ### 7.9 开关、勾选
@@ -271,7 +273,7 @@ frontend/src/styles/tokens.json       ← 唯一来源（字体、颜色含 ligh
 
 - 生成文件不要手改；改 tokens.json 后运行 `npm run tokens`，生成的三份一起提交。备案页只有浅色，直接引用 tokens.generated.css。
 - `tokens.generated.css` 里还有一个 `.fm-theme-system` 作用域：在读到住民深浅设置之前出现的界面（隐私同意页）加上这个类，深色跟随系统。
-- `npm run test:design-lint`：`src/` 里不许出现十六进制颜色（白名单：Canvas 出图 `journey/cover.js`、`places/shareCard.js`、`poster/rendering/`，`theme/theme.js` 的默认值，`noticeColors.js` 给原生的色值；单行豁免写 `design-token-ignore` 并说明原因）；阶梯外字号与令牌外圆角按文件记在 `tests/unit/styles/design-lint-baseline.json`，只减不增，改少了用 `--update` 收紧。
+- `npm run test:design-lint`：图标名必须经 `iconRegistry.js`；`src/` 里不许出现十六进制颜色（白名单：Canvas 出图 `journey/cover.js`、`places/shareCard.js`、`poster/rendering/`，`theme/theme.js` 的默认值，`noticeColors.js` 给原生的色值；单行豁免写 `design-token-ignore` 并说明原因）；阶梯外字号（文字阶梯 + 输入框 16 + 图标阶梯）与令牌外圆角按文件记在 `tests/unit/styles/design-lint-baseline.json`，目前都是 0，新增就会失败；确实需要时在同一行写 `design-token-ignore` 并说明原因（如新手引导高亮圈跟随目标按钮的形状）。
 - Swift 里不生成品牌主色 / 辅色（原生以网页下发的住民设置为准），只有 `themePrimary` 等缺省值；字号用 Dynamic Type，不生成。
 - 主题色（住民可改）仍由 `theme.js` 运行时写入，并负责算出 `--theme-primary-text`、`--theme-on-primary`；原生从主题快照拿。
 - `npm run test:design-tokens`：两份生成文件与 tokens.json 同步、主题色默认值与 `theme.js` 一致、文字配色对比度（正文与语义色文字 ≥ 4.5:1、muted ≥ 3:1）、Swift 文件已加入 Xcode 工程。

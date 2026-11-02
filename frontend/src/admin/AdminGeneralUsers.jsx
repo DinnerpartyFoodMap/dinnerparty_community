@@ -11,6 +11,7 @@ import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
 import AdminBanModal from './AdminBanModal';
+import StateMessage from "../components/feedback/StateMessage";
 
 function resolveBackendUrl() {
     return getApiBaseUrl();
@@ -214,11 +215,11 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
             ) : (
                 <div>
                     {filteredUsers.length === 0 ? (
-                        <div>{t('admin:generalUsers.empty')}</div>
+                        <StateMessage>{t('admin:generalUsers.empty')}</StateMessage>
                     ) : isMobile ? (
                         <div style={{ display: 'grid', gap: 10 }}>
                             {filteredUsers.map((target) => (
-                                <article key={target.id} style={{ padding: 12, border: '1px solid var(--color-border)', borderRadius: 12, background: 'var(--color-bg-surface)' }}>
+                                <article key={target.id} style={{ padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-surface)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                         <img src={target.has_avatar ? `${backendUrl}/users/${target.id}/avatar?t=${Date.now()}` : defaultAvatar} alt={t('common:label.avatar')} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} />
                                         <div style={{ flex: 1, minWidth: 0 }}>

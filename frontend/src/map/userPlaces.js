@@ -3,6 +3,7 @@
 // relation 来自 GET /users/:id/places（self：就是自己；blocked：已屏蔽 TA，此时不列出地点；can_block：已登录且不是自己）。
 import { t } from '../i18n/index.js';
 import { isAvoidedPlace } from '../places/rating.js';
+import { sfSymbol, materialIcon } from '../platform/iconRegistry.js';
 
 /**
  * 日期只保留到日（本地时区）。SQLite 的 CURRENT_TIMESTAMP 是不带时区的 UTC（"2026-08-08 10:00:00"），
@@ -107,11 +108,11 @@ export function userPlacesActions(filter) {
     if (!filter) return [];
     const relation = filter.status === 'ready' ? filter.relation : null;
     return [
-        { id: 'profile', title: relation?.self ? t('map:userPlaces.profileSelf') : t('map:userPlaces.profile'), symbol: 'person.crop.circle', icon: 'account_circle' },
+        { id: 'profile', title: relation?.self ? t('map:userPlaces.profileSelf') : t('map:userPlaces.profile'), symbol: sfSymbol('account'), icon: materialIcon('account') },
         relation?.can_block && relation.blocked
-            ? { id: 'unblock', title: t('map:userPlaces.unblock'), symbol: 'person.crop.circle.badge.checkmark', icon: 'how_to_reg' }
+            ? { id: 'unblock', title: t('map:userPlaces.unblock'), symbol: sfSymbol('unblock'), icon: materialIcon('unblock') }
             : null,
-        { id: 'exit', title: t('map:userPlaces.exit'), symbol: 'xmark.circle', icon: 'filter_alt_off' }
+        { id: 'exit', title: t('map:userPlaces.exit'), symbol: sfSymbol('clearFilter'), icon: materialIcon('clearFilter') }
     ].filter(Boolean);
 }
 
@@ -130,7 +131,7 @@ export function userPlacesChromeSheet(filter) {
             {
                 id: 'actions',
                 rows: [
-                    filter.status === 'error' && { id: 'retry', title: t('map:userPlaces.retry'), symbol: 'arrow.clockwise' },
+                    filter.status === 'error' && { id: 'retry', title: t('map:userPlaces.retry'), symbol: sfSymbol('retry') },
                     ...userPlacesActions(filter).map(({ icon, ...row }) => row)
                 ].filter(Boolean)
             },
@@ -140,7 +141,7 @@ export function userPlacesChromeSheet(filter) {
                     id: userPlaceRowId(place),
                     title: place.name || t('common:label.unnamedPlace'),
                     subtitle: userPlaceDetail(place),
-                    symbol: 'mappin.circle.fill',
+                    symbol: sfSymbol('placeRow'),
                     tone: isAvoidedPlace(place) ? 'danger' : (isHiddenPlace(place) ? 'warning' : undefined),
                     badge: userPlaceBadge(place) || undefined
                 }))

@@ -4,6 +4,7 @@
 // 松手后原生回传行 id "cost:range:<低>:<高>"。清除筛选在标题左侧（leading）。
 import { COST_SLIDER, cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState } from './placeFilter.js';
 import { t } from '../i18n/index.js';
+import { sfSymbol } from '../platform/iconRegistry.js';
 
 // 展开全部时最多下发的标签数（原生面板一次最多 300 行）
 const TAG_LIMIT = 200;
@@ -24,7 +25,7 @@ export function filterChromeSheet({ filter, categories = [], showAll = false, lo
             id: `tag:${tag}`,
             title: tag,
             tone: state || undefined,
-            symbol: state === 'include' ? 'checkmark' : state === 'exclude' ? 'nosign' : undefined,
+            symbol: state === 'include' ? sfSymbol('include') : state === 'exclude' ? sfSymbol('exclude') : undefined,
             subtitle: state === 'include' ? t('places:filter.included') : state === 'exclude' ? t('places:filter.excluded') : undefined,
             keepsOpen: true
         };
@@ -67,7 +68,7 @@ export function filterChromeSheet({ filter, categories = [], showAll = false, lo
         title: t('places:filter.title'),
         size: 'list',
         // 标题左侧：清除筛选
-        leading: { id: 'reset', title: t('places:filter.reset'), symbol: 'xmark.circle', disabled: !isPlaceFilterActive(value), keepsOpen: true },
+        leading: { id: 'reset', title: t('places:filter.reset'), symbol: sfSymbol('clearFilter'), disabled: !isPlaceFilterActive(value), keepsOpen: true },
         message: loading && !categories.length ? t('common:status.loading') : (error || undefined),
         messageTone: loading && !categories.length ? 'loading' : (error ? 'danger' : undefined),
         sections

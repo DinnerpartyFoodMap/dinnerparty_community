@@ -158,7 +158,7 @@ export class OverseasTileLayer {
             const el = document.createElement('div');
             el.className = 'overseas-attribution';
             el.innerHTML = ATTRIBUTION_HTML;
-            el.style.cssText = 'position:absolute;right:4px;z-index:150;padding:1px 6px;border-radius:4px;font-size:10px;line-height:16px;pointer-events:auto;white-space:nowrap;';
+            el.style.cssText = 'position:absolute;right:4px;z-index:150;padding:1px 6px;border-radius:var(--radius-xs);font-size:11px;line-height:16px;pointer-events:auto;white-space:nowrap;';
             container.appendChild(el);
             this.attribution = el;
             this.applyAttributionTheme();

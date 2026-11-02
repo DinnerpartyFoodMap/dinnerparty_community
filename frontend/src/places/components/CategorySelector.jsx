@@ -341,7 +341,7 @@ export default function CategorySelector({ backendUrl, token, value, onChange, p
                         outline: 'none',
                         background: 'transparent',
                         color: 'var(--color-text-primary)',
-                        fontSize: 14
+                        fontSize: 15
                     }}
                 />
             </div>
@@ -361,7 +361,7 @@ export default function CategorySelector({ backendUrl, token, value, onChange, p
                     zIndex: 20,
                     overflow: 'hidden',
                     border: '1px solid var(--color-border)',
-                    borderRadius: 8,
+                    borderRadius: 'var(--radius-md)',
                     background: 'var(--color-bg-surface)',
                     boxShadow: 'var(--shadow-surface)'
                 }}>

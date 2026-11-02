@@ -37,7 +37,12 @@
     "takePhoto": "拍照",
     "remove": "移除",
     "chooseImage": "选择图片",
-    "ok": "好"
+    "ok": "好",
+    "discard": "丢弃",
+    "block": "屏蔽",
+    "leave": "离开",
+    "replace": "替换",
+    "retry": "重试"
   },
   "error": {
     "deleteFailedStatus": "删除失败 {{status}}",

@@ -35,7 +35,7 @@
         "test:i18n": "node tests/unit/i18n/test-i18n.mjs",
         "test:skins": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/skins/test-skins.mjs",
         "test:design-tokens": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/styles/test-design-tokens.mjs",
-        "test:design-lint": "node tests/unit/styles/test-design-lint.mjs",
+        "test:design-lint": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/styles/test-design-lint.mjs",
         "test:markdown": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/components/test-markdown.mjs",
         "test:search": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/discovery/test-external-search.mjs",
         "test:place-filter": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-place-filter.mjs"

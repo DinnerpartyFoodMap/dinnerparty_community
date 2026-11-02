@@ -3,10 +3,11 @@
 import { isNativePlatform } from '../platform/env.js';
 import { buildPublicUrl } from '../platform/runtimeConfig.js';
 import { t } from '../i18n/index.js';
+import { sfSymbol } from '../platform/iconRegistry.js';
 
 const LEGAL_PAGES = {
-    terms: { path: '/terms/', symbol: 'doc.plaintext', label: () => t('auth:page.terms') },
-    privacy: { path: '/privacy/', symbol: 'hand.raised', label: () => t('auth:page.privacyPolicy') }
+    terms: { path: '/terms/', symbol: sfSymbol('terms'), label: () => t('auth:page.terms') },
+    privacy: { path: '/privacy/', symbol: sfSymbol('privacy'), label: () => t('auth:page.privacyPolicy') }
 };
 
 export const LEGAL_PAGE_IDS = Object.freeze(['terms', 'privacy']);

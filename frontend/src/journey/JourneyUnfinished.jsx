@@ -32,7 +32,7 @@ export default function JourneyUnfinished({ctx,nav,active}) {
     },[api,userId]);
     useEffect(()=>{if(active)load();},[active,load]);
     const run=async fn=>{setBusy(true);setError('');try{await fn();await load();}catch(e){setError(e.message);}finally{setBusy(false);}};
-    const discard=(label,fn)=>run(async()=>{if(await confirm(t('journey:unfinished.confirmDiscard', { label }), { destructive: true }))await fn();});
+    const discard=(label,fn)=>run(async()=>{if(await confirm(t('journey:unfinished.confirmDiscard', { label }), { destructive: true, confirmLabel: t('common:action.discard') }))await fn();});
     const row=(item,{title,meta,open,openLabel,remove})=><div key={`${item.kind||'local'}-${item.id||item.draftId}`} className="jw-entry-row">
         <button type="button" className="jw-entry" onClick={open} aria-label={t('journey:unfinished.openItem', { openLabel, title })}>
             {item.cover_media_id?<PrivatePhoto id={item.cover_media_id} base={base} token={token} className="jw-entry__cover" alt=""/>:<span className="jw-entry__cover jw-entry__cover--empty" aria-hidden="true">✎</span>}

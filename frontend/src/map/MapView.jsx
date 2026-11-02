@@ -1436,7 +1436,7 @@ export default function MapView({
         const current = userFilterRef.current;
         if (!current || !token) return;
         const { id, name } = current.user;
-        if (blocked && !(await confirm(t('map:userPlaces.blockConfirm', { name }), { destructive: true }))) return;
+        if (blocked && !(await confirm(t('map:userPlaces.blockConfirm', { name }), { destructive: true, confirmLabel: t('common:action.block') }))) return;
         try {
             await Api.setUserBlocked(backendUrl, token, id, blocked);
         } catch (e) {
@@ -1913,8 +1913,8 @@ export default function MapView({
                     <div style={{ maxWidth: 360, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
                         <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 40, color: 'var(--color-text-secondary)' }}>map</span>
                         <div style={{ fontSize: 16, fontWeight: 600 }}>{t('map:main.loadFailed')}</div>
-                        <div style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}>{describeAmapError(amapState.error)}</div>
-                        <Button themeAware onClick={() => retryAmap().catch(() => { })}>{t('map:main.reload')}</Button>
+                        <div style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}>{describeAmapError(amapState.error)}</div>
+                        <Button onClick={() => retryAmap().catch(() => { })}>{t('map:main.reload')}</Button>
                     </div>
                 </div>
             )}

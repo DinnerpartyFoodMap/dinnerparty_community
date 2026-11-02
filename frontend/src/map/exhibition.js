@@ -1,6 +1,7 @@
 // 展会地点与 iOS 原生展会面板快照（纯函数，纳入 test:map）。
 import { t } from '../i18n/index.js';
 import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText.js';
+import { sfSymbol } from '../platform/iconRegistry.js';
 
 /** 展会地点（GCJ-02，与地点相同）；未设置或无效时为 null */
 export function exhibitionCenter(exhibition) {
@@ -39,7 +40,7 @@ export function exhibitionChromeSheet(exhibition, { iconUrl } = {}) {
     const venueAction = located ? {
         id: 'venue',
         title: locationName ? t('map:exhibition.showVenueLabel', { location: locationName }) : t('map:exhibition.showVenue'),
-        symbol: 'mappin.and.ellipse'
+        symbol: sfSymbol('place')
     } : undefined;
     return {
         id: 'exhibition',
@@ -51,9 +52,9 @@ export function exhibitionChromeSheet(exhibition, { iconUrl } = {}) {
         caption: locationName || undefined,
         captionAction: locationName ? venueAction : undefined,
         actions: [
-            located && { id: 'random', title: t('map:exhibition.randomNearby'), symbol: 'dice', tone: 'accent' },
+            located && { id: 'random', title: t('map:exhibition.randomNearby'), symbol: sfSymbol('random'), tone: 'accent' },
             // 原生侧展开到全屏详情，不回传
-            { id: 'details', title: t('map:ui.details'), symbol: 'info.circle', keepsOpen: true, expands: true }
+            { id: 'details', title: t('map:ui.details'), symbol: sfSymbol('details'), keepsOpen: true, expands: true }
         ].filter(Boolean),
         paragraphs: [
             ...(exhibition.event_time ? [{ id: 'event-time', title: t('map:exhibition.eventTime'), text: exhibition.event_time.replace('T', ' ') }] : []),

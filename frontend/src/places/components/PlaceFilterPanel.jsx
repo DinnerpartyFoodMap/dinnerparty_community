@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Button from '../../components/primitives/Button';
 import Chip from '../../components/primitives/Chip';
+import { materialIcon } from '../../platform/iconRegistry.js';
 import RangeSlider from '../../components/forms/RangeSlider';
 import { loadCategoryDirectory } from '../categoryDirectory';
 import { COST_SLIDER, EMPTY_PLACE_FILTER, cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState } from '../placeFilter';
@@ -61,7 +62,7 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, color: 'var(--color-text-primary)' }}>
             <section>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, margin: '0 0 8px' }}>
-                    <h3 style={{ margin: 0, fontSize: 14 }}>{t('places:filter.tagsTitle')}</h3>
+                    <h3 style={{ margin: 0, fontSize: 15 }}>{t('places:filter.tagsTitle')}</h3>
                     <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('places:filter.tagsHint')}</span>
                 </div>
                 {loadError && <div style={{ fontSize: 12, color: 'var(--color-danger)' }}>{loadError}</div>}
@@ -73,7 +74,7 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
                                 key={tag}
                                 selected={state !== null}
                                 tone={state ? TAG_TONES[state] : undefined}
-                                icon={state ? (state === 'include' ? 'check' : 'block') : undefined}
+                                icon={state ? materialIcon(state) : undefined}
                                 aria-pressed={state === null ? false : (state === 'include' ? true : 'mixed')}
                                 aria-label={state === 'include' ? t('places:filter.tagIncluded', { tag }) : state === 'exclude' ? t('places:filter.tagExcluded', { tag }) : tag}
                                 onClick={() => toggleTag(tag)}
@@ -91,7 +92,7 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
             </section>
             <section>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <h3 style={{ margin: 0, fontSize: 14 }}>{t('places:filter.costTitle')}</h3>
+                    <h3 style={{ margin: 0, fontSize: 15 }}>{t('places:filter.costTitle')}</h3>
                     <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                         {t('places:filter.costRange', { min: costText(filter.minCost, 'min'), max: costText(filter.maxCost, 'max') })}
                     </span>
@@ -108,7 +109,7 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
                 />
             </section>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button themeAware onClick={() => onChange(EMPTY_PLACE_FILTER)} disabled={!isPlaceFilterActive(filter)}>{t('places:filter.reset')}</Button>
+                <Button onClick={() => onChange(EMPTY_PLACE_FILTER)} disabled={!isPlaceFilterActive(filter)}>{t('places:filter.reset')}</Button>
             </div>
         </div>
     );

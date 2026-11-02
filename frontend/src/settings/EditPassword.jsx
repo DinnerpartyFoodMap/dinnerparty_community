@@ -61,8 +61,8 @@ export default function EditPassword({ user, onBack, backendUrl, token, onUpdate
 
 
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <Button themeAware type="submit" disabled={loading} style={{ padding: '8px 12px' }}>{loading ? t('settings:common.status.saving') : t('common:action.save')}</Button>
-                    <Button themeAware type="button" onClick={() => { setCurrentPwd(''); setNewPwd(''); setConfirmPwd(''); if (onBack) onBack(); }} style={{ padding: '8px 12px' }}>{t('common:action.cancel')}</Button>
+                    <Button type="submit" disabled={loading}>{loading ? t('settings:common.status.saving') : t('common:action.save')}</Button>
+                    <Button type="button" onClick={() => { setCurrentPwd(''); setNewPwd(''); setConfirmPwd(''); if (onBack) onBack(); }} style={{ padding: '8px 12px' }}>{t('common:action.cancel')}</Button>
                 </div>
             </form>
         </PageTemplate>

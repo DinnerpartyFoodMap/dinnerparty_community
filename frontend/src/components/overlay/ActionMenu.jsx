@@ -17,8 +17,8 @@ export default function ActionMenu({ items = [], label = t('common:action.more')
     return (
         <>
             <span ref={anchorRef} style={{ display: 'inline-block' }}>
-                <Button themeAware onClick={toggle} disabled={disabled} aria-haspopup="menu" aria-expanded={open} style={{ minHeight: 38, padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 19, verticalAlign: 'middle', marginRight: 3 }}>more_horiz</span>
+                <Button variant="secondary" onClick={toggle} disabled={disabled} aria-haspopup="menu" aria-expanded={open} style={{ whiteSpace: 'nowrap' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 20, verticalAlign: 'middle', marginRight: 3 }}>more_horiz</span>
                     {label}
                 </Button>
             </span>
@@ -35,7 +35,6 @@ export default function ActionMenu({ items = [], label = t('common:action.more')
                 {items.map((item, index) => (
                     <Button
                         key={item.key || `${item.label}-${index}`}
-                        themeAware
                         variant="menu"
                         full
                         role="menuitem"

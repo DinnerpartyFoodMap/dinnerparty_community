@@ -18,7 +18,7 @@ export default function ScrollableView({ children, style = {}, className = "", a
                 }
                 .yuyuko-custom-scrollbar::-webkit-scrollbar-thumb {
                     background: var(--color-border);
-                    border-radius: 4px;
+                    border-radius: var(--radius-full);
                 }
                 .yuyuko-custom-scrollbar::-webkit-scrollbar-thumb:hover {
                     background: var(--color-text-muted);
