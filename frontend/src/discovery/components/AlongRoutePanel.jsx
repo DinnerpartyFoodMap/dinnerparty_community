@@ -540,7 +540,7 @@ export default function AlongRoutePanel({
                                         aria-pressed="true"
                                         style={{
                                             borderRadius: 'var(--radius-full)', border: `1px solid ${customThemeColor}`,
-                                            background: customThemeColor, color: '#fff', padding: '4px 8px', fontSize: 11
+                                            background: customThemeColor, color: 'var(--theme-on-primary)', padding: '4px 8px', fontSize: 11
                                         }}
                                     >
                                         {name} ×
@@ -578,7 +578,7 @@ export default function AlongRoutePanel({
                                                 borderRadius: 'var(--radius-full)',
                                                 border: `1px solid ${selected ? customThemeColor : 'var(--color-border)'}`,
                                                 background: selected ? customThemeColor : 'var(--color-bg-surface)',
-                                                color: selected ? '#fff' : 'var(--color-text-secondary)',
+                                                color: selected ? 'var(--theme-on-primary)' : 'var(--color-text-secondary)',
                                                 padding: '5px 9px',
                                                 fontSize: 11
                                             }}
@@ -613,7 +613,7 @@ export default function AlongRoutePanel({
                         disabled={busy || !mapReady || (routeSummary?.routes?.length > 1 && selectedRouteIndex == null)}
                         style={{
                             width: '100%', marginTop: 13, padding: '10px 12px', border: 0,
-                            borderRadius: 'var(--radius-sm)', background: customThemeColor, color: '#fff',
+                            borderRadius: 'var(--radius-sm)', background: customThemeColor, color: 'var(--theme-on-primary)',
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                             fontWeight: 700,
                             opacity: busy || !mapReady || (routeSummary?.routes?.length > 1 && selectedRouteIndex == null) ? 0.65 : 1
@@ -700,7 +700,7 @@ export default function AlongRoutePanel({
                     >
                         <span style={{
                             width: 24, height: 24, flexShrink: 0, borderRadius: '50%', background: customThemeColor,
-                            color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700
+                            color: 'var(--theme-on-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700
                         }}>{index + 1}</span>
                         <span style={{ flex: 1, minWidth: 0 }}>
                             <span style={{ display: 'block', fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.name}</span>

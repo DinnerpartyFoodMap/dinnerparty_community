@@ -7,7 +7,7 @@ import { useConfirm } from "../../components/feedback/Confirm";
 import { useTips } from "../../components/feedback/Tips";
 import { useAuth } from "../../auth/AuthContext";
 import useDarkMode from "../../theme/useDarkMode";
-import { getThemeColor } from "../../theme/theme";
+import { getThemeColor, DEFAULT_PRIMARY } from "../../theme/theme";
 import "../../components/forms/field.css";
 import {
     createCategory as createCategoryRecord,
@@ -127,7 +127,7 @@ export default function CategorySelector({ backendUrl, token, value, onChange, p
     const [loading, setLoading] = useState(false);
     const [categoryError, setCategoryError] = useState('');
     const [creating, setCreating] = useState(false);
-    const themeColor = getThemeColor() || '#E2789F';
+    const themeColor = getThemeColor() || DEFAULT_PRIMARY;
     const selectedCategories = useMemo(() => parseCategories(value), [value]);
     const normalizedQuery = searchQuery.trim();
 

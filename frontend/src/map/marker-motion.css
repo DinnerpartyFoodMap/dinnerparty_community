@@ -51,7 +51,7 @@
     top: var(--skin-marker-count-y, 30%);
     transform: translate(-50%, -50%);
     font-weight: 600;
-    color: var(--skin-marker-count-color, #000);
+    color: var(--skin-marker-count-color, var(--color-on-emphasis));
     line-height: 1;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -83,9 +83,9 @@
     font-size: 12px;
     line-height: 16px;
     border-radius: var(--radius-sm, 8px);
-    border: 1px solid var(--skin-marker-label-border, var(--theme-primary, #c77dff));
-    background: var(--skin-marker-label-bg, var(--color-bg-surface, #fff));
-    color: var(--skin-marker-label-color, var(--color-text-primary, #222));
+    border: 1px solid var(--skin-marker-label-border, var(--theme-primary));
+    background: var(--skin-marker-label-bg, var(--color-bg-surface));
+    color: var(--skin-marker-label-color, var(--color-text-primary));
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
     pointer-events: none;
     opacity: 1;
@@ -93,9 +93,9 @@
 }
 
 .fm-marker__label[data-thunder] {
-    border-color: var(--color-danger, #d9534f);
-    color: var(--color-danger, #d9534f);
-    background: var(--color-bg-overlay, #fafafa);
+    border-color: var(--color-danger);
+    color: var(--color-danger-text);
+    background: var(--color-bg-overlay);
 }
 
 .fm-marker__label[data-hidden] {
@@ -118,7 +118,7 @@
 }
 
 .fm-marker__hit:focus-visible {
-    outline: 2px solid var(--theme-primary, #c77dff);
+    outline: 2px solid var(--theme-primary);
     outline-offset: 2px;
 }
 
@@ -169,8 +169,8 @@
     width: 18px;
     height: 18px;
     box-sizing: border-box;
-    border: 3px solid #fff;
-    background: #1a73e8;
+    border: 3px solid var(--color-on-scrim);
+    background: var(--color-location);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 

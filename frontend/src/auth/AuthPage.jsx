@@ -6,7 +6,7 @@ import ScrollableView from "../components/layout/ScrollableView";
 import Button from "../components/primitives/Button";
 import qrcodeImg from "../img/qrcode.png";
 import useDarkMode from "../theme/useDarkMode";
-import { getThemeColor, colorToRgba, darkenColor } from "../theme/theme";
+import { getThemeColor, colorToRgba, darkenColor, DEFAULT_PRIMARY } from "../theme/theme";
 import { reportAuthStage } from "./services/authDiagnostics";
 import { getClientInfo } from "../platform/env";
 import { t, tx } from "../i18n/index.js";
@@ -42,7 +42,7 @@ function getStaticColors(dark) {
 }
 
 function getThemeUIColors(themeColor) {
-    const primary = themeColor || '#E2789F';
+    const primary = themeColor || DEFAULT_PRIMARY;
     const primaryBorder = darkenColor(primary, 0.18);
     const primaryDisabled = colorToRgba(primary, 0.5);
     const tabActiveText = primary;

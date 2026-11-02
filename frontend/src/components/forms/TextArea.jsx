@@ -43,7 +43,7 @@ const TextArea = forwardRef(({ style = {}, className, rows, markdown = false, ..
                 <span style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-muted)' }}>{t('common:markdown.hint')}</span>
                 <button type="button" aria-pressed={preview} onClick={() => setPreview((value) => !value)}
                     style={{ flexShrink: 0, padding: '2px 8px', border: '1px solid var(--color-border)', borderRadius: 999, background: preview ? 'var(--theme-primary)' : 'transparent',
-                        color: preview ? '#FFFFFF' : 'var(--color-text-secondary)', fontSize: 12, lineHeight: 1.6, cursor: 'pointer' }}>
+                        color: preview ? 'var(--theme-on-primary)' : 'var(--color-text-secondary)', fontSize: 12, lineHeight: 1.6, cursor: 'pointer' }}>
                     {preview ? t('common:markdown.edit') : t('common:markdown.preview')}
                 </button>
             </div>

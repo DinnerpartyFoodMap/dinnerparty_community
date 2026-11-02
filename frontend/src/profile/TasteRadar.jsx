@@ -18,7 +18,7 @@ function point(index, ratio) {
     return [CENTER + Math.cos(angle) * RADIUS * ratio, CENTER + Math.sin(angle) * RADIUS * ratio];
 }
 
-export default function TasteRadar({ axes, selected, onSelect, accent = 'var(--theme-primary, #e2789f)', size = SIZE }) {
+export default function TasteRadar({ axes, selected, onSelect, accent = 'var(--theme-primary)', size = SIZE }) {
     const rings = [0.25, 0.5, 0.75, 1];
     const polygon = (ratio) => axes.map((_, index) => point(index, ratio).join(',')).join(' ');
     return (

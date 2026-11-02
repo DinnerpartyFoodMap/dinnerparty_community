@@ -45,6 +45,9 @@
 | `--color-text-secondary` | `#6E6578` | `#9E97A9` | `.secondary` | 次要信息、组标题、说明 |
 | `--color-text-muted` | `#857C90` | **`#7D748A`**（原 `#60586E`，2.6:1 不达标） | `.tertiary` | 只用于占位符、禁用态、纯装饰 |
 | `--color-backdrop` | `rgba(18,16,22,.32)` | `rgba(8,6,12,.68)` | 系统 | 模态遮罩 |
+| `--color-scrim` / `--color-on-scrim` | `rgba(0,0,0,.55)` / `#FFFFFF` | 同 | `FM.scrim` / `FM.onScrim` | 图片上的半透明遮罩与其上的文字、图标（缩略图状态、删除钮、看图关闭钮） |
+| `--color-media-bg` | `#1A1625` | 同 | `FM.mediaBg` | 照片编辑 / 裁剪的底色 |
+| `--color-location` | `#1A73E8` | 同 | `FM.location` | 地图上「我的位置」蓝点 |
 
 规则：
 
@@ -267,6 +270,8 @@ frontend/src/styles/tokens.json       ← 唯一来源（字体、颜色含 ligh
 ```
 
 - 生成文件不要手改；改 tokens.json 后运行 `npm run tokens`，生成的三份一起提交。备案页只有浅色，直接引用 tokens.generated.css。
+- `tokens.generated.css` 里还有一个 `.fm-theme-system` 作用域：在读到住民深浅设置之前出现的界面（隐私同意页）加上这个类，深色跟随系统。
+- `npm run test:design-lint`：`src/` 里不许出现十六进制颜色（白名单：Canvas 出图 `journey/cover.js`、`places/shareCard.js`、`poster/rendering/`，`theme/theme.js` 的默认值，`noticeColors.js` 给原生的色值；单行豁免写 `design-token-ignore` 并说明原因）；阶梯外字号与令牌外圆角按文件记在 `tests/unit/styles/design-lint-baseline.json`，只减不增，改少了用 `--update` 收紧。
 - Swift 里不生成品牌主色 / 辅色（原生以网页下发的住民设置为准），只有 `themePrimary` 等缺省值；字号用 Dynamic Type，不生成。
 - 主题色（住民可改）仍由 `theme.js` 运行时写入，并负责算出 `--theme-primary-text`、`--theme-on-primary`；原生从主题快照拿。
 - `npm run test:design-tokens`：两份生成文件与 tokens.json 同步、主题色默认值与 `theme.js` 一致、文字配色对比度（正文与语义色文字 ≥ 4.5:1、muted ≥ 3:1）、Swift 文件已加入 Xcode 工程。
@@ -277,7 +282,7 @@ frontend/src/styles/tokens.json       ← 唯一来源（字体、颜色含 ligh
 - 浏览器宽屏 / 窄屏（320px）× 浅色 / 深色；iOS App 原生页与网页页 × 浅色 / 深色；Android App。
 - 换一个自定义主题色（很浅的黄、很深的蓝）看 on-primary 和 primary-text 是否可读。
 - 启用一个皮肤，确认槽位覆盖仍生效、未启用时外观正确。
-- 组件里不出现新的十六进制颜色、不在阶梯里的字号、令牌外的圆角（`test:design-tokens` 可加扫描）。
+- 组件里不出现新的十六进制颜色、不在阶梯里的字号、令牌外的圆角（`npm run test:design-lint` 检查）。
 
 ## 11. 交互规范
 

@@ -1,6 +1,6 @@
 /* 双滑块范围拉杆（RangeSlider.jsx）：两个透明的 range 叠在同一条轨道上，只有滑块接收指针 */
 .fm-range {
-    --fm-range-accent: var(--color-primary, #e2789f);
+    --fm-range-accent: var(--theme-primary);
     position: relative;
     height: 36px;
     touch-action: none;
@@ -51,7 +51,7 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: var(--color-bg-surface, #fff);
+    background: var(--color-bg-surface);
     border: 2px solid var(--fm-range-accent);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
     cursor: grab;
@@ -61,7 +61,7 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: var(--color-bg-surface, #fff);
+    background: var(--color-bg-surface);
     border: 2px solid var(--fm-range-accent);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
     cursor: grab;

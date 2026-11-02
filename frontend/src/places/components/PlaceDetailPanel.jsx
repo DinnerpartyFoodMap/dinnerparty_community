@@ -196,7 +196,7 @@ function ImagePreview({ preview, onClose }) {
                         onClick={onClose}
                         aria-label={t('map:placeDetail.closePreview')}
                         className="fm-pressable"
-                        style={{ position: 'absolute', top: 8, right: 8, width: 44, height: 44, borderRadius: 999, border: 'none', background: 'rgba(0,0,0,.5)', color: '#fff', fontSize: 26, cursor: 'pointer' }}
+                        style={{ position: 'absolute', top: 8, right: 8, width: 44, height: 44, borderRadius: 999, border: 'none', background: 'var(--color-scrim)', color: 'var(--color-on-scrim)', fontSize: 26, cursor: 'pointer' }}
                     >×</button>
                 </div>
             )}

@@ -80,7 +80,7 @@
     overflow: hidden;
     font-size: 24px;
     background: var(--onboarding-accent, var(--theme-primary));
-    color: var(--onboarding-on-accent, #fff);
+    color: var(--onboarding-on-accent, var(--theme-on-primary));
 }
 
 .fm-onboarding__count {
@@ -199,7 +199,7 @@
 .fm-onboarding__button--primary {
     border-color: var(--onboarding-accent, var(--theme-primary));
     background: var(--onboarding-accent, var(--theme-primary));
-    color: var(--onboarding-on-accent, #fff);
+    color: var(--onboarding-on-accent, var(--theme-on-primary));
     font-weight: 700;
 }
 

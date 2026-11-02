@@ -10,7 +10,7 @@ import { fetchUserProfile, saveProfileWidgets, saveTasteLevel, setUserBlocked } 
 import { userReportPrefill } from '../feedback/feedbackTypes';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating';
 import { imageThumbnailUrl } from '../platform/runtimeConfig';
-import { getThemeColor } from '../theme/theme';
+import { getThemeColor, DEFAULT_PRIMARY } from '../theme/theme';
 import defaultAvatar from '../img/default.png';
 import { t } from '../i18n/index.js';
 import './profile.css';
@@ -28,7 +28,7 @@ const WIDGET_TEXT = {
 export default function UserProfilePage({ backendUrl, token, userId, currentUser, onOpenPlace, onOpenFeedback, onRequireAuth, onBack }) {
     const showTip = useTips();
     const confirm = useConfirm();
-    const accent = getThemeColor() || '#E2789F';
+    const accent = getThemeColor() || DEFAULT_PRIMARY;
     const [profile, setProfile] = useState(null);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(true);

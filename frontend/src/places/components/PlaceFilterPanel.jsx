@@ -4,7 +4,7 @@ import Chip from '../../components/primitives/Chip';
 import RangeSlider from '../../components/forms/RangeSlider';
 import { loadCategoryDirectory } from '../categoryDirectory';
 import { COST_SLIDER, EMPTY_PLACE_FILTER, cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState } from '../placeFilter';
-import { getThemeColor } from '../../theme/theme';
+import { getThemeColor, DEFAULT_PRIMARY } from '../../theme/theme';
 import { t } from '../../i18n/index.js';
 
 const costText = (value, bound) => {
@@ -36,7 +36,7 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
     const [categories, setCategories] = useState([]);
     const [loadError, setLoadError] = useState('');
     const [showAll, setShowAll] = useState(false);
-    const accent = getThemeColor() || '#E2789F';
+    const accent = getThemeColor() || DEFAULT_PRIMARY;
     const filter = normalizePlaceFilter(value);
 
     useEffect(() => {

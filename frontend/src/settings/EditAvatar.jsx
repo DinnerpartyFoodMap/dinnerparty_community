@@ -6,13 +6,13 @@ import { TipsContext } from "../components/feedback/Tips";
 import Cropper from 'react-easy-crop';
 import getCroppedImg from "./media/cropImage";
 import PageTemplate from "../components/layout/PageTemplate";
-import { getThemeColor, pickContrastTextColor } from "../theme/theme";
+import { getThemeColor, pickContrastTextColor, DEFAULT_PRIMARY } from "../theme/theme";
 import { pickImages, prepareImageForUpload, UPLOAD_LIMITS } from '../platform/mediaPicker';
 import { t } from '../i18n/index.js';
 import { uploadAvatar } from './accountSettings';
 
 export default function EditAvatar({ user, onBack, backendUrl, token, onUpdateUser }) {
-    const themeColor = getThemeColor() || '#E2789F';
+    const themeColor = getThemeColor() || DEFAULT_PRIMARY;
     const dark = useDarkMode();
     const [file, setFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState('');
@@ -78,7 +78,7 @@ export default function EditAvatar({ user, onBack, backendUrl, token, onUpdateUs
         <PageTemplate breadcrumb={[{ label: t('settings:common.nav.settings'), onClick: onBack }, { label: t('common:nav.editAvatar') }]} onBack={onBack}>
             <div style={{ maxWidth: 500, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
                 {previewUrl ? (
-                    <div style={{ position: 'relative', width: '100%', height: 300, background: '#333', borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ position: 'relative', width: '100%', height: 300, background: 'var(--color-media-bg)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
                         <Cropper
                             image={previewUrl}
                             crop={crop}

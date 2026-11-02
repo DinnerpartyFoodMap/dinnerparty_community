@@ -24,7 +24,7 @@
 .fm-exhibition-spread__column { display: flex; flex-direction: column; gap: 18px; pointer-events: none; }
 .fm-exhibition-spread__item {
     position: relative; flex: none; display: flex; flex-direction: row-reverse; align-items: center; gap: 14px; width: 100%;
-    padding: 0; border: 0; background: transparent; color: #fff; text-align: left;
+    padding: 0; border: 0; background: transparent; color: var(--color-on-scrim); text-align: left;
     font: inherit; cursor: pointer; pointer-events: auto; backface-visibility: hidden;
 }
 .fm-exhibition-spread__art {

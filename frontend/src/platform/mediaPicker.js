@@ -62,8 +62,8 @@ function chooseSourceFallback() {
         });
         const sheet = document.createElement('div');
         Object.assign(sheet.style, {
-            width: 'min(480px, 100%)', boxSizing: 'border-box', background: 'var(--color-bg-surface, #fff)',
-            color: 'var(--color-text-primary, #222)', borderRadius: '16px 16px 0 0',
+            width: 'min(480px, 100%)', boxSizing: 'border-box', background: 'var(--color-bg-surface)',
+            color: 'var(--color-text-primary)', borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
             padding: '12px 12px calc(12px + var(--safe-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: '8px'
         });
         let done = false;
@@ -80,8 +80,8 @@ function chooseSourceFallback() {
             button.type = 'button';
             button.textContent = label;
             Object.assign(button.style, {
-                padding: '14px', fontSize: '16px', borderRadius: '10px', border: '1px solid var(--color-border, #ddd)',
-                background: value ? 'var(--color-bg-overlay, #f4f4f4)' : 'transparent', color: 'inherit'
+                padding: '14px', fontSize: '16px', borderRadius: '10px', border: '1px solid var(--color-border)',
+                background: value ? 'var(--color-bg-overlay)' : 'transparent', color: 'inherit'
             });
             button.addEventListener('click', () => finish(value));
             sheet.appendChild(button);
@@ -264,7 +264,7 @@ export async function prepareImageForUpload(file, limits = UPLOAD_LIMITS.placeIm
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff'; // PNG 透明区域转 JPEG 时避免变黑
+    ctx.fillStyle = '#ffffff'; // PNG 透明区域转 JPEG 时避免变黑（画布填充，design-token-ignore）
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(decoded, 0, 0, canvas.width, canvas.height);
     if (typeof decoded.close === 'function') decoded.close();

@@ -5,8 +5,8 @@
     height: 8px;
     flex-shrink: 0;
     border-radius: 50%;
-    background: var(--color-danger, #d9534f);
-    box-shadow: 0 0 0 1.5px var(--color-bg-surface, #fff);
+    background: var(--color-danger);
+    box-shadow: 0 0 0 1.5px var(--color-bg-surface);
 }
 
 .fm-red-dot--corner {
@@ -20,8 +20,8 @@
     flex-shrink: 0;
     padding: 1px 6px;
     border-radius: 8px;
-    border: 1px solid color-mix(in srgb, var(--color-danger, #d9534f) 60%, transparent);
-    color: var(--color-danger, #d9534f);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 60%, transparent);
+    color: var(--color-danger-text);
     font-size: 11px;
     font-weight: 600;
     white-space: nowrap;

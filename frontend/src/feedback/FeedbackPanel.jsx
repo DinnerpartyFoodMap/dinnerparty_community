@@ -148,7 +148,7 @@ export default function FeedbackPanel({ open, onClose, backendUrl, token, onRequ
                             <button type="button" onClick={() => removeImage(image.key)} disabled={submitting}
                                 aria-label={t('feedback:removeImage', { index: index + 1 })}
                                 style={{ position: 'absolute', top: -6, right: -6, width: 24, height: 24, padding: 0, borderRadius: '50%', border: 0, cursor: 'pointer',
-                                    background: 'rgba(0,0,0,0.65)', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    background: 'var(--color-scrim)', color: 'var(--color-on-scrim)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16 }}>close</span>
                             </button>
                         </div>

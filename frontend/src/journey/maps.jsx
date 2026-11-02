@@ -8,6 +8,7 @@ import {centerLabel} from './shared';
 import { t, tx } from '../i18n/index.js';
 import { searchExternalPlaces } from '../discovery/externalSearch.js';
 import { useExternalSearch } from '../discovery/hooks/useExternalSearch.js';
+import {DEFAULT_PRIMARY} from '../theme/theme';
 
 // 日记里的地图能力：搜索中心选择与行程预览；地图选点使用与地图首页相同的全屏选点器（ctx.pickOnMap）。所有坐标均为 GCJ-02（与高德地图一致），
 // 设备定位已在 platform/geolocation 中统一转换，这里不再二次转换。
@@ -140,7 +141,7 @@ export function StopMapPreview({stops,activeId,onSelect}) {
             const marker=new AMap.Marker({position:[s.lng,s.lat],content,offset:new AMap.Pixel(-15,-15),zIndex:300});
             marker.on('click',()=>onSelect?.(s.id));list.push(marker);
             const previous=stops.slice(0,index).reverse().find(p=>Number.isFinite(p.lng)&&Number.isFinite(p.lat));
-            if(previous)list.push(new AMap.Polyline({path:[[previous.lng,previous.lat],[s.lng,s.lat]],strokeColor:getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim()||'#E2789F',strokeWeight:4,strokeStyle:'dashed',zIndex:150}));
+            if(previous)list.push(new AMap.Polyline({path:[[previous.lng,previous.lat],[s.lng,s.lat]],strokeColor:getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim()||DEFAULT_PRIMARY,strokeWeight:4,strokeStyle:'dashed',zIndex:150}));
         });
         overlays.current=list;
         if(list.length){map.add(list);try{map.setFitView(list.filter(o=>o instanceof AMap.Marker),false,[40,40,40,40],16);}catch{}}

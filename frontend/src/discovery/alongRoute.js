@@ -235,7 +235,10 @@ export function drawAmapRoutes(
 ) {
     if (!map || !window.AMap || !Array.isArray(routes) || routes.length === 0) return [];
     const overlays = [];
-    const palette = [primaryColor, secondaryColor || '#8D6EBA', '#E58C45', '#468AC9', '#6BA66F', '#B65C82'];
+    // 多条路线依次用主色、辅色与语义色（来自设计令牌，深浅模式自动）
+    const tokenColor = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const palette = [primaryColor, secondaryColor || tokenColor('--theme-secondary'), tokenColor('--color-warning'),
+        tokenColor('--color-info'), tokenColor('--color-success'), tokenColor('--color-primary-active')];
     const highlightedRouteIndex = selectedRouteIndex == null && routes.length === 1
         ? Number(routes[0].index) || 0
         : selectedRouteIndex;
@@ -263,7 +266,7 @@ export function drawAmapRoutes(
     });
 
     const primaryPath = routes[0].path;
-    const endpointContent = (label) => `<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${primaryColor};color:#fff;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.25);font-size:12px;font-weight:700">${label}</div>`;
+    const endpointContent = (label) => `<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${primaryColor};color:var(--theme-on-primary);border:2px solid var(--color-bg-surface);box-shadow:var(--shadow-sm);font-size:12px;font-weight:700">${label}</div>`;
     const startMarker = new window.AMap.Marker({
         position: [primaryPath[0].lng, primaryPath[0].lat],
         content: endpointContent(t('map:alongRoute.startMarker')),

@@ -40,7 +40,7 @@ export function createIosBackGesture({ dispatch = dispatchBack, duration = 180 }
         if (state.target) state.target.style.translate = `${state.progress * state.width}px 0px`;
         state.indicator.style.opacity = String(0.35 + state.progress * 0.65);
         state.indicator.style.transform = `translateX(${Math.min(18, state.progress * 30)}px) scale(${0.8 + state.progress * 0.2})`;
-        state.indicator.style.background = `conic-gradient(var(--theme-primary, #e2789f) ${state.progress * 360}deg, var(--color-bg-surface, #fff) 0deg)`;
+        state.indicator.style.background = `conic-gradient(var(--theme-primary) ${state.progress * 360}deg, var(--color-bg-surface) 0deg)`;
         state.indicator.dataset.progress = String(state.progress);
     };
     const animate = async (state, progress) => {
@@ -105,7 +105,7 @@ export function createIosBackGesture({ dispatch = dispatchBack, duration = 180 }
                 Object.assign(indicator.style, {
                     position: 'fixed', zIndex: '2147483646', left: '6px', top: '45%', width: '38px', height: '38px',
                     display: 'grid', placeItems: 'center', borderRadius: '50%', fontSize: '32px', lineHeight: '1',
-                    color: 'var(--color-text-primary, #222)', boxShadow: 'var(--shadow-sm)', pointerEvents: 'none'
+                    color: 'var(--color-text-primary)', boxShadow: 'var(--shadow-sm)', pointerEvents: 'none'
                 });
                 document.body.appendChild(indicator);
                 const previous = target?.parentElement?.querySelector('[data-native-back-previous]');

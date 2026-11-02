@@ -1,10 +1,11 @@
 .fm-consent-shell {
-    --consent-bg: #f9f8fa;
-    --consent-surface: #ffffff;
-    --consent-text: #2b2533;
-    --consent-muted: #6e6578;
-    --consent-border: #e6dceb;
-    --consent-accent: #864064;
+    /* 颜色取设计令牌；.fm-theme-system 让它在读到住民设置之前跟随系统深浅（tokens.generated.css） */
+    --consent-bg: var(--color-bg-base);
+    --consent-surface: var(--color-bg-surface);
+    --consent-text: var(--color-text-primary);
+    --consent-muted: var(--color-text-secondary);
+    --consent-border: var(--color-border);
+    --consent-accent: var(--theme-primary-text);
     position: fixed;
     inset: 0;
     overflow: auto;
@@ -35,7 +36,7 @@
     overscroll-behavior: contain;
     box-shadow: var(--shadow-surface);
 }
-.fm-consent-dialog::backdrop { background: #17101d55; }
+.fm-consent-dialog::backdrop { background: var(--color-backdrop); }
 .fm-consent-dialog h1 { margin: 0 0 16px; font-size: 24px; line-height: 1.5; }
 .fm-consent-dialog p { margin: 12px 0; }
 .fm-consent-links { display: flex; flex-wrap: wrap; gap: 8px 20px; }
@@ -52,12 +53,8 @@
     font-weight: 600;
     cursor: pointer;
 }
-.fm-consent-accept { background: var(--consent-accent); color: #fff; }
+.fm-consent-accept { background: var(--theme-primary); border-color: var(--theme-primary); color: var(--theme-on-primary); }
 .fm-consent-button:hover { filter: brightness(0.94); }
 .fm-consent-shell :focus-visible { outline: 2px solid var(--consent-accent); outline-offset: 2px; }
 .fm-consent-dialog h1:focus { outline: none; }
 @media (max-width: 480px) { .fm-consent-dialog { padding: 22px 20px; } .fm-consent-actions { flex-wrap: nowrap; } .fm-consent-button { padding: 10px 12px; } }
-@media (prefers-color-scheme: dark) {
-    .fm-consent-shell { --consent-bg: #121016; --consent-surface: #1a1625; --consent-text: #f3efef; --consent-muted: #bab0c5; --consent-border: #44364f; --consent-accent: #ffa6c1; }
-    .fm-consent-accept { color: #2b2533; }
-}

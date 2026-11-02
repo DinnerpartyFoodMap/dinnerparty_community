@@ -42,7 +42,7 @@ export default function PrivacyConsent({ onAccept }) {
     };
 
     return (
-        <main className="fm-consent-shell">
+        <main className="fm-consent-shell fm-theme-system">
             <div className="fm-consent-status">
                 <p className="fm-consent-brand">{t('common:app.name')}</p>
                 {choice === 'rejected' && <>

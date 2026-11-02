@@ -1,4 +1,4 @@
-import { pickContrastTextColor } from "../theme/theme";
+import { pickContrastTextColor, DEFAULT_PRIMARY } from "../theme/theme";
 import { markdownToPlainText } from '../components/markdown/markdownText.js';
 import { t } from '../i18n/index.js';
 
@@ -19,7 +19,7 @@ const plain = (text) => markdownToPlainText(text || '').trim();
 function themeOf(style) {
     if (style !== '主站') return themes[style] || themes.奶油;
     const root = getComputedStyle(document.documentElement);
-    return { bg: root.getPropertyValue('--color-bg-base').trim() || '#F9F8FA', ink: root.getPropertyValue('--color-text-primary').trim() || '#2B2533', line: root.getPropertyValue('--theme-primary').trim() || '#E2789F' };
+    return { bg: root.getPropertyValue('--color-bg-base').trim() || '#F9F8FA', ink: root.getPropertyValue('--color-text-primary').trim() || '#2B2533', line: root.getPropertyValue('--theme-primary').trim() || DEFAULT_PRIMARY };
 }
 export function resolveTemplate(cover, template = 'auto') {
     const stops = cover.stops || [], photos = stops.some((s) => s.media_ids?.length);

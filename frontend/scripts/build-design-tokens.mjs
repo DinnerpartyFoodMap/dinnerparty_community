@@ -48,8 +48,11 @@ export function renderCss(tokens) {
     light.push('', '/* 层级 */');
     for (const [key, value] of entries(tokens.z)) light.push(`--z-${key}: ${value}`);
 
+    // .fm-theme-system：还没读到住民深浅设置的界面（隐私同意页）跟随系统
+    const systemScope = cssBlock('.fm-theme-system', darkLines(tokens)).trimEnd().split('\n').map((line) => `    ${line}`).join('\n');
     return '/* 由 src/styles/tokens.json 生成（npm run tokens），不要手改。规格见 frontend/doc/DESIGN_SYSTEM.md */\n\n'
-        + cssBlock(':root', light) + '\n' + cssBlock(":root[data-theme='dark']", darkLines(tokens));
+        + cssBlock(':root', light) + '\n' + cssBlock(":root[data-theme='dark']", darkLines(tokens))
+        + `\n@media (prefers-color-scheme: dark) {\n${systemScope}\n}\n`;
 }
 
 function darkLines(tokens) {

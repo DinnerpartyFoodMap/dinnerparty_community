@@ -3,15 +3,17 @@
 // 不依赖 HTML 截图，App 与网页输出一致。版式见 doc/README.md 与 doc/TEST_CASES.md。
 import QRCode from 'qrcode';
 import { markdownToPlainText } from '../components/markdown/markdownText.js';
+import { DEFAULT_PRIMARY, DEFAULT_SECONDARY } from '../theme/theme.js';
 
 export const CARD_SIZE = {
     portrait: { width: 1200, height: 1600 },
     landscape: { width: 1600, height: 900 }
 };
 
+// 品牌主色 / 辅色取默认主题（theme.js，与 tokens.json 同步）；其余是分享卡片专用的纸色与墨色
 export const CARD_BRAND = {
-    primary: '#E2789F',
-    secondary: '#8C6BB1',
+    primary: DEFAULT_PRIMARY,
+    secondary: DEFAULT_SECONDARY,
     ink: '#4A2438',
     inkSoft: 'rgba(74, 36, 56, 0.72)',
     inkFaint: 'rgba(74, 36, 56, 0.55)',

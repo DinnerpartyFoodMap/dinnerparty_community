@@ -1258,7 +1258,7 @@ export default function MapUI(props) {
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                         // 颜色不随状态变化，只换图标（列表 / 地图）
                         background: customThemeColor,
-                        color: '#FFFFFF', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
+                        color: 'var(--theme-on-primary)', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
                     }}
                 >
                     <span className="material-symbols-outlined" style={{ fontSize: size }}>{listShown ? 'map' : 'view_list'}</span>
@@ -1281,7 +1281,7 @@ export default function MapUI(props) {
                         width: 44, height: 44, padding: 0, borderRadius: '50%', position: 'relative',
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                         background: filterActive || filterOpen ? 'var(--color-primary-active)' : customThemeColor,
-                        color: '#FFFFFF', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
+                        color: 'var(--theme-on-primary)', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
                     }}
                 >
                     <span className="material-symbols-outlined" style={{ fontSize: size }}>filter_list</span>
@@ -1978,7 +1978,7 @@ export default function MapUI(props) {
                             aria-label={isPosterPicker && selectedPlaceAlreadyPicked ? t('map:ui.card.unpick') : t('map:ui.card.pick')}
                             style={{
                                 ...(isPosterPicker && selectedPlaceAlreadyPicked ? { background: 'var(--color-danger)' } : {}),
-                                color: isPosterPicker && selectedPlaceAlreadyPicked ? 'var(--color-on-emphasis)' : '#FFFFFF',
+                                color: isPosterPicker && selectedPlaceAlreadyPicked ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
                                 border: 0
                             }}
                         >
@@ -2514,7 +2514,7 @@ export default function MapUI(props) {
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     background: locating ? 'var(--color-success)' : customThemeColor,
-                                    color: locating ? 'var(--color-on-emphasis)' : '#FFFFFF',
+                                    color: locating ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
                                     border: 'none',
                                     boxShadow: 'var(--shadow-sm)',
                                     opacity: (!mapReady || locating) ? 0.65 : 1
@@ -2592,7 +2592,7 @@ export default function MapUI(props) {
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     background: customThemeColor,
-                                    color: '#FFFFFF',
+                                    color: 'var(--theme-on-primary)',
                                     border: 'none',
                                     boxShadow: 'var(--shadow-sm)',
                                     transition: 'background 180ms ease, transform 220ms ease',
@@ -2635,7 +2635,7 @@ export default function MapUI(props) {
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
                                                 background: addMode ? 'var(--color-danger)' : customThemeColor,
-                                                color: addMode ? 'var(--color-on-emphasis)' : '#FFFFFF',
+                                                color: addMode ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
                                                 border: 'none',
                                                 boxShadow: addMode ? '0 4px 12px rgba(217,83,79,0.22)' : '0 4px 12px var(--color-glow)',
                                                 transition: 'background 180ms ease, transform 220ms ease',
@@ -2666,7 +2666,7 @@ export default function MapUI(props) {
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         background: favPageOpen ? 'var(--color-primary-active)' : customThemeColor,
-                                        color: favPageOpen ? 'var(--color-on-emphasis)' : '#FFFFFF',
+                                        color: favPageOpen ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
                                         border: 'none',
                                         transition: 'background 180ms ease, transform 220ms ease',
                                         cursor: (!mapReady || authPending) ? 'not-allowed' : 'pointer',
@@ -2698,7 +2698,7 @@ export default function MapUI(props) {
                                             justifyContent: 'center',
                                             position: 'relative',
                                             background: pickedPageOpen ? 'var(--color-primary-active)' : customThemeColor,
-                                            color: pickedPageOpen ? 'var(--color-on-emphasis)' : '#FFFFFF',
+                                            color: pickedPageOpen ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
                                             border: 'none',
                                             transition: 'background 180ms ease, transform 220ms ease',
                                             cursor: !mapReady ? 'not-allowed' : 'pointer',
@@ -2748,7 +2748,7 @@ export default function MapUI(props) {
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             background: locating ? 'var(--color-success)' : customThemeColor,
-                                            color: locating ? 'var(--color-on-emphasis)' : '#FFFFFF',
+                                            color: locating ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
                                             border: 'none',
                                             transition: 'background 180ms ease, transform 220ms ease',
                                             cursor: (!mapReady || authPending) ? 'not-allowed' : 'pointer',
@@ -3578,7 +3578,7 @@ export default function MapUI(props) {
                                 justifyContent: 'center',
                                 flexShrink: 0,
                                 background: customThemeColor,
-                                color: '#FFFFFF',
+                                color: 'var(--theme-on-primary)',
                                 fontSize: 11,
                                 fontWeight: 700
                             }}>

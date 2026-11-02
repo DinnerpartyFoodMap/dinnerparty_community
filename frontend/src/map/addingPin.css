@@ -12,7 +12,7 @@
 .fm-adding-pin .material-symbols-outlined {
     font-size: 44px;
     line-height: 1;
-    color: var(--theme-primary, #e2789f);
+    color: var(--theme-primary);
     font-variation-settings: 'FILL' 1;
     filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
 }

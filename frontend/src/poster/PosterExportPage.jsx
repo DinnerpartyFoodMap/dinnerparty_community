@@ -295,7 +295,7 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
                                                 justifyContent: 'center',
                                                 flexShrink: 0,
                                                 background: 'var(--theme-primary)',
-                                                color: '#2B2533',
+                                                color: 'var(--theme-on-primary)',
                                                 fontSize: 12,
                                                 fontWeight: 700
                                             }}>
@@ -383,8 +383,8 @@ export default function PosterExportPage({ backendUrl, token, isAuth, onRequireA
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                background: 'rgba(15, 23, 42, 0.58)',
-                                                color: '#fff',
+                                                background: 'var(--color-scrim)',
+                                                color: 'var(--color-on-scrim)',
                                                 fontSize: 14
                                             }}
                                         >
