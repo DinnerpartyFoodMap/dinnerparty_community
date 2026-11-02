@@ -375,6 +375,7 @@ private struct JourneyButtonStyle: ViewModifier {
 /// 图文生成（网页 JourneyComposer）：照片 → 描述 → 地址 → 日期（可多日）→ 可见性，底部生成 / 手动记录，右上角存草稿。
 /// 输入随时（防抖）同步给网页，离开、上传照片、生成时网页都拿到最新内容。
 private struct NativeJourneyComposerView: View {
+    @Environment(\.nativePrimaryText) private var primaryText
     @ObservedObject var model: NativePageModel
     let data: JourneyData
     @Environment(\.nativePrimaryTint) private var primaryTint
@@ -490,6 +491,8 @@ private struct NativeJourneyComposerView: View {
                     model.custom("save", values: values())
                 }
                 .disabled(model.loading)
+                // 工具栏文字按钮用加深的主色（浅色模式下主色当文字不够清楚，设计参考 1.1）
+                .tint(primaryText)
             }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -656,6 +659,8 @@ private struct NativeJourneyComposerView: View {
 /// 日历（网页 JourneyCalendar）：未完成入口 → 搜索与公开状态筛选 → 月份切换 → 月历（每天的篇数 / 草稿）→
 /// 选中日期（或本月 / 搜索结果）的日记列表；右上角“管理”多选删除，选两篇可预览合并；底部图文生成 / 手动新建。
 private struct NativeJourneyCalendarView: View {
+    @Environment(\.nativePrimaryText) private var primaryText
+    @Environment(\.nativeOnPrimary) private var onPrimary
     @ObservedObject var model: NativePageModel
     let data: JourneyData
     @Environment(\.nativePrimaryTint) private var primaryTint
@@ -749,6 +754,7 @@ private struct NativeJourneyCalendarView: View {
                     manage.toggle()
                     selected = []
                 }
+                .tint(primaryText)
             }
         }
         .alert(data.label("deleteTitle", "删除日记"), isPresented: $confirmDelete) {
@@ -834,19 +840,23 @@ private struct NativeJourneyCalendarView: View {
             VStack(spacing: 2) {
                 Text("\(day.int("day"))")
                     .font(.subheadline.weight(isToday || isSelected ? .bold : .regular))
-                    .foregroundStyle(isSelected ? Color.white : (isToday ? primaryTint : Color.primary))
+                    .foregroundStyle(isSelected ? onPrimary : (isToday ? primaryText : Color.primary))
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(isSelected ? primaryTint : Color.clear))
                 if count > 0 {
                     Text(String(format: data.label("dayCount", "%d篇"), count))
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(primaryTint)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .foregroundStyle(primaryText)
                 } else if day.bool("draft") {
                     Text(data.label("draft", "草稿"))
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .foregroundStyle(secondaryTint)
                 } else {
-                    Text(" ").font(.system(size: 9))
+                    Text(" ").font(.caption2)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 46)

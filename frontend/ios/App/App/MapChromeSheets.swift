@@ -289,22 +289,23 @@ struct MapChromeMenuPanel: View {
     @ViewBuilder
     private var header: some View {
         if let leading = sheet.leading {
-            // v15 标题左侧的文字按钮（筛选的“清除筛选”）：标题仍在整行居中，两侧按钮叠在上面
+            // v15 的文字按钮（筛选的“清除筛选”，协议字段仍叫 leading）：关闭钮在左、文字按钮在右（设计参考 7.6），
+            // 标题仍在整行居中，两侧按钮叠在上面
             ZStack {
                 titleBlock
                     .padding(.horizontal, 104)
                 HStack {
-                    leadingButton(leading)
-                    Spacer(minLength: 0)
                     closeButton
+                    Spacer(minLength: 0)
+                    leadingButton(leading)
                 }
             }
         } else {
             HStack(alignment: .center, spacing: 12) {
-                // 与右侧关闭钮等宽的占位，标题保持居中
-                Color.clear.frame(width: 44, height: 44)
-                titleBlock
                 closeButton
+                titleBlock
+                // 与左侧关闭钮等宽的占位，标题保持居中
+                Color.clear.frame(width: 44, height: 44)
             }
         }
     }
@@ -514,6 +515,15 @@ struct MapChromeMenuPanel: View {
     }
 
     /// 标签：未选为浅底；include 成功色、exclude 危险色（与网页筛选面板相同）、accent 主题色（描边 + 浅色底），选中时带图标
+    /// 选中芯片的文字色：包含 / 排除用语义色的文字变体，主题色用加深的主色
+    private func chipTextColor(_ row: MapChromeSheetRow) -> Color {
+        switch row.tone {
+        case "include": return FM.successText
+        case "exclude": return FM.dangerText
+        default: return accent.fmReadableText
+        }
+    }
+
     private func chipButton(_ row: MapChromeSheetRow) -> some View {
         let tint: Color? = {
             switch row.tone {
@@ -552,7 +562,8 @@ struct MapChromeMenuPanel: View {
             .frame(minHeight: 36)
             .background((tint ?? Color.primary).opacity(tint == nil ? 0.08 : 0.16), in: Capsule())
             .overlay(Capsule().strokeBorder(tint ?? Color.clear, lineWidth: 1))
-            .foregroundStyle(tint ?? Color.primary)
+            // 选中的文字用加深的文字色（与网页 Chip 相同），底色与描边仍用本色
+            .foregroundStyle(tint.map { _ in chipTextColor(row) } ?? Color.primary)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -754,7 +765,15 @@ struct MapChromePlaceCard: View {
     }
 
     private var header: some View {
+        // 关闭钮在左（设计参考 7.6），分享钮（协议字段 leading）或展会图标在右
         HStack(alignment: .center, spacing: 12) {
+            circleButton(symbol: "xmark", image: sheet.closeImage, template: sheet.closeImageTemplate,
+                         label: model.text("close", "关闭"), tint: Color.primary, disabled: false) {
+                model.dismissSheet()
+            }
+            headerTitle
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
             if let leading = sheet.leading {
                 circleButton(
                     symbol: leading.symbol ?? "square.and.arrow.up",
@@ -771,23 +790,16 @@ struct MapChromePlaceCard: View {
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }
-            headerTitle
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-            circleButton(symbol: "xmark", image: sheet.closeImage, template: sheet.closeImageTemplate,
-                         label: model.text("close", "关闭"), tint: Color.primary, disabled: false) {
-                model.dismissSheet()
-            }
         }
     }
 
     @ViewBuilder
     private var titleText: some View {
         if sheet.scrollsTitle {
-            MapChromeMarqueeText(text: sheet.title, font: .title2.weight(.bold))
+            MapChromeMarqueeText(text: sheet.title, font: .title3.weight(.bold))
         } else {
             Text(sheet.title)
-                .font(.title2.weight(.bold))
+                .font(.title3.weight(.bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }

@@ -843,12 +843,15 @@ struct NativePageView: View {
 private struct NativePageList: View {
     @ObservedObject var model: NativePageModel
     @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativePrimaryText) private var primaryText
     let spec: NativePageSpec
     let isRoot: Bool
     @State private var search = ""
 
     /// 半屏面板的根页：不铺列表底色，透出面板玻璃（与收藏面板同一种分组底色）
     private var glass: Bool { isRoot && model.presentation == "sheet" }
+    /// 普通行的底色：整页用卡片底色，半屏玻璃根页保持系统行底（nil）
+    private var plainRowFill: Color? { glass ? nil : FM.bgSurface }
 
     var body: some View {
         Group {
@@ -888,6 +891,8 @@ private struct NativePageList: View {
 
     private var list: some View {
         List {
+            // 没有单独设底色的分组：整页用卡片底色（与网页 bg-surface 一致），半屏玻璃面板的根页保持系统行底
+            Group {
             if let header = spec.header {
                 Section {
                     NativePageHeaderView(header: header)
@@ -904,7 +909,7 @@ private struct NativePageList: View {
                 Section {
                     Label(spec.message, systemImage: "checkmark.circle.fill")
                         .font(.subheadline)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(primaryText)
                 }
             }
             if !spec.error.isEmpty {
@@ -914,6 +919,8 @@ private struct NativePageList: View {
                         .foregroundStyle(FM.dangerText)
                 }
             }
+            }
+            .listRowBackground(plainRowFill)
             if !spec.tabs.isEmpty {
                 Section {
                     tabsView
@@ -927,10 +934,12 @@ private struct NativePageList: View {
                         Spacer()
                     }
                 }
+                .listRowBackground(plainRowFill)
             }
             ForEach(spec.sections) { section in
                 sectionView(section)
             }
+            Group {
             if !spec.emptyText.isEmpty && spec.sections.isEmpty && !spec.loading {
                 Section {
                     Text(spec.emptyText)
@@ -951,6 +960,8 @@ private struct NativePageList: View {
                     pager
                 }
             }
+            }
+            .listRowBackground(plainRowFill)
         }
         .listStyle(.insetGrouped)
         .modifier(NativePageGlassList(enabled: glass))
@@ -1142,10 +1153,10 @@ private struct NativePageRowButton: View {
     @Environment(\.nativeOnPrimary) private var onPrimary
     @Environment(\.nativePageGlassRows) private var glassRows
 
-    /// 选中行用主色浅底；半屏面板根页的行用与收藏面板相同的分组底色
+    /// 选中行用主色浅底；半屏面板根页的行用与收藏面板相同的分组底色；整页的行用卡片底色（与网页 bg-surface 一致）
     private var rowBackground: Color? {
         if row.selected { return primaryTint.opacity(0.12) }
-        return glassRows ? Color.nativeSheetGroupFill : nil
+        return glassRows ? Color.nativeSheetGroupFill : FM.bgSurface
     }
 
     private var tappable: Bool { !row.actions.isEmpty || !row.fields.isEmpty }
@@ -1462,6 +1473,8 @@ private struct NativePageRowDetail: View {
 
     var body: some View {
         List {
+            // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+            Group {
             Section {
                 HStack(alignment: .top, spacing: 14) {
                     NativePageRowImage(model: model, row: row, size: 64)
@@ -1549,6 +1562,8 @@ private struct NativePageRowDetail: View {
                     }
                 }
             }
+            }
+            .listRowBackground(FM.bgSurface)
         }
         .listStyle(.insetGrouped)
         .nativePageBackground()
@@ -1620,6 +1635,7 @@ struct NativeFormPage: View {
     let form: NativePageForm
     @ObservedObject var model: NativePageModel
     @Environment(\.nativePrimaryTint) private var primaryTint
+    @Environment(\.nativePrimaryText) private var primaryText
     @State private var values: [String: NativePageValue] = [:]
 
     /// 私有 @State 会让编译器合成的 memberwise init 变成 private，页面视图无法创建表单页。
@@ -1630,6 +1646,8 @@ struct NativeFormPage: View {
 
     var body: some View {
         Form {
+            // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+            Group {
             if !form.message.isEmpty {
                 Section {
                     Text(form.message)
@@ -1651,6 +1669,8 @@ struct NativeFormPage: View {
                     }
                 }
             }
+            }
+            .listRowBackground(FM.bgSurface)
         }
         .scrollDismissesKeyboard(.interactively)
         .nativePageBackground()
@@ -1666,6 +1686,7 @@ struct NativeFormPage: View {
                         model.submit(form, values: collect())
                     }
                     .font(.body.weight(.semibold))
+                    .tint(primaryText)
                 }
             }
         }
@@ -1936,7 +1957,7 @@ private struct NativeCalendarCard: View {
                             VStack(spacing: 1) {
                                 Text("\(day.day)").font(.subheadline)
                                 if day.count > 0 {
-                                    Text("\(day.count)").font(.system(size: 9, weight: .semibold)).foregroundStyle(primaryTint)
+                                    Text("\(day.count)").font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7).foregroundStyle(primaryTint.fmReadableText)
                                 } else if day.hasDraft {
                                     Circle().fill(secondaryTint).frame(width: 4, height: 4)
                                 } else {

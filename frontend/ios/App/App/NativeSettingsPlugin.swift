@@ -596,6 +596,8 @@ private struct NativeSettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+                Group {
                 Section {
                     page(store.text("avatar", "头像"), symbol: "person.crop.circle", action: "avatar", destination: NativeAvatarView(store: store)) {
                         AvatarImage(url: store.avatarURL)
@@ -645,6 +647,8 @@ private struct NativeSettingsView: View {
                         }
                     }
                 }
+                }
+                .listRowBackground(FM.bgSurface)
             }
             .listStyle(.insetGrouped)
             .nativePageBackground()
@@ -773,6 +777,7 @@ private struct SettingsPageChrome: ViewModifier {
                             Button(saveTitle, action: save)
                                 .font(.body.weight(.semibold))
                                 .disabled(!canSave)
+                                .tint(store.primaryColor.fmReadableText)
                         }
                     }
                 }
@@ -809,6 +814,8 @@ private struct NativeUsernameView: View {
 
     var body: some View {
         Form {
+            // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+            Group {
             Section {
                 labeledField(store.text("usernameLabel", "住民名")) {
                     TextField(store.text("usernameLabel", "住民名"), text: $name)
@@ -819,6 +826,8 @@ private struct NativeUsernameView: View {
                         .onSubmit(save)
                 }
             }
+            }
+            .listRowBackground(FM.bgSurface)
         }
         .settingsPage(store, title: store.text("usernameTitle", "修改住民名"), busyType: "saveUsername",
                       saveTitle: store.text("save", "保存"),
@@ -848,6 +857,8 @@ private struct NativePasswordView: View {
 
     var body: some View {
         Form {
+            // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+            Group {
             Section {
                 labeledField(store.text("passwordCurrent", "当前通行密码")) {
                     SecureField(store.text("passwordCurrent", "当前通行密码"), text: $current)
@@ -862,6 +873,8 @@ private struct NativePasswordView: View {
                         .textContentType(.newPassword)
                 }
             }
+            }
+            .listRowBackground(FM.bgSurface)
         }
         .settingsPage(store, title: store.text("passwordTitle", "修改通行密码"), busyType: "savePassword",
                       saveTitle: store.text("save", "保存"),
@@ -1126,6 +1139,8 @@ private struct NativeThemesView: View {
 
     var body: some View {
         Form {
+            // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+            Group {
             Section {
                 Toggle(isOn: Binding(get: { store.dark }, set: { store.setDarkMode($0) })) {
                     Text(store.text("darkMode", "暗黑模式"))
@@ -1170,6 +1185,8 @@ private struct NativeThemesView: View {
                     Text(store.text("mapStyleHint", "为当前明暗主题选择地图样式。"))
                 }
             }
+            }
+            .listRowBackground(FM.bgSurface)
         }
         .settingsPage(store, title: store.text("themesTitle", "个性化主题"), busyType: "")
         .onAppear {
@@ -1202,6 +1219,8 @@ private struct NativeMapSettingsView: View {
 
     var body: some View {
         Form {
+            // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+            Group {
             Section {
                 LabeledContent(store.mapText("mapStyle", "地图样式"), value: store.mapText("styleStandard", "标准"))
             }
@@ -1243,6 +1262,8 @@ private struct NativeMapSettingsView: View {
                     Text(store.mapText("motionFooter", "仅保存在本设备。"))
                 }
             }
+            }
+            .listRowBackground(FM.bgSurface)
         }
         .settingsPage(store, title: store.mapText("title", "个性化地图"), busyType: "saveMap",
                       saveTitle: store.mapText("save", "保存")) {

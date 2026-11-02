@@ -677,7 +677,8 @@ private struct NativePlaceFormView: View {
                 } label: {
                     Image(systemName: "checkmark")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(enabled ? Color.white : Color.secondary)
+                        // 主色底上的符号用算好的对比色（默认粉色上白色不够清楚）
+                        .foregroundStyle(enabled ? Color(uiColor: .fmOnColor(UIColor(model.tint))) : Color.secondary)
                         .frame(width: 44, height: 44)
                         .background(Circle().fill(enabled ? model.tint : Color.primary.opacity(0.1)))
                         .contentShape(Circle())

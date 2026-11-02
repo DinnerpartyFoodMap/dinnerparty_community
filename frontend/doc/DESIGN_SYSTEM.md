@@ -30,7 +30,7 @@
 - 默认粉色上白字只有 2.8:1，所以 **on-primary 一律用计算值**（`pickContrastTextColor`），不写死白色。
 - 浅色模式下主色当文字只有 2.8:1。`--theme-primary-text` 由 `theme.js` 在应用主题时计算：把主色逐步加深（`darkenColor`），直到在 `bg-surface` 和 `bg-overlay` 上都 ≥ 4.5:1；深色模式直接用主色（8.3:1）。
 - 两个计算值由 `theme.js` 的 `applyThemeColor` 写入（`pickContrastTextColor`、`readableTextColor`），tokens.json 里是默认主题算出的结果，`test:design-tokens` 检查两者一致。
-- iOS 原生从主题快照（`nativeThemeColors()`）拿 `primary`、`secondary`、`onPrimary`、`primaryText` 四个值，`tint` 用 primary，文字按钮用 primaryText。
+- iOS 原生从主题快照（`nativeThemeColors()`）拿 `primary`、`secondary`、`onPrimary`、`primaryText` 四个值，`tint` 用 primary，文字按钮用 primaryText。快照里没有这两个派生值时，原生用同一算法自己算（`NativeGlassComponents.swift` 的 `UIColor.fmOnColor` / `UIColor.fmReadableText`、`Color.fmReadableText`），`nativeThemeColors(primary:secondary:)` 也会自动放进环境。
 - `--color-on-emphasis`（固定 `#2B2533`）不跟主题色走：它是红色、橙色等语义色底上的文字。
 
 ### 1.2 中性色
@@ -110,7 +110,7 @@
 | `--text-caption2` | 11 / 13 | 600 | `.caption2` | 工具栏按钮文字、徽章 |
 
 - 字重只用 400 / 500 / 600 / 700。不用 800、`bold` 关键字。`--weight-regular` 是 400。
-- 例外：网页输入框 16px（小于 16 时 iOS Safari 聚焦会放大页面）。
+- 例外：网页输入框 16px（小于 16 时 iOS Safari 聚焦会放大页面）。iOS 原生只在图标（圆钮里的符号）和地图标记文字上写固定字号，其余文字用 Dynamic Type 样式；日历格里的小字用 `caption2` 并允许缩小。
 - 不在阶梯里的字号（10、12.5、13.5、14、16、18、19、24、26、30、32、36）按就近原则并入：14 → 15 或 13，16 → 15 或 17，18/19 → 17 或 20，24 → 22，26 以上 → 28。
 
 ## 3. 圆角
@@ -192,6 +192,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 - 形状：胶囊（`--radius-full`）。尺寸 sm 32 高 / 13 号字，md 44 高 / 15 号字（默认），lg 50 高 / 17 号 600（整宽主操作）。左右内边距 16（sm 12）。字重：primary / destructive 600，其余 500。
 - 一组按钮里只放一个 primary。禁用：透明度 0.45，不改颜色。
 - 按压：`.fm-pressable`（缩放 0.97）；原生系统按压效果。
+- iOS：工具栏上的文字按钮（提交、保存、存草稿、管理）`.tint` 用加深的主色（`primaryText`），主色实心圆钮里的符号用 `onPrimary`。
 - 网页实现：`components/primitives/Button.jsx` + `button.css`（`variant`、`size`、`full`；另有 `menu` 变体给菜单行）。调用方用 `style` 自定义了底色时自动按 secondary 的基础样式（正文色文字、细边框），避免主色上的文字色落到别的底色上。日记模块的裸 `<button>` 由 `journey.css` 给同一规格（胶囊、44 高），整行 / 列表式按钮单独用矩形圆角。
 
 ### 7.2 图标按钮
@@ -218,7 +219,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 
 ### 7.5 卡片与分组
 
-- 整页里的卡片：`bg-surface`、圆角 lg 20、内边距 16、e0（描边不加阴影）。
+- 整页里的卡片：`bg-surface`、圆角 lg 20、内边距 16、e0（描边不加阴影）。iOS 不透明整页的列表行底同样是 `FM.bgSurface`（设置、反馈、页面引擎、小组件编辑），半屏玻璃面板保持系统半透明填充。
 - 列表分组：同上，行之间 1px 分隔线（缩进 16）；组标题在组外，footnote、`text-secondary`，左右 16。
 - 宽屏地图店卡：圆角 lg 20、e2，内边距 12（里面贴角的元素见 3.1）。
 - 图片格不在卡片角上时按尺寸取：≤ 44 用 sm 8，56–148 用 md 12。
@@ -229,6 +230,8 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 |---|---|
 | 所有面板：弹窗、侧面板、底部面板（浏览器、App 内网页、iOS 原生一致） | 左：44 圆形关闭钮（`close` / `xmark`，底 `text-primary` 8–10%）；中：标题 title3，居中单行；右：主操作或 44 占位 |
 | 整页标题栏（两端） | 左：44 圆形返回钮（`chevron_left` / `chevron.backward`，与关闭钮同样式，对应 iOS 26 导航栏的玻璃圆钮）；中：标题 headline 居中，可带一行 caption 小字；右：文字操作，`--theme-primary-text` 600；下边 1px `border` |
+
+iOS 原生：半屏面板用 `NativeSheetHeader`；地图上的玻璃面板（`MapChromeSheets`）也是左侧关闭——列表面板右侧放「清除筛选」等文字钮，店卡 / 展会卡片右侧放收藏钮或展会图标（协议字段仍叫 `leading`）；反馈、小组件编辑等 NavigationStack 页面左上用 `xmark` 图标按钮，不用文字「取消」。网页店卡的关闭钮同样在店名左侧。
 
 网页实现：面板是 `ResponsivePanel` 导出的 `PanelHeader`（地图列表面板 `MapPanel` 也用它），整页是 `components/layout/FullPageHeader`（日记 · 同好的 `PageHeader` 直接用它，右侧按钮加 `jw-header__action`）。
 

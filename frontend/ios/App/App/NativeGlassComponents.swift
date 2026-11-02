@@ -178,22 +178,85 @@ struct NativeThemeColors {
         let primaryColor = UIColor(cssHex: primary ?? "")
         self.primary = Color(uiColor: primaryColor ?? FM.UI.themePrimary)
         self.secondary = Color(uiColor: UIColor(cssHex: secondary ?? "") ?? FM.UI.themeSecondary)
-        self.onPrimary = Color(uiColor: UIColor(cssHex: onPrimary ?? "") ?? FM.UI.themeOnPrimary)
-        // 没下发 primaryText 时：有自定义主色就退回主色本身，否则用默认主题的计算值
-        self.primaryText = Color(uiColor: UIColor(cssHex: primaryText ?? "") ?? primaryColor ?? FM.UI.themePrimaryText)
+        // 网页算好的值优先；没下发时按同样的算法在这里算（见下方 UIColor 扩展）
+        self.onPrimary = Color(uiColor: UIColor(cssHex: onPrimary ?? "") ?? primaryColor.map(UIColor.fmOnColor) ?? FM.UI.themeOnPrimary)
+        self.primaryText = Color(uiColor: UIColor(cssHex: primaryText ?? "") ?? primaryColor.map(UIColor.fmReadableText) ?? FM.UI.themePrimaryText)
     }
 }
 
+// MARK: - 主色派生色（与网页 theme.js 的 pickContrastTextColor / readableTextColor 同一算法）
+
+extension UIColor {
+    /// 0–255 的 sRGB 分量（先按当前界面解析动态颜色）
+    fileprivate func fmRGB(_ traits: UITraitCollection) -> [CGFloat] {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        resolvedColor(with: traits).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return [r, g, b].map { ($0 * 255).rounded() }
+    }
+
+    /// WCAG 相对亮度
+    fileprivate static func fmLuminance(_ rgb: [CGFloat]) -> CGFloat {
+        func linear(_ value: CGFloat) -> CGFloat {
+            let n = value / 255
+            return n <= 0.03928 ? n / 12.92 : pow((n + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+    }
+
+    fileprivate static func fmContrast(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+        (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    /// 主色底上的文字：#2B2533 或 #F3EFEF 里更清楚的一个
+    static func fmOnColor(_ background: UIColor) -> UIColor {
+        UIColor { traits in
+            let luminance = UIColor.fmLuminance(background.fmRGB(traits))
+            let darkText = (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05)
+            return darkText ? UIColor.fmColor255(0x2B, 0x25, 0x33) : UIColor.fmColor255(0xF3, 0xEF, 0xEF)
+        }
+    }
+
+    /// 主色当文字用的可读版本：对卡片底与输入框底都达到 4.5:1，否则按 2% 一步向黑（浅色底）或向白（深色底）混合
+    static func fmReadableText(_ color: UIColor) -> UIColor {
+        UIColor { traits in
+            let rgb = color.fmRGB(traits)
+            let backgrounds = [FM.UI.bgSurface, FM.UI.bgOverlay].map { UIColor.fmLuminance($0.fmRGB(traits)) }
+            let passes = { (candidate: [CGFloat]) -> Bool in
+                let luminance = UIColor.fmLuminance(candidate)
+                return backgrounds.allSatisfy { UIColor.fmContrast(luminance, $0) >= 4.5 }
+            }
+            if passes(rgb) { return color.resolvedColor(with: traits) }
+            let target: CGFloat = backgrounds.reduce(0, +) / CGFloat(backgrounds.count) > 0.18 ? 0 : 255
+            for step in 1...50 {
+                let t = CGFloat(step) / 50
+                let mixed = rgb.map { ($0 + (target - $0) * t).rounded() }
+                if passes(mixed) || step == 50 { return UIColor.fmColor255(mixed[0], mixed[1], mixed[2]) }
+            }
+            return color.resolvedColor(with: traits)
+        }
+    }
+
+    fileprivate static func fmColor255(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> UIColor {
+        UIColor(red: r / 255, green: g / 255, blue: b / 255, alpha: 1)
+    }
+}
+
+extension Color {
+    /// 这个颜色当文字用时的可读版本（工具栏文字按钮、浅底上的强调文字）
+    var fmReadableText: Color { Color(uiColor: .fmReadableText(UIColor(self))) }
+}
+
 extension View {
-    /// 整页使用住民的主题色：tint 为主色，辅色与派生色放进 environment（未传派生色时文字用主色本身）
-    func nativeThemeColors(primary: Color, secondary: Color, onPrimary: Color = FM.themeOnPrimary,
+    /// 整页使用住民的主题色：tint 为主色，辅色与派生色放进 environment（未传派生色时按主色算）
+    func nativeThemeColors(primary: Color, secondary: Color, onPrimary: Color? = nil,
                            primaryText: Color? = nil) -> some View {
-        self
+        let base = UIColor(primary)
+        return self
             .tint(primary)
             .environment(\.nativePrimaryTint, primary)
             .environment(\.nativeSecondaryTint, secondary)
-            .environment(\.nativeOnPrimary, onPrimary)
-            .environment(\.nativePrimaryText, primaryText ?? primary)
+            .environment(\.nativeOnPrimary, onPrimary ?? Color(uiColor: .fmOnColor(base)))
+            .environment(\.nativePrimaryText, primaryText ?? Color(uiColor: .fmReadableText(base)))
     }
 
     func nativeThemeColors(_ colors: NativeThemeColors) -> some View {

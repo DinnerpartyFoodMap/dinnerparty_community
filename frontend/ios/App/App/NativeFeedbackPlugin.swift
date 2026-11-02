@@ -320,6 +320,8 @@ private struct NativeFeedbackView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+                Group {
                 Section {
                     Text(model.text("intro", "遇到问题或者有新想法？告诉我们吧。"))
                         .font(.subheadline)
@@ -352,6 +354,8 @@ private struct NativeFeedbackView: View {
                     }
                 }
                 imagesSection
+                }
+                .listRowBackground(FM.bgSurface)
             }
             .disabled(model.submitting)
             .nativePageBackground()
@@ -359,8 +363,11 @@ private struct NativeFeedbackView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(model.text("cancel", "取消")) { model.requestCancel() }
-                        .disabled(model.submitting)
+                    Button { model.requestCancel() } label: {
+                        Image(systemName: "xmark").font(.headline)
+                    }
+                    .accessibilityLabel(Text(model.text("cancel", "取消")))
+                    .disabled(model.submitting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if model.submitting {
@@ -370,6 +377,7 @@ private struct NativeFeedbackView: View {
                         Button(model.text("submit", "提交反馈")) { model.submit() }
                             .font(.body.weight(.semibold))
                             .disabled(!model.canSubmit)
+                            .tint(model.tint.fmReadableText)
                     }
                 }
             }

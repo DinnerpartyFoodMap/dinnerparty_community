@@ -672,6 +672,8 @@ private struct NativeProfileView: View {
     private var widgetEditor: some View {
         NavigationStack {
             Form {
+                // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
+                Group {
                 Section {
                     ForEach(Array((model.editingWidgets ?? []).enumerated()), id: \.offset) { index, _ in
                         Picker(slotLabel(index), selection: Binding(
@@ -685,19 +687,25 @@ private struct NativeProfileView: View {
                         .pickerStyle(.menu)
                     }
                 }
+                }
+                .listRowBackground(FM.bgSurface)
             }
             .nativePageBackground()
             .navigationTitle(model.text("widgetsEdit", "调整小组件"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(model.text("cancel", "取消")) { model.editingWidgets = nil }
+                    Button { model.editingWidgets = nil } label: {
+                        Image(systemName: "xmark").font(.headline)
+                    }
+                    .accessibilityLabel(Text(model.text("cancel", "取消")))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if model.busy {
                         ProgressView()
                     } else {
                         Button(model.text("save", "保存")) { model.saveWidgets() }
+                            .tint(model.tint.fmReadableText)
                             .font(.body.weight(.semibold))
                     }
                 }
@@ -804,8 +812,8 @@ private struct NativeTasteRadar: View {
                         onSelect(axis.key)
                     } label: {
                         Text(axis.label)
-                            .font(.system(size: 13, weight: selected == axis.key ? .bold : .medium))
-                            .foregroundStyle(selected == axis.key ? accent : Color.primary)
+                            .font(.footnote.weight(selected == axis.key ? .bold : .medium))
+                            .foregroundStyle(selected == axis.key ? accent.fmReadableText : Color.primary)
                             .fixedSize()
                     }
                     .buttonStyle(.plain)

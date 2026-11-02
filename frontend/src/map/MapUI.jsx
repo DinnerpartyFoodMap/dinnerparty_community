@@ -1916,13 +1916,14 @@ export default function MapUI(props) {
         >
             <SkinFrame slot="placeCard.frame" disabled={inSheet && platform !== 'web'} />
             {/* 首屏：店名、分类与人均、简介、评价；修改人与日期放到最下面 */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                <strong style={{ fontSize: 16, lineHeight: 1.35, color: 'var(--color-text-primary)', overflowWrap: 'anywhere' }}>{selectedPlace.name}</strong>
+            {/* 关闭钮在店名左侧（与所有面板、iOS 原生店卡相同，设计参考 7.6） */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                 {!hideNonSearchButtons && (
-                    <Button onClick={closePopup} style={{ flexShrink: 0, minWidth: 32, minHeight: 32, padding: "2px 8px", borderRadius: 'var(--radius-sm)', border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, color: 'var(--color-text-secondary)' }} title={t('common:action.close')} aria-label={t('common:action.close')}>
+                    <Button onClick={closePopup} style={{ flexShrink: 0, minWidth: 32, minHeight: 32, padding: 0, borderRadius: 'var(--radius-full)', border: "none", background: 'color-mix(in srgb, var(--color-text-primary) 8%, transparent)', cursor: "pointer", fontSize: 18, lineHeight: 1, color: 'var(--color-text-primary)' }} title={t('common:action.close')} aria-label={t('common:action.close')}>
                         <SkinIcon slot="cardActions.close" size={18}>×</SkinIcon>
                     </Button>
                 )}
+                <strong style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 600, lineHeight: 1.35, paddingTop: 4, color: 'var(--color-text-primary)', overflowWrap: 'anywhere' }}>{selectedPlace.name}</strong>
             </div>
             {/* 展会地点没有分类和人均，不显示这一行 */}
             {!selectedPlace.exhibitionVenue && (
