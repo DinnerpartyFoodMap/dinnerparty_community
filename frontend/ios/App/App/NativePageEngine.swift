@@ -551,8 +551,11 @@ final class NativePageModel: ObservableObject {
     func screen(_ route: NativePageRoute) -> NativePageScreen? { screens[route.id] }
 
     /// 当前最上面那一级网页页面的层级（原生二级页算它下面那一页）
-    private var topLevel: Int {
-        for route in path.reversed() {
+    private var topLevel: Int { level(within: path.count) }
+
+    /// 路径前 count 页里最上面那一页的层级（一页都没有时是根页）
+    private func level(within count: Int) -> Int {
+        for route in path.prefix(count).reversed() {
             if let screen = screens[route.id] { return screen.level }
         }
         return root.level
@@ -615,8 +618,12 @@ final class NativePageModel: ObservableObject {
     /// 网页要求填写表单（编辑、新建）：推入原生表单页
     func presentForm(_ form: NativePageForm) {
         finishPending()
-        // 还在加载的占位页让给表单
-        if let last = path.last, case .loading? = screens[last.id] { truncate(to: path.count - 1) }
+        // 还在加载的占位页原地换成表单，不动路径：表单是网页当场拼好的，回传时占位页的推入动画往往还没结束，
+        // 这时先弹出再推入，NavigationStack 会停在已清掉的占位页上（空白页卡住，如后台修改展会）
+        if let last = path.last, case .loading? = screens[last.id] {
+            screens[last.id] = .form(form, level: level(within: path.count - 1))
+            return
+        }
         push(.form(form, level: topLevel))
     }
 
