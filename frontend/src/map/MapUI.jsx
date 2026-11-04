@@ -547,7 +547,8 @@ export default function MapUI(props) {
     // iOS App 窄屏：搜索框不常驻，点工具栏“搜索”后工具栏变成输入框（原生玻璃控件，或同样布局的网页控件）。
     // 输入中右侧头像位置变为“收起键盘”按钮；收起键盘后头像回来，左侧返回圆钮退出搜索。
     const compactSearch = iosApp && isNarrow && !pickerMode;
-    const [searchExpanded, setSearchExpanded] = useState(false);
+    const [searchExpandedState, setSearchExpanded] = useState(false);
+    const searchExpanded = searchExpandedState || (compactSearch && addMode);
     // 网页输入框的“输入中”布局：失焦稍后生效，避免点“收起键盘”时按钮先被换回头像、点击落空
     const [webSearchEditing, setWebSearchEditing] = useState(false);
     const webBlurTimerRef = useRef(0);
@@ -800,7 +801,20 @@ export default function MapUI(props) {
 
     const externalSearch = useExternalSearch(searchTerm, searchResetKey, backendUrl);
 
-    // ---- 搜索输入：网页输入框与原生输入框共用；输入及回车仅搜索已收录地点 ----
+    // 添加地点默认查询高德；短暂停顿后预览，提交仍可立即查询。
+    useEffect(() => {
+        if (!addMode || !mapReady || !searchResultsVisible || !searchTerm.trim()) return undefined;
+        const timer = window.setTimeout(() => {
+            void externalSearch.search({ center: currentMapCenter(mapRef), source: 'map_manual' });
+        }, 400);
+        return () => window.clearTimeout(timer);
+    }, [addMode, mapReady, searchResultsVisible, searchTerm, externalSearch.search]);
+
+    useEffect(() => {
+        if (addMode) setSearchExpanded(false);
+    }, [addMode]);
+
+    // ---- 搜索输入：两端共用；普通模式搜站内，添加地点时默认搜高德 ----
     const handleSearchInput = (value) => {
         feedback?.beginSearch();
         setSearchTerm(value);
@@ -817,6 +831,11 @@ export default function MapUI(props) {
         feedback?.beginSearch();
         feedback?.record('search', 'search');
         setSearchResultsVisible(true);
+        if (addMode) {
+            setSearchTerm(value);
+            void externalSearch.search({ q: value, center: currentMapCenter(mapRef), source: 'map_manual' });
+            return;
+        }
         searchServer({ q: value, autoFit: false });
     };
 
@@ -1033,6 +1052,10 @@ export default function MapUI(props) {
                 runMobileMoreAction(openRandomFood);
                 return true;
             case 'add':
+                if (addMode) {
+                    requestNativeSearchFocus(false);
+                    closeCompactSearch();
+                }
                 handleToggleAddMode();
                 setMobileMoreOpen(false);
                 setFavPageOpen(false);
@@ -1361,7 +1384,7 @@ export default function MapUI(props) {
         search: compactSearch ? {
             expanded: searchExpanded,
             placeholder: t('map:ui.searchPlaceholderShort'),
-            hint: t('map:ui.search.nativeHint'),
+            hint: addMode ? t('map:ui.search.amapResults') : t('map:ui.search.nativeHint'),
             busyLabel: externalSearch.loading ? t('map:ui.search.externalLoading') : t('map:ui.search.loading'),
             busy: !!searching || externalSearch.loading,
             text: searchTerm,
@@ -1545,7 +1568,7 @@ export default function MapUI(props) {
         }
     };
 
-    const { results: spResults, loading: spLoading, error: spError, retry: retrySpSearch } = useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places, token);
+    const { results: spResults, loading: spLoading, error: spError, retry: retrySpSearch } = useSearchPanel(addMode ? '' : searchTerm, mapRef, backendUrl, mapReady, places, token);
 
     // Close detail and rating panels if popup closes
     useEffect(() => {
@@ -1651,6 +1674,7 @@ export default function MapUI(props) {
     const searchButtonIconColor = pickContrastTextColor(customThemeColor);
 
     const handleSearchButtonClick = () => {
+        if (addMode) { submitSearch(searchTerm); return; }
         if (hasSubmittedSearch) {
             setSearchResultsVisible((visible) => !visible);
             return;
@@ -2121,7 +2145,7 @@ export default function MapUI(props) {
     // 搜索建议与结果：placement 决定相对输入框的位置（窄屏向上展开）
     const renderSearchDropdown = (placement) => (
         <AnimatePresence>
-        {searchTerm && searchResultsVisible && (aiThinking || aiRecommendations.length > 0 || Array.isArray(searchResults) || searchFailed || spLoading || spError || Array.isArray(spResults)) && (
+        {searchTerm && searchResultsVisible && (addMode || aiThinking || aiRecommendations.length > 0 || Array.isArray(searchResults) || searchFailed || spLoading || spError || Array.isArray(spResults)) && (
             <ScrollableView
                 key="search-results"
                 className="fm-search-results"
@@ -2144,7 +2168,7 @@ export default function MapUI(props) {
                 color: 'var(--color-text-primary)',
                 ...placement
             }}>
-                {aiThinking && (
+                {!addMode && aiThinking && (
                     <div style={{
                         padding: '10px 12px 6px',
                         display: 'flex',
@@ -2162,8 +2186,20 @@ export default function MapUI(props) {
                         {t('map:ui.search.loadingFun')}
                     </div>
                 )}
-                {renderAiRecommendations()}
+                {!addMode && renderAiRecommendations()}
                 {(() => {
+                    if (addMode) {
+                        const results = unmarkedExternalPlaces(externalSearch.results, places || [], currentMapCenter(mapRef));
+                        return <>
+                            {externalSearch.loading && <div role="status" style={{ padding: 12 }}>{t('map:ui.search.externalLoading')}</div>}
+                            {renderSpSection(t('map:ui.search.amapResults'), results, false, null)}
+                            {externalSearch.loaded && !results.length && <div role="status" style={{ padding: 12 }}>{t('map:ui.search.externalEmpty')}</div>}
+                            {externalSearch.error && <div role="alert" style={{ padding: 12 }}>
+                                {externalSearch.error}
+                                <Button size="sm" onClick={searchUnlistedPlaces}>{t('map:ui.search.externalRetry')}</Button>
+                            </div>}
+                        </>;
+                    }
                     const baseResults = Array.isArray(searchResults) ? searchResults : spResults;
                     const recommendedIds = new Set(aiRecommendations.map((recommendation) => String(recommendation?.place?.id)));
                     const visibleResults = Array.isArray(baseResults)
@@ -2232,12 +2268,12 @@ export default function MapUI(props) {
         const editing = webSearchEditing;
         return (
             <div data-map-search-bar data-map-occluder="" className="fm-compact-search" style={{ position: 'absolute', zIndex: 2050, left: 12, right: 76, bottom: aboveBottomInset(4), height: 60 }}>
-                {!editing && (
-                    <button type="button" className="fm-compact-search__back fm-pressable" onClick={closeCompactSearch} aria-label={t('map:ui.search.exit')}>
-                        <span className="material-symbols-outlined" aria-hidden="true">arrow_back_ios_new</span>
+                {(!editing || addMode) && (
+                    <button type="button" className="fm-compact-search__back fm-pressable" onClick={() => { closeCompactSearch(); if (addMode) handleToggleAddMode(); }} aria-label={addMode ? t('map:ui.cancelAdd') : t('map:ui.search.exit')}>
+                        <span className="material-symbols-outlined" aria-hidden="true">{addMode ? 'close' : 'arrow_back_ios_new'}</span>
                     </button>
                 )}
-                <div className="fm-compact-search__field" style={{ left: editing ? 0 : 62 }}>
+                <div className="fm-compact-search__field" style={{ left: editing && !addMode ? 0 : 62 }}>
                     <span className="material-symbols-outlined fm-compact-search__icon" aria-hidden="true">search</span>
                     <input
                         ref={inputRef}
@@ -2294,6 +2330,8 @@ export default function MapUI(props) {
             {/* 状态栏区域登记为遮挡：地图居中、聚合展开时避开它（网页中高度为 0，不生效） */}
             <div className="fm-statusbar-occluder" data-map-occluder="" aria-hidden="true" />
 
+            {addMode && !pickerMode && <Notice title={t('map:ui.addPlaceHint')} tone="warning"
+                style={isNarrow ? undefined : { top: 64, width: 'min(560px, calc(100% - 140px))' }} />}
             {pickerMode && (
                 <Notice title={pickerTitle || (isPosterPicker ? t('map:ui.picker.posterTitle', { count: normalizedPickedPlaces.length }) : t('map:ui.picker.dinnerTitle'))} tone="warning"
                     style={isNarrow ? undefined : { top: 64, width: 'min(560px, calc(100% - 140px))' }}>

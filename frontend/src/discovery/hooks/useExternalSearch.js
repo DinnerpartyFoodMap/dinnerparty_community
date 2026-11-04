@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { createExternalSearchController, searchExternalPlaces } from '../externalSearch.js';
 
 export function useExternalSearch(query, resetKey, base) {
@@ -12,5 +12,9 @@ export function useExternalSearch(query, resetKey, base) {
     const contextKey = `${base}:${resetKey}`;
     useLayoutEffect(() => { controller.setContext(query, contextKey); }, [controller, query, contextKey]);
     useLayoutEffect(() => () => controller.dispose(), [controller]);
-    return { ...state, search: options => { controller.setContext(query, contextKey); return controller.search(options); } };
+    const search = useCallback(({ q = query, ...options } = {}) => {
+        controller.setContext(q, contextKey);
+        return controller.search(options);
+    }, [controller, query, contextKey]);
+    return { ...state, search };
 }

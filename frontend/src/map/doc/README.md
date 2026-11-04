@@ -46,3 +46,5 @@ flowchart TD
 | MapView/MapUI 继续协调 | 本轮先归位地点与发现面板，状态拆分见 MAP-01，不假定文件移动已解除耦合 |
 
 已有 `test:map` / `test:platform` 逻辑测试；真实地图相关交互覆盖一部分在位置与日记浏览器回归。案例见 [TEST_CASES.md](TEST_CASES.md)。历史 `d944e8a`、`2bc8c5e`；待办 MAP-01 / MAP-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+
+添加地点模式在顶部用 Notice 提示‘点击地图或搜索添加地点’。iOS 底部复用展开的搜索栏，左侧取消按钮在输入时也保留，取消后恢复工具栏；网页保留原搜索框。添加模式输入停顿 400ms 后默认预览高德结果，提交立即查询；普通模式仍只自动预览站内地点，高德由用户手动查询。验证入口为 npm run test:add-pick-browser（地图、HTTP 与原生桥使用替身，Swift 外观需真机检查）。

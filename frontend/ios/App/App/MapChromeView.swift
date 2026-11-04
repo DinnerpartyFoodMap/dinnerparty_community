@@ -609,10 +609,17 @@ struct MapChromeView: View {
 
     // MARK: - 搜索栏（工具栏展开形态）
 
-    /// 未输入时左侧是由工具栏收拢成的返回圆钮、右侧是头像；输入中返回圆钮收起、头像变为关闭按钮
+    /// 普通搜索输入时收起左侧返回钮；添加地点时左侧始终保留取消钮。输入时右侧头像变为关闭按钮。
     private func searchBar(showBack: Bool, editing: Bool) -> some View {
-        HStack(spacing: 10) {
-            if showBack {
+        let cancelAdd = model.toolbarItems.first { $0.id == "add" && $0.selected }
+        return HStack(spacing: 10) {
+            if let cancelAdd {
+                circleButton(symbol: cancelAdd.symbol, label: cancelAdd.title, glassID: "searchBack") {
+                    searchFocused = false
+                    focusPending = false
+                    model.tap(cancelAdd)
+                }
+            } else if showBack {
                 circleButton(symbol: "chevron.backward", label: model.text("exitSearch", "退出搜索"), glassID: "searchBack") {
                     searchFocused = false
                     model.closeSearch()

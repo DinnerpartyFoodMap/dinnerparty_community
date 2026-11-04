@@ -522,7 +522,7 @@ final class MapChromeModel: ObservableObject {
 
     func submitSearch() {
         guard !search.busy, !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        // Only submit the local search. External POIs require the explicit Web result-list action.
+        // 网页按当前模式处理提交：普通模式搜站内，添加地点时默认搜高德。
         sendSearch("submit", ["text": searchText])
     }
 
