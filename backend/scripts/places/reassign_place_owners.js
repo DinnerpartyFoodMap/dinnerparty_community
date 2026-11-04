@@ -1,6 +1,6 @@
 // 按 CSV 把地点的所有者（Place.creator_id）改成 qq 列对应的住民。默认只预览，不写库。
 //
-// CSV 需要表头「名称」「qq」（其余列忽略），UTF-8，可带 BOM：
+// CSV 需要表头「名称」「qq」，新建账户还需要「创建人」，UTF-8，可带 BOM：
 //   名称,创建人,qq
 //   酱饼摊,alipay_森近霖之助,1714284791
 //
@@ -8,7 +8,9 @@
 //   npm run places:reassign-owners -- import.csv --apply    备份数据库后写入
 //
 // 规则：
-//  1. qq 在 User.qq 里找不到住民 → 跳过该行；
+//  1. qq 在 User.qq 里找不到住民 → 用「创建人」作用户名并绑定 qq，新建普通账户；
+//     每个新账户生成不同的 24 位复杂随机密码，按现有登录规则只存 SHA-256，不输出明文；
+//     住民可通过绑定 QQ 找回密码。「创建人」为空或用户名冲突时跳过该行；
 //  2. 名称在 Place 里找不到 → 跳过该行；
 //  3. 同名地点有多个时：CSV 里该名称的所有行 qq 都相同 → 同名地点全部改给这个人；
 //     否则行数与地点数相等时按 CSV 行序对应地点 id 从小到大，不相等就整组跳过（需手动处理）；
@@ -19,6 +21,7 @@
 //     接口打的分（source = user）不动。删除 + 插入会触发两人的偏好重算，并各记一条评分历史（RatingRevision）。
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 /** 解析 CSV（支持双引号字段、字段内逗号和换行），返回字符串数组的数组。 */
@@ -47,16 +50,18 @@ function parseCsv(text) {
     return rows;
 }
 
-/** 读取 CSV，返回 [{ line, name, qq }]（line 为文件中的行号）。 */
+/** 读取 CSV，返回 [{ line, name, creator, qq }]（line 为文件中的行号）。 */
 function readEntries(file) {
     const rows = parseCsv(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
     const header = (rows.shift() || []).map((cell) => cell.trim());
     const nameIndex = header.indexOf('名称');
+    const creatorIndex = header.indexOf('创建人');
     const qqIndex = header.findIndex((cell) => cell.toLowerCase() === 'qq');
     if (nameIndex < 0 || qqIndex < 0) throw new Error(`CSV 表头缺少「名称」或「qq」列：${header.join(',')}`);
     return rows.map((row, index) => ({
         line: index + 2,
         name: String(row[nameIndex] || '').trim(),
+        creator: String(row[creatorIndex] || '').trim(),
         qq: String(row[qqIndex] || '').trim(),
     }));
 }
@@ -64,6 +69,19 @@ function readEntries(file) {
 const SCORE_LABELS = { 4: '强烈推荐', 3: '均线之上', 2: '均线之下', 1: '强烈拒绝' };
 const CREATION_SOURCES = ['create', 'migration'];
 const RATING_ORIGIN = 'owner_reassign';
+
+/** 使用系统安全随机数，并保证包含大小写字母、数字和符号。 */
+function generatePassword() {
+    const groups = ['ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz', '0123456789', '!@#$%^&*()-_=+'];
+    const alphabet = groups.join('');
+    const chars = groups.map((group) => group[crypto.randomInt(group.length)]);
+    while (chars.length < 24) chars.push(alphabet[crypto.randomInt(alphabet.length)]);
+    for (let i = chars.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(i + 1);
+        [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join('');
+}
 
 function hasTable(sql, name) {
     return !!sql.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
@@ -114,9 +132,10 @@ function moveCreatorRating(sql, change, now) {
     return 'move';
 }
 
-/** 计算改动，返回 { changes, skipped }；不写库。 */
+/** 计算改动，返回 { changes, skipped, newUsers }；不写库，也不生成密码。 */
 function plan(sql, entries) {
     const findUser = sql.prepare('SELECT id, username FROM User WHERE qq = ?');
+    const findUsername = sql.prepare('SELECT id FROM User WHERE username = ?');
     const findPlaces = sql.prepare(
         `SELECT p.id, p.name, p.creator_id, p.updated_by, u.username AS creator_name
          FROM Place p LEFT JOIN User u ON p.creator_id = u.id
@@ -124,10 +143,22 @@ function plan(sql, entries) {
     );
     const skipped = [];
     const groups = new Map();
+    const pendingUsers = new Map();
+    const pendingUsernames = new Set();
     for (const entry of entries) {
         if (!entry.name || !entry.qq) { skipped.push({ ...entry, reason: '名称或 qq 为空' }); continue; }
-        const user = findUser.get(entry.qq);
-        if (!user) { skipped.push({ ...entry, reason: `qq ${entry.qq} 没有对应住民` }); continue; }
+        let user = findUser.get(entry.qq) || pendingUsers.get(entry.qq);
+        if (!user) {
+            const username = String(entry.creator || '').trim();
+            if (!username) { skipped.push({ ...entry, reason: `qq ${entry.qq} 没有对应住民且创建人为空，无法注册` }); continue; }
+            if (findUsername.get(username) || pendingUsernames.has(username)) {
+                skipped.push({ ...entry, reason: `用户名「${username}」已被其他账户使用，无法为 qq ${entry.qq} 注册` });
+                continue;
+            }
+            user = { id: crypto.randomUUID(), username, qq: entry.qq };
+            pendingUsers.set(entry.qq, user);
+            pendingUsernames.add(username);
+        }
         if (!groups.has(entry.name)) groups.set(entry.name, []);
         groups.get(entry.name).push({ ...entry, user });
     }
@@ -166,7 +197,10 @@ function plan(sql, entries) {
             });
         }
     }
-    return { changes, skipped };
+    // 只为真正参与转移的 QQ 建账户，缺失地点或无法匹配的整组不会产生空账户。
+    const targetIds = new Set(changes.map((change) => change.toId));
+    const newUsers = [...pendingUsers.values()].filter((user) => targetIds.has(user.id));
+    return { changes, skipped, newUsers };
 }
 
 async function main() {
@@ -183,9 +217,12 @@ async function main() {
     const { db } = require('../../infrastructure/database');
     const sql = db._raw;
     try {
-        const { changes, skipped } = plan(sql, entries);
+        const { changes, skipped, newUsers } = plan(sql, entries);
         console.log(`数据库：${sql.name}`);
-        console.log(`CSV ${entries.length} 行，需要改动 ${changes.length} 个地点，跳过 ${skipped.length} 行`);
+        console.log(`CSV ${entries.length} 行，需要改动 ${changes.length} 个地点，新建 ${newUsers.length} 个账户，跳过 ${skipped.length} 行`);
+        for (const user of newUsers) {
+            console.log(`  新建账户「${user.username}」（qq ${user.qq}），使用独立随机密码，可通过 QQ 找回密码`);
+        }
         for (const change of changes) {
             console.log(`  第 ${change.line} 行 地点 ${change.placeId}「${change.name}」 ${change.from} → ${change.to}（qq ${change.qq}）${describeRating(change.rating)}`);
         }
@@ -208,6 +245,20 @@ async function main() {
         const setOwnerAndModifier = sql.prepare('UPDATE Place SET creator_id = ?, updated_by = ? WHERE id = ? AND creator_id IS ?');
         const run = sql.transaction(() => {
             const now = Date.now();
+            const insertUser = sql.prepare('INSERT INTO User (id, username, password, qq) VALUES (?, ?, ?, ?)');
+            const passwordHashes = new Set();
+            for (const user of newUsers) {
+                // 和地点、评分一起提交；失败时新账户也回滚，且不会重置已有账户的密码。
+                if (sql.prepare('SELECT id FROM User WHERE qq = ?').get(user.qq)) {
+                    throw new Error(`qq ${user.qq} 已绑定账户，请重新预览后执行`);
+                }
+                let passwordHash;
+                do {
+                    passwordHash = crypto.createHash('sha256').update(generatePassword()).digest('hex');
+                } while (passwordHashes.has(passwordHash));
+                passwordHashes.add(passwordHash);
+                insertUser.run(user.id, user.username, passwordHash, user.qq);
+            }
             const counts = { updated: 0, move: 0, drop: 0, personal: 0, none: 0 };
             for (const change of changes) {
                 const result = change.updateModifier
@@ -220,7 +271,7 @@ async function main() {
             return counts;
         });
         const counts = run.immediate();
-        console.log(`已改动 ${counts.updated} 个地点；创建评分转移 ${counts.move} 条，`
+        console.log(`已新建 ${newUsers.length} 个账户，改动 ${counts.updated} 个地点；创建评分转移 ${counts.move} 条，`
             + `新所有者已评过而删除 ${counts.drop} 条，原所有者自己的评分保留 ${counts.personal} 条。`);
     } finally {
         try { db.close(); } catch (_) { }
@@ -234,4 +285,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { parseCsv, readEntries, plan, ratingAction };
+module.exports = { parseCsv, readEntries, plan, ratingAction, generatePassword };
