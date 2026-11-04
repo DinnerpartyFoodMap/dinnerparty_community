@@ -23,12 +23,14 @@ assert.equal(tierForAverage(4).score, 4);
 assert.equal(ratingTierFor(5), null);
 assert.equal(formatAverage(3.25), '3.3');
 
-// 避雷图标：有评价看综合评价，没人评价看“避雷”标签
+// 社区避雷标签保留警示，不被模型或高分覆盖。
 assert.equal(isAvoidedPlace({ category: '快餐, 避雷' }), true, 'legacy rows without rating fields keep the tag rule');
 assert.equal(isAvoidedPlace({ category: '快餐, 避雷', rating_count: 0, rating_average: null }), true);
-assert.equal(isAvoidedPlace({ category: '快餐, 避雷', rating_count: 4, rating_average: 3.1 }), false);
+assert.equal(isAvoidedPlace({ category: '快餐, 避雷', rating_count: 4, rating_average: 3.1 }), true);
+assert.equal(isAvoidedPlace({ category: '不避雷', rating_count:0 }),false,'match the exact category token');
 assert.equal(isAvoidedPlace({ category: '火锅', rating_count: 2, rating_average: 2.4 }), true);
 assert.equal(isAvoidedPlace({ category: '火锅', rating_count: 2, rating_average: 2.5 }), false);
+assert.equal(isAvoidedPlace({category:'火锅',rating_count:3,rating_average:2.67,rating_negative_count:2}),true,'a negative majority stays visible before model scores arrive');
 assert.equal(isAvoidedPlace(null), false);
 
 

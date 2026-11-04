@@ -84,11 +84,13 @@ test('an exact avoided restaurant name can still be looked up', async () => {
     add('网红烧烤分店');
     assert.equal((await fastSearch('网红烧烤', 5, { center }))[0].id, warning);
 });
-test('warning ranking follows current ratings rather than stale tags', async () => {
+test('community warning remains until its tag is explicitly removed', async () => {
     const recovered = add('恢复口碑烧烤', { category: '烧烤, 避雷' });
     const negative = add('评分低的烧烤');
     rate(recovered, 4);
     rate(negative, 1);
+    assert.ok((await fastSearch('避雷',5,{center})).some(row=>row.id===recovered),'high ratings do not silently remove the warning');
+    sql.prepare("UPDATE Place SET category='烧烤' WHERE id=?").run(recovered);
     assert.deepEqual((await fastSearch('烧烤', 5, { center })).map(row => row.id), [recovered, negative]);
 });
 test('explicit warning search finds rating-based warnings without a tag', async () => {
@@ -98,11 +100,11 @@ test('explicit warning search finds rating-based warnings without a tag', async 
     rate(negative, 1);
     rate(recovered, 4);
     const warningIds = (await fastSearch('避雷', 5, { center })).map(row => row.id);
-    assert.deepEqual(new Set(warningIds), new Set([negative, tagged]));
-    assert.deepEqual(new Set((await fastSearch('烧烤 避雷', 5, { center })).map(row => row.id)), new Set([negative, tagged]));
+    assert.deepEqual(new Set(warningIds), new Set([negative, tagged, recovered]));
+    assert.deepEqual(new Set((await fastSearch('烧烤 避雷', 5, { center })).map(row => row.id)), new Set([negative, tagged, recovered]));
 });
 test('a 2.5 average and banned ratings do not mark a place avoided', async () => {
-    const boundary = add('边界烧烤', { category: '避雷' });
+    const boundary = add('边界烧烤', { category: '烧烤' });
     rate(boundary, 2);
     rate(boundary, 3, { user: 'second-rater' });
     const banned = add('普通烧烤');

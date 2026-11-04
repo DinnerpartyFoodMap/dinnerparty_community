@@ -8,12 +8,13 @@ const {context,same,profileRows}=require('./ratingSnapshot');
 const {placeMeanVector,resetMeanVectorCache}=require('./meanVectorAdapter');
 const {userRatingWeight,encodeMean}=require('./ratingReputation');
 const {appendRatingRevision,commandHash}=require('./ratingHistory');
+const {hasAvoidTag}=require('./ratingWarning');
 const RATING_SCORES=Object.freeze([1,2,3,4]),AVOID_BELOW_AVERAGE=2.5,OFFSET=8*3600000,DAY=86400000;
 function fail(status,message){throw Object.assign(new Error(message),{status,publicMessage:message});}
 function isValidScore(n){return Number.isInteger(n)&&RATING_SCORES.includes(n);}
 function ratingTier(n){return n==null||!Number.isFinite(Number(n))?null:Math.max(1,Math.min(4,Math.floor(Number(n)+0.5)));}
-function defaultCreationScore(category){return (Array.isArray(category)?category:[category]).some(x=>String(x||'').includes('避雷'))?1:4;}
-function isAvoidedPlace(p){return p?Number(p.rating_count)>0?Number(p.rating_average)<AVOID_BELOW_AVERAGE:String(p.category||'').includes('避雷'):false;}
+function defaultCreationScore(category){return hasAvoidTag(category)?1:4;}
+function isAvoidedPlace(p){return !!p&&(hasAvoidTag(p.category)||Number(p.rating_count)>0&&(Number(p.rating_average)<AVOID_BELOW_AVERAGE||Number(p.rating_negative_count)>Number(p.rating_count)/2));}
 function dailyLimit(){const n=parseInt(process.env.PLACE_RATING_DAILY_LIMIT,10);return Number.isSafeInteger(n)&&n>=1&&n<=1000?n:10;}
 function quotaDay(now=Date.now()){return new Date(now+OFFSET).toISOString().slice(0,10);}
 function quotaResetsAt(now=Date.now()){return (Math.floor((now+OFFSET)/DAY)+1)*DAY-OFFSET;}

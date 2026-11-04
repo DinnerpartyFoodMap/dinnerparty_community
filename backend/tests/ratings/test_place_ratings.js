@@ -60,9 +60,10 @@ function testPureRules() {
     assert.equal(ratings.defaultCreationScore('快餐, 避雷'), 1);
     assert.equal(ratings.defaultCreationScore(['火锅']), 4);
     assert.equal(ratings.defaultCreationScore(''), 4);
-    // Ratings decide once anyone has rated; the 避雷 tag only covers unrated places.
+    // Explicit community warnings and actual negative majorities stay effective.
     assert.equal(ratings.isAvoidedPlace({ category: '避雷', rating_count: 0, rating_average: null }), true);
-    assert.equal(ratings.isAvoidedPlace({ category: '避雷', rating_count: 3, rating_average: 3.2 }), false);
+    assert.equal(ratings.isAvoidedPlace({ category: '避雷', rating_count: 3, rating_average: 3.2 }), true);
+    assert.equal(ratings.isAvoidedPlace({ category: '火锅', rating_count:3,rating_average:2.67,rating_negative_count:2 }),true);
     assert.equal(ratings.isAvoidedPlace({ category: '火锅', rating_count: 2, rating_average: 2.49 }), true);
     assert.equal(ratings.isAvoidedPlace({ category: '火锅', rating_count: 2, rating_average: 2.5 }), false);
     // Beijing-time quota day: 2026-10-14 23:59 +08 and 2026-10-15 00:00 +08.
@@ -311,18 +312,22 @@ async function testAvoidedFilters() {
     const untaggedButDisliked = makePlace('没标签但被拒绝', { category: '火锅', lat: 10, lng: 10.001 });
     const taggedUnrated = makePlace('标签避雷且无人评价', { category: '避雷', lat: 10, lng: 10.002 });
     const normal = makePlace('普通店', { category: '火锅', lat: 10, lng: 10.003 });
+    const majority = makePlace('两条负评一条好评', { category:'火锅',lat:10,lng:10.004 });
+    rate(majority,makeUser('negative-majority-a'),2);
+    rate(majority,makeUser('negative-majority-b'),2);
+    rate(majority,makeUser('negative-majority-c'),4);
     rate(taggedButLiked, creator, 1);
     rate(taggedButLiked, fan, 4);
     rate(taggedButLiked, makeUser('filter-fan-2'), 4);
     rate(untaggedButDisliked, fan, 1);
     const ids = (await nearbyCandidates(sql, center)).map(({ place }) => place.id).sort((a, b) => a - b);
-    assert.deepEqual(ids, [taggedButLiked, normal], 'random picks follow the rating, then the tag');
+    assert.deepEqual(ids, [normal], 'random picks respect the explicit community warning even alongside high votes');
     const rows = [taggedButLiked, untaggedButDisliked, taggedUnrated, normal].map((id) => ({
         ...sql.prepare(`SELECT p.*, ${ratings.RATING_COLUMNS_SQL} FROM Place p WHERE p.id = ?`).get(id),
         vector_distance: 0.01
     }));
     const ranked = rankSemanticRows(rows, { center, limit: 10 }).map((match) => match.place.id).sort((a, b) => a - b);
-    assert.deepEqual(ranked, [taggedButLiked, normal], 'AI recommendations skip avoided places by the same rule');
+    assert.deepEqual(ranked, [normal], 'AI recommendations skip avoided places by the same rule');
 }
 function testCascades() {
     const user = makeUser('leaver');

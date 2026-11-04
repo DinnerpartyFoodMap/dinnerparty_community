@@ -44,14 +44,15 @@ export function formatAverage(average) {
 }
 
 export function hasAvoidTag(category) {
-    return String(category || '').includes(AVOID_TAG);
+    return (Array.isArray(category)?category:[category]).some(value=>String(value||'').split(/[,，/、|]/).some(tag=>tag.trim()===AVOID_TAG));
 }
 
-/** 地图上的避雷图标、红色店名：有评价看综合评价，没人评价看“避雷”标签 */
+/** 社区“避雷”标签始终保留警示；其他地点按已有评价判断。 */
 export function isAvoidedPlace(place) {
     if (!place) return false;
+    if (hasAvoidTag(place.category)) return true;
     const count = Number(place.rating_count) || 0;
-    if (count > 0) return Number(place.rating_average) < AVOID_BELOW_AVERAGE;
+    if (count > 0) return Number(place.rating_average) < AVOID_BELOW_AVERAGE || Number(place.rating_negative_count)>count/2;
     return hasAvoidTag(place.category);
 }
 

@@ -119,7 +119,7 @@ async function nearbyCandidates(database, center) {
         LEFT JOIN User uu ON p.updated_by = uu.id
         WHERE p.moderation_status = 'visible' AND p.latitude BETWEEN ? AND ?${longitudeFilter}`).all(...params);
     return rows.flatMap((place) => {
-        // 避雷地点（综合评价在“均线之下”及以下；无人评价时看“避雷”标签）不参与随机推荐
+        // 显式社区“避雷”标签和低于均线的实际评价，都不参与随机推荐。
         if (isAvoidedPlace(place)) return [];
         const distanceKm = haversineDistanceKm(center, { lat: place.latitude, lng: place.longitude });
         if (distanceKm === null || distanceKm > RADIUS_KM) return [];

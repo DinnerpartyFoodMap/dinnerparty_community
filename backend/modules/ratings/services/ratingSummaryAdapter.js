@@ -3,7 +3,8 @@ const client=require('../../../infrastructure/numericAlgorithmClient');
 const {context,same,revision}=require('./ratingSnapshot');
 const RATING_COLUMNS_SQL=`
     COALESCE((SELECT s.count FROM PlaceRatingSummary s WHERE s.place_id=p.id),0) AS rating_count,
-    (SELECT s.average FROM PlaceRatingSummary s WHERE s.place_id=p.id) AS rating_average`;
+    (SELECT s.average FROM PlaceRatingSummary s WHERE s.place_id=p.id) AS rating_average,
+    COALESCE((SELECT json_extract(s.distribution,'$."1"')+json_extract(s.distribution,'$."2"') FROM PlaceRatingSummary s WHERE s.place_id=p.id),0) AS rating_negative_count`;
 let pending=null;
 function readRatings(){return db._raw.prepare(`SELECT r.*,COALESCE(u.is_banned,0) AS is_banned FROM PlaceRating r JOIN User u ON u.id=r.user_id`).all();}
 function readSummary(id){const r=db._raw.prepare('SELECT * FROM PlaceRatingSummary WHERE place_id=?').get(id);return r?{count:r.count,average:r.average,tier:r.tier,distribution:JSON.parse(r.distribution)}:{count:0,average:null,tier:null,distribution:{1:0,2:0,3:0,4:0}};}

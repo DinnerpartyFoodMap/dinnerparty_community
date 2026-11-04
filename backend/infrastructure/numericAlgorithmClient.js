@@ -44,6 +44,7 @@ function validateSummary(r){
 function unique(rows,key,allowed){if(!Array.isArray(rows))invalid();const ids=rows.map(key);if(new Set(ids).size!==ids.length||allowed&&ids.some(id=>!allowed.has(id)))invalid();return ids;}
 function validate(op,r,i={}){
     if(!r||typeof r!=='object')invalid();
+    if(i.calibration_policy!==undefined&&r.calibration_policy!==i.calibration_policy)invalid();
     if(['ratingestimate','ratingpredict','listrank'].includes(op)&&r.config_version!==i.config_version)invalid();
     if(i.model_hash!==undefined&&r.model_hash!==i.model_hash)invalid();
     if(op==='modelcontract'){
