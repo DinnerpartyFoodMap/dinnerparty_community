@@ -152,6 +152,8 @@ final class NativeProfileModel: ObservableObject {
         let key: String
         let label: String
         let accessible: String
+        let description: String
+        let evidence: String
         let value: Double?
         let estimated: Bool
         let selfLevel: Int?
@@ -299,6 +301,8 @@ final class NativeProfileModel: ObservableObject {
                 key: key,
                 label: item["label"] as? String ?? key,
                 accessible: item["accessible"] as? String ?? (item["label"] as? String ?? key),
+                description: item["description"] as? String ?? "",
+                evidence: item["evidence"] as? String ?? "",
                 value: value,
                 estimated: (item["estimated"] as? Bool) ?? false,
                 selfLevel: level.flatMap { (1...4).contains($0) ? $0 : nil }
@@ -354,7 +358,6 @@ final class NativeProfileModel: ObservableObject {
     }
 
     func toggleAxis(_ key: String) {
-        guard view.canEditTaste else { return }
         selectedAxis = selectedAxis == key ? nil : key
     }
 
@@ -594,11 +597,17 @@ private struct NativeProfileView: View {
 
     @ViewBuilder
     private var axisEditor: some View {
-        if let axis = model.selectedAxisValue, model.view.canEditTaste {
+        if let axis = model.selectedAxisValue {
             NativeGlassCard(padding: 14) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(axis.label)
                         .font(.subheadline.weight(.semibold))
+                    Text(axis.description)
+                        .font(.subheadline)
+                    Text(axis.evidence)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if model.view.canEditTaste {
                     Text(model.text("selfTitle", "自己填"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -617,6 +626,7 @@ private struct NativeProfileView: View {
                             .buttonStyle(.plain)
                             .disabled(model.busy)
                         }
+                    }
                     }
                 }
             }

@@ -38,6 +38,19 @@ export function valueWord(value) {
     return t('profile:taste.word.dislike');
 }
 
+/** Self reports retain their exact wording; a random-reference percentile is relative affinity. */
+export function axisValueWord(axis) {
+    if (axis.basis === 'self' && SELF_LEVELS.includes(axis.selfLevel)) return selfLevelLabel(axis.selfLevel);
+    if (!Number.isFinite(axis.value)) return axis.unavailableReason === 'service_unavailable' ? t('profile:taste.unavailable') : t('profile:taste.unknown');
+    if (axis.basis === 'embedding') {
+        if (axis.value < 0.4) return t('profile:taste.relative.less');
+        if (axis.value < 0.6) return t('profile:taste.relative.reference');
+        if (axis.value < 0.8) return t('profile:taste.relative.more');
+        return t('profile:taste.relative.strong');
+    }
+    return valueWord(axis.value);
+}
+
 /** 按后端返回的顺序整理；缺的轴补成“待了解”，多出来的轴丢掉 */
 export function normalizeTaste(list) {
     const byKey = new Map((Array.isArray(list) ? list : []).filter((axis) => axis && TASTE_AXES.includes(axis.key)).map((axis) => [axis.key, axis]));
@@ -54,6 +67,7 @@ export function normalizeTaste(list) {
             negativeCount: Number(axis.negative_count) || 0,
             favoriteCount: Number(axis.favorite_count) || 0,
             embedding: axis.embedding && typeof axis.embedding === 'object' ? axis.embedding : null,
+            unavailableReason: typeof axis.unavailable_reason === 'string' ? axis.unavailable_reason : null,
             places: Array.isArray(axis.places) ? axis.places.filter((place) => place && place.id != null) : []
         };
     });
@@ -72,5 +86,5 @@ export function axisEvidenceText(axis) {
     if (axis.basis === 'embedding' && axis.embedding) {
         return t('profile:taste.basis.embedding', { count: axis.embedding.shop_count, percent: Math.round(axis.embedding.percentile * 100) });
     }
-    return t('profile:taste.basis.unknown');
+    return axis.unavailableReason === 'service_unavailable' ? t('profile:taste.unavailable') : t('profile:taste.basis.unknown');
 }

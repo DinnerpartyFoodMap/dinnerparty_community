@@ -18,13 +18,20 @@
     "title": "餐饮偏好",
     "hint": "点类别名选择喜好",
     "unknown": "待了解",
+    "unavailable": "暂时无法估算",
+    "relative": {
+      "less": "较少偏向",
+      "reference": "接近随机参照",
+      "more": "较多偏向",
+      "strong": "明显偏向"
+    },
     "estimated": "估算",
     "favoriteOnly": "收藏",
     "axisAria": "{{axis}}：{{value}}",
     "saveFailed": "保存失败，请稍后重试",
     "axes": {
-      "homestyle": "家常正餐",
-      "noodles": "粉面简餐",
+      "homestyle": "中式正餐",
+      "noodles": "快餐简餐",
       "hotpotBbq": "火锅烧烤",
       "dessert": "甜品烘焙",
       "drinks": "咖啡茶饮",
@@ -47,12 +54,12 @@
     "basis": {
       "self": "自己填的：{{level}}",
       "stores": "依据 {{count}} 家店",
-      "positive": "其中 {{count}} 次明确好评",
+      "positive": "其中 {{count}} 次好评",
       "negative": "{{count}} 次差评",
       "favorites": "{{count}} 家收藏",
       "separator": "，",
-      "embedding": "还没评价过这类店，按评价和收藏过的店铺整体口味估算",
-      "unknown": "还没有对这类店的评价或收藏"
+      "embedding": "依据 {{count}} 家店的整体口味估算，高于 {{percent}}% 的随机参照；表示相对偏向，不是喜欢的概率",
+      "unknown": "现有资料不足，暂不能判断这类偏好"
     }
   },
   "widgets": {

@@ -18,12 +18,17 @@ const { parseAmapRouteUrl, isAllowedAmapUrl } = require('../../modules/discovery
 const sql = db._raw;
 async function main() {
     init();
+    for (const value of [0,0.2,0.49,0.5,0.8]) assert.equal(taste.usableEmbeddingEstimate({value,percentile:value,usable:false}).value,value,'all valid percentiles must remain displayable');
+    for (const value of [null,undefined,NaN,-0.1,1.1]) assert.equal(taste.usableEmbeddingEstimate({value}),null);
     // 1. 规则分类：分类名关键词（多类可以同时成立）、店名强关键词、“法式甜品”不算异国料理；判断不了时为空
     assert.deepEqual(taste.ruleAxes({ category: '广东菜(粤菜), 甜品店' }), ['homestyle', 'dessert']);
     assert.deepEqual(taste.ruleAxes({ category: '法式甜品' }), ['dessert']);
+    assert.deepEqual(taste.ruleAxes({ category: '意式咖啡' }), ['drinks']);
+    assert.deepEqual(taste.ruleAxes({ category: '意大利菜, 咖啡' }), ['drinks','foreign']);
     assert.deepEqual(taste.ruleAxes({ category: '其他', name: '老王火锅' }), ['hotpotBbq']);
     assert.deepEqual(taste.ruleAxes({ category: '茶餐厅' }), ['noodles'], '茶餐厅 is not a drinks shop');
     assert.deepEqual(taste.ruleAxes({ category: '日本料理' }), ['foreign']);
+    assert.deepEqual(taste.ruleAxes({ category: '咖啡厅', name:'意式咖啡' }), ['drinks']);
     assert.deepEqual(taste.ruleAxes({ category: '其他', name: '某某小馆' }), []);
     const users = {};
     for (const name of ['eater', 'creator', 'fan', 'peer']) {
@@ -36,13 +41,18 @@ async function main() {
     const hotpot2 = addPlace('火锅二号', '火锅店');
     const cafe = addPlace('咖啡馆', '咖啡厅');
     const mystery = addPlace('某某小馆', '其他');
-    const rate = (who, place, score, source = 'user') => sql.prepare(`INSERT INTO PlaceRating (place_id, user_id, score, source, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 0, 0)`).run(place, users[who], score, source);
+    const rate = (who, place, score, source = 'user') => {
+        sql.prepare(`INSERT INTO PlaceRating (place_id, user_id, score, source, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0)`).run(place, users[who], score, source);
+        if (source === 'user') require('../../modules/ratings/services/ratingHistory').appendRatingRevision({userId:users[who],placeId:place,before:null,after:{score},action:'rate',origin:'active'});
+    };
     const axis = (list, key) => list.find((item) => item.key === key);
     // 2. 创建与迁移时补的评价不算偏好：只有这些评价的住民，六轴都是“待了解”
     rate('creator', hotpot, 4, 'create');
     rate('creator', cafe, 4, 'migration');
     assert.ok((await taste.userTasteAxes(users.creator)).every((item) => item.value === null && item.basis === null));
+    assert.ok((await taste.userTasteAxes(users.creator)).every(item => item.unavailable_reason === 'no_eligible_evidence'));
+    require('../../modules/ratings/services/ratingHistory').appendRatingRevision({userId:users.creator,placeId:hotpot,before:null,after:{score:4},action:'create',origin:'creation_explicit'});
+    assert.equal(axis(await taste.userTasteAxes(users.creator),'hotpotBbq').basis,'evidence','explicit creation vote qualifies');
     // 3. 自己的评价是主要依据；同一家店只算一份证据；一次好评向全站水平收缩，不会满分
     rate('eater', hotpot, 4);
     taste.resetTastePopulationCache();
@@ -100,6 +110,13 @@ async function main() {
     taste.setManualPlaceAxes(mystery, []);
     assert.deepEqual(taste.pendingLlmPlaces(10), [], 'manual result is never overwritten');
     assert.equal(taste.placeTasteClass(mystery).source, 'manual');
+    const malformed = addPlace('尚未分类', '其他');
+    for (const axes of [undefined, 'drinks', null, ['not-an-axis']]) {
+        assert.equal(await taste.classifyBatchWithLlm([{...sql.prepare('SELECT * FROM Place WHERE id=?').get(malformed)}], sql, async()=>({results:[{id:malformed,axes}]})),0);
+        assert.ok(taste.pendingLlmPlaces(20).some(p=>p.id===malformed),'malformed axes must retry');
+    }
+    assert.equal(await taste.classifyBatchWithLlm([sql.prepare('SELECT * FROM Place WHERE id=?').get(malformed)], sql, async()=>({results:[{id:malformed,axes:[]}]})),1);
+    assert.ok(!taste.pendingLlmPlaces(20).some(p=>p.id===malformed),'valid empty classification is cached');
     assert.ok(Math.abs(taste.normalCdf(0) - 0.5) < 1e-6 && taste.normalCdf(1.96) > 0.97 && taste.normalCdf(-1.96) < 0.03);
     // 8. AI 搜索筛选：标签必须是现有分类，人均范围整理好；什么都没有时为 null
     const categories = ['火锅店', '烧烤', '甜品店'];
@@ -148,7 +165,27 @@ async function main() {
     // 内嵌的链接只读参数：不是高德 App 链接的 schema 不算
     const foreign = new URL(`https://static5.gaode.com/x?schema=${encodeURIComponent('https://evil.example.com/?slat=1&slon=2&dlat=3&dlon=4')}`);
     assert.equal(parseAmapRouteUrl(foreign), null);
-    console.log('Taste axes, search filter, app release and AMap landing link tests passed.');
+    // Real vector fallback below the median must remain a valid estimate,
+    // including an extreme rounded zero. A cancelled prototype remains unknown.
+    if (require('../../infrastructure/database').isVectorSearchAvailable()) {
+        for (const [id,x,y] of [[cafe,1,0],[mystery,-1,0],[hotpot,0,1],[hotpot2,0,-1]]) {
+            const v=new Float32Array(1024);v[0]=x;v[1]=y;
+            sql.prepare('INSERT INTO place_vectors(place_id,embedding) VALUES(?,?)').run(BigInt(id),Buffer.from(v.buffer));
+            sql.prepare('UPDATE Place SET has_vector=1 WHERE id=?').run(id);
+        }
+        rate('eater',mystery,4);
+        const [parallel] = await Promise.all([taste.userTasteAxes(users.eater),taste.userTasteAxes(users.fan)]);
+        const low=axis(parallel,'drinks');
+        assert.equal(low.basis,'embedding');assert.ok(low.value>=0&&low.value<0.5);assert.equal(low.unavailable_reason,null);
+        const old=low.value;
+        sql.prepare('UPDATE Place SET category=? WHERE id=?').run('日本料理',cafe);
+        const changed=axis(await taste.userTasteAxes(users.eater),'drinks');
+        // Name still classifies it as coffee: clearing that name removes the prototype.
+        sql.prepare('UPDATE Place SET name=? WHERE id=?').run('新店',cafe);
+        assert.equal(axis(await taste.userTasteAxes(users.eater),'drinks').unavailable_reason,'missing_prototype','classification changes invalidate cached prototype without manual reset');
+        assert.ok(Number.isFinite(old));
+    }
+    console.log('Taste axes, explicit sources, low embedding estimates, malformed classifier retry, cache invalidation and support services passed.');
 }
 main().catch((error) => {
     console.error(error);

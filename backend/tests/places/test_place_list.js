@@ -42,6 +42,9 @@ async function main() {
     rate.run(single, users.fan, 4, 'user');
     rate.run(disliked, users.fan, 1, 'user');
     rate.run(disliked, users.other, 2, 'user');
+    for (const row of sql.prepare("SELECT * FROM PlaceRating WHERE source='user'").all()) {
+        require('../../modules/ratings/services/ratingHistory').appendRatingRevision({userId:row.user_id,placeId:row.place_id,before:null,after:{score:row.score},action:'rate',origin:'active'});
+    }
     sql.prepare('INSERT INTO Favorite (user_id, place_id) VALUES (?, ?)').run(users.fan, single);
 
     const app = express();

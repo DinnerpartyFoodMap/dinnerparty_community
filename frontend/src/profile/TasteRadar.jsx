@@ -1,5 +1,5 @@
 import React from 'react';
-import { axisLabel, valueWord } from './tasteAxes';
+import { axisLabel, axisValueWord } from './tasteAxes';
 import { t } from '../i18n/index.js';
 
 // 六类餐饮偏好的雷达。每轴独立：有依据的轴画一个点，相邻两轴都有值时用粗线连起来；
@@ -65,7 +65,7 @@ export default function TasteRadar({ axes, selected, onSelect, accent = 'var(--t
                         role="button"
                         tabIndex={0}
                         aria-pressed={active}
-                        aria-label={t('profile:taste.axisAria', { axis: axisLabel(axis.key), value: valueWord(axis.value) })}
+                        aria-label={t('profile:taste.axisAria', { axis: axisLabel(axis.key), value: axisValueWord(axis) })}
                         onClick={() => onSelect?.(axis.key)}
                         onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {

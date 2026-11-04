@@ -92,6 +92,8 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(view.axes.map((axis) => axis.key), ['homestyle', 'noodles', 'hotpotBbq', 'dessert', 'drinks', 'foreign']);
     assert.equal(view.axes[0].value, 0.8);
     assert.equal(view.axes[1].estimated, true);
+    assert.match(view.axes[1].accessible, /较少偏向/);
+    assert.doesNotMatch(view.axes[1].accessible, /待了解|不太喜欢/);
     assert.equal(view.axes[2].value, null);
     assert.equal(view.axes[2].label.length > 0, true);
     assert.equal(view.axes[4].selfLevel, 3);
@@ -104,6 +106,20 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(view.widgetSlotLabels.length, 3);
     assert.ok(view.labels.blockConfirm.includes('幽幽子'));
     assert.ok(view.labels.blockedNote.length > 0);
+}
+
+// Valid low estimates (including zero) survive the shared Web/native presentation.
+{
+    const { normalizeTaste, axisValueWord, axisEvidenceText } = await import('../../../src/profile/tasteAxes.js');
+    for (const value of [0, 0.2, 0.49, 0.5, 0.8]) {
+        const [axis] = normalizeTaste([{key:'homestyle',value,basis:'embedding',embedding:{shop_count:3,percentile:value}}]);
+        assert.equal(axis.value,value);
+        assert.doesNotMatch(axisValueWord(axis),/待了解|不太喜欢/);
+        assert.match(axisEvidenceText(axis),/3/);
+    }
+    const [manual] = normalizeTaste([{key:'homestyle',value:1/3,basis:'self',self_level:2}]);
+    assert.equal(axisValueWord(manual),'一般');
+    assert.equal(normalizeTaste([])[0].value,null);
 }
 
 // 会话：偏好 / 小组件 / 屏蔽请求交给网页，respond 回传最新快照；返回与打开地点分开处理
