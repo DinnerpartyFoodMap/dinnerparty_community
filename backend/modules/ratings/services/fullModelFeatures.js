@@ -72,17 +72,31 @@ function buildFullFeatures({places,ratings,profiles=new Map(),viewerId=null,asOf
  const centers={};for(const [s,map]of Object.entries(spaces)){const vectors=active.map(id=>map.get(id)).filter(Boolean);centers[s]=vectors.length?vmean(vectors,vectors[0].length):null;}
  const flagMean=flags.map((_,k)=>{const known=places.map(p=>profiles.get(p.id)?.flags?.[k]).filter(v=>v===0||v===1);return mean(known);});
  const allHistory=(byUser.get(viewerId)||[]).slice().sort((a,b)=>timestamp(a)-timestamp(b)||a.place_id-b.place_id);
- function featureFor(placeId,{excludeViewer=false}={}){
-  const target=byId.get(placeId)||{},profile=profiles.get(placeId),votes=(byPlace.get(placeId)||[]).filter(r=>!excludeViewer||r.user_id!==viewerId),history=allHistory.filter(r=>r.place_id!==placeId),recent=history.slice(-50),n=history.length;
-  const hidden=excludeViewer?ratings.filter(r=>r.user_id===viewerId&&r.place_id===placeId):[],hiddenSet=new Set(hidden),safeRatings=excludeViewer?ratings.filter(r=>!hiddenSet.has(r)):ratings,localYs=excludeViewer?safeRatings.map(r=>star(r.score)):ys;
-  const localMu=mean(localYs)??contract.global_mean??4,localGv=localYs.length>1?localYs.reduce((sum,y)=>sum+(y-localMu)**2,0)/(localYs.length-1):0;
+ const owned=new Set(allHistory.map(r=>r.place_id)),histories=new Map(),preferences=new WeakMap();
+ function historyPreference(history){
+  let cached=preferences.get(history);if(cached)return cached;
+  const U=new Array(vocab.length).fill(0),rawU=new Array(vocab.length).fill(0);
+  for(const r of history){const v=catVectors.get(r.place_id);v.forEach((x,k)=>U[k]+=x);for(const cat of rawCats.get(r.place_id)||[]){const k=catIndex.get(cat);if(k!==undefined)rawU[k]++;}}
+  const totalCats=rawU.reduce((a,b)=>a+b,0),lift=new Array(vocab.length).fill(0);if(totalCats)for(let i=0;i<vocab.length;i++)if(rawU[i])for(let j=0;j<vocab.length;j++)lift[j]+=rawU[i]/totalCats*L[i][j];
+  const hu=flags.map((_,k)=>{const vs=history.map(r=>profiles.get(r.place_id)?.flags?.[k]??flagMean[k]).filter(v=>v!==null);return mean(vs);});
+  cached={U,lift,hu};preferences.set(history,cached);return cached;
+ }
+ function featureFor(placeId,{excludeViewer=false,asOf:featureTime=asOf,scope='all'}={}){
+  let history=allHistory;if(owned.has(placeId)){history=histories.get(placeId);if(!history){history=allHistory.filter(r=>r.place_id!==placeId);histories.set(placeId,history);}}
+  const target=byId.get(placeId)||{},profile=profiles.get(placeId),votes=(byPlace.get(placeId)||[]).filter(r=>!excludeViewer||r.user_id!==viewerId),recent=history.slice(-50),n=history.length;
+  const hidden=excludeViewer?(byPlace.get(placeId)||[]).filter(r=>r.user_id===viewerId):[],hiddenSet=new Set(hidden),safeRatings=hidden.length?ratings.filter(r=>!hiddenSet.has(r)):ratings,localYs=hidden.length?safeRatings.map(r=>star(r.score)):ys;
+  const localMu=hidden.length?(mean(localYs)??contract.global_mean??4):mu,localGv=hidden.length?(localYs.length>1?localYs.reduce((sum,y)=>sum+(y-localMu)**2,0)/(localYs.length-1):0):gv;
   const localShopMean=id=>{const rs=(byPlace.get(id)||[]).filter(r=>!hiddenSet.has(r));return(rs.reduce((sum,r)=>sum+star(r.score),0)+10*localMu)/(rs.length+10);};
   const voteValues=votes.map(r=>star(r.score)),nVotes=votes.length;
   const knownVoteTimes=votes.every(r=>timestamp(r)>0);
-  const f={p_logn:Math.log1p(nVotes),p_mean:nVotes?(voteValues.reduce((a,b)=>a+b,0)+10*localMu)/(nVotes+10):null,p_since:votes.length&&knownVoteTimes?Math.log1p(Math.max(0,Math.floor((asOf-Math.max(...votes.map(timestamp)))/DAY))):null,p_flavor:nVotes?0:null,p_env:nVotes?0:null,p_service:nVotes?0:null,p_cellsize:Math.log1p(candidateCount),p_cost:price(placeId),p_cost_n:price(placeId)===null?0:1};
-  for(const d of [30,90,365])f['p_n'+d]=knownVoteTimes?Math.log1p(votes.filter(r=>timestamp(r)>asOf-d*DAY).length):null;
-  const c=city(placeId),s=style(placeId),cityReviews=safeRatings.filter(r=>timestamp(r)>asOf-365*DAY&&city(r.place_id)===c),styleReviews=cityReviews.filter(r=>style(r.place_id)===s);
+  const f={p_logn:Math.log1p(nVotes),p_mean:nVotes?(voteValues.reduce((a,b)=>a+b,0)+10*localMu)/(nVotes+10):null,p_since:votes.length&&knownVoteTimes?Math.log1p(Math.max(0,Math.floor((featureTime-Math.max(...votes.map(timestamp)))/DAY))):null,p_flavor:nVotes?0:null,p_env:nVotes?0:null,p_service:nVotes?0:null,p_cellsize:Math.log1p(candidateCount),p_cost:price(placeId),p_cost_n:price(placeId)===null?0:1};
+  for(const d of [30,90,365])f['p_n'+d]=knownVoteTimes?Math.log1p(votes.filter(r=>timestamp(r)>featureTime-d*DAY).length):null;
+  const c=city(placeId),s=style(placeId),cityReviews=nVotes&&c&&s?safeRatings.filter(r=>timestamp(r)>featureTime-365*DAY&&city(r.place_id)===c):[],styleReviews=cityReviews.filter(r=>style(r.place_id)===s);
   f.p_style_share=nVotes&&c&&s?styleReviews.length/Math.max(cityReviews.length,1):null;f.p_style_mean=nVotes&&c&&s?(styleReviews.reduce((sum,r)=>sum+star(r.score),0)+10*localMu)/(styleReviews.length+10):null;
+  const av=profile?.flags;flags.forEach((_,k)=>f['a_f'+String(k).padStart(2,'0')]=av?.[k]??null);
+  // Public/personal rating and risk trees do not consume choice-only preference,
+  // co-visit or multi-interest columns. Keep their identical scalar calculation.
+  if(scope!=='estimate'){
   const styleHistory=s?history.filter(r=>style(r.place_id)===s):[];
   f.u_style_share=n&&f.p_style_share!==null?(styleHistory.length+5*f.p_style_share)/(n+5):null;
   f.u_style_lift=f.u_style_share!==null?Math.log((f.u_style_share+1e-4)/(f.p_style_share+1e-4)):null;
@@ -91,16 +105,14 @@ function buildFullFeatures({places,ratings,profiles=new Map(),viewerId=null,asOf
   f.u_price_mean=mean(hp);f.u_price_gap=f.p_cost!==null&&hp.length?f.p_cost-f.u_price_mean:null;f.u_price_absgap=f.u_price_gap===null?null:Math.abs(f.u_price_gap);
   f.u_mean_gap=n&&f.p_mean!==null?f.p_mean-mean(hm):null;f.u_pop_gap2=n?f.p_logn-mean(hpop):null;
   const styleCounts=new Map();for(const r of history){const k=style(r.place_id);styleCounts.set(k,(styleCounts.get(k)||0)+1);}f.u_style_entropy=n?-[...styleCounts.values()].reduce((sum,k)=>sum+(k/n)*Math.log(k/n),0):null;
-  const Cv=catVectors.get(placeId)||[],U=new Array(vocab.length).fill(0),rawU=new Array(vocab.length).fill(0);
-  for(const r of history){const v=catVectors.get(r.place_id);v.forEach((x,k)=>U[k]+=x);for(const cat of rawCats.get(r.place_id)||[]){const k=catIndex.get(cat);if(k!==undefined)rawU[k]++;}}
+  const Cv=catVectors.get(placeId)||[],{U,lift,hu}=historyPreference(history);
   f.u_cat_cos=n?dot(unit(Cv),unit(U)):null;f.u_cat_n=Math.log1p(n);
-  const totalCats=rawU.reduce((a,b)=>a+b,0),lift=new Array(vocab.length).fill(0);if(totalCats)for(let i=0;i<vocab.length;i++)if(rawU[i])for(let j=0;j<vocab.length;j++)lift[j]+=rawU[i]/totalCats*L[i][j];
   const wanted=(rawCats.get(placeId)||[]).map(x=>catIndex.get(x)).filter(x=>x!==undefined);f.u_cat_lift=n&&wanted.length?mean(wanted.map(k=>lift[k])):null;f.u_cat_lift_max=n&&wanted.length?Math.max(...wanted.map(k=>lift[k])):null;
-  const av=profile?.flags,hu=flags.map((_,k)=>{const vs=history.map(r=>profiles.get(r.place_id)?.flags?.[k]??flagMean[k]).filter(v=>v!==null);return mean(vs);});
-  flags.forEach((_,k)=>f['a_f'+String(k).padStart(2,'0')]=av?.[k]??null);
   if(av&&hu.every(x=>x!==null)&&flagMean.every(x=>x!==null)){const ac=av.map((v,k)=>v??flagMean[k]);f.u_attr_cos=n?cosine(sub(ac,flagMean),sub(hu,flagMean)):null;f.u_attr_dist=n?dist(ac,hu):null;}else{f.u_attr_cos=null;f.u_attr_dist=null;}
   const co=recent.map(r=>cf(r.place_id,placeId));f.cf_sum=co.reduce((a,b)=>a+b,0);f.cf_max=co.length?Math.max(...co):0;f.cf_mean=mean(co)??0;f.cf_nz=co.length?co.filter(x=>x>0).length/co.length:0;f.cf_recent=co.slice(-10).reduce((a,b)=>a+b,0);
+  }
   const cp=profile?.description_projected||project(profile?.description_embedding,transforms.description);for(let k=0;k<8;k++)f['d_pc'+k]=cp?.[k]??null;
+  if(scope!=='estimate'){
   for(const [space,prefix,width]of [['ds','dsp',contract.profiles?.ds?.mean?.length||0],['rv','rvp',contract.profiles?.rv?.mean?.length||0],['em','em',transforms.review?.components?.length||0]]){
    const map=spaces[space],candidate=map.get(placeId),vectors=recent.map(r=>map.get(r.place_id)).filter(Boolean),u=vmean(vectors,width),center=centers[space];
    const excluded=new Set(contract.profiles?.[space]?.excluded_indices||[]);
@@ -112,7 +124,8 @@ function buildFullFeatures({places,ratings,profiles=new Map(),viewerId=null,asOf
   }
   const desc=profile?.description_embedding,dv=recent.map(r=>spaces.desc.get(r.place_id)).filter(Boolean),du=dv.length?unit(dv.reduce((sum,v)=>sum.map((x,k)=>x+v[k]),new Array(dv[0].length).fill(0))):null;
   f.u_desc_cos=desc&&du?cosine(desc,du):null;f.u_desc_max=desc&&dv.length?Math.max(...dv.map(v=>cosine(desc,v))):null;
-  const hy=history.map(r=>star(r.score)),um=mean(hy),res=history.map(r=>star(r.score)-localShopMean(r.place_id));f.l_len=res.reduce((a,b)=>a+b,0)/(n+5);f.l_sd=Math.sqrt((hy.reduce((sum,y)=>sum+(y-(um??localMu))**2,0)+5*localGv)/(n-1+5));f.l_hi=(hy.filter(y=>y===5).length+5*(localYs.length?localYs.filter(y=>y===5).length/localYs.length:0))/(n+5);f.l_lo=(hy.filter(y=>y<=2).length+5*(localYs.length?localYs.filter(y=>y<=2).length/localYs.length:0))/(n+5);f.l_logn=Math.log1p(n);
+  }
+  const hy=history.map(r=>star(r.score)),um=mean(hy),res=history.map(r=>star(r.score)-localShopMean(r.place_id));f.l_len=res.reduce((a,b)=>a+b,0)/(n+5);f.l_sd=Math.sqrt((hy.reduce((sum,y)=>sum+(y-(um??localMu))**2,0)+5*localGv)/(n-1+5));f.l_hi=(hy.filter(y=>y===5).length+5*(hidden.length?(localYs.length?localYs.filter(y=>y===5).length/localYs.length:0):g5))/(n+5);f.l_lo=(hy.filter(y=>y<=2).length+5*(hidden.length?(localYs.length?localYs.filter(y=>y<=2).length/localYs.length:0):g2))/(n+5);f.l_logn=Math.log1p(n);
   const riskN=votes.length>=5?5:votes.length>=3?3:votes.length?1:0,early=votes.slice().sort((a,b)=>timestamp(a)-timestamp(b)||String(a.user_id).localeCompare(String(b.user_id))).slice(0,riskN),ey=early.map(r=>star(r.score));
   f.n=riskN;for(let k=1;k<=5;k++)f['c'+k]=ey.reduce((sum,y)=>sum+Math.max(0,1-Math.abs(y-k)),0);
   f.mean=mean(ey);f.min=ey.length?Math.min(...ey):null;f.span=early.length&&early.every(r=>timestamp(r)>0)?Math.log1p((Math.max(...early.map(timestamp))-Math.min(...early.map(timestamp)))/DAY):null;

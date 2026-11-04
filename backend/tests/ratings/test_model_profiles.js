@@ -4,6 +4,11 @@ Object.assign(process.env,{DB_FILE:path.join(temp,'test.sqlite'),LOG_TO_FILE:'fa
 const {db,init}=require('../../infrastructure/database');const profiles=require('../../modules/ratings/services/modelProfiles');
 async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,username,password) VALUES('owner','owner','unused')").run();sql.prepare("INSERT INTO Place(id,name,category,description,creator_id,moderation_status) VALUES(1,'店铺','其他','简介','owner','visible')").run();
  const contract={profiles:{ds:{properties:['quality']},rv:{properties:['spicy']}},categories:['Restaurant'],flags:['Family']},model={model_hash:'a'.repeat(64)};
+ const schema=profiles.profileSchema(contract),base={ds:[7],rv:null,categories:['Restaurant'],price_level:null};
+ assert.deepEqual(profiles.parseAnswer({...base,flags:{}},schema,false).flags,[null]);
+ assert.deepEqual(profiles.parseAnswer({...base,flags:{f00:1}},schema,false).flags,[1]);
+ assert.throws(()=>profiles.parseAnswer({...base,flags:{unknown:1}},schema,false),/attributes/);
+ assert.throws(()=>profiles.parseAnswer({...base,flags:[null,null]},schema,false),/attributes/);
  let calls=0;const complete=async({system})=>{calls++;assert.ok(!system.includes('dsIndices')&&!system.includes('dsTotal'),'prompt contains only public active property schema');assert.match(system,/ds must contain exactly 1 numbers/);return {ds:[7],rv:null,categories:['Restaurant'],flags:[null],price_level:null};};
  await profiles.syncProfile(1,model,contract,{complete});assert.equal(calls,1);assert.equal(profiles.readProfiles([{id:1}],model).get(1).rv,null,'default scores do not create review profiles');
  await profiles.syncProfile(1,model,contract,{complete});assert.equal(calls,1,'unchanged profiles do not repeat remote calls');

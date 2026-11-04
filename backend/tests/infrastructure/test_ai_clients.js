@@ -103,9 +103,9 @@ async function main() {
         deepseekMode = 'garbage';
         await assert.rejects(completeDeepseekJson({ system: 's', user: 'u' }), /invalid JSON body/);
         deepseekMode = 'rate_limited';
-        await assert.rejects(completeDeepseekJson({ system: 's', user: 'u' }), /Rate limit reached/);
+        await assert.rejects(completeDeepseekJson({ system: 's', user: 'u' }), e=>/Rate limit reached/.test(e.message)&&e.code==='upstream_http_error'&&e.httpStatus===429);
         deepseekMode = 'stall';
-        await assert.rejects(completeDeepseekJson({ system: 's', user: 'u' }), /body timed out/);
+        await assert.rejects(completeDeepseekJson({ system: 's', user: 'u' }), e=>/body timed out/.test(e.message)&&e.code==='upstream_timeout'&&e.timeoutMs===200);
 
         assert.ok(isVectorSearchAvailable(), 'sqlite-vec is required for the semantic search fallback test');
         const placeId = Number(db._raw.prepare(`INSERT INTO Place (name, category, description, per_person_cost, latitude, longitude)

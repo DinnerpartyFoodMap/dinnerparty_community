@@ -23,7 +23,11 @@ const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 const { listPlaces } = require('../services/placeList');
-async function projectRatingViews(rows,viewerId){
+async function projectRatingViews(rows,viewerId,{map=false}={}){
+    const configured=Number(process.env.MAP_EAGER_RATING_LIMIT??100),limit=Number.isSafeInteger(configured)&&configured>=0&&configured<=500?configured:100;
+    // Dense map responses keep stored aggregate/default votes and defer model
+    // scoring to the existing selected-place rating endpoint.
+    if(map&&rows.length>limit)return rows.map(row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null}));
     try{const views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(rows.map(r=>r.id),viewerId),estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
         return rows.map(row=>({...row,rating_estimate:estimates.get(row.id)??null,rating_risk:estimates.get(row.id)?.risk??null,predicted_rating:predictions.get(row.id)??null}));
     }catch{return rows.map(row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null}));}
@@ -48,7 +52,7 @@ router.get("/", attachViewer, (req, res) => {
                  ORDER BY p.created_time DESC`;
     db.all(sql, [req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id),req.viewer));
+        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true}),req.viewer));
     });
 });
 
@@ -64,7 +68,7 @@ router.get("/nearby", attachViewer, (req, res) => {
                    AND ${notBlockedSql('p.creator_id')}`;
     db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id),req.viewer));
+        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true}),req.viewer));
     });
 });
 

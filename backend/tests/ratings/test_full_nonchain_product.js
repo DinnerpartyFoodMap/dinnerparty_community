@@ -24,6 +24,12 @@ async function main(){
  for(let k=0;k<3;k++){const id='future'+k;db._raw.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)').run(id,id,'unused');db._raw.prepare("INSERT INTO PlaceRating(place_id,user_id,score,source,created_at,updated_at) VALUES(1,?,1,'user',?,?)").run(id,now+1000,now+1000);}
  const early=await adapter.ratingViews([1],'viewer');assert.equal(early.estimates[0].evidence_count,4,'future rows are excluded from estimate input count');assert.equal(early.estimates[0].risk.prefix_count,3);assert.equal(early.estimates[0].average,past.estimates[0].average,'future rows do not change additive public quality');
  Date.now=()=>now+2000;const later=await adapter.ratingViews([1],'viewer');assert.equal(later.estimates[0].evidence_count,7);assert.equal(later.estimates[0].risk.prefix_count,5,'cache cannot retain an earlier prefix after future rows become available');}finally{Date.now=realNow;}
+ const boundary=Date.now()+10000;
+ db._raw.prepare("INSERT INTO PlaceRating(place_id,user_id,score,source,created_at,updated_at) VALUES(2,'owner',3,'user',?,?)").run(boundary-30*86400000+100,boundary-30*86400000+100);
+ const inputRevision=require('../../modules/ratings/services/ratingSnapshot').revision();
+ const firstTime=adapter.fullFeatures(null,{input_revision:inputRevision,as_of_ms:boundary},config),laterTime=adapter.fullFeatures(null,{input_revision:inputRevision,as_of_ms:boundary+200},config);
+ assert.equal(firstTime.featureFor(2).p_n30,Math.log1p(1));assert.equal(laterTime.featureFor(2).p_n30,0,'shared structures retain exact per-request time boundaries');
+ assert.equal(firstTime.featureFor(2).p_n30,Math.log1p(1),'later requests cannot mutate earlier feature snapshots');
  process.env.RATING_ESTIMATE_MODE='off';process.env.RATING_PREDICTION_MODE='off';assert.equal((await adapter.ratingViews([1],'viewer')).estimates.length,0);
  console.log('Full product integration passed: pinned contract, public additive quality, retained defaults, full personal model, risk prefix and choice features.');
 }

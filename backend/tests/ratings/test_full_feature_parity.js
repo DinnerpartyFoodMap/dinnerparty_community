@@ -11,5 +11,9 @@ const ratings=f.ratings.map(r=>({...r,score:1+3*(r.native5-1)/4}));
 const builder=buildFullFeatures({places:f.places,ratings,profiles,viewerId:f.viewer_id,asOf:f.as_of_ms,contract,candidateCount:f.expected.length});
 const diffs=[];for(const row of f.expected){const actual=builder.featureFor(row.place_id);for(const [key,value]of Object.entries(row.features)){const a=actual[key];if(value===null?a!==null:!Number.isFinite(a)||Math.abs(a-value)>1e-4)diffs.push({place_id:row.place_id,key,expected:value,actual:a});}}
 assert.equal(diffs.length,0,JSON.stringify(diffs.slice(0,25)));
+for(const row of f.expected)for(const excludeViewer of [false,true]){
+ const full=builder.featureFor(row.place_id,{excludeViewer}),lean=builder.featureFor(row.place_id,{excludeViewer,scope:'estimate'});
+ for(const key of new Set([...contract.feature_order.rating,...contract.feature_order.risk]))assert.equal(lean[key],full[key],`${name}: lean rating/risk ${key}`);
+}
 console.log(`${name}: full feature Python/Node parity passed for every original P93 non-chain feature on synthetic histories.`);
 }

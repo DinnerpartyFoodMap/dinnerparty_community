@@ -38,7 +38,7 @@ async function postJson(url, payload, apiKey, timeoutMs) {
             // Headers arrived but the body stalled. DeepSeek does this while it queues
             // requests under load: 200 at once, then only keep-alive blank lines.
             if (controller.signal.aborted) {
-                throw new Error(`upstream response body timed out after ${timeoutMs}ms (status ${response.status})`);
+                throw Object.assign(new Error(`upstream response body timed out after ${timeoutMs}ms (status ${response.status})`), { code: 'upstream_timeout', timeoutMs });
             }
             throw error;
         }
@@ -48,13 +48,13 @@ async function postJson(url, payload, apiKey, timeoutMs) {
         } catch (_) { }
         if (!response.ok) {
             const message = body?.error?.message || body?.message || `upstream returned ${response.status}`;
-            throw new Error(message);
+            throw Object.assign(new Error(message), { code: 'upstream_http_error', httpStatus: response.status });
         }
-        if (!body || typeof body !== 'object') throw new Error('upstream returned an invalid JSON body');
+        if (!body || typeof body !== 'object') throw Object.assign(new Error('upstream returned an invalid JSON body'), { code: 'upstream_invalid_json' });
         return body;
     } catch (error) {
         if (error && error.name === 'AbortError') {
-            throw new Error(`upstream request timed out after ${timeoutMs}ms`);
+            throw Object.assign(new Error(`upstream request timed out after ${timeoutMs}ms`), { code: 'upstream_timeout', timeoutMs });
         }
         throw error;
     } finally {

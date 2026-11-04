@@ -15,6 +15,8 @@ SILICONFLOW_API_KEY=现有密钥
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn
 EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B
 MODEL_PROFILE_MODE=active
+MODEL_PROFILE_TIMEOUT_MS=60000
+MAP_EAGER_RATING_LIMIT=100
 ```
 
 4. 删除已不使用的 `MODEL_FEATURE_EMBEDDING_URL/TOKEN`。不启动旧的 `Dockerfile.encoder`。
@@ -28,3 +30,18 @@ MODEL_PROFILE_MODE=active
 - 本次改动不涉及前端和 iOS 展示，不需要为这次 4B 切换重新打包。此前若还有未发布的客户端改动，按原客户端发布流程处理。
 
 模型实验结果、特征约定与限制见 [FULL_NONCHAIN.md](FULL_NONCHAIN.md)。私有服务中的 `docs/UNIFIED_4B.md` 包含完整训练及回滚说明。
+
+## 画像报错和地图卡顿修复
+
+更新本次后端并重启即可，私有服务模型不需重训。画像提取使用独立的 60 秒超时；属性按编号输出为对象，省略的属性保留为未知，避免长数组漏项。embedding 失败会保留已完成的画像和向量，重试不再重复调用 DeepSeek。
+
+`MAP_EAGER_RATING_LIMIT=100` 表示地图范围请求返回超过 100 个地点时，仅返回标记和已有汇总评价，点开详情卡后仍正常计算两个完整模型评分；列表和随机推荐不受影响。设为 `0` 可让全部地图标记都按此方式加载。已有默认/导入评价保留，不会因为延后计算而显示成暂无评价。
+
+如果仍出现 `Restaurant model profile extraction unavailable`，新日志包含 `stage`、`code`、HTTP 状态和超时时间：
+
+- `profile_parse / profile_attributes_invalid`：模型属性输出格式异常；旧长数组报错会显示期望和实际长度。
+- `profile_request / upstream_timeout`：DeepSeek 超时，可按实际服务速度调整 `MODEL_PROFILE_TIMEOUT_MS`，最大 180000。
+- `description_embedding` 或 `review_embedding` 配合 `http_status=401/403`：检查 SiliconFlow 密钥和访问权限；`402` 检查余额；`429` 为限流。
+- `encoder_contract_mismatch`：确认私有服务加载的是 `research-full-nonchain-4b-v3`，并同步更新后端。
+
+临时需要停止画像任务时可设置 `MODEL_PROFILE_MODE=off` 并重启；地图已有评价会保留。完整诊断和快照性能测量见 [MAP_RATING_PERFORMANCE.md](MAP_RATING_PERFORMANCE.md)。
