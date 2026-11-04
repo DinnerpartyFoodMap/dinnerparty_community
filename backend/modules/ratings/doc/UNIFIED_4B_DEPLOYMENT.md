@@ -35,11 +35,12 @@ MAP_EAGER_RATING_LIMIT=100
 
 更新本次后端并重启即可，私有服务模型不需重训。画像提取使用独立的 60 秒超时；属性按编号输出为对象，省略的属性保留为未知，避免长数组漏项。embedding 失败会保留已完成的画像和向量，重试不再重复调用 DeepSeek。
 
-`MAP_EAGER_RATING_LIMIT=100` 表示地图范围请求返回超过 100 个地点时，仅返回标记和已有汇总评价，点开详情卡后仍正常计算两个完整模型评分；列表和随机推荐不受影响。设为 `0` 可让全部地图标记都按此方式加载。已有默认/导入评价保留，不会因为延后计算而显示成暂无评价。
+`MAP_EAGER_RATING_LIMIT=100` 表示新版客户端的实际地图视野超过 100 个地点时，仅返回标记和已有汇总评价；少量点则批量预加载两个评分，外围预取点不计入阈值。点开详情卡仍刷新评分，列表和随机推荐不受影响。设为 `0` 关闭所有地图评分预加载。已有默认/导入评价保留。此次视野/卡片修正需要发布网页和重新打包 iOS，详见 [PROFILE_MAP_V4.md](../../preferences/doc/PROFILE_MAP_V4.md)。
 
 如果仍出现 `Restaurant model profile extraction unavailable`，新日志包含 `stage`、`code`、HTTP 状态和超时时间：
 
 - `profile_parse / profile_attributes_invalid`：模型属性输出格式异常；旧长数组报错会显示期望和实际长度。
+- `profile_parse / profile_categories_invalid` 或 `profile_values_invalid`：升级到固定分类/属性编号格式，允许资料不足属性保持未知；旧失败记录自动按新格式重试。错误类型、越界值或未知编号仍会拒绝，不应关闭校验。
 - `profile_request / upstream_timeout`：DeepSeek 超时，可按实际服务速度调整 `MODEL_PROFILE_TIMEOUT_MS`，最大 180000。
 - `description_embedding` 或 `review_embedding` 配合 `http_status=401/403`：检查 SiliconFlow 密钥和访问权限；`402` 检查余额；`429` 为限流。
 - `encoder_contract_mismatch`：确认私有服务加载的是 `research-full-nonchain-4b-v3`，并同步更新后端。

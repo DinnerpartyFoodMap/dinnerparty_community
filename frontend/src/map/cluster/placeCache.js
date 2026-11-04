@@ -42,6 +42,14 @@ export class PlaceRangeCache {
         return { covered, fresh: covered && fresh, nearEdge: !covered || nearEdge };
     }
 
+    // A dense cached response can become sparse after zooming in. Its markers
+    // remain covered, but the newly visible scores still need one batch fetch.
+    needsRatings(viewBounds) {
+        const visible=this.all().filter(place=>pointInBounds(viewBounds,Number(place.longitude),Number(place.latitude)));
+        const limit=visible.find(place=>Number.isInteger(place.rating_eager_limit))?.rating_eager_limit??100;
+        return limit>0&&visible.length<=limit&&visible.some(place=>place.rating_deferred===true);
+    }
+
     /** 写入一次成功响应。返回数据是否真的发生了变化。 */
     apply(bounds, list, { fetchedAt = this.now() } = {}) {
         let changed = false;

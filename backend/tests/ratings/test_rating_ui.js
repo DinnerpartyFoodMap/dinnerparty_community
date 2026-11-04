@@ -13,7 +13,7 @@ async function main(){
     const frontend=path.resolve(__dirname,'../../../frontend'),{createServer}=await import(pathToFileURL(path.join(frontend,'node_modules/vite/dist/node/index.js')).href);
     vite=await createServer({root:frontend,server:{middlewareMode:true,hmr:false},appType:'custom',logLevel:'warn'});
     const token=jwt.sign({id:'viewer'},process.env.JWT_SECRET||'yuyuko_secret_key');
-    app.get('/__rating_ui',async(req,res)=>res.type('html').send(await vite.transformIndexHtml(req.url,`<!doctype html><html lang="zh"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script>window.__TEST_TOKEN=${JSON.stringify(token)}</script><script type="module" src="/tests/integration/rating-harness.jsx"></script></body></html>`)));
+    app.get('/__rating_ui',async(req,res)=>res.type('html').send(await vite.transformIndexHtml(req.url,`<!doctype html><html lang="zh"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script>window.__TEST_TOKEN=${JSON.stringify(token)};window.__TEST_PRELOADED=${req.query.preloaded==='1'}</script><script type="module" src="/tests/integration/rating-harness.jsx"></script></body></html>`)));
     app.use(vite.middlewares);server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
     const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'msedge'});
     for(const viewport of [{width:1100,height:850},{width:390,height:844}]){
@@ -46,6 +46,15 @@ async function main(){
         assert.equal(await projected.getByText(/3\.6/).count(),1);
         assert.equal(await projected.getByText(/模型提示这家店更可能得到低分/).count(),1);
         assert.equal(await projected.getByText(/3\.9/).count(),0,'internal ranking score is not a displayed rating');
+        await page.unroute('**/api/ratings/places/1');
+        let release;const blocked=new Promise(resolve=>{release=resolve;});
+        await page.route('**/api/ratings/places/1',async route=>{await blocked;await route.fulfill({json:{summary:{count:2,average:3.2},prediction:{active:true,status:'ready',average:3.6}}});});
+        await page.goto(`http://127.0.0.1:${server.address().port}/__rating_ui?preloaded=1`,{waitUntil:'domcontentloaded'});
+        await page.getByRole('dialog').waitFor();
+        assert.equal(await page.getByRole('dialog').getByText('3.2',{exact:true}).count(),1,'preloaded public score displays while detail fetch is blocked');
+        assert.equal(await page.getByRole('dialog').getByText(/3\.6/).count(),1,'preloaded personal score displays before detail response');
+        assert.equal(await page.locator('#rating-state').textContent(),'null');
+        release();await page.waitForFunction(()=>JSON.parse(document.querySelector('#rating-state')?.textContent||'null')?.summary);
         assert.deepEqual(errors,[]);await page.close();
     }
     console.log('Rating browser tests passed on desktop and mobile: confirmation identity, two bootstrap scores, independent risk hint, hidden ranking boost.');

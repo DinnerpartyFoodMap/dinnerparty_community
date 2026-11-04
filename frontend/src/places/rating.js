@@ -69,6 +69,14 @@ export function summaryFromPlace(place) {
     return { count, average: count ? Number(place.rating_average) : null };
 }
 
+// Preloaded personal scores are scoped to the authenticated response owner.
+// Switching accounts must never briefly render the previous account's score.
+export function ratingPlaceForViewer(place,viewerId) {
+    if(!place)return null;
+    if(viewerId!=null&&place.rating_viewer_id!=null&&String(viewerId)===String(place.rating_viewer_id))return place;
+    return {...place,predicted_rating:null,personalized_average:null};
+}
+
 // Display selection never mutates the legacy aggregates used by avoidance rules.
 export function ratingDisplay(data, place) {
     const estimate = data ? data.estimate : place?.rating_estimate;

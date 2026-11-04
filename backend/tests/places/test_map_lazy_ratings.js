@@ -21,6 +21,18 @@ async function main(){
  const detail=await get('/places/1');assert.equal(detail.rating_estimate.average,3.5);assert.deepEqual(projected.at(-1),[1],'selected-place details still load model scores');
  process.env.MAP_EAGER_RATING_LIMIT='0';const all=await get('/places');assert.equal(all.length,3);assert.equal(projected.length,2);
  await get('/places/1');assert.equal(projected.length,3,'zero map limit does not defer detail scores');
+ process.env.MAP_EAGER_RATING_LIMIT='2';
+ const scoped=await get('/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24&viewMinLng=113&viewMaxLng=113.025&viewMinLat=22&viewMaxLat=24');
+ assert.equal(scoped.length,3,'prefetch still includes offscreen markers');
+ assert.deepEqual([...projected.at(-1)].sort(),[1,2],'only actual visible markers count toward the eager limit');
+ assert.equal(scoped.find(p=>p.id===3).rating_deferred,true);
+ assert.equal(scoped.find(p=>p.id===1).rating_deferred,false);
+ assert.equal(scoped.find(p=>p.id===1).rating_estimate.average,3.5);
+ for(const query of ['viewMinLng=113','viewMinLng=113&viewMaxLng=115&viewMinLat=22&viewMaxLat=24'])assert.equal((await fetch(base+'/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24&'+query)).status,400);
+ const token=require('jsonwebtoken').sign({id:'owner'},process.env.JWT_SECRET||'yuyuko_secret_key');
+ const response=await fetch(base+'/places/nearby?minLng=113&maxLng=113.025&minLat=22&maxLat=24',{headers:{Authorization:'Bearer '+token}});
+ assert.equal(response.headers.get('cache-control'),'no-store');
+ assert.ok((await response.json()).every(p=>p.rating_viewer_id==='owner'),'preloaded scores carry their authenticated owner');
  console.log('Map lazy scoring passed: dense/sparse threshold, default rating retention, zero threshold and selected detail projection.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});

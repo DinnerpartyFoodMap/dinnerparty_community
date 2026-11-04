@@ -1,6 +1,6 @@
 # 六类餐饮偏好（住民主页雷达）
 
-当前主页并发修复、保守刻度和全部兴趣信号见 [INTEREST_V3.md](INTEREST_V3.md)。以下 v2 计算和实验记录保留为历史说明。
+当前六维刻度见 [PROFILE_MAP_V4.md](PROFILE_MAP_V4.md)，主页并发修复和全部兴趣信号见 [INTEREST_V3.md](INTEREST_V3.md)。以下 v2 计算和实验记录保留为历史说明。
 
 实现：`services/tasteAxes.js`；接口：`GET /users/:id/profile` 的 `taste`、`PUT /users/me/taste`、管理员 `/admin/taste-axes/places`。
 

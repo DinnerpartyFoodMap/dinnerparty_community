@@ -66,6 +66,11 @@ try {
 console.log('rating tests passed');
 
 const { ratingDisplay } = await import('../../../src/places/rating.js');
+const {ratingPlaceForViewer}=await import('../../../src/places/rating.js');
+const preloaded={rating_count:1,rating_average:3,rating_viewer_id:'alice',predicted_rating:{active:true,status:'ready',average:3.7}};
+assert.equal(ratingDisplay(null,ratingPlaceForViewer(preloaded,'alice')).personal.average,3.7,'owner sees already preloaded prediction without waiting for detail');
+for(const viewer of ['bob',null,undefined])assert.equal(ratingDisplay(null,ratingPlaceForViewer(preloaded,viewer)).personal,null,'stale owner score never appears after account switch/logout');
+assert.equal(ratingDisplay(null,ratingPlaceForViewer({...preloaded,rating_viewer_id:undefined},'alice')).personal,null,'unscoped old payloads require detail refresh');
 assert.equal(ratingDisplay({summary:{count:1,average:3},prediction:{active:true,average:3,status:'cold_start'}},null).personal,null,'cold start must not masquerade as individual prediction');
 const raw = { summary: { count: 9, average: 1, distribution: {1:9} }, personalized: { average: 2.2 }, estimate: { active:true, average:3.2, evidence_count:2, distribution:{3:2} }, prediction:{active:true,average:3.6,status:'ready'} };
 assert.equal(ratingDisplay(raw).summary.count,2);
@@ -88,3 +93,16 @@ assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,risk:{...flaggedRis
 assert.equal(ratingDisplay(null,{rating_estimate:raw.estimate,rating_risk:{...flaggedRisk,active:true}}).risk.flagged,true);
 assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,risk:flaggedRisk}}).personal.average,3.6);
 assert.equal(isAvoidedPlace({rating_count:3,rating_average:3.2,rating_risk:{...flaggedRisk,active:true}}),false);
+
+// Nearby requests distinguish visible viewport from marker prefetch coverage.
+try {
+    let sent;
+    globalThis.fetch=async(url,options)=>{sent={url:new URL(url),options};return {ok:true,json:async()=>[]};};
+    const {fetchPlacesNearby}=await import('../../../src/api/client.js');
+    await fetchPlacesNearby('https://example.test',{minLng:110,maxLng:116,minLat:20,maxLat:26},{token:'tk',viewBounds:{minLng:112,maxLng:114,minLat:22,maxLat:24}});
+    assert.equal(sent.url.searchParams.get('minLng'),'110');
+    assert.equal(sent.url.searchParams.get('viewMinLng'),'112');
+    assert.equal(sent.url.searchParams.get('viewMaxLat'),'24');
+    assert.equal(sent.options.headers.Authorization,'Bearer tk');
+    assert.equal(sent.options.cache,'no-store');
+} finally {globalThis.fetch=originalFetch;}

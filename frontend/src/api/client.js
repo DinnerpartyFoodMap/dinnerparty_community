@@ -22,14 +22,15 @@ export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { s
 // 带 token 时结果包含自己新增、还在审核中的地点（其他人看不到）；token 无效时后端按游客返回
 const authHeaders = (token) => (token ? { headers: { Authorization: `Bearer ${token}` } } : {});
 
-export async function fetchPlacesNearby(backendUrl, { minLng, minLat, maxLng, maxLat }, { signal, token } = {}) {
+export async function fetchPlacesNearby(backendUrl, { minLng, minLat, maxLng, maxLat }, { signal, token, viewBounds } = {}) {
     const params = new URLSearchParams({
         minLng: String(minLng),
         minLat: String(minLat),
         maxLng: String(maxLng),
         maxLat: String(maxLat)
     });
-    const res = await fetch(`${backendUrl}/places/nearby?${params.toString()}`, { signal, ...authHeaders(token) });
+    if(viewBounds)for(const name of ['minLng','minLat','maxLng','maxLat'])params.set('view'+name[0].toUpperCase()+name.slice(1),String(viewBounds[name]));
+    const res = await fetch(`${backendUrl}/places/nearby?${params.toString()}`, { signal, cache:'no-store', ...authHeaders(token) });
     if (!res.ok) throw new Error(`Failed to fetch nearby places: ${res.status}`);
     return res.json();
 }

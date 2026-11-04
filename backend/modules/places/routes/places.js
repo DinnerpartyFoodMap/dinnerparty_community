@@ -23,14 +23,15 @@ const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 const { listPlaces } = require('../services/placeList');
-async function projectRatingViews(rows,viewerId,{map=false}={}){
+async function projectRatingViews(rows,viewerId,{map=false,bounds=null}={}){
     const configured=Number(process.env.MAP_EAGER_RATING_LIMIT??100),limit=Number.isSafeInteger(configured)&&configured>=0&&configured<=500?configured:100;
-    // Dense map responses keep stored aggregate/default votes and defer model
-    // scoring to the existing selected-place rating endpoint.
-    if(map&&rows.length>limit)return rows.map(row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null}));
-    try{const views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(rows.map(r=>r.id),viewerId),estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
-        return rows.map(row=>({...row,rating_estimate:estimates.get(row.id)??null,rating_risk:estimates.get(row.id)?.risk??null,predicted_rating:predictions.get(row.id)??null}));
-    }catch{return rows.map(row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null}));}
+    const visible=rows.filter(r=>!bounds||r.longitude>=bounds.minLng&&r.longitude<=bounds.maxLng&&r.latitude>=bounds.minLat&&r.latitude<=bounds.maxLat);
+    const candidates=map&&visible.length>limit?[]:visible,ids=new Set(candidates.map(r=>r.id));
+    const base=row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null,rating_viewer_id:viewerId??null,...(map?{rating_deferred:!ids.has(row.id),rating_eager_limit:limit}:{})});
+    if(!candidates.length)return rows.map(base);
+    try{const views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(candidates.map(r=>r.id),viewerId),estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
+        return rows.map(row=>({...base(row),rating_estimate:estimates.get(row.id)??null,rating_risk:estimates.get(row.id)?.risk??null,predicted_rating:predictions.get(row.id)??null}));
+    }catch{return rows.map(base);}
 }
 function visibleProjectedRows(rows,viewer,detail=false){
     // Synchronous final authorization: projection may have awaited a newer snapshot.
@@ -44,6 +45,7 @@ router.use((req,res,next)=>req.method==='GET'&&!req.path.endsWith('/diaries')?re
 // 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者；
 // 观看者屏蔽了的住民创建的地点也不返回（accounts/services/userRelations.js）
 router.get("/", attachViewer, (req, res) => {
+    res.set('Cache-Control','no-store');
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
@@ -58,8 +60,16 @@ router.get("/", attachViewer, (req, res) => {
 
 // 按 bounds 查询范围内地点（附带创建者和最后修改者姓名、评价人数与平均分）
 router.get("/nearby", attachViewer, (req, res) => {
+    res.set('Cache-Control','no-store');
     const { minLng, minLat, maxLng, maxLat } = req.query;
     if (![minLng, minLat, maxLng, maxLat].every(Boolean)) return res.status(400).json({ error: "缺少范围参数" });
+    const names=['minLng','minLat','maxLng','maxLat'],viewKeys=names.map(name=>'view'+name[0].toUpperCase()+name.slice(1));
+    let bounds=null;
+    if(viewKeys.some(name=>req.query[name]!==undefined)){
+        if(!viewKeys.every(name=>typeof req.query[name]==='string'&&req.query[name].trim()!==''&&Number.isFinite(Number(req.query[name]))))return res.status(400).json({error:'地图视野范围无效'});
+        bounds=Object.fromEntries(names.map((name,k)=>[name,Number(req.query[viewKeys[k]])]));
+        if(bounds.minLng<Number(minLng)||bounds.maxLng>Number(maxLng)||bounds.minLat<Number(minLat)||bounds.maxLat>Number(maxLat)||bounds.minLng>=bounds.maxLng||bounds.minLat>=bounds.maxLat)return res.status(400).json({error:'地图视野范围无效'});
+    }
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
@@ -68,7 +78,7 @@ router.get("/nearby", attachViewer, (req, res) => {
                    AND ${notBlockedSql('p.creator_id')}`;
     db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true}),req.viewer));
+        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true,bounds}),req.viewer));
     });
 });
 

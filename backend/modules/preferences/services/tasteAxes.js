@@ -51,8 +51,8 @@ const CLASSIFIER_VERSION = 2;
 // 评价权重 1；只收藏是弱线索，权重 0.35、信号 0.2，不等于明确好评。
 const FAVORITE_WEIGHT = 0.35;
 const FAVORITE_SIGNAL = 0.2;
-// 向中性收缩的强度（相当于 6 家店的证据）
-const PRIOR_WEIGHT = 6;
+// 向中性收缩的强度（相当于 3 家店的证据）
+const PRIOR_WEIGHT = 3;
 // 全站水平本身也向中性收缩：全站评价还少时，几条好评不应把所有人的先验都拉高
 const POPULATION_PRIOR_WEIGHT = 10;
 const SELF_LEVELS = Object.freeze([1, 2, 3, 4]);
@@ -197,7 +197,7 @@ function axisScore(items, userMean) {
     const weight = items.reduce((sum, item) => sum + item.w, 0);
     // Separate category preference from a general habit of rating everything
     // highly. Retain every eligible legacy vote, with a neutral sparse prior.
-    return items.reduce((sum,item)=>sum+item.w*(item.rating===null?item.x:Math.max(-1,Math.min(1,item.x-0.5*userMean))),0)/(weight+PRIOR_WEIGHT);
+    return items.reduce((sum,item)=>sum+item.w*(item.rating===null?item.x:Math.max(-1,Math.min(1,item.x-0.25*userMean))),0)/(weight+PRIOR_WEIGHT);
 }
 
 function selfLevels(userId, database = db._raw) {
@@ -431,7 +431,7 @@ async function userTasteAxes(userId, database = db._raw, attempt = 0) {
             key: axis,
             value,
             basis,
-            scale_version: 'taste-axes-v3',
+            scale_version: 'taste-axes-v4',
             unavailable_reason: basis ? null : (embedding ? (embedding.every(value => value === null) ? 'no_classification' : 'missing_prototype') : unavailable),
             inferred: inferred === null ? null : toDisplay(inferred),
             self_level: selfLevel,

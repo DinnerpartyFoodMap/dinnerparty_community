@@ -63,6 +63,7 @@ async function main() {
     assert.equal(hot.store_count, 1);
     assert.equal(hot.positive_count, 1);
     assert.ok(hot.value > 0.5 && hot.value < 1, `one good rating is shrunk (${hot.value})`);
+    assert.ok(hot.value<.6,'one isolated good rating stays 一般');
     assert.deepEqual(hot.sources, ['rating']);
     assert.deepEqual(hot.places.map((place) => place.id), [hotpot]);
     assert.ok(!('latitude' in hot.places[0]), 'representative shops carry no coordinates');
@@ -73,6 +74,19 @@ async function main() {
     eater = await taste.userTasteAxes(users.eater);
     assert.ok(axis(eater, 'hotpotBbq').value > hot.value);
     assert.equal(axis(eater, 'hotpotBbq').store_count, 2);
+    assert.ok(axis(eater,'hotpotBbq').value>=.6,'repeated category positives can reach 喜欢');
+    // Sufficient consistent evidence can reach 很喜欢 and separate categories;
+    // a weak category is never forcibly stretched down by per-user min/max.
+    const focused=randomUUID();sql.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)').run(focused,'focused','x');
+    for(let k=0;k<15;k++){
+        const id=addPlace('火锅证据'+k,'火锅店');
+        sql.prepare("INSERT INTO PlaceRating(place_id,user_id,score,source,created_at,updated_at) VALUES(?,?,4,'migration',0,0)").run(id,focused);
+    }
+    sql.prepare("INSERT INTO PlaceRating(place_id,user_id,score,source,created_at,updated_at) VALUES(?,?,2,'user',0,0)").run(cafe,focused);
+    const contrast=await taste.userTasteAxes(focused);
+    assert.ok(axis(contrast,'hotpotBbq').value>=.8,'sustained strong preference is expressible');
+    assert.ok(axis(contrast,'hotpotBbq').value-axis(contrast,'drinks').value>.3,'category evidence remains distinct');
+    assert.equal(axis(contrast,'hotpotBbq').scale_version,'taste-axes-v4');
     // 4. 只收藏：弱线索，算依据但不是好评
     sql.prepare('INSERT INTO Favorite (user_id, place_id) VALUES (?, ?)').run(users.fan, cafe);
     const fan = await taste.userTasteAxes(users.fan);

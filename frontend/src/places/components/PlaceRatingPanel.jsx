@@ -40,7 +40,7 @@ const sectionTitleStyle = { fontSize: 13, fontWeight: 700, color: 'var(--color-t
 
 function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, showTip }) {
     const data = rating.data;
-    const { summary, personal, risk } = ratingDisplay(data, { ...place, predicted_rating: null, personalized_average: null });
+    const { summary, personal, risk } = ratingDisplay(data, place);
     const tier = tierForAverage(summary.average);
     const mine = data && data.mine;
     const quota = data && data.quota;

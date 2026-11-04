@@ -9,7 +9,14 @@ async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,
  assert.deepEqual(profiles.parseAnswer({...base,flags:{f00:1}},schema,false).flags,[1]);
  assert.throws(()=>profiles.parseAnswer({...base,flags:{unknown:1}},schema,false),/attributes/);
  assert.throws(()=>profiles.parseAnswer({...base,flags:[null,null]},schema,false),/attributes/);
- let calls=0;const complete=async({system})=>{calls++;assert.ok(!system.includes('dsIndices')&&!system.includes('dsTotal'),'prompt contains only public active property schema');assert.match(system,/ds must contain exactly 1 numbers/);return {ds:[7],rv:null,categories:['Restaurant'],flags:[null],price_level:null};};
+ assert.deepEqual(profiles.parseAnswer({...base,ds:{d00:7},categories:['c000'],flags:{}},schema,false).ds,[7]);
+ assert.deepEqual(profiles.parseAnswer({...base,ds:{},rv:{r00:null},categories:[' restaurant '],flags:{}},schema,true),{ds:[null],rv:[null],categories:['Restaurant'],flags:[null],price_level:null});
+ assert.deepEqual(profiles.parseAnswer({...base,ds:[null],flags:{}},schema,false).ds,[null],'explicit unknowns use the existing model mean-imputation path');
+ for(const ds of [[7,8],['7'],[11],{d01:7},{d00:'7'},null])assert.throws(()=>profiles.parseAnswer({...base,ds,flags:{}},schema,false),/profile/,'no padding, coercing or positional shifts');
+ for(const categories of [['中文编造类别'],['c999'],[null],null])assert.throws(()=>profiles.parseAnswer({...base,categories,flags:{}},schema,false),/categories/);
+ const excluded=profiles.profileSchema({profiles:{ds:{properties:['excluded','active'],excluded_indices:[0]},rv:{properties:['review']}},categories:[],flags:[]});
+ assert.deepEqual(profiles.parseAnswer({ds:{d00:8},rv:null,categories:[],flags:{},price_level:null},excluded,false).ds,[null,8]);
+ let calls=0;const complete=async({system})=>{calls++;assert.ok(!system.includes('dsIndices')&&!system.includes('dsTotal'),'prompt contains only public active property schema');assert.match(system,/"d00":"quality"/);assert.match(system,/"c000":"Restaurant"/);return {ds:[7],rv:null,categories:['Restaurant'],flags:[null],price_level:null};};
  await profiles.syncProfile(1,model,contract,{complete});assert.equal(calls,1);assert.equal(profiles.readProfiles([{id:1}],model).get(1).rv,null,'default scores do not create review profiles');
  await profiles.syncProfile(1,model,contract,{complete});assert.equal(calls,1,'unchanged profiles do not repeat remote calls');
  const oldRevision=sql.prepare('SELECT revision FROM AlgorithmClock').get().revision;
@@ -37,7 +44,11 @@ async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,
  sql.prepare("UPDATE Place SET description='changed' WHERE id=1").run();
  const stale=await profiles.syncProfile(1,model,contract,{complete:async()=>{sql.prepare("UPDATE Place SET moderation_status='rejected' WHERE id=1").run();return {ds:[7],rv:[4],categories:['Restaurant'],flags:[1],price_level:2};}});assert.equal(stale.status,'stale');
  for(const id of [2,3])sql.prepare("INSERT INTO Place(id,name,category,creator_id,moderation_status) VALUES(?,'pending','其他','owner','visible')").run(id);
+ // An old-format parse failure retries after upgrade, without waiting out the
+ // old exponential backoff or discarding any ready assets.
+ sql.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,attempts,retry_at,updated_at) VALUES(?,?,?,1,'failed',10,?,0)`).run(2,model.model_hash,profiles.inputHash(profiles.inputFor(2)),Date.now()+86400000);
  let enabled=true;const attempted=await profiles.processProfiles(model,contract,{enabled:()=>enabled,complete:async()=>{enabled=false;return {ds:[7],rv:null,categories:['Restaurant'],flags:[null],price_level:null};}});assert.equal(attempted,1,'rollback stops the next paid extraction within an active batch');
+ assert.equal(sql.prepare('SELECT status FROM PlaceModelProfile WHERE place_id=2 AND model_hash=?').get(model.model_hash).status,'ready','old extraction failures bypass the obsolete retry delay');
  console.log('Restaurant model profiles passed: async cache, genuine text only, retry, clock, ban invalidation and stale writes.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});

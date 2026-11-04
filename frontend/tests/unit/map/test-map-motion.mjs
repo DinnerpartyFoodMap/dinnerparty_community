@@ -253,6 +253,18 @@ assert.ok(boundsContains(expandBounds(v, 0.5), v));
 
 // ---- 请求闸门：旧响应即使晚到也不能覆盖新状态 ----
 {
+    const cache=new PlaceRangeCache(),wide={minLng:0,maxLng:4,minLat:0,maxLat:4},narrow={minLng:0,maxLng:1.5,minLat:0,maxLat:4};
+    const points=[1,2,3].map(id=>({id,longitude:id,latitude:1,rating_deferred:true,rating_eager_limit:2}));
+    cache.apply(wide,points);
+    assert.equal(cache.needsRatings(wide),false,'dense view remains lazy');
+    assert.equal(cache.needsRatings(narrow),true,'zooming into fresh cached markers requests visible ratings');
+    cache.upsert({...points[0],rating_deferred:false});
+    assert.equal(cache.needsRatings(narrow),false,'no repeated request once sparse scores were attempted');
+    cache.upsert({...points[0],rating_eager_limit:0});
+    assert.equal(cache.needsRatings(narrow),false,'server zero-limit configuration remains authoritative');
+}
+
+{
     const gate = new RequestGate();
     const first = gate.begin();
     const second = gate.begin();

@@ -9,7 +9,7 @@ import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
 import usePlaceRating from "../places/hooks/usePlaceRating";
 import useVisitEvidence from '../places/useVisitEvidence';
 import useDetailInterest from '../places/useDetailInterest';
-import { isAvoidedPlace, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace, ratingDisplay } from "../places/rating";
+import { isAvoidedPlace, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace, ratingDisplay, ratingPlaceForViewer } from "../places/rating";
 import useDarkMode from "../theme/useDarkMode";
 import { useSearchPanel } from "../discovery/hooks/useSearchPanel";
 import { useExternalSearch } from '../discovery/hooks/useExternalSearch';
@@ -457,7 +457,8 @@ export default function MapUI(props) {
     useEffect(() => {
         if (!userFilter) setUserPlacesOpen(false);
     }, [userFilter]);
-    const { summary: ratingSummary, personal: personalizedRating, risk: ratingRisk } = ratingDisplay(placeRating.data, selectedPlace ? { ...selectedPlace, predicted_rating: null, personalized_average: null } : null);
+    const preloadedRatingPlace=ratingPlaceForViewer(selectedPlace,isAuthenticated?currentUser?.id:null);
+    const { summary: ratingSummary, personal: personalizedRating, risk: ratingRisk } = ratingDisplay(placeRating.data, preloadedRatingPlace);
     const myRatingTier = placeRating.data && placeRating.data.mine ? ratingTierFor(placeRating.data.mine.score) : null;
 
     const [favPageOpen, setFavPageOpen] = useState(false);
@@ -3421,7 +3422,7 @@ export default function MapUI(props) {
                     <PlaceRatingPanel
                         open={ratingOpen && ratingPlaceId != null}
                         onClose={() => setRatingOpen(false)}
-                        place={selectedPlace}
+                        place={preloadedRatingPlace}
                         rating={placeRating}
                         isAuthenticated={isAuthenticated}
                         banned={!!currentUser?.is_banned}

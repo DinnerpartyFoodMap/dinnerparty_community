@@ -841,13 +841,13 @@ export default function MapView({
         const cache = placeCacheRef.current;
         const status = cache.coverage(view);
         if (status.covered) publishNearbyFromCache();
-        if (status.covered && status.fresh && !status.nearEdge) return;
+        if (status.covered && status.fresh && !status.nearEdge && !cache.needsRatings(view)) return;
 
         const target = expandBounds(view, PREFETCH_BOUNDS_RATIO);
         const gate = nearbyGateRef.current;
         const ticket = gate.begin();
         try {
-            const data = await Api.fetchPlacesNearby(backendUrl, target, { signal: ticket.signal, token });
+            const data = await Api.fetchPlacesNearby(backendUrl, target, { signal: ticket.signal, token, viewBounds:view });
             if (!gate.isCurrent(ticket)) return;
             nearbyFailureRef.current = 0;
             const changed = cache.apply(target, data);
@@ -873,7 +873,8 @@ export default function MapView({
     useEffect(() => {
         if (nearbyTokenRef.current === token) return;
         nearbyTokenRef.current = token;
-        placeCacheRef.current.invalidate();
+        nearbyGateRef.current.invalidate();
+        placeCacheRef.current.clear();
         loadPlacesRef.current?.(false);
         refreshUserFilterRef.current?.();
     }, [token]);
@@ -923,9 +924,10 @@ export default function MapView({
     // 标记的避雷图标随综合评价立即更新，不等下一次附近请求。值没变时不触发重渲染。
     const applyRatingSummary = (placeId, summary, data) => {
         if (placeId == null || !summary) return;
-        const patch = { rating_count: Number(summary.count) || 0, rating_average: summary.count ? summary.average : null, rating_estimate: data?.estimate ?? null, predicted_rating: data?.prediction ?? null, rating_risk: data?.risk ?? data?.estimate?.risk ?? null };
+        const patch = { rating_count: Number(summary.count) || 0, rating_average: summary.count ? summary.average : null, rating_estimate: data?.estimate ?? null, predicted_rating: data?.prediction ?? null, rating_risk: data?.risk ?? data?.estimate?.risk ?? null, rating_viewer_id:currentUser?.id??null, rating_deferred:false };
         const matches = (place) => !!place && place.isMarked !== false && String(place.id) === String(placeId);
         const differs = (place) => (Number(place.rating_count) || 0) !== patch.rating_count
+            || place.rating_viewer_id !== patch.rating_viewer_id || place.rating_deferred === true
             || (place.rating_average ?? null) !== patch.rating_average
             || JSON.stringify(place.rating_estimate ?? null) !== JSON.stringify(patch.rating_estimate)
             || JSON.stringify(place.predicted_rating ?? null) !== JSON.stringify(patch.predicted_rating)
