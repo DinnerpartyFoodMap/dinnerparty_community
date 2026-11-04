@@ -1,7 +1,6 @@
 const crypto = require('node:crypto');
 const { db, isVectorSearchAvailable } = require('../../../infrastructure/database');
 const { decodeVector } = require('./userPreferenceService');
-const { placeMeanVector, resetMeanVectorCache } = require('../../ratings/services/ratingSimilarity');
 const { completeDeepseekJson, hasDeepseekConfiguration } = require('../../../infrastructure/aiClients');
 const { parseCategoryNames } = require('../../places/services/placeService');
 const { publicPlaceSql } = require('../../places/services/placeVisibility');
@@ -14,7 +13,7 @@ const { classifyRatingEvidence } = require('../../ratings/services/ratingSourceP
 //    模型也判断不了就是“未知”；管理员可以人工纠正（优先级最高）。一家店可以属于多轴，也可以哪轴都不属于。
 // 2. 住民反馈：住民自己打的评价是主要依据；收藏只是较弱的兴趣线索。创建、修改地点不算偏好，
 //    保留已保存的创建、历史迁移默认评价；封禁用户与已撤回且未重新提交的评价不计入。
-// 3. 每轴分数：同一家店在同一轴只算一份证据；样本少时向全站在这一轴的水平收缩，避免一次好评就满分。
+// 3. 每轴分数：同一家店在同一轴只算一份证据；样本少时向中性收缩，并降低普遍打高分的共同偏移。
 //    住民自己填的喜好单独保存，覆盖自动推断。
 // 4. 夹角估算（没有这一类店的直接证据时补位）：住民的口味方向 u 与这一类典型店铺方向 t_k 的余弦，
 //    按“同样数量的随机店铺”逐轴标定，完整显示 0–1；低值表示较少偏向，不当成讨厌。
@@ -49,11 +48,11 @@ const NAME_RULES = Object.freeze({
 
 const AXIS_SET = new Set(TASTE_AXES);
 const CLASSIFIER_VERSION = 2;
-// 住民反馈的证据：评价权重 1；只收藏没评价是弱线索，权重 0.35，倾向只算“有兴趣”（0.5），不等于明确好评
+// 评价权重 1；只收藏是弱线索，权重 0.35、信号 0.2，不等于明确好评。
 const FAVORITE_WEIGHT = 0.35;
-const FAVORITE_SIGNAL = 0.5;
-// 向全站水平收缩的强度（相当于 2 家店的证据）
-const PRIOR_WEIGHT = 2;
+const FAVORITE_SIGNAL = 0.2;
+// 向中性收缩的强度（相当于 6 家店的证据）
+const PRIOR_WEIGHT = 6;
 // 全站水平本身也向中性收缩：全站评价还少时，几条好评不应把所有人的先验都拉高
 const POPULATION_PRIOR_WEIGHT = 10;
 const SELF_LEVELS = Object.freeze([1, 2, 3, 4]);
@@ -61,8 +60,8 @@ const POPULATION_TTL_MS = 30 * 60 * 1000;
 const REPRESENTATIVE_LIMIT = 3;
 
 function containsAny(text, words) {
-    const value = String(text || '').toLocaleLowerCase('zh-CN');
-    return words.some((word) => value.includes(word.toLocaleLowerCase('zh-CN')));
+    const value = String(text || '').toLowerCase();
+    return words.some((word) => value.includes(word.toLowerCase()));
 }
 
 /** 规则分类：返回轴数组（可能为空，表示规则判断不了） */
@@ -145,9 +144,9 @@ function eligibleRatings(database = db._raw, userId = null) {
         .filter(row => classifyRatingEvidence(row, revisions.get(JSON.stringify([row.user_id, row.place_id])) || []).eligible);
 }
 
-function cacheKey(database) {
-    return JSON.stringify([CLASSIFIER_VERSION, database.prepare('SELECT total_changes() AS n').get().n,
-        database.pragma('data_version', { simple: true })]);
+function cacheKey(database, prototype = false) {
+    const row=database.prepare('SELECT prototype_revision,evidence_revision FROM TasteAxisClock WHERE id=1').get();
+    return JSON.stringify([CLASSIFIER_VERSION,row.prototype_revision,...(prototype?[]:[row.evidence_revision])]);
 }
 
 function userEvidence(userId, database = db._raw) {
@@ -161,6 +160,13 @@ function userEvidence(userId, database = db._raw) {
         const entry = evidence.get(row.place_id);
         if (entry) entry.favorite = true;
         else evidence.set(row.place_id, { placeId: row.place_id, rating: null, favorite: true, x: FAVORITE_SIGNAL, w: FAVORITE_WEIGHT });
+    }
+    const strengths={detail_open:0.03,detail_dwell:0.12,navigation:0.25,share:0.1,share_copy:0.05};
+    for(const row of database.prepare(`SELECT e.* FROM UserBehaviorEvent e JOIN Place p ON p.id=e.place_id WHERE e.user_id=? AND e.contributes=1 AND e.occurred_at>=? AND e.occurred_at<=? AND ${publicPlaceSql('p')}`).all(userId,Date.now()-90*86400000,Date.now())){
+        if(!strengths[row.event_type])continue;
+        const current=evidence.get(row.place_id);if(current?.rating!==null&&current?.rating!==undefined||current?.favorite)continue;
+        const weight=strengths[row.event_type]*(row.event_type==='detail_dwell'?Math.min(1,(row.duration_ms||0)/60000):1);
+        if(!current||weight>current.w)evidence.set(row.place_id,{placeId:row.place_id,rating:null,favorite:false,x:0.2,w:weight});
     }
     return evidence;
 }
@@ -185,11 +191,13 @@ function populationMeans(database = db._raw, now = Date.now()) {
     return value;
 }
 
-/** 一轴的推断分数（-1…1）：证据加权平均，以 PRIOR_WEIGHT 向全站水平收缩；没有证据为 null */
-function axisScore(items, populationMean) {
+/** 一轴的推断分数（-1…1）：评价习惯校正后向中性收缩；没有证据为 null */
+function axisScore(items, userMean) {
     if (!items.length) return null;
     const weight = items.reduce((sum, item) => sum + item.w, 0);
-    return (items.reduce((sum, item) => sum + item.w * item.x, 0) + PRIOR_WEIGHT * populationMean) / (weight + PRIOR_WEIGHT);
+    // Separate category preference from a general habit of rating everything
+    // highly. Retain every eligible legacy vote, with a neutral sparse prior.
+    return items.reduce((sum,item)=>sum+item.w*(item.rating===null?item.x:Math.max(-1,Math.min(1,item.x-0.5*userMean))),0)/(weight+PRIOR_WEIGHT);
 }
 
 function selfLevels(userId, database = db._raw) {
@@ -212,7 +220,7 @@ const NULL_SAMPLES = 300;
 const PROTOTYPE_TTL_MS = 30 * 60 * 1000;
 let prototypeCache = null;
 let prototypePending = null;
-const nullModelCache = new Map();
+let nullModelCache = new WeakMap();
 
 function placeVector(placeId, database = db._raw) {
     const row = database.prepare('SELECT embedding FROM place_vectors WHERE place_id = ?').get(placeId);
@@ -233,7 +241,7 @@ function cosine(left, right) {
 
 /** 六类的典型方向（已去掉平均向量）与可作随机参照的店铺向量；没有向量检索时为 null */
 async function axisPrototypes(database = db._raw, now = Date.now()) {
-    const key = cacheKey(database);
+    const key = cacheKey(database, true);
     if (prototypePending?.database === database && prototypePending.key === key) return prototypePending.promise;
     const entry = { database, key, promise: null };
     entry.promise = buildAxisPrototypes(database, now).finally(() => { if (prototypePending === entry) prototypePending = null; });
@@ -243,20 +251,23 @@ async function axisPrototypes(database = db._raw, now = Date.now()) {
 
 async function buildAxisPrototypes(database, now) {
     if (!isVectorSearchAvailable()) return null;
-    const key = cacheKey(database);
+    const key = cacheKey(database, true);
     if (prototypeCache && prototypeCache.database === database && prototypeCache.key === key && now - prototypeCache.at < PROTOTYPE_TTL_MS) return prototypeCache.value;
-    resetMeanVectorCache();
-    const mean = await placeMeanVector(now);
-    if (key !== cacheKey(database)) throw Object.assign(new Error('Taste inputs changed'), { status:409 });
-    if (!mean) return null;
+    // Compute once from a synchronous SQLite snapshot: no remote mean request,
+    // no invalidation of the shared mean cache used by unrelated requests.
+    const rows=database.prepare(`SELECT p.id,p.name,p.category,p.description,p.moderation_status,v.embedding FROM Place p JOIN place_vectors v ON v.place_id=p.id WHERE p.has_vector=1`).all()
+        .map(row=>({...row,vector:decodeVector(row.embedding)})).filter(row=>row.vector);
+    if(!rows.length)return null;
+    const mean=new Float64Array(rows[0].vector.length);
+    for(const row of rows)for(let j=0;j<mean.length;j++)mean[j]+=row.vector[j];
+    for(let j=0;j<mean.length;j++)mean[j]/=rows.length;
     const stored = storedClasses(database);
     const sums = TASTE_AXES.map(() => new Float64Array(mean.length));
     const counts = TASTE_AXES.map(() => 0);
     const pool = [];
-    for (const row of database.prepare(`SELECT p.id, p.name, p.category, p.description, v.embedding FROM Place p
-        JOIN place_vectors v ON v.place_id = p.id WHERE p.has_vector = 1 AND ${publicPlaceSql('p')}`).iterate()) {
-        const vector = decodeVector(row.embedding);
-        if (!vector) continue;
+    for (const row of rows) {
+        if(row.moderation_status!=='visible')continue;
+        const vector = row.vector;
         const centered = Float64Array.from(vector, (value, index) => value - mean[index]);
         pool.push(centered);
         const { axes } = resolvePlaceAxes(row, stored.get(row.id));
@@ -268,7 +279,7 @@ async function buildAxisPrototypes(database, now) {
     }
     const value = pool.length ? { mean, pool, prototypes: sums.map((sum, k) => (counts[k] ? sum : null)), counts } : null;
     prototypeCache = { at: now, value, database, key };
-    nullModelCache.clear();
+    nullModelCache = new WeakMap();
     return value;
 }
 
@@ -281,7 +292,8 @@ function evidenceBucket(count) {
 /** 随机参照：同样多家随机店铺组成的口味方向，与六类方向余弦的均值、标准差（固定种子，结果稳定） */
 function nullModel(model, count) {
     const bucket = evidenceBucket(count);
-    if (nullModelCache.has(bucket)) return nullModelCache.get(bucket);
+    let byBucket=nullModelCache.get(model);if(!byBucket){byBucket=new Map();nullModelCache.set(model,byBucket);}
+    if (byBucket.has(bucket)) return byBucket.get(bucket);
     let seed = 20261027 + bucket;
     const random = () => {
         seed = (seed * 1103515245 + 12345) & 0x7fffffff;
@@ -302,7 +314,7 @@ function nullModel(model, count) {
         const sd = Math.sqrt(list.reduce((sum, value) => sum + (value - mu) ** 2, 0) / list.length);
         return { mu, sd: Math.max(sd, 1e-6) };
     });
-    nullModelCache.set(bucket, stats);
+    byBucket.set(bucket, stats);
     return stats;
 }
 
@@ -354,7 +366,7 @@ async function embeddingEstimates(evidence, database = db._raw, unavailable = ()
             percentile: Math.round(percentile * 1000) / 1000,
             // 完整保留有效估算；零值和低于一半不是缺失，也不解释为讨厌。
             usable: Number.isFinite(percentile),
-            value: Math.round(percentile * 1000) / 1000,
+            value: Math.round((0.5+(percentile-0.5)*(items.reduce((sum,item)=>sum+item.w*Math.abs(item.x),0)/(items.reduce((sum,item)=>sum+item.w*Math.abs(item.x),0)+PRIOR_WEIGHT)))*1000)/1000,
             shop_count: items.length,
             placeIds: places.map((item) => item.placeId)
         };
@@ -372,31 +384,32 @@ function usableEmbeddingEstimate(estimate) {
 }
 
 async function userTasteAxes(userId, database = db._raw, attempt = 0) {
-    const key = cacheKey(database);
-    const evidence = userEvidence(userId, database);
-    const classes = placeAxesMap([...evidence.keys()], database);
-    const population = populationMeans(database);
-    const self = selfLevels(userId, database);
+    const {key,evidence,classes,self,userMean}=database.transaction(()=>{
+        const key=cacheKey(database),evidence=userEvidence(userId,database),classes=placeAxesMap([...evidence.keys()],database),self=selfLevels(userId,database);
+        const rated=[...evidence.values()].filter(item=>item.rating!==null),userMean=rated.length?rated.reduce((sum,item)=>sum+item.x,0)/rated.length:0;
+        return {key,evidence,classes,self,userMean};
+    })();
     let embedding = null;
     let unavailable = evidence.size ? (isVectorSearchAvailable() ? 'missing_vectors' : 'service_unavailable') : 'no_eligible_evidence';
     try {
-        embedding = await embeddingEstimates(evidence, database, reason => { unavailable = reason; });
+        if(attempt<2)embedding = await embeddingEstimates(evidence, database, reason => { unavailable = reason; });
     } catch (error) {
         if (error.status === 409 && attempt < 1) return userTasteAxes(userId, database, attempt + 1);
-        if (error.status === 409) throw error;
         unavailable = 'service_unavailable';
         console.warn('Taste axis embedding estimate unavailable:', error.message);
     }
-    if (key !== cacheKey(database)) {
+    if (attempt<2 && key !== cacheKey(database)) {
         if (attempt < 1) return userTasteAxes(userId, database, attempt + 1);
-        throw Object.assign(new Error('Taste inputs changed'), { status:409 });
+        // Under sustained real updates, fall back to a fresh synchronous
+        // evidence/manual snapshot instead of taking down the whole profile.
+        return userTasteAxes(userId,database,2);
     }
     const placeName = (placeId) => classes.get(placeId)?.place.name
         ?? database.prepare('SELECT name FROM Place WHERE id = ?').get(placeId)?.name ?? '';
     const shop = (item) => ({ id: item.placeId, name: placeName(item.placeId), rating: item.rating, favorite: item.favorite });
     return TASTE_AXES.map((axis, k) => {
         const items = [...evidence.values()].filter((item) => classes.get(item.placeId)?.axes.includes(axis));
-        const inferred = axisScore(items, population[axis]);
+        const inferred = axisScore(items, userMean);
         const selfLevel = self[axis] ?? null;
         const estimate = embedding && embedding[k];
         const usableEstimate = usableEmbeddingEstimate(estimate);
@@ -418,7 +431,7 @@ async function userTasteAxes(userId, database = db._raw, attempt = 0) {
             key: axis,
             value,
             basis,
-            scale_version: 'taste-axes-v2',
+            scale_version: 'taste-axes-v3',
             unavailable_reason: basis ? null : (embedding ? (embedding.every(value => value === null) ? 'no_classification' : 'missing_prototype') : unavailable),
             inferred: inferred === null ? null : toDisplay(inferred),
             self_level: selfLevel,
@@ -582,6 +595,13 @@ function initTasteAxesSchema(database) {
         PRIMARY KEY (user_id, axis)
       );
     `);
+    database.exec(`CREATE TABLE IF NOT EXISTS TasteAxisClock(id INTEGER PRIMARY KEY CHECK(id=1),prototype_revision INTEGER NOT NULL,evidence_revision INTEGER NOT NULL);
+      INSERT OR IGNORE INTO TasteAxisClock VALUES(1,0,0);`);
+    const triggers=(table,actions,prototype)=>{for(const [name,event]of actions)database.exec(`CREATE TRIGGER IF NOT EXISTS taste_clock_${table}_${name} AFTER ${event} ON ${table} BEGIN UPDATE TasteAxisClock SET evidence_revision=evidence_revision+1${prototype?',prototype_revision=prototype_revision+1':''} WHERE id=1; END;`);};
+    for(const table of ['PlaceTasteClass'])triggers(table,[['insert','INSERT'],['update','UPDATE'],['delete','DELETE']],true);
+    triggers('Place',[['insert','INSERT'],['update','UPDATE OF name,category,description,moderation_status,has_vector,vector_updated_at'],['delete','DELETE']],true);
+    for(const table of ['PlaceRating','RatingRevision','Favorite','UserTastePreference','UserBehaviorEvent'])triggers(table,[['insert','INSERT'],['update','UPDATE'],['delete','DELETE']],false);
+    triggers('User',[['ban','UPDATE OF is_banned'],['delete','DELETE']],false);
 }
 
 module.exports = {
@@ -608,6 +628,6 @@ module.exports = {
     resetTastePopulationCache: () => {
         populationCache = null;
         prototypeCache = null;
-        nullModelCache.clear();
+        nullModelCache = new WeakMap();
     }
 };

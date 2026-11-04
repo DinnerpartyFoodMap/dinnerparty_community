@@ -2,6 +2,7 @@ import {useEffect,useState,useRef} from 'react';
 import {createVisitEvidence} from './visitEvidence';
 import {getFreshLocation} from '../platform/geolocation';
 import {isAppActive,onAppStateChange} from '../platform/lifecycle';
+let serviceStatus=null;
 
 export default function useVisitEvidence({place,backendUrl,token,enabled,onVisited}){
  const [prompt,setPrompt]=useState(null);
@@ -28,7 +29,12 @@ export default function useVisitEvidence({place,backendUrl,token,enabled,onVisit
    }catch{state.reset();}finally{busy=false;}
   };
   // Only an actually visible foreground detail creates a viewed candidate.
-  const viewedTimer=setTimeout(async()=>{if(!isAppActive()||stopped)return;try{view=await request('view');started=Date.now();await sample();if(!stopped)timer=setInterval(sample,60000);}catch{}},800);
+  const viewedTimer=setTimeout(async()=>{if(!isAppActive()||stopped)return;try{
+   if(!serviceStatus||serviceStatus.token!==token||serviceStatus.until<Date.now()){
+    const res=await fetch(`${backendUrl}/api/visits/status`,{signal:controller.signal,headers:{Authorization:`Bearer ${token}`}});if(!res.ok)return;const status=await res.json();serviceStatus={token,enabled:status.enabled===true,until:Date.now()+60000};
+   }
+   if(!serviceStatus.enabled||stopped)return;
+   view=await request('view');started=Date.now();await sample();if(!stopped)timer=setInterval(sample,60000);}catch{}},800);
   const unsubscribe=onAppStateChange(({active})=>{state.reset();if(!active){stopped=true;controller.abort();clearInterval(timer);clearTimeout(viewedTimer);}else setEpoch(n=>n+1);});
   return()=>{stopped=true;controller.abort();clearTimeout(viewedTimer);clearInterval(timer);unsubscribe();};
  },[placeId,backendUrl,token,enabled,place?.latitude,place?.longitude,epoch]);

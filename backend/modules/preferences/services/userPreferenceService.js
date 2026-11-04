@@ -3,6 +3,7 @@ const { db } = require('../../../infrastructure/database');
 const DEDUPE_MS = 30 * 60 * 1000;
 // This module owns authenticated business writes. Composition lives in the private service.
 const CHANNELS = {
+    detail_open:['place'],detail_dwell:['place'],
     navigation: ['system-default', 'apple-maps', 'amap', 'tencent', 'google'],
     share: ['place', 'amap'],
     share_copy: ['place', 'amap', 'place_info']
@@ -20,6 +21,7 @@ function validPlaceId(value) {
 }
 
 function validateBehavior(payload) {
+    if(payload?.event_type==='detail_dwell'&&(!Number.isSafeInteger(payload.duration_ms)||payload.duration_ms<5000||payload.duration_ms>300000))fail(400,'无效的浏览时长');
     if (!payload || !validPlaceId(payload.place_id)) fail(400, '无效的 place_id');
     if (typeof payload.event_type !== 'string' || !Object.hasOwn(CHANNELS, payload.event_type)) fail(400, '不支持的行为类型');
     if (!CHANNELS[payload.event_type].includes(payload.channel)) fail(400, '无效的行为渠道');
@@ -30,23 +32,23 @@ function validateBehavior(payload) {
 
 const recordBehaviorTransaction = db._raw.transaction((userId, payload, now) => {
     const placeId = Number(payload.place_id);
-    const previous = db._raw.prepare('SELECT place_id, event_type, channel FROM UserBehaviorEvent WHERE user_id = ? AND event_id = ?')
+    const previous = db._raw.prepare('SELECT place_id, event_type, channel,duration_ms FROM UserBehaviorEvent WHERE user_id = ? AND event_id = ?')
         .get(userId, payload.event_id);
     if (previous) {
-        if (previous.place_id !== placeId || previous.event_type !== payload.event_type || previous.channel !== payload.channel) {
+        if (previous.place_id !== placeId || previous.event_type !== payload.event_type || previous.channel !== payload.channel || previous.duration_ms!==(payload.event_type==='detail_dwell'?payload.duration_ms:0)) {
             fail(409, 'event_id 已用于其他行为');
         }
         return { recorded: false, reason: 'duplicate' };
     }
-    if (!db._raw.prepare('SELECT id FROM Place WHERE id = ?').get(placeId)) fail(404, '地点不存在');
+    if (!db._raw.prepare("SELECT id FROM Place WHERE id = ? AND (moderation_status='visible' OR creator_id=?)").get(placeId,userId)) fail(404, '地点不存在');
     const recent = db._raw.prepare(`SELECT id FROM UserBehaviorEvent
         WHERE user_id = ? AND place_id = ? AND event_type = ? AND contributes = 1 AND occurred_at > ? LIMIT 1`)
         .get(userId, placeId, payload.event_type, now - DEDUPE_MS);
     const rate = db._raw.prepare('SELECT COUNT(*) AS count FROM UserBehaviorEvent WHERE user_id = ? AND occurred_at > ?')
         .get(userId, now - 60000);
     if (rate.count >= 60) fail(429, '操作过于频繁，请稍后再试');
-    db._raw.prepare(`INSERT INTO UserBehaviorEvent(user_id, place_id, event_id, event_type, channel, occurred_at, contributes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(userId, placeId, payload.event_id, payload.event_type, payload.channel, now, recent ? 0 : 1);
+    db._raw.prepare(`INSERT INTO UserBehaviorEvent(user_id, place_id, event_id, event_type, channel, occurred_at, contributes,duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?,?)`).run(userId, placeId, payload.event_id, payload.event_type, payload.channel, now, recent ? 0 : 1,payload.event_type==='detail_dwell'?payload.duration_ms:0);
     const evidence=require('../../ratings/services/ratingEvidence');
     evidence.captureEvent('UserBehaviorEvent',userId,payload.event_id,{trigger:payload.trigger,surface:payload.surface==='place_card'?'place_card':null});evidence.queueEvidence(userId);
     return { recorded: true, counted: !recent, ...(recent ? { reason: 'cooldown' } : {}) };

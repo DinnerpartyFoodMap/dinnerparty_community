@@ -1,15 +1,29 @@
 // Called after the existing User/Place/Favorite migrations have completed.
 function initUserPreferenceSchema(rawDb) {
+    const old=rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='UserBehaviorEvent'").get();
+    if(old&&!old.sql.includes('detail_open'))rawDb.transaction(()=>{
+        const triggers=rawDb.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND sql LIKE '%UserBehaviorEvent%'").all();
+        const indexes=rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='UserBehaviorEvent' AND sql IS NOT NULL").all();
+        const sequence=rawDb.prepare("SELECT seq FROM sqlite_sequence WHERE name='UserBehaviorEvent'").get()?.seq||0;
+        for(const t of triggers)rawDb.exec('DROP TRIGGER "'+t.name.replace(/"/g,'""')+'"');
+        rawDb.exec(`CREATE TABLE UserBehaviorEventNext(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,place_id INTEGER NOT NULL REFERENCES Place(id) ON DELETE CASCADE,event_id TEXT NOT NULL,event_type TEXT NOT NULL CHECK(event_type IN ('favorite_add','favorite_remove','navigation','share','share_copy','detail_open','detail_dwell')),channel TEXT NOT NULL,occurred_at INTEGER NOT NULL,contributes INTEGER NOT NULL DEFAULT 1 CHECK(contributes IN (0,1)),duration_ms INTEGER NOT NULL DEFAULT 0,UNIQUE(user_id,event_id));
+          INSERT INTO UserBehaviorEventNext(id,user_id,place_id,event_id,event_type,channel,occurred_at,contributes) SELECT id,user_id,place_id,event_id,event_type,channel,occurred_at,contributes FROM UserBehaviorEvent;
+          DROP TABLE UserBehaviorEvent; ALTER TABLE UserBehaviorEventNext RENAME TO UserBehaviorEvent;`);
+        for(const t of triggers)rawDb.exec(t.sql);
+        for(const index of indexes)rawDb.exec(index.sql);
+        rawDb.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='UserBehaviorEvent'").run(sequence);
+    })();
     rawDb.exec(`
         CREATE TABLE IF NOT EXISTS UserBehaviorEvent (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
             place_id INTEGER NOT NULL REFERENCES Place(id) ON DELETE CASCADE,
             event_id TEXT NOT NULL,
-            event_type TEXT NOT NULL CHECK(event_type IN ('favorite_add', 'favorite_remove', 'navigation', 'share', 'share_copy')),
+            event_type TEXT NOT NULL CHECK(event_type IN ('favorite_add', 'favorite_remove', 'navigation', 'share', 'share_copy','detail_open','detail_dwell')),
             channel TEXT NOT NULL,
             occurred_at INTEGER NOT NULL,
             contributes INTEGER NOT NULL DEFAULT 1 CHECK(contributes IN (0, 1)),
+            duration_ms INTEGER NOT NULL DEFAULT 0,
             UNIQUE(user_id, event_id)
         );
         CREATE INDEX IF NOT EXISTS idx_behavior_user_time ON UserBehaviorEvent(user_id, occurred_at);

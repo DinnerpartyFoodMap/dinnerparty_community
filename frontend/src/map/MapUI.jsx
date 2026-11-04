@@ -8,6 +8,7 @@ import PlaceDetailPanel, { parseImages as parsePlaceImages } from "../places/com
 import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
 import usePlaceRating from "../places/hooks/usePlaceRating";
 import useVisitEvidence from '../places/useVisitEvidence';
+import useDetailInterest from '../places/useDetailInterest';
 import { isAvoidedPlace, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace, ratingDisplay } from "../places/rating";
 import useDarkMode from "../theme/useDarkMode";
 import { useSearchPanel } from "../discovery/hooks/useSearchPanel";
@@ -401,6 +402,7 @@ export default function MapUI(props) {
     const placeRating = usePlaceRating({ backendUrl, token: isAuthenticated ? token : null, placeId: ratingPlaceId, onSummary: onRatingSummary });
     const [ratingOpen, setRatingOpen] = useState(false);
     const visitEvidence = useVisitEvidence({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!nativeOverlayActive&&!pickerMode&&!currentUser?.is_banned,onVisited:()=>setRatingOpen(true)});
+    useDetailInterest({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!pickerMode&&!currentUser?.is_banned});
     const openRating = () => setRatingOpen(true);
     // 举报：打开预填好的意见反馈表（类型“不良信息举报”、地点名、编号与链接），住民接着写原因；高德临时地点没有收录，不能举报
     const canReportPlace = !!(onOpenFeedback && ratingPlaceId != null);

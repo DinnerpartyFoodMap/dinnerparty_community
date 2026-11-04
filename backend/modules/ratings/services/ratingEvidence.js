@@ -46,6 +46,7 @@ function buildRatingEvidence({userIds=null,placeIds=null,asOfMs=Date.now(),purpo
         const grant=meta?.consent_ref?db._raw.prepare('SELECT purpose_version FROM ResearchConsentEvent WHERE id=?').get(meta.consent_ref):null;
         if(!retention.isRetained(db._raw,at,asOfMs,purpose==='research'?grant?.purpose_version||retention.LEGACY_PURPOSE_VERSION:null)||!allowed(row.user_id,meta)){excluded++;return;}
         const event={event_id:eventId,event_type:source==='UserBehaviorEvent'?row.event_type:({favorite:'favorite_add',unfavorite:'favorite_remove'}[row.kind]||row.kind),user_key:row.user_id,place_id:row.place_id,occurred_at_ms:at,recorded_at_ms:meta?.recorded_at_ms||at,available_at_ms:meta?.recorded_at_ms||at,source_table:source,source_event_id:source==='UserBehaviorEvent'?row.id:row.id,surface:meta?.surface||row.surface||null,trigger:meta?.trigger_kind||'unknown',decision_id:meta?.decision_id||row.decision_id||null,impression_id:meta?.impression_id||null,contributes:row.contributes??null,consent_ref:meta?.consent_ref||null,contract_version:1,source_expires_at_ms:retention.sourceExpiry(db._raw,at,purpose==='research'?grant?.purpose_version:null)};
+        if(source==='UserBehaviorEvent')event.duration_ms=Number(row.duration_ms)||0;
         const key=`${row.user_id}|${eventId}`;if(seen.has(key)){deduplicated++;if(source==='UserBehaviorEvent')seen.set(key,event);}else seen.set(key,event);
     };
     // Original behavior rows take precedence over the favorites feedback mirror.

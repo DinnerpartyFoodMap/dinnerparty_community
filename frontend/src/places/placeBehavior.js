@@ -1,5 +1,5 @@
 // Best-effort authenticated telemetry: never delay opening a map app or a share sheet.
-export function recordPlaceBehavior(backendUrl, token, placeId, eventType, channel) {
+export function recordPlaceBehavior(backendUrl, token, placeId, eventType, channel, {durationMs,trigger='user'}={}) {
     if (!backendUrl || !token || !/^[1-9]\d*$/.test(String(placeId)) || !Number.isSafeInteger(Number(placeId))) {
         return Promise.resolve(false);
     }
@@ -9,7 +9,7 @@ export function recordPlaceBehavior(backendUrl, token, placeId, eventType, chann
         return fetch(`${backendUrl}/api/preferences/events`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ event_id: eventId, place_id: Number(placeId), event_type: eventType, channel,trigger:'user',surface:'place_card',contract_version:1 }),
+            body: JSON.stringify({ event_id: eventId, place_id: Number(placeId), event_type: eventType, channel,trigger,surface:'place_card',contract_version:1,...(eventType==='detail_dwell'?{duration_ms:durationMs}:{}) }),
             keepalive: true
         }).then((response) => response.ok).catch(() => false);
     } catch (_) {

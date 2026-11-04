@@ -14,7 +14,7 @@ function collectPreferenceInput(userId,now=Date.now(),mutation=null){return db._
     const favorites=db._raw.prepare('SELECT f.place_id FROM Favorite f JOIN Place p ON p.id=f.place_id WHERE f.user_id=?').all(userId).map(x=>x.place_id);
     let ratings=db._raw.prepare('SELECT r.place_id,r.score FROM PlaceRating r JOIN Place p ON p.id=r.place_id WHERE r.user_id=?').all(userId);
     if(mutation){ratings=ratings.filter(x=>x.place_id!==mutation.place_id);if(mutation.score!==null)ratings.push({place_id:mutation.place_id,score:mutation.score});ratings.sort((a,b)=>a.place_id-b.place_id);}
-    const behaviors=db._raw.prepare(`SELECT e.place_id,e.event_type,e.occurred_at,e.contributes FROM UserBehaviorEvent e JOIN Place p ON p.id=e.place_id WHERE e.user_id=? AND e.occurred_at>=? AND e.occurred_at<=? AND e.contributes=1`).all(userId,now-180*86400000,now);
+    const behaviors=db._raw.prepare(`SELECT e.place_id,e.event_type,e.occurred_at,e.contributes,e.duration_ms FROM UserBehaviorEvent e JOIN Place p ON p.id=e.place_id WHERE e.user_id=? AND e.occurred_at>=? AND e.occurred_at<=? AND e.contributes=1`).all(userId,now-180*86400000,now);
     const ids=new Set([...favorites,...ratings.map(x=>x.place_id),...behaviors.map(x=>x.place_id)]),vectors=[];
     const available=isVectorSearchAvailable();if(available){const read=db._raw.prepare('SELECT v.embedding FROM place_vectors v JOIN Place p ON p.id=v.place_id WHERE v.place_id=? AND p.has_vector=1');for(const id of ids){const b=read.get(BigInt(id))?.embedding;if(decodeVector(b))vectors.push({place_id:id,embedding:b.toString('base64')});}}
     return {contract_version:1,dataset_id:process.env.ALGORITHM_DATASET_ID||'primary',snapshot_id:randomUUID(),input_revision:row?.input_revision||0,as_of_ms:now,

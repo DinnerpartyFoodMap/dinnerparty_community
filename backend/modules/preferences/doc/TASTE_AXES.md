@@ -1,5 +1,7 @@
 # 六类餐饮偏好（住民主页雷达）
 
+当前主页并发修复、保守刻度和全部兴趣信号见 [INTEREST_V3.md](INTEREST_V3.md)。以下 v2 计算和实验记录保留为历史说明。
+
 实现：`services/tasteAxes.js`；接口：`GET /users/:id/profile` 的 `taste`、`PUT /users/me/taste`、管理员 `/admin/taste-axes/places`。
 
 每一轴回答“你有多喜欢这类餐饮”。各轴独立，不求和、不算面积、没有总分；所有住民用同一刻度。
