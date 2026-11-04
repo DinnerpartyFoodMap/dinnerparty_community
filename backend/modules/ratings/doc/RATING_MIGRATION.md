@@ -4,6 +4,8 @@ The private Node service retains the legacy operations and adds `ratingestimate`
 
 Bootstrap package implementation: private `main` commit `5a59ce7`. This repository contains the backend/UI integration; the private repository contains the models and offline trainer.
 
+Current main extends this to `research-full-nonchain-v2`, preferred by the private service when its complete manifest is present. It adds the full non-chain P93 ranking family, pooled personal-rating model, P98 public rater correction and selected P86 risk tiers. The original bootstrap remains available through an explicitly selected model directory. See [full model integration](FULL_NONCHAIN.md) for feature/profile/encoder setup and evaluation boundaries.
+
 Current source policy `retained-ratings-v2` retains persisted migration and creation defaults in public estimates and preference histories. It preserves withdrawals and ban exclusions. Map/detail display keeps the existing aggregate when an active estimate has no usable score, so model eligibility changes do not erase existing ratings from the UI. Six-axis presentation uses one point style and shared preference wording, without source badges or inference explanations.
 
 ## Current switches

@@ -1,5 +1,5 @@
 const {randomUUID}=require('node:crypto');
-const OPERATIONS=new Set(['preference','vectormean','ratingweights','ratingweightspage','ratingsummary','ratingview','personalaverages','ratingsort','evidence','ratingestimate','ratingpredict','listrank']);
+const OPERATIONS=new Set(['preference','vectormean','ratingweights','ratingweightspage','ratingsummary','ratingview','personalaverages','ratingsort','evidence','ratingestimate','ratingpredict','listrank','modelcontract','ratingquality']);
 const MAX_INPUT=32*1024*1024,MAX_OUTPUT=1024*1024;
 function failure(status=503,code='unavailable') {return Object.assign(new Error(status===409?'数据已变化，请重试':'计算服务暂不可用，请稍后重试'),{status,publicMessage:status===409?'数据已变化，请重试':'计算服务暂不可用，请稍后重试',code});}
 function configuration(){
@@ -18,7 +18,7 @@ async function capabilities(){
     try{const response=await fetch(`${config.url}/v1/capabilities`,{signal:controller.signal,redirect:'error',headers:{Authorization:`Bearer ${config.token}`,Accept:'application/json'}});
         if(!response.ok||!/^application\/json\b/i.test(response.headers.get('content-type')||''))throw Error();
         const data=await response.json(),model=data.bootstrap_model??data.result?.bootstrap_model;
-        const value=model?.status==='ready'&&model.method==='research_bootstrap'&&typeof model.model_id==='string'&&/^[a-f0-9]{64}$/.test(model.model_hash)?model:null;
+        const value=model?.status==='ready'&&['research_bootstrap','research_full_nonchain'].includes(model.method)&&typeof model.model_id==='string'&&/^[a-f0-9]{64}$/.test(model.model_hash)?model:null;
         capabilityCache={key,value,until:Date.now()+5000};return value;
     }catch{return null;}finally{clearTimeout(timer);}
 }
@@ -46,10 +46,20 @@ function validate(op,r,i={}){
     if(!r||typeof r!=='object')invalid();
     if(['ratingestimate','ratingpredict','listrank'].includes(op)&&r.config_version!==i.config_version)invalid();
     if(i.model_hash!==undefined&&r.model_hash!==i.model_hash)invalid();
+    if(op==='modelcontract'){
+        if(r.config_version!==i.config_version||!r.feature_orders||typeof r.feature_contract!=='object'||!r.feature_contract)invalid();
+        for(const order of Object.values(r.feature_orders))if(!Array.isArray(order)||order.length>512||order.some(key=>typeof key!=='string'||/chain|name_match/i.test(key)))invalid();
+    }
+    if(op==='ratingquality'){
+        if(r.config_version!==i.config_version||r.quality_method!=='additive_shrinkage'||!Number.isFinite(r.global_average)||r.global_average<1||r.global_average>4)invalid();
+        const ids=new Set(i.ratings.map(x=>x.place_id));if(unique(r.qualities,x=>x.place_id,ids).length!==ids.size)invalid();
+        for(const row of r.qualities)if(!Number.isFinite(row.average)||row.average<1||row.average>4||!integer(row.evidence_count))invalid();
+        if(!Array.isArray(r.rater_biases)||r.rater_biases.some(row=>!Number.isFinite(row.bias)||!integer(row.history_count)))invalid();
+    }
     if(op==='ratingestimate'){
-        if(r.estimate_schema_version!==1||r.source_policy_version!==i.source_policy_version||r.config_hash!==i.estimator_config.config_hash||i.estimator_config.method==='research_bootstrap'&&r.model_hash!==i.estimator_config.config_hash)invalid();
+        if(r.estimate_schema_version!==1||r.source_policy_version!==i.source_policy_version||r.config_hash!==i.estimator_config.config_hash||['research_bootstrap','research_full_nonchain'].includes(i.estimator_config.method)&&r.model_hash!==i.estimator_config.config_hash)invalid();
         const allowed=new Set(i.place_ids);if(unique(r.estimates,x=>x.place_id,allowed).length!==allowed.size)invalid();
-        const bootstrap=i.estimator_config.method==='research_bootstrap',priors=new Map((i.priors||[]).map(x=>[x.place_id,x.prior_version]));
+        const bootstrap=['research_bootstrap','research_full_nonchain'].includes(i.estimator_config.method),priors=new Map((i.priors||[]).map(x=>[x.place_id,x.prior_version]));
         for(const row of r.estimates){
             if(!integer(row.evidence_count)||row.prior_version!==(bootstrap?i.config_version:priors.get(row.place_id))||row.evidence_status!==(row.evidence_count?'sufficient':'insufficient'))invalid();
             const evidence=i.ratings.filter(x=>x.place_id===row.place_id);
@@ -61,7 +71,7 @@ function validate(op,r,i={}){
     if(op==='ratingpredict'){
         const allowed=new Set(i.estimates.map(x=>x.place_id));if(unique(r.predictions,x=>x.place_id,allowed).length!==allowed.size)invalid();
         for(const row of r.predictions){const n=i.viewer_history.filter(x=>x.place_id!==row.place_id).length,base=i.estimates.find(x=>x.place_id===row.place_id);
-            const bootstrap=Number.isFinite(base.prior_average),method=bootstrap?'research_bootstrap_viewer_bias':'public_estimate_viewer_bias';
+            const bootstrap=Number.isFinite(base.prior_average),method=i.model_method==='research_full_nonchain'?'research_full_nonchain_viewer_bias':bootstrap?'research_bootstrap_viewer_bias':'public_estimate_viewer_bias';
             if(row.history_count!==n||row.method!==method||row.status!==(base.average===null?'insufficient':n?'ready':'cold_start')||!bootstrap&&base.average===null&&row.average!==null||(base.average!==null||bootstrap)&&(!Number.isFinite(row.average)||row.average<1||row.average>4))invalid();}
     }
     if(op==='listrank'){
@@ -93,14 +103,15 @@ function validate(op,r,i={}){
 }
 async function compute(operation,input,{signal,requestId=randomUUID(),timeoutMs=10000}={}){
     if(!OPERATIONS.has(operation))throw failure(400,'invalid_input');const config=configuration();if(!config)throw failure();
+    const maxOutput=operation==='modelcontract'?4*MAX_OUTPUT:MAX_OUTPUT;
     const context={contract_version:1,dataset_id:process.env.ALGORITHM_DATASET_ID||'primary',snapshot_id:randomUUID(),input_revision:0,as_of_ms:Date.now(),purpose:'operation',...input};
     const body=JSON.stringify({request_id:requestId,input:context});if(Buffer.byteLength(body)>(operation==='ratingweights'?128*1024*1024:MAX_INPUT))throw failure(413,'payload_too_large');
     const controller=new AbortController(),abort=()=>controller.abort();if(signal?.aborted)throw failure(503,'aborted');signal?.addEventListener('abort',abort,{once:true});const timer=setTimeout(abort,timeoutMs);
     try{
         const response=await fetch(`${config.url}/v1/compute/${operation}`,{method:'POST',redirect:'error',signal:controller.signal,headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/json',Accept:'application/json'},body});
-        if(!/^application\/json\b/i.test(response.headers.get('content-type')||'')||Number(response.headers.get('content-length'))>MAX_OUTPUT){await response.body?.cancel();invalid();}
+        if(!/^application\/json\b/i.test(response.headers.get('content-type')||'')||Number(response.headers.get('content-length'))>maxOutput){await response.body?.cancel();invalid();}
         const reader=response.body?.getReader();if(!reader)invalid();const parts=[];let length=0;
-        try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>MAX_OUTPUT){await reader.cancel();invalid();}parts.push(Buffer.from(value));}}finally{reader.releaseLock();}
+        try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>maxOutput){await reader.cancel();invalid();}parts.push(Buffer.from(value));}}finally{reader.releaseLock();}
         let data;try{data=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{invalid();}
         if(!response.ok)throw failure(response.status===409?409:response.status===429?429:503,data.error?.code||'unavailable');
         if(data.protocol_version!==1||!data.result)invalid();const result=data.result;

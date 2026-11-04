@@ -291,6 +291,7 @@ const stopRatingBundleWorker=require('./modules/ratings/services/ratingResearchB
 const stopJourneyWorker = require('./modules/journeys/services/journeyAI').startJourneyWorker();
 // 住民主页六类餐饮偏好：规则分不了类的店铺交给模型后台补分类（modules/preferences/doc/TASTE_AXES.md）
 const stopTasteClassificationWorker = require('./modules/preferences/services/tasteAxes').startTasteClassificationWorker();
+const stopModelProfileWorker = require('./modules/ratings/services/modelProfiles').startModelProfileWorker(require('./modules/ratings/services/ratingEstimateAdapter').configuration);
 // QQ Bot (NapCat/OneBot). Disabled unless QQ_BOT_ENABLED=true; connection problems never block the website.
 const qqBot = require('./modules/qqbot/runtime/index').startQQBot();
 
@@ -359,6 +360,7 @@ function gracefulShutdown(signal) {
     stopRatingEvidenceWorker();stopRatingBundleWorker();
     stopJourneyWorker();
     stopTasteClassificationWorker();
+    stopModelProfileWorker();
     if (qqBot) qqBot.stop();
     logger.notice('Backend shutdown started', { event: 'server.shutdown', signal });
     const forceExit = setTimeout(() => process.exit(1), 5000);

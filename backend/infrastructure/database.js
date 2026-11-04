@@ -748,6 +748,7 @@ function init() {
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
         require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);
         require('../modules/preferences/services/tasteAxes').initTasteAxesSchema(rawDb);
+        require('../modules/ratings/services/modelProfiles').initModelProfileSchema(rawDb);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_sitenotice_active_created_time ON SiteNotice(is_active, created_time DESC);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_request_id ON AdminAudit(request_id);`);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_adminaudit_admin_time ON AdminAudit(admin_id, time DESC);`);

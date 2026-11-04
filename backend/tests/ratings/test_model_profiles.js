@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'model-profiles-'));
+Object.assign(process.env,{DB_FILE:path.join(temp,'test.sqlite'),LOG_TO_FILE:'false',LOG_TO_CONSOLE:'false'});
+const {db,init}=require('../../infrastructure/database');const profiles=require('../../modules/ratings/services/modelProfiles');
+async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,username,password) VALUES('owner','owner','unused')").run();sql.prepare("INSERT INTO Place(id,name,category,description,creator_id,moderation_status) VALUES(1,'店铺','其他','简介','owner','visible')").run();
+ const contract={profiles:{ds:{properties:['quality']},rv:{properties:['spicy']}},categories:['Restaurant'],flags:['Family']},model={model_hash:'a'.repeat(64)};
+ let calls=0;const complete=async({system})=>{calls++;assert.ok(!system.includes('dsIndices')&&!system.includes('dsTotal'),'prompt contains only public active property schema');assert.match(system,/ds must contain exactly 1 numbers/);return {ds:[7],rv:null,categories:['Restaurant'],flags:[null],price_level:null};};
+ await profiles.syncProfile(1,model,contract,{complete});assert.equal(calls,1);assert.equal(profiles.readProfiles([{id:1}],model).get(1).rv,null,'default scores do not create review profiles');
+ await profiles.syncProfile(1,model,contract,{complete});assert.equal(calls,1,'unchanged profiles do not repeat remote calls');
+ const oldRevision=sql.prepare('SELECT revision FROM AlgorithmClock').get().revision;
+ sql.prepare("INSERT INTO Comment(place_id,user_id,content,rating) VALUES(1,'owner','这是足够长的真实评论正文，包含菜品体验和服务感受。',3)").run();
+ assert.ok(sql.prepare('SELECT revision FROM AlgorithmClock').get().revision>oldRevision);assert.equal(profiles.readProfiles([{id:1}],model).size,0,'new review invalidates old assets synchronously');
+ await assert.rejects(profiles.syncProfile(1,model,contract,{complete}),/Malformed/);
+ await profiles.syncProfile(1,model,contract,{complete:async()=>({ds:[7],rv:[4],categories:['Restaurant'],flags:[1],price_level:2})});
+ assert.equal(profiles.readProfiles([{id:1}],model).get(1).review_count,1);
+ sql.prepare("UPDATE User SET is_banned=1 WHERE id='owner'").run();assert.equal(profiles.readProfiles([{id:1}],model).size,0,'banned author text is not reused');
+ sql.prepare('UPDATE User SET is_banned=0').run();
+ sql.prepare("UPDATE Place SET description='changed' WHERE id=1").run();
+ const stale=await profiles.syncProfile(1,model,contract,{complete:async()=>{sql.prepare("UPDATE Place SET moderation_status='rejected' WHERE id=1").run();return {ds:[7],rv:[4],categories:['Restaurant'],flags:[1],price_level:2};}});assert.equal(stale.status,'stale');
+ for(const id of [2,3])sql.prepare("INSERT INTO Place(id,name,category,creator_id,moderation_status) VALUES(?,'pending','其他','owner','visible')").run(id);
+ let enabled=true;const attempted=await profiles.processProfiles(model,contract,{enabled:()=>enabled,complete:async()=>{enabled=false;return {ds:[7],rv:null,categories:['Restaurant'],flags:[null],price_level:null};}});assert.equal(attempted,1,'rollback stops the next paid extraction within an active batch');
+ console.log('Restaurant model profiles passed: async cache, genuine text only, retry, clock, ban invalidation and stale writes.');
+}
+main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});
