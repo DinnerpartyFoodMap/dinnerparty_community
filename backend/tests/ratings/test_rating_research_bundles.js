@@ -13,11 +13,12 @@ try{
     const preview=bundles.exportBundle({secret:'s'.repeat(32)});assert.equal(preview.applied,false);assert.equal(fs.existsSync(process.env.RATING_EVIDENCE_ROOT),false,'dry-run must not create a directory');
     process.env.RATING_EVIDENCE_EXPORT_ENABLED='true';
     const created=bundles.exportBundle({apply:true,secret:'s'.repeat(32)});assert.equal(created.applied,true);
+    const repeated=bundles.exportBundle({apply:true,secret:'s'.repeat(32),now:Date.now()+1000});assert.equal(repeated.expires_at,created.expires_at,'re-export cannot renew source event lifespan');
     const file=path.join(process.env.RATING_EVIDENCE_ROOT,`${created.id}.json`);assert.ok(fs.existsSync(file));assert.equal(bundles.bundleStatus(created.id).valid,true);
     evidence.recordResearchChoice('u',false);assert.equal(bundles.bundleStatus(created.id).valid,false,'revocation invalidates before filesystem deletion');
     const remove=fs.rmSync;fs.rmSync=(target,options)=>{if(target===file)throw Object.assign(Error('temporary lock'),{code:'EACCES'});return remove(target,options);};
     try{assert.equal(bundles.purgeBundles().failed,1);assert.equal(bundles.bundleStatus(created.id).valid,false);}finally{fs.rmSync=remove;}
-    assert.equal(bundles.purgeBundles().deleted,1);assert.equal(fs.existsSync(file),false);
+    assert.ok(bundles.purgeBundles().deleted>=1);assert.equal(fs.existsSync(file),false);
     db._raw.prepare("INSERT INTO User(id,username,password) VALUES('unconsented','original-author','unused')").run();
     const revisions=require('../../modules/places/services/placeRevisions');
     db._raw.prepare('UPDATE Place SET description=? WHERE id=?').run('unconsented original text',id);
@@ -35,7 +36,7 @@ try{
     const recorded=db._raw.prepare("SELECT * FROM RatingRevision WHERE user_id='u' ORDER BY rowid DESC LIMIT 1").get();
     assert.equal(recorded.experience_time_basis,'submission','an explicit creation score is a first rating submission');
     const decisionId='bundle-decision-123456';
-    db._raw.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(decisionId,'u','fixture',JSON.stringify({algorithm:'random-mixture-v1',policy_version:'random-mixture-v1',feature_snapshot_version:1,display_version:'rating-summary-v1',selected_probability:1,candidates:[{place_id:id,probability:1}],private_text:'do-not-export',latitude:30}),'{}',new Date().toISOString());
+    db._raw.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(decisionId,'u','fixture',JSON.stringify({recommendation_session_id:'research-session-12345',parent_decision_id:null,draw_index:0,surface:'random',model_version:null,algorithm:'random-mixture-v1',policy_version:'random-mixture-v1',feature_snapshot_version:1,display_version:'rating-summary-v1',selected_probability:1,candidates:[{place_id:id,probability:1}],private_text:'do-not-export',latitude:30}),'{}',new Date().toISOString());
     db._raw.prepare("INSERT INTO MapInteraction(id,user_id,session_id,kind,surface,decision_id,place_id,research_allowed,created_at) VALUES('bundle-click-123456','u','session','click','random',?,?,1,?)").run(decisionId,id,new Date().toISOString());
     evidence.captureEvent('MapInteraction','u','bundle-click-123456',{trigger:'user',surface:'random',decisionId});
     const rewritten=bundles.exportBundle({apply:true,secret:'s'.repeat(32)});
@@ -46,7 +47,7 @@ try{
     assert.ok(!JSON.stringify(payload).includes('unconsented original text'),'unproven predecessor text must never be exported');
     assert.equal(payload.rating_revisions[0].entry_surface,'web');assert.equal(payload.rating_revisions[0].rating_scale_version,1);
     assert.equal(payload.reason_links[0].place_revision_id,contribution);
-    assert.equal(payload.decisions[0].policy_version,'random-mixture-v1');assert.deepEqual(payload.decisions[0].candidates,[{place_id:id,rank:null,probability:1}]);
+    assert.equal(payload.decisions[0].recommendation_session_id,'research-session-12345');assert.equal(payload.decisions[0].draw_index,0);assert.equal(payload.decisions[0].parent_decision_id,null);assert.equal(payload.decisions[0].surface,'random');assert.equal(payload.decisions[0].feature_snapshot,null);assert.equal(payload.decisions[0].model_version,null);assert.equal(payload.decisions[0].policy_version,'random-mixture-v1');assert.deepEqual(payload.decisions[0].candidates,[{place_id:id,rank:null,probability:1}]);
     assert.ok(!JSON.stringify(payload).includes('do-not-export'),'decision export uses an explicit field allowlist');
     const mixedBefore=db._raw.prepare('SELECT * FROM Place WHERE id=?').get(id);
     db._raw.prepare('UPDATE Place SET description=? WHERE id=?').run('本人修改unconsented original text中间内容',id);

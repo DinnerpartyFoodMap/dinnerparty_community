@@ -3,7 +3,7 @@ import Button from '../components/primitives/Button';
 import Markdown from '../components/markdown/Markdown';
 import { fetchPlaceList } from '../api/client';
 import { EMPTY_PLACE_FILTER, isPlaceFilterActive, placeFilterKey, placeListQuery } from './placeFilter';
-import { formatAverage, tierForAverage, tierLabel } from './rating';
+import { formatAverage, tierForAverage, tierLabel, ratingDisplay } from './rating';
 import { imageThumbnailUrl } from '../platform/runtimeConfig';
 import { t } from '../i18n/index.js';
 import './placeList.css';
@@ -22,6 +22,7 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
     const requestRef = useRef(0);
     const sentinelRef = useRef(null);
     const queryRef = useRef(null);
+    const snapshotRef = useRef(null);
     queryRef.current = placeListQuery(filter, distance);
     // 同样的条件不重复请求
     const queryKey = queryRef.current.toString() || placeFilterKey(filter);
@@ -30,8 +31,10 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
         const requestId = ++requestRef.current;
         setState((current) => ({ ...current, loading: true, error: '', ...(offset === 0 ? { items: [], done: false } : null) }));
         try {
-            const data = await fetchPlaceList(backendUrl, { query: queryRef.current, offset, limit: PAGE_SIZE, token });
+            if (offset === 0) snapshotRef.current = null;
+            const data = await fetchPlaceList(backendUrl, { query: queryRef.current, offset, limit: PAGE_SIZE, token, snapshot: snapshotRef.current });
             if (requestId !== requestRef.current) return;
+            snapshotRef.current = data.snapshot || null;
             const items = Array.isArray(data.items) ? data.items : [];
             const total = Number(data.total) || 0;
             setState((current) => ({
@@ -103,8 +106,9 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
 }
 
 function PlaceListItem({ place, onOpen }) {
-    const tier = tierForAverage(place.rating_average);
-    const personalTier = tierForAverage(place.personalized_average);
+    const { summary, personal } = ratingDisplay(null, place);
+    const tier = tierForAverage(summary.average);
+    const personalTier = tierForAverage(personal?.average);
     const tags = String(place.category || '').split(/[,，]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 4);
     const href = `/p/${encodeURIComponent(place.id)}`;
     const open = (event) => {
@@ -130,12 +134,12 @@ function PlaceListItem({ place, onOpen }) {
                         {tier
                             ? (
                                 <span className="fm-place-card__score">
-                                    <span style={{ color: tier.tone, fontWeight: 700 }}>{t('places:list.rating', { tier: tierLabel(tier), average: formatAverage(place.rating_average) })}</span>
-                                    <span className="fm-place-card__count">{t('places:list.ratingCount', { count: place.rating_count })}</span>
+                                    <span style={{ color: tier.tone, fontWeight: 700 }}>{t('places:list.rating', { tier: tierLabel(tier), average: formatAverage(summary.average) })}</span>
+                                    <span className="fm-place-card__count">{t('places:list.ratingCount', { count: summary.count })}</span>
                                 </span>
                             )
                             : <span>{t('map:rating.summary.none')}</span>}
-                        {personalTier && <span className="fm-place-card__personal">{t('places:list.personalRating', { tier: tierLabel(personalTier) })}</span>}
+                        {personalTier && <span className="fm-place-card__personal">{personal.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personal.average) }) : t('places:list.personalRating', { tier: tierLabel(personalTier) })}</span>}
                     </span>
                     <span className="fm-place-card__tags">
                         {tags.length

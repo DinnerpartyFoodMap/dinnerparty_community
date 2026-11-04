@@ -15,6 +15,8 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
     const requestRef = useRef(null);
     const pendingDrawRef = useRef(null);
     const sessionRef = useRef(null);
+    const recommendationRef = useRef(null);
+    const parentDecisionRef = useRef(null);
 
     const draw = async (reset = false, from = activeOrigin, recordPrevious = true) => {
         if (!open || requestRef.current) return;
@@ -22,12 +24,14 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
             : from ? { lat: from.lat, lng: from.lng } : normalizeLngLat(mapRef.current?.getCenter?.());
         if (!center) { setError(t('map:randomFood.mapNotReady')); return; }
         if (reset) {
+            recommendationRef.current = eventId();
+            parentDecisionRef.current = null;
             pendingDrawRef.current = null;
             centerRef.current = { lat: center.lat, lng: center.lng };
             recentRef.current = [];
         }
         const controller = new AbortController();
-        if (recordPrevious && result?.place) feedback?.record('next', 'random', result.place.id, { decision_id: result.decision_id || null });
+        if (recordPrevious && result?.place) feedback?.record('next', 'random', result.place.id, { decision_id: result.decision_id || null, recommendation_session_id: result.recommendation_session_id, draw_index: result.draw_index });
         requestRef.current = controller;
         setBusy(true);
         setError('');
@@ -35,12 +39,13 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
         try {
             let data;
             if (feedback?.consent?.feedback && token) {
-                pendingDrawRef.current ||= { draw_id: eventId(), center: centerRef.current, exclude_ids: [...recentRef.current] };
+                pendingDrawRef.current ||= { draw_id: eventId(), recommendation_session_id: recommendationRef.current, parent_decision_id: parentDecisionRef.current, center: centerRef.current, exclude_ids: [...recentRef.current] };
                 data = await request(backendUrl, token, '/api/community/draw', { method: 'POST', signal: controller.signal,
                     body: JSON.stringify({ ...pendingDrawRef.current, consent_version: feedback.consent.version }) });
             } else data = await fetchRandomPlace(backendUrl, centerRef.current, recentRef.current, { signal: controller.signal, token });
             if (requestRef.current !== controller) return;
             pendingDrawRef.current = null;
+            parentDecisionRef.current = data.decision_id || null;
             setResult(data);
             if (data.place) recentRef.current = [...recentRef.current, data.place.id].slice(-2);
         } catch (err) {
@@ -74,7 +79,7 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
     };
     const selectPlace = () => {
         if (!currentSession || busy || !result?.place) return;
-        feedback?.record('click', 'random', result.place.id, { decision_id: result.decision_id || null });
+        feedback?.record('click', 'random', result.place.id, { decision_id: result.decision_id || null, recommendation_session_id: result.recommendation_session_id, draw_index: result.draw_index });
         onSelectPlace?.(result.place);
         onClose?.();
     };

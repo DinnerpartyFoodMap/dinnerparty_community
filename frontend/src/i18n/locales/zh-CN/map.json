@@ -526,12 +526,14 @@
       "mine": "我：{{tier}}",
       "rate": "评价",
       "rateNow": "去评价",
-      "openLabel": "评价：{{summary}}，点击查看或评价"
+      "openLabel": "评价：{{summary}}，点击查看或评价",
+      "prediction": "预计你会给 {{average}}"
     },
     "native": {
       "rowSubtitleMine": "我的评价：{{tier}}",
       "rowSubtitlePersonalized": "按你口味：{{tier}} {{average}}",
-      "rowSubtitleRate": "点此评价"
+      "rowSubtitleRate": "点此评价",
+      "rowSubtitlePrediction": "预计你会给 {{tier}} {{average}}"
     },
     "panel": {
       "title": "评价",
@@ -559,8 +561,14 @@
       "saved": "已评价：{{tier}}",
       "withdrawn": "已撤回评价",
       "saveFailed": "评价失败：{{message}}",
-      "optionLabel": "{{tier}}：{{hint}}"
-    }
+      "optionLabel": "{{tier}}：{{hint}}",
+      "predictionTitle": "预计你会给",
+      "predictionUnavailable": "暂时没有足够信息预测你会给几分"
+    },
+    "visitQuestion": "你去过这家店吗？",
+    "visitYes": "去过",
+    "visitNo": "没去过",
+    "visitLater": "稍后"
   },
   "onboarding": {
     "label": "操作指引",

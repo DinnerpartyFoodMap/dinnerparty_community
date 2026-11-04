@@ -362,10 +362,11 @@ export async function createCategory(backendUrl, token, name, { allowSimilar = f
 // -------- 地点列表 / 住民主页 / 发版信息 --------
 
 // 地点列表页：按标签、人均筛选，按综合评价与口味加权评价排序；条目不带坐标，只链接 /p/:id
-export async function fetchPlaceList(backendUrl, { query, offset = 0, limit = 20, token, signal } = {}) {
+export async function fetchPlaceList(backendUrl, { query, offset = 0, limit = 20, token, signal, snapshot } = {}) {
     const params = new URLSearchParams(query || '');
     params.set('offset', String(offset));
     params.set('limit', String(limit));
+    if (snapshot) params.set('snapshot', snapshot);
     const res = await fetch(`${backendUrl}/places/list?${params}`, { signal, cache: 'no-store', ...authHeaders(token) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw Object.assign(new Error(data.error || t('places:list.loadFailed')), { status: res.status });

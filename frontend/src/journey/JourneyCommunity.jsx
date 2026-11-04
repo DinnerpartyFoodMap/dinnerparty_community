@@ -96,6 +96,7 @@ export default function JourneyCommunity({ctx,nav,params}) {
             </>}
             {settings&&section==='settings'&&<>
                 <p className="jw-muted">{t('journey:community.settingsHint')}</p>
+                <p className="jw-muted">{t('journey:community.retentionHint', { days: stats?.retention_days || settings.retention_days || 90 })}</p>
                 <label className="jw-field"><span className="jw-field__label">{t('journey:community.tagsLabel')}</span><input value={settings.tags.join(t('journey:community.tagSeparator'))} maxLength={500} onChange={e=>setSettings({...settings,tags:e.target.value.split(/[,，]/)})}/></label>
                 <label className="jw-check"><input type="checkbox" checked={settings.discovery} onChange={e=>setSettings({...settings,discovery:e.target.checked})}/><span>{t('journey:community.consent.discovery')}</span></label>
                 <label className="jw-check"><input type="checkbox" checked={settings.feedback} onChange={e=>setSettings({...settings,feedback:e.target.checked,research:e.target.checked?settings.research:false})}/><span>{t('journey:community.consent.feedback')}</span></label>

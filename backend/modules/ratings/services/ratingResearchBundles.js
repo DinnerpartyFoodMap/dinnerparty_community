@@ -1,6 +1,8 @@
 const {db}=require('../../../infrastructure/database');
 const fs=require('node:fs'),path=require('node:path'),{randomUUID,createHash,createHmac}=require('node:crypto');
 const evidence=require('./ratingEvidence');
+const retention=require('../../community/services/feedbackRetention');
+function expiry(at,ref){const grant=db._raw.prepare('SELECT purpose_version FROM ResearchConsentEvent WHERE id=?').get(ref);return retention.sourceExpiry(db._raw,at,grant?.purpose_version||retention.LEGACY_PURPOSE_VERSION);}
 function root(){return path.resolve(process.env.RATING_EVIDENCE_ROOT||path.join(__dirname,'../../../../.private/journey-algorithm-service/datasets'));}
 function filename(key){if(!/^[a-f0-9-]{36}\.json$/.test(key))throw new Error('非法受控路径');const result=path.resolve(root(),key);if(path.dirname(result)!==root())throw new Error('非法受控路径');return result;}
 function bundleStatus(id,now=Date.now()){
@@ -26,10 +28,10 @@ function decisionSnapshots(data,now){
         if(!event.decision_id||decisions.has(event.decision_id))continue;
         const row=db._raw.prepare('SELECT * FROM MapDecision WHERE id=? AND user_id=?').get(event.decision_id,event.user_key);
         const at=Date.parse(row?.created_at),grant=db._raw.prepare('SELECT recorded_at_ms FROM ResearchConsentEvent WHERE id=?').get(event.consent_ref);
-        if(!row||!Number.isFinite(at)||at<data.manifest.from_ms||at>now||!grant||grant.recorded_at_ms>at)continue;
+        if(!row||!Number.isFinite(at)||at<data.manifest.from_ms||at>now||!grant||grant.recorded_at_ms>at||expiry(at,event.consent_ref)<=now)continue;
         const source=JSON.parse(row.snapshot),result=JSON.parse(row.result);
         if(!Array.isArray(source.candidates)||source.candidates.some(p=>!places.has(p.place_id)))continue;
-        decisions.set(row.id,{id:row.id,user_id:row.user_id,created_at_ms:at,algorithm:source.algorithm||null,policy_version:source.policy_version||null,feature_snapshot_version:source.feature_snapshot_version??null,display_version:source.display_version||null,surface:source.surface||null,personalized:source.personalized??null,selected_place_id:Number.isSafeInteger(result.place?.id)?result.place.id:null,selected_probability:Number.isFinite(source.selected_probability)?source.selected_probability:null,candidates:source.candidates.map(p=>({place_id:p.place_id,rank:Number.isSafeInteger(p.rank)?p.rank:null,probability:Number.isFinite(p.probability)?p.probability:null}))});
+        decisions.set(row.id,{id:row.id,user_id:row.user_id,created_at_ms:at,source_expires_at_ms:expiry(at,event.consent_ref),recommendation_session_id:source.recommendation_session_id??null,parent_decision_id:source.parent_decision_id??null,draw_index:source.draw_index??null,model_version:source.model_version??null,feature_snapshot:null,algorithm:source.algorithm||null,policy_version:source.policy_version||null,feature_snapshot_version:source.feature_snapshot_version??null,display_version:source.display_version||null,surface:source.surface||null,personalized:source.personalized??null,selected_place_id:Number.isSafeInteger(result.place?.id)?result.place.id:null,selected_probability:Number.isFinite(source.selected_probability)?source.selected_probability:null,candidates:source.candidates.map(p=>({place_id:p.place_id,rank:Number.isSafeInteger(p.rank)?p.rank:null,probability:Number.isFinite(p.probability)?p.probability:null}))});
     }
     return [...decisions.values()];
 }
@@ -39,16 +41,16 @@ function exportBundle({apply=false,secret=process.env.FEEDBACK_EXPORT_SECRET,out
     const key=id=>createHmac('sha256',secret).update(id).digest('hex').slice(0,32);
     const raw=db._raw.transaction(()=>{
         const data=evidence.buildRatingEvidence({purpose:'research',asOfMs:now}),cutoff=data.manifest.from_ms;
-        const eligible=(user,ref)=>evidence.hasResearchBasis(user,ref,now);
-        const ratings=db._raw.prepare('SELECT * FROM RatingRevision WHERE available_at_ms>=? AND available_at_ms<=? ORDER BY available_at_ms,rowid').all(cutoff,now).filter(r=>eligible(r.user_id,r.research_consent_id));
-        const descriptions=db._raw.prepare('SELECT * FROM PlaceRevision WHERE available_at_ms>=? AND available_at_ms<=? ORDER BY available_at_ms,rowid').all(cutoff,now).filter(r=>r.author_id&&JSON.parse(r.changed_fields).includes('description')&&String(JSON.parse(r.after_state).description||'').trim()&&eligible(r.author_id,r.research_consent_id));
+        const eligible=(user,ref,at)=>evidence.hasResearchBasis(user,ref,now)&&at<=now&&expiry(at,ref)>now;
+        const ratings=db._raw.prepare('SELECT * FROM RatingRevision WHERE available_at_ms>=? AND available_at_ms<=? ORDER BY available_at_ms,rowid').all(cutoff,now).filter(r=>eligible(r.user_id,r.research_consent_id,r.available_at_ms));
+        const descriptions=db._raw.prepare('SELECT * FROM PlaceRevision WHERE available_at_ms>=? AND available_at_ms<=? ORDER BY available_at_ms,rowid').all(cutoff,now).filter(r=>r.author_id&&JSON.parse(r.changed_fields).includes('description')&&String(JSON.parse(r.after_state).description||'').trim()&&eligible(r.author_id,r.research_consent_id,r.available_at_ms));
         const ratingKeys=new Set(ratings.map(r=>`${r.user_id}|${r.place_id}|${r.revision}`)),descriptionIds=new Set(descriptions.map(r=>r.id));
         const reasonLinks=db._raw.prepare('SELECT * FROM RatingEvidenceLink WHERE available_at_ms>=? AND available_at_ms<=?').all(cutoff,now).filter(r=>ratingKeys.has(`${r.user_id}|${r.place_id}|${r.rating_revision}`)&&descriptionIds.has(r.place_revision_id));
         const decisions=decisionSnapshots(data,now);
         const users=new Set([...data.events.map(x=>x.user_key),...data.states.map(x=>x.user_id),...ratings.map(x=>x.user_id),...descriptions.map(x=>x.author_id)]);
         const places=new Set([...data.events.map(x=>x.place_id),...data.states.map(x=>x.place_id),...ratings.map(x=>x.place_id),...descriptions.map(x=>x.place_id),...decisions.flatMap(d=>d.candidates.map(p=>p.place_id))].filter(x=>x!=null));
-        const times=[...data.events.map(x=>x.recorded_at_ms),...ratings.map(x=>x.available_at_ms),...descriptions.map(x=>x.available_at_ms),...decisions.map(d=>d.created_at_ms)];
-        return {data,ratings,descriptions,reasonLinks,decisions,users:[...users],places:[...places],expires_at:times.reduce((expiry,t)=>Math.min(expiry,t+30*86400000),now+30*86400000)};
+        const expiries=[...data.events.map(x=>x.source_expires_at_ms),...ratings.map(x=>expiry(x.available_at_ms,x.research_consent_id)),...descriptions.map(x=>expiry(x.available_at_ms,x.research_consent_id)),...decisions.map(d=>d.source_expires_at_ms)];
+        return {data,ratings,descriptions,reasonLinks,decisions,users:[...users],places:[...places],expires_at:expiries.reduce((a,b)=>Math.min(a,b),now+retention.FEEDBACK_RETENTION_DAYS*retention.DAY_MS)};
     })();
     if(!apply)return {applied:false,event_count:raw.data.events.length,rating_count:raw.ratings.length,description_count:raw.descriptions.length,user_count:raw.users.length,excluded:raw.data.manifest.excluded};
     if(process.env.RATING_EVIDENCE_EXPORT_ENABLED!=='true')throw new Error('研究导出尚未启用');

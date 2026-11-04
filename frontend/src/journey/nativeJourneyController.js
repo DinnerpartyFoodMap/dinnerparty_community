@@ -1575,6 +1575,7 @@ export function createNativeJourneyController({
     } else {
       // 发现设置（网页同一页的输入框与勾选框）：兴趣标签、三个开关（研究依赖互动记录），保存；下面是互动记录统计与清除
       const consent = state.consent || {};
+      const feedbackStats = await api('/api/community/feedback');
       const form = registerForm({
         title: '',
         message: '',
@@ -1601,7 +1602,7 @@ export function createNativeJourneyController({
         }
       });
       form.inline = true;
-      sections.push({ id: 'settings', title: '', text: t('journey:community.settingsHint'), form });
+      sections.push({ id: 'settings', title: '', text: [t('journey:community.settingsHint'), t('journey:community.retentionHint', { days: feedbackStats?.retention_days || 90 })].join('\n'), form });
     }
     return basePage('journey-community', t('journey:common.feature.community'), {
       tabs,

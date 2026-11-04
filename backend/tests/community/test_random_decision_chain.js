@@ -1,0 +1,33 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'random-chain-'));Object.assign(process.env,{DB_FILE:path.join(temp,'test.sqlite'),LOG_TO_FILE:'false',LOG_TO_CONSOLE:'false'});
+const {db,init}=require('../../infrastructure/database');init();const sql=db._raw;
+require('../../modules/accounts/middleware/auth').requireAuth=(req,res,next)=>{req.user={id:req.headers['x-user']||'a'};next();};
+require('../../modules/preferences/services/userPreferenceService').getUserPreference=async()=>null;
+require('../../modules/discovery/services/randomRecommendation').nearbyCandidates=async()=>[1,2,3,4,5].map(id=>({place:{id,name:'p'+id},distanceKm:1,weight:1}));
+const app=require('express')();app.use(require('express').json());app.use(require('../../modules/community/routes/community'));let server;
+async function main(){
+ for(const id of ['a','b'])sql.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)').run(id,id,'x');
+ for(const id of [1,2,3,4,5])sql.prepare("INSERT INTO Place(id,name,creator_id) VALUES(?,?,'a')").run(id,'p'+id);
+ server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base=`http://127.0.0.1:${server.address().port}`;
+ const call=async(url,body,user='a')=>{const r=await fetch(base+url,{method:'POST',headers:{'Content-Type':'application/json','x-user':user},body:JSON.stringify(body)});return {status:r.status,data:await r.json()};};
+ const first={draw_id:'first_draw_identifier',recommendation_session_id:'recommendation_session',center:{lat:1,lng:1},exclude_ids:[],consent_version:0};
+ const a=await call('/draw',first);assert.equal(a.status,200);assert.equal(a.data.draw_index,0);assert.equal(a.data.recommendation_session_id,first.recommendation_session_id);
+ assert.deepEqual((await call('/draw',first)).data,a.data,'retry retains draw');
+ const second={...first,draw_id:'second_draw_identifier',parent_decision_id:first.draw_id};const b=await call('/draw',second);assert.equal(b.data.draw_index,1);
+ assert.equal((await call('/draw',{...second,draw_id:'stolen_parent_draw'},'b')).status,409);
+ assert.equal((await call('/draw',{...second,draw_id:'forked_draw_identifier'})).status,409);
+ const unselected=[1,2,3,4,5].find(id=>id!==a.data.place.id);
+ const event={id:'unselected_click_event',session_id:'feedback_session_id',kind:'click',surface:'random',place_id:unselected,decision_id:first.draw_id};
+ assert.equal((await call('/feedback',{consent_version:0,events:[event]})).data.accepted,0);
+ assert.equal((await call('/feedback',{consent_version:0,events:[{...event,id:'unselected_exposure_event',kind:'exposure'}]})).data.accepted,0);
+ const snapshot=JSON.parse(sql.prepare('SELECT snapshot FROM MapDecision WHERE id=?').get(first.draw_id).snapshot);assert.equal(snapshot.surface,'random');assert.equal(snapshot.selected_place_id,a.data.place.id);
+ snapshot.algorithm='future-random-policy';sql.prepare('UPDATE MapDecision SET snapshot=? WHERE id=?').run(JSON.stringify(snapshot),first.draw_id);
+ assert.equal((await call('/feedback',{consent_version:0,events:[{...event,id:'wrong_surface_event_id',place_id:a.data.place.id,surface:'map'}]})).status,400,'surface attribution survives algorithm version changes');
+ const evidence=require('../../modules/ratings/services/ratingEvidence');evidence.recordResearchChoice('a',true);
+ const selectedEvent={...event,id:'selected_click_event_id',place_id:a.data.place.id};
+ assert.equal((await call('/feedback',{consent_version:0,events:[selectedEvent]})).data.accepted,1);
+ const rows=require('../../modules/community/services/feedbackDataset').buildDataset(sql,{secret:'s'.repeat(32),localDataAllowed:true});
+ const exported=rows.find(row=>row.event_id===selectedEvent.id);assert.ok(exported);assert.equal(exported.draw_index,0);assert.equal(exported.decision_surface,'random');assert.equal(exported.parent_decision_id,null);assert.equal(exported.model_version,null);assert.equal(exported.feature_snapshot,null);assert.ok(exported.recommendation_session_id);
+ console.log('Random chain ownership, retry, server index and selected feedback passed');
+}
+main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{if(server){server.closeAllConnections();await new Promise(r=>server.close(r));}db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});

@@ -64,3 +64,14 @@ try {
 }
 
 console.log('rating tests passed');
+
+const { ratingDisplay } = await import('../../../src/places/rating.js');
+assert.equal(ratingDisplay({summary:{count:1,average:3},prediction:{active:true,average:3,status:'cold_start'}},null).personal,null,'cold start must not masquerade as individual prediction');
+const raw = { summary: { count: 9, average: 1, distribution: {1:9} }, personalized: { average: 2.2 }, estimate: { active:true, average:3.2, evidence_count:2, distribution:{3:2} }, prediction:{active:true,average:3.6,status:'ready'} };
+assert.equal(ratingDisplay(raw).summary.count,2);
+assert.deepEqual(ratingDisplay(raw).summary.distribution,{3:2});
+assert.equal(ratingDisplay(raw).personal.kind,'prediction');
+assert.equal(ratingDisplay({...raw,prediction:{active:false,average:4}}).personal.kind,'legacy');
+assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,active:false}}).summary.average,1);
+assert.equal(isAvoidedPlace({rating_count:9,rating_average:1,rating_estimate:raw.estimate}),true);
+assert.equal(ratingDisplay({...raw,prediction:{active:true,average:null,status:'insufficient'}}).personal,null);

@@ -90,8 +90,7 @@ function startJourneyWorker() {
         try {
             const cutoff=new Date(Date.now()-7*86400000).toISOString();
             sql.prepare("DELETE FROM JourneyJob WHERE created_at<? AND status NOT IN ('running','queued')").run(cutoff);
-            sql.prepare('DELETE FROM MapInteraction WHERE created_at<?').run(new Date(Date.now()-30*86400000).toISOString());
-            sql.prepare('DELETE FROM MapDecision WHERE created_at<?').run(new Date(Date.now()-30*86400000).toISOString());
+            require('../../community/services/feedbackRetention').cleanupFeedback(sql);
             const job=sql.prepare("SELECT * FROM JourneyJob WHERE status='queued' ORDER BY created_at LIMIT 1").get();
             if(!job) return;
             if(!sql.prepare("UPDATE JourneyJob SET status='running',attempts=attempts+1,updated_at=? WHERE id=? AND status='queued'").run(now(),job.id).changes) return;

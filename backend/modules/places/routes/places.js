@@ -23,6 +23,17 @@ const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 const { listPlaces } = require('../services/placeList');
+async function projectRatingViews(rows,viewerId){
+    try{const views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(rows.map(r=>r.id),viewerId),estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
+        return rows.map(row=>({...row,rating_estimate:estimates.get(row.id)??null,predicted_rating:predictions.get(row.id)??null}));
+    }catch{return rows.map(row=>({...row,rating_estimate:null,predicted_rating:null}));}
+}
+function visibleProjectedRows(rows,viewer,detail=false){
+    // Synchronous final authorization: projection may have awaited a newer snapshot.
+    const read=db._raw.prepare('SELECT id,creator_id,moderation_status FROM Place WHERE id=?');
+    const {isBlocked}=require('../../accounts/services/userRelations');
+    return rows.filter(row=>{const current=read.get(row.id);return current&&!isBlocked(viewer?.id,current.creator_id)&&(detail?canViewPlace(current,viewer):current.moderation_status==='visible'||String(current.creator_id)===String(viewer?.id));});
+}
 router.use((req,res,next)=>req.method==='GET'&&!req.path.endsWith('/diaries')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
 
 // 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
@@ -35,9 +46,9 @@ router.get("/", attachViewer, (req, res) => {
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  WHERE ${viewerPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}
                  ORDER BY p.created_time DESC`;
-    db.all(sql, [req.viewer?.id ?? null, req.viewer?.id ?? null], (err, rows) => {
+    db.all(sql, [req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
+        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id),req.viewer));
     });
 });
 
@@ -51,9 +62,9 @@ router.get("/nearby", attachViewer, (req, res) => {
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND ${viewerPlaceSql('p')}
                    AND ${notBlockedSql('p.creator_id')}`;
-    db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null], (err, rows) => {
+    db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
+        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id),req.viewer));
     });
 });
 
@@ -64,7 +75,8 @@ router.get("/list", attachViewer, async (req, res) => {
         res.json(await listPlaces(req.query, req.viewer?.id ?? null));
     } catch (error) {
         res.locals.unhandledError = error;
-        res.status(500).json({ error: '地点列表加载失败，请稍后重试' });
+        const status = [409, 503].includes(error.status) ? error.status : 500;
+        res.status(status).json({ error: status === 409 ? '列表已更新，请重新加载' : '地点列表加载失败，请稍后重试' });
     }
 });
 
@@ -132,10 +144,12 @@ router.get("/:id", attachViewer, (req, res) => {
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  WHERE p.id = ?`;
-    db.get(sql, [req.params.id], (err, row) => {
+    db.get(sql, [req.params.id], async (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (!row || !canViewPlace(row, req.viewer)) return res.status(404).json({ error: "地点不存在" });
-        res.json(row);
+        const projected=visibleProjectedRows(await projectRatingViews([row],req.viewer?.id),req.viewer,true)[0];
+        if(!projected)return res.status(404).json({error:'地点不存在'});
+        res.json(projected);
     });
 });
 

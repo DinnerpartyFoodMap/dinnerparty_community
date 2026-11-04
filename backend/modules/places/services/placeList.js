@@ -19,6 +19,27 @@ const EARTH_RADIUS_KM = 6371.0088;
 // 观看者的口味平均在一段时间内复用：翻页时不必每页重算
 const PERSONAL_CACHE_TTL_MS = 2 * 60 * 1000;
 const personalCache = new Map();
+const { createHash, randomUUID } = require('node:crypto');
+const LIST_SNAPSHOT_TTL_MS = 2 * 60 * 1000;
+const listSnapshots = new Map();
+const MAX_SNAPSHOT_ROWS = 100000;
+function snapshotKey(filter, viewerId) {
+    const { offset, limit, ...criteria } = filter;
+    criteria.tags = [...criteria.tags].sort();
+    criteria.excludeTags = [...criteria.excludeTags].sort();
+    return createHash('sha256').update(JSON.stringify({ viewerId, criteria, sort: 'ratingsort-v1',
+        dataset: process.env.ALGORITHM_DATASET_ID || 'primary', mode: process.env.RATING_LIST_RANK_MODE || '' })).digest('hex');
+}
+function pruneSnapshots(now) {
+    for (const [token, entry] of listSnapshots) if (now >= entry.expires) listSnapshots.delete(token);
+}
+function snapshotPage(entry, token, filter) {
+    return { items: entry.items.slice(filter.offset, filter.offset + filter.limit), total: entry.items.length,
+        offset: filter.offset, limit: filter.limit, personalized: entry.personalized, snapshot: token };
+}
+function visibleIds(database, viewerId) {
+    return new Set(database.prepare(`SELECT p.id FROM Place p WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId).map(p => p.id));
+}
 
 function firstImage(...fields) {
     for (const value of fields) {
@@ -114,8 +135,21 @@ async function viewerAverages(viewerId, now = Date.now()) {
     return value;
 }
 
-async function listPlaces(query, viewerId = null, database = db._raw) {
+async function listPlaces(query = {}, viewerId = null, database = db._raw) {
     const filter = normalizeListFilter(query);
+    const key = snapshotKey(filter, viewerId), now = Date.now();
+    pruneSnapshots(now);
+    if (query.snapshot !== undefined) {
+        const entry = typeof query.snapshot === 'string' && listSnapshots.get(query.snapshot);
+        if (!entry || entry.key !== key || entry.database !== database || !snapshot.same(entry.revision)) throw client.failure(409, 'stale_input');
+        // Recheck every candidate, including rows outside this page, before returning cached data.
+        const visible = visibleIds(database, viewerId);
+        if (entry.items.some(item => !visible.has(item.id))) {
+            listSnapshots.delete(query.snapshot);
+            throw client.failure(409, 'stale_input');
+        }
+        return snapshotPage(entry, query.snapshot, filter);
+    }
     for(let attempt=0;attempt<2;attempt++){
     let personalResult;
     try{personalResult=await viewerAverages(viewerId);}catch(e){if(e.status===409)continue;throw e;}
@@ -130,10 +164,20 @@ async function listPlaces(query, viewerId = null, database = db._raw) {
         WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId);
     const filtered=rows.filter(row=>matchesFilter(row,filter)),byId=new Map(filtered.map(row=>[row.id,row]));
     const result=await client.compute('ratingsort',{...current,places:filtered.map(row=>({id:row.id,rating_count:row.rating_count,rating_average:row.rating_average})),personal:[...personal].map(([place_id,average])=>({place_id,average}))});
+    let views={estimates:[],predictions:[]};
+    try{views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(filtered.map(row=>row.id),viewerId);}catch(e){if(e.status===409)continue;console.warn('Shadow list ratings unavailable');}
+    if(views.input_revision!==undefined&&views.input_revision!==current.input_revision)continue;
+    const estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
+    // Exercise the replacement ranker in shadow only; no trained choice model is configured.
+    // Empty bonuses keep this migration independent of fabricated choice scores.
+    if(process.env.RATING_LIST_RANK_MODE==='shadow'){
+        const candidates=filtered.map(row=>({place_id:row.id,predicted_rating:predictions.get(row.id)?.average??estimates.get(row.id)?.average})).filter(row=>Number.isFinite(row.predicted_rating));
+        try{await client.compute('listrank',{...current,config_version:'neutral-shadow-v1',candidates,bonuses_by_choice_rank:[]});}catch(e){if(e.status===409)continue;console.warn('Shadow list ranking unavailable');}
+    }
     if(!snapshot.same(current.input_revision))continue;
     const visible=new Set(database.prepare(`SELECT p.id FROM Place p WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId).map(p=>p.id));
     const ranked=result.ranked.filter(r=>visible.has(r.place_id)).map(r=>({row:byId.get(r.place_id),score:r.score,personalized:personal.get(r.place_id)}));
-    const page = ranked.slice(filter.offset, filter.offset + filter.limit).map(({ row, personalized, score }) => ({
+    const items = ranked.map(({ row, personalized, score }) => ({
         id: row.id,
         name: row.name,
         description: row.description || '',
@@ -143,15 +187,20 @@ async function listPlaces(query, viewerId = null, database = db._raw) {
         rating_count: Number(row.rating_count) || 0,
         rating_average: row.rating_average,
         personalized_average: personalized ?? null,
+        rating_estimate: estimates.get(row.id)??null,
+        predicted_rating: predictions.get(row.id)??null,
         score: Math.round(score * 10000) / 10000
     }));
-    return {
-        items: page,
-        total: ranked.length,
-        offset: filter.offset,
-        limit: filter.limit,
-        personalized: personal.size > 0
-    };
+    if (items.length > MAX_SNAPSHOT_ROWS) throw client.failure(503, 'snapshot_capacity');
+    let cachedRows = [...listSnapshots.values()].reduce((sum, entry) => sum + entry.items.length, 0);
+    while (listSnapshots.size >= 128 || cachedRows + items.length > MAX_SNAPSHOT_ROWS) {
+        const oldest = listSnapshots.keys().next().value;
+        cachedRows -= listSnapshots.get(oldest).items.length;
+        listSnapshots.delete(oldest);
+    }
+    const token = randomUUID(), entry = { key, database, revision: current.input_revision, expires: Date.now() + LIST_SNAPSHOT_TTL_MS, items, personalized: personal.size > 0 };
+    listSnapshots.set(token, entry);
+    return snapshotPage(entry, token, filter);
     }
     throw client.failure(409,'stale_input');
 }

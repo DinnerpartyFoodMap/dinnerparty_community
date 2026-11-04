@@ -21,6 +21,7 @@ router.put('/consent',run((req,res)=>{
         if(!feedback) {
             sql.prepare('DELETE FROM MapInteraction WHERE user_id=?').run(req.user.id);
             sql.prepare('DELETE FROM MapDecision WHERE user_id=?').run(req.user.id);
+        require('../services/feedbackRetention').clearVisitFeedback(sql,req.user.id);
         } else if(!research) sql.prepare('UPDATE MapInteraction SET research_allowed=0 WHERE user_id=?').run(req.user.id);
     })();
     res.json(consent(req.user.id));
@@ -79,12 +80,22 @@ router.post('/draw',run(async(req,res)=>{
     const c=consent(req.user.id);
     if(!c.feedback||req.body.consent_version!==c.version) fail('交互设置已改变，请重新抽取',409);
     const {draw_id,center}=req.body;
+    const recommendation_session_id=req.body.recommendation_session_id||draw_id,parent_decision_id=req.body.parent_decision_id??null;
+    if(!/^[a-zA-Z0-9_-]{16,80}$/.test(recommendation_session_id||'')||parent_decision_id!==null&&!/^[a-zA-Z0-9_-]{16,80}$/.test(parent_decision_id))fail('抽取会话无效');
     if(!/^[a-zA-Z0-9_-]{16,80}$/.test(draw_id||'')||!center||typeof center.lng!=='number'||typeof center.lat!=='number'||!Number.isFinite(center.lng)||!Number.isFinite(center.lat)||Math.abs(center.lng)>180||Math.abs(center.lat)>90) fail('抽取参数无效');
     const excluded=Array.isArray(req.body.exclude_ids)?req.body.exclude_ids.slice(-2):[];
     if(excluded.some(n=>!Number.isSafeInteger(n)||n<1)) fail('排除地点无效');
-    const hash=createHash('sha256').update(JSON.stringify({center,excluded})).digest('hex');
+    const hash=createHash('sha256').update(JSON.stringify({center,excluded,recommendation_session_id,parent_decision_id})).digest('hex');
     const old=sql.prepare('SELECT * FROM MapDecision WHERE id=?').get(draw_id);
     if(old) {if(old.user_id!==req.user.id||old.request_hash!==hash) fail('抽取 ID 已用于另一请求',409);res.json(JSON.parse(old.result));return;}
+    function chainIndex(){
+        const latest=sql.prepare("SELECT id,user_id,snapshot FROM MapDecision WHERE json_extract(snapshot,'$.recommendation_session_id')=? ORDER BY json_extract(snapshot,'$.draw_index') DESC LIMIT 1").get(recommendation_session_id);
+        if(!latest){if(parent_decision_id)fail('上次抽取不存在',409);return 0;}
+        if(latest.user_id!==req.user.id||latest.id!==parent_decision_id)fail('抽取会话已改变，请重新抽取',409);
+        const parent=JSON.parse(latest.snapshot);if(parent.surface!=='random'||!Number.isSafeInteger(parent.draw_index))fail('抽取会话无效',409);
+        return parent.draw_index+1;
+    }
+    chainIndex();
     if(sql.prepare('SELECT COUNT(*) AS n FROM MapDecision WHERE user_id=? AND created_at>?').get(req.user.id,new Date(Date.now()-60000).toISOString()).n>=30) fail('请稍后再抽取',429);
     const {nearbyCandidates,drawRecommendation,personalizeCandidates}=require('../../discovery/services/randomRecommendation');
     const {getUserPreference}=require('../../preferences/services/userPreferenceService');
@@ -95,13 +106,15 @@ router.post('/draw',run(async(req,res)=>{
     if(consent(req.user.id).version!==c.version)fail('交互设置已改变，请重新抽取',409);
     const concurrent=sql.prepare('SELECT * FROM MapDecision WHERE id=?').get(draw_id);
     if(concurrent){if(concurrent.user_id!==req.user.id||concurrent.request_hash!==hash)fail('抽取 ID 已用于另一请求',409);res.json(JSON.parse(concurrent.result));return;}
+    const draw_index=chainIndex();
     const result=drawRecommendation(candidates,excluded,Math.random,candidates=>{
         try { if(preference) return personalizeCandidates(sql,candidates,preference); } catch {}
         return {candidates,personalized:false};
     },data=>{snapshot=data;});
     result.decision_id=draw_id;
+    Object.assign(result,{recommendation_session_id,parent_decision_id,draw_index});
     // Only probabilities and local POI IDs are retained. No raw center coordinates.
-    sql.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(draw_id,req.user.id,hash,JSON.stringify({...snapshot,policy_version:snapshot.algorithm,feature_snapshot_version:1,display_version:'rating-summary-v1'}),JSON.stringify(result),now());
+    sql.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(draw_id,req.user.id,hash,JSON.stringify({...snapshot,surface:'random',recommendation_session_id,parent_decision_id,draw_index,selected_place_id:result.place?.id??null,policy_version:snapshot.algorithm,model_version:preference&&snapshot.personalized?{model:preference.model,algorithm_version:preference.algorithm_version}:null,feature_snapshot_version:1,display_version:'rating-summary-v1'}),JSON.stringify(result),now());
     res.json(result);
 }));
 router.post('/feedback',run((req,res)=>{
@@ -123,8 +136,10 @@ router.post('/feedback',run((req,res)=>{
             const decision=e.decision_id?sql.prepare('SELECT snapshot FROM MapDecision WHERE id=? AND user_id=?').get(String(e.decision_id),req.user.id):null;
             if(e.decision_id&&!decision) continue;
             const snapshot=decision?JSON.parse(decision.snapshot):null;
-            if(snapshot&&((snapshot.surface==='search'&&e.surface!=='search')||(snapshot.algorithm==='random-mixture-v1'&&e.surface!=='random')))fail('事件与展示来源不匹配');
+            if(e.surface==='random'&&['click','exposure','next'].includes(e.kind)&&!snapshot)continue;
+            if(snapshot&&((snapshot.surface==='search'&&e.surface!=='search')||((snapshot.surface==='random'||snapshot.algorithm==='random-mixture-v1')&&e.surface!=='random')))fail('事件与展示来源不匹配');
             if(snapshot&&placeId&&!snapshot.candidates.some(p=>p.place_id===placeId)) continue;
+            if(snapshot?.surface==='random'&&['click','exposure','next'].includes(e.kind)&&placeId!==snapshot.selected_place_id)continue;
             const rank=Number.isInteger(e.rank)&&e.rank>=0&&e.rank<200?e.rank:null;
             if(snapshot?.surface==='search'&&placeId&&!snapshot.candidates.some(p=>p.place_id===placeId&&p.rank===rank))fail('搜索结果顺序不匹配');
             const reason=['wrong_branch','wrong_place','not_visited','privacy','other'].includes(e.reason)?e.reason:null;
@@ -137,13 +152,14 @@ router.post('/feedback',run((req,res)=>{
     res.json({accepted});
     require('../../ratings/services/ratingEvidence').queueEvidence(req.user.id);
 }));
-router.get('/feedback',run((req,res)=>res.json({retention_days:30,counts:sql.prepare('SELECT kind,COUNT(*) AS count FROM MapInteraction WHERE user_id=? GROUP BY kind').all(req.user.id)})));
+router.get('/feedback',run((req,res)=>res.json({retention_days:90,retention_policy_version:'feedback-90d-v2',research_purpose_version:'rating-research-v2-90d',legacy_retention_days:30,counts:sql.prepare('SELECT kind,COUNT(*) AS count FROM MapInteraction WHERE user_id=? GROUP BY kind').all(req.user.id)})));
 router.delete('/feedback',run((req,res)=>{
     sql.transaction(()=>{
         require('../../ratings/services/ratingEvidence').invalidateUserBundles(req.user.id);
         sql.prepare('UPDATE AlgorithmEventContext SET research_allowed=0 WHERE user_id=?').run(req.user.id);
         sql.prepare('DELETE FROM MapInteraction WHERE user_id=?').run(req.user.id);
         sql.prepare('DELETE FROM MapDecision WHERE user_id=?').run(req.user.id);
+        require('../services/feedbackRetention').clearVisitFeedback(sql,req.user.id);
         sql.prepare('UPDATE MapConsent SET version=version+1,updated_at=? WHERE user_id=?').run(now(),req.user.id);
     })();
     require('../../ratings/services/ratingEvidence').queueEvidence(req.user.id);

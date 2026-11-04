@@ -8,6 +8,8 @@ import * as Api from "../../api/client";
  */
 export default function usePlaceRating({ backendUrl, token, placeId, onSummary }) {
     const key = placeId == null ? null : `${placeId}|${token || ''}`;
+    const tokenRef = useRef(token);
+    tokenRef.current = token;
     const keyRef = useRef(key);
     keyRef.current = key;
     const onSummaryRef = useRef(onSummary);
@@ -35,7 +37,7 @@ export default function usePlaceRating({ backendUrl, token, placeId, onSummary }
             .then((data) => {
                 if (keyRef.current !== requestKey) return;
                 setState({ key: requestKey, data, loading: false, error: '' });
-                onSummaryRef.current?.(placeId, data.summary);
+                onSummaryRef.current?.(placeId, data.summary, data);
             })
             .catch((error) => {
                 if (error?.name === 'AbortError' || keyRef.current !== requestKey) return;
@@ -51,7 +53,7 @@ export default function usePlaceRating({ backendUrl, token, placeId, onSummary }
         setSaving(true);
         try {
             const data = await request();
-            onSummaryRef.current?.(requestPlace, data.summary);
+            if (tokenRef.current === token) onSummaryRef.current?.(requestPlace, data.summary, data);
             if (keyRef.current === requestKey) setState({ key: requestKey, data, loading: false, error: '' });
             return data;
         } finally {

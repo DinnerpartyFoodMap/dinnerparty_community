@@ -2,16 +2,19 @@ const {db}=require('../../../infrastructure/database');
 const {randomUUID}=require('node:crypto');
 const {context}=require('./ratingSnapshot');
 const client=require('../../../infrastructure/numericAlgorithmClient');
-const PURPOSE_VERSION='rating-research-v1';
+const retention=require('../../community/services/feedbackRetention');
+const PURPOSE_VERSION=retention.RESEARCH_PURPOSE_VERSION;
+const validPurpose=value=>[PURPOSE_VERSION,retention.LEGACY_PURPOSE_VERSION].includes(value);
 function researchConsent(userId,at=Date.now()){
     const settings=db._raw.prepare('SELECT feedback,research FROM MapConsent WHERE user_id=?').get(userId);
     if(!settings?.feedback||!settings.research)return null;
     const event=db._raw.prepare('SELECT * FROM ResearchConsentEvent WHERE user_id=? AND recorded_at_ms<=? ORDER BY recorded_at_ms DESC,rowid DESC LIMIT 1').get(userId,at);
-    return event?.allowed&&!event.revoked_at_ms&&event.purpose_version===PURPOSE_VERSION?event:null;
+    return event?.allowed&&!event.revoked_at_ms&&validPurpose(event.purpose_version)?event:null;
 }
 function hasResearchBasis(userId,consentId,at=Date.now()){
     if(!consentId||!researchConsent(userId,at))return false;
-    return !!db._raw.prepare('SELECT 1 FROM ResearchConsentEvent WHERE id=? AND user_id=? AND allowed=1 AND revoked_at_ms IS NULL AND purpose_version=? AND recorded_at_ms<=?').get(consentId,userId,PURPOSE_VERSION,at);
+    const grant=db._raw.prepare('SELECT * FROM ResearchConsentEvent WHERE id=? AND user_id=? AND allowed=1 AND revoked_at_ms IS NULL AND recorded_at_ms<=?').get(consentId,userId,at);
+    return !!grant&&validPurpose(grant.purpose_version);
 }
 function invalidateUserBundles(userId){
     db._raw.prepare("UPDATE ResearchBundle SET status='invalid' WHERE id IN(SELECT bundle_id FROM ResearchBundleMember WHERE user_id=?)").run(userId);
@@ -31,8 +34,8 @@ function captureEvent(source,userId,eventId,{trigger='unknown',surface=null,deci
     db._raw.prepare(`INSERT OR IGNORE INTO AlgorithmEventContext(source_table,event_id,user_id,behavior_id,interaction_id,consent_ref,research_allowed,trigger_kind,surface,decision_id,impression_id,recorded_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
         .run(source,eventId,userId,behavior,interaction,consent?.id||null,+!!consent,['user','programmatic'].includes(trigger)?trigger:'unknown',surface,decisionId,impressionId,now);
 }
-function buildRatingEvidence({userIds=null,placeIds=null,asOfMs=Date.now(),purpose='research',windowMs=30*86400000}={}){
-    const users=userIds?new Set(userIds):null,places=placeIds?new Set(placeIds):null,cutoff=asOfMs-Math.min(windowMs,30*86400000),seen=new Map();let excluded=0,deduplicated=0;
+function buildRatingEvidence({userIds=null,placeIds=null,asOfMs=Date.now(),purpose='research',windowMs=retention.FEEDBACK_RETENTION_DAYS*retention.DAY_MS}={}){
+    const users=userIds?new Set(userIds):null,places=placeIds?new Set(placeIds):null,cutoff=asOfMs-Math.min(windowMs,retention.FEEDBACK_RETENTION_DAYS*retention.DAY_MS),seen=new Map();let excluded=0,deduplicated=0;
     const allowed=(userId,meta)=>purpose!=='research'||!!(meta?.research_allowed&&hasResearchBasis(userId,meta.consent_ref,asOfMs));
     const push=(row,source)=>{
         if(users&&!users.has(row.user_id)||places&&!places.has(row.place_id))return;
@@ -40,8 +43,9 @@ function buildRatingEvidence({userIds=null,placeIds=null,asOfMs=Date.now(),purpo
         if(!Number.isFinite(at)||at<cutoff||at>asOfMs)return;
         const eventId=source==='UserBehaviorEvent'?row.event_id:row.id;
         const meta=db._raw.prepare('SELECT * FROM AlgorithmEventContext WHERE source_table=? AND user_id=? AND event_id=?').get(source,row.user_id,eventId);
-        if(!allowed(row.user_id,meta)){excluded++;return;}
-        const event={event_id:eventId,event_type:source==='UserBehaviorEvent'?row.event_type:({favorite:'favorite_add',unfavorite:'favorite_remove'}[row.kind]||row.kind),user_key:row.user_id,place_id:row.place_id,occurred_at_ms:at,recorded_at_ms:meta?.recorded_at_ms||at,available_at_ms:meta?.recorded_at_ms||at,source_table:source,source_event_id:source==='UserBehaviorEvent'?row.id:row.id,surface:meta?.surface||row.surface||null,trigger:meta?.trigger_kind||'unknown',decision_id:meta?.decision_id||row.decision_id||null,impression_id:meta?.impression_id||null,contributes:row.contributes??null,consent_ref:meta?.consent_ref||null,contract_version:1};
+        const grant=meta?.consent_ref?db._raw.prepare('SELECT purpose_version FROM ResearchConsentEvent WHERE id=?').get(meta.consent_ref):null;
+        if(!retention.isRetained(db._raw,at,asOfMs,purpose==='research'?grant?.purpose_version||retention.LEGACY_PURPOSE_VERSION:null)||!allowed(row.user_id,meta)){excluded++;return;}
+        const event={event_id:eventId,event_type:source==='UserBehaviorEvent'?row.event_type:({favorite:'favorite_add',unfavorite:'favorite_remove'}[row.kind]||row.kind),user_key:row.user_id,place_id:row.place_id,occurred_at_ms:at,recorded_at_ms:meta?.recorded_at_ms||at,available_at_ms:meta?.recorded_at_ms||at,source_table:source,source_event_id:source==='UserBehaviorEvent'?row.id:row.id,surface:meta?.surface||row.surface||null,trigger:meta?.trigger_kind||'unknown',decision_id:meta?.decision_id||row.decision_id||null,impression_id:meta?.impression_id||null,contributes:row.contributes??null,consent_ref:meta?.consent_ref||null,contract_version:1,source_expires_at_ms:retention.sourceExpiry(db._raw,at,purpose==='research'?grant?.purpose_version:null)};
         const key=`${row.user_id}|${eventId}`;if(seen.has(key)){deduplicated++;if(source==='UserBehaviorEvent')seen.set(key,event);}else seen.set(key,event);
     };
     // Original behavior rows take precedence over the favorites feedback mirror.
@@ -50,8 +54,9 @@ function buildRatingEvidence({userIds=null,placeIds=null,asOfMs=Date.now(),purpo
         if(seen.has(`${row.user_id}|${row.id}`)){deduplicated++;continue;}push(row,'MapInteraction');
     }
     const events=[...seen.values()].sort((a,b)=>a.occurred_at_ms-b.occurred_at_ms||a.source_table.localeCompare(b.source_table)||String(a.source_event_id).localeCompare(String(b.source_event_id)));
-    const states=[];for(const r of db._raw.prepare('SELECT user_id,place_id FROM Favorite').all())if((!users||users.has(r.user_id))&&(!places||places.has(r.place_id))&&(purpose!=='research'||researchConsent(r.user_id,asOfMs)))states.push({...r,kind:'favorite_state',available_at_ms:asOfMs});
-    return {...context(asOfMs),purpose,events,states,manifest:{contract_version:1,purpose_version:PURPOSE_VERSION,from_ms:cutoff,to_ms:asOfMs,excluded,deduplicated,count:events.length,state_count:states.length,retention_days:30}};
+    // Current membership has no immutable event timestamp; never renew research life at export time.
+    const states=[];
+    return {...context(asOfMs),purpose,events,states,manifest:{contract_version:1,purpose_version:PURPOSE_VERSION,from_ms:cutoff,to_ms:asOfMs,excluded,deduplicated,count:events.length,state_count:states.length,retention_days:retention.FEEDBACK_RETENTION_DAYS,retention_policy_version:retention.RETENTION_POLICY_VERSION,legacy_retention_days:retention.LEGACY_RETENTION_DAYS}};
 }
 let worker=null;
 function queueEvidence(userId){

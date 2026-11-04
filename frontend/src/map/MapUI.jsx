@@ -7,7 +7,8 @@ import AddForm from "../places/components/AddPlaceForm";
 import PlaceDetailPanel, { parseImages as parsePlaceImages } from "../places/components/PlaceDetailPanel";
 import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
 import usePlaceRating from "../places/hooks/usePlaceRating";
-import { isAvoidedPlace, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace } from "../places/rating";
+import useVisitEvidence from '../places/useVisitEvidence';
+import { isAvoidedPlace, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace, ratingDisplay } from "../places/rating";
 import useDarkMode from "../theme/useDarkMode";
 import { useSearchPanel } from "../discovery/hooks/useSearchPanel";
 import { useExternalSearch } from '../discovery/hooks/useExternalSearch';
@@ -399,6 +400,7 @@ export default function MapUI(props) {
     const ratingPlaceId = selectedPlace && selectedPlace.isMarked !== false && !pickerMode ? selectedPlace.id : null;
     const placeRating = usePlaceRating({ backendUrl, token: isAuthenticated ? token : null, placeId: ratingPlaceId, onSummary: onRatingSummary });
     const [ratingOpen, setRatingOpen] = useState(false);
+    const visitEvidence = useVisitEvidence({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!nativeOverlayActive&&!pickerMode&&!currentUser?.is_banned,onVisited:()=>setRatingOpen(true)});
     const openRating = () => setRatingOpen(true);
     // 举报：打开预填好的意见反馈表（类型“不良信息举报”、地点名、编号与链接），住民接着写原因；高德临时地点没有收录，不能举报
     const canReportPlace = !!(onOpenFeedback && ratingPlaceId != null);
@@ -453,9 +455,9 @@ export default function MapUI(props) {
     useEffect(() => {
         if (!userFilter) setUserPlacesOpen(false);
     }, [userFilter]);
-    const ratingSummary = placeRating.data ? placeRating.data.summary : summaryFromPlace(selectedPlace);
+    const { summary: ratingSummary, personal: personalizedRating } = ratingDisplay(placeRating.data, selectedPlace ? { ...selectedPlace, predicted_rating: null, personalized_average: null } : null);
     const myRatingTier = placeRating.data && placeRating.data.mine ? ratingTierFor(placeRating.data.mine.score) : null;
-    const personalizedRating = placeRating.data && placeRating.data.personalized;
+
     const [favPageOpen, setFavPageOpen] = useState(false);
     const [pickedPageOpen, setPickedPageOpen] = useState(false);
     const [favItems, setFavItems] = useState([]);
@@ -1186,7 +1188,7 @@ export default function MapUI(props) {
             id: 'rating',
             title: summaryText(ratingSummary),
             subtitle: [
-                personalizedRating ? t('map:rating.native.rowSubtitlePersonalized', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) }) : null,
+                personalizedRating ? (personalizedRating.kind === 'prediction' ? t('map:rating.native.rowSubtitlePrediction', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) }) : t('map:rating.native.rowSubtitlePersonalized', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) })) : null,
                 myRatingTier ? t('map:rating.native.rowSubtitleMine', { tier: tierLabel(myRatingTier) }) : t('map:rating.native.rowSubtitleRate')
             ].filter(Boolean).join(' · '),
             symbol: ratingTier ? ratingTier.symbol : sfSymbol('thumbUp'),
@@ -1898,7 +1900,7 @@ export default function MapUI(props) {
                     </span>
                     {personalizedRating && (
                         <span style={{ whiteSpace: 'nowrap', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                            {t('map:rating.card.personalized', { average: formatAverage(personalizedRating.average) })}
+                            {(personalizedRating.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personalizedRating.average) }) : t('map:rating.card.personalized', { average: formatAverage(personalizedRating.average) }))}
                         </span>
                     )}
                 </span>
@@ -3405,6 +3407,13 @@ export default function MapUI(props) {
                     <PlaceDetailPanel open={detailOpen && !!selectedPlace} place={selectedPlace} focus={detailFocus} backendUrl={backendUrl} onClose={() => setDetailOpen(false)} onNavigate={handleNavigate}
                         rating={ratingPlaceId != null ? { summary: ratingSummary, mine: myRatingTier } : null} onOpenRating={openRating}
                         onReport={canReportPlace ? reportPlace : undefined} />
+                    <ResponsivePanel open={!!visitEvidence.prompt} onClose={()=>void visitEvidence.answer('later')} title={t('map:rating.visitQuestion')} kind="visit-confirmation" desktop="center" mobile="sheet">
+                        <div style={{padding:20,display:'flex',gap:12}}>
+                            <Button onClick={()=>void visitEvidence.answer('yes')}>{t('map:rating.visitYes')}</Button>
+                            <Button onClick={()=>void visitEvidence.answer('no')}>{t('map:rating.visitNo')}</Button>
+                            <Button onClick={()=>void visitEvidence.answer('later')}>{t('map:rating.visitLater')}</Button>
+                        </div>
+                    </ResponsivePanel>
                     <PlaceRatingPanel
                         open={ratingOpen && ratingPlaceId != null}
                         onClose={() => setRatingOpen(false)}

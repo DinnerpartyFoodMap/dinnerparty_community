@@ -597,3 +597,22 @@ export async function getCurrentLocation({ map, timeout, onUpdate, signal } = {}
     if (isNativePlatform()) return locateNative({ timeout, onUpdate, signal });
     return locateWeb({ map, timeout: timeout ?? WEB_LOCATE_TIMEOUT_MS, onUpdate, signal });
 }
+
+// Evidence sampling is separate from the map's cached/best-fix optimization.
+// It never requests a new permission, uses IP fallback, or invents a timestamp.
+export async function getFreshLocation({signal,timeout=10000}={}) {
+    const fresh=raw=>{
+        if(!Number.isFinite(raw?.timestamp)||raw.timestamp>Date.now()||Date.now()-raw.timestamp>15000)throw new LocationError(LOCATION_ERROR.POSITION_UNAVAILABLE);
+        return raw;
+    };
+    if(isNativePlatform()){
+        const {plugin}=await nativeLocator();
+        const permission=await plugin.checkPermissions();
+        if(permission.location!=='granted')throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
+        if(getPlatform()==='android')return nativeCall(()=>plugin.getCurrentPosition({timeout}).then(raw=>fromAmapPosition(fresh(raw))),{timeout,signal});
+        return locateWithWatch({watch:cb=>plugin.watchPosition({enableHighAccuracy:true,maximumAge:0,timeout},cb),clearWatch:id=>plugin.clearWatch({id}),toPosition:raw=>fromSystemPosition(fresh(raw)),maxAge:15000,timeout,signal});
+    }
+    const permission=await navigator.permissions?.query({name:'geolocation'}).catch(()=>null);
+    if(permission?.state!=='granted')throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
+    return locateWithWatch({watch:cb=>navigator.geolocation.watchPosition(raw=>cb(raw),err=>cb(null,err),{enableHighAccuracy:true,maximumAge:0,timeout}),clearWatch:id=>navigator.geolocation.clearWatch(id),toPosition:raw=>fromBrowserPosition(fresh(raw)),maxAge:15000,timeout,signal});
+}

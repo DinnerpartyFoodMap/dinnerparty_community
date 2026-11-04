@@ -314,6 +314,7 @@ app.use("/api/dinners", dinnersRouter);
 app.use("/api/favorites", favoritesRouter);
 app.use('/api/preferences', preferencesRouter);
 app.use('/api/ratings', require('./modules/ratings/routes/placeRatings'));
+app.use('/api/visits/places', require('./modules/places/routes/placeVisits'));
 app.use('/api/skins', require('./modules/skins/routes/skins'));
 app.use('/api/feedback', require('./modules/feedback/routes/feedback'));
 app.use('/api/journeys', require('./modules/journeys/routes/journeys'));

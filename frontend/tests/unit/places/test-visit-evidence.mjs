@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {createVisitEvidence} from '../../../src/places/visitEvidence.js';
+const place={latitude:31,longitude:121},base=2000000;
+const fix=t=>({lat:31,lng:121,accuracy:10,coordSystem:'GCJ-02',source:'browser',timestamp:base+t});
+const s=createVisitEvidence();let result;
+for(let i=0;i<12;i++)result=s.observe(place,fix(i*60000),base+i*60000);
+assert.ok(result);assert.equal(result.fix_count,12);
+s.reset();for(let i=0;i<12;i++)assert.equal(s.observe(place,fix(0),base),null);
+s.reset();for(let i=0;i<12;i++)assert.equal(s.observe(place,{...fix(i*60000),accuracy:100},base+i*60000),null);
+s.reset();for(let i=0;i<12;i++)assert.equal(s.observe(place,fix(i*120000),base+i*120000),null);
+assert.equal(s.observe(place,{...fix(2000000),timestamp:undefined},base+2000000),null);
+console.log('Visit evidence: dwell, duplicate, accuracy and gap checks passed');

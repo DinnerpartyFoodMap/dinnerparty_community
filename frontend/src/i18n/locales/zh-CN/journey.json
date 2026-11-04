@@ -153,7 +153,7 @@
     "tagSeparator": "，",
     "consent": {
       "discovery": "允许按我的口味匹配同好，并向其他用户展示我的用户名、兴趣标签和公开收藏夹",
-      "feedback": "记录搜索操作、可见结果、点选、收藏和纠错，帮助改进地图",
+      "feedback": "记录搜索、可见结果、点选、收藏、纠错及定位推断的到访；定位采样仅在前台进行",
       "research": "允许将这些交互记录用于改进用户体验"
     },
     "saveSettings": "保存设置",
@@ -163,7 +163,8 @@
     "editCollection": "编辑收藏夹",
     "deleteCollection": "删除收藏夹",
     "collectionPlaces": "收藏的地点",
-    "collectionEmpty": "还没有地点，点“编辑收藏夹”从你的收藏里挑选。"
+    "collectionEmpty": "还没有地点，点“编辑收藏夹”从你的收藏里挑选。",
+    "retentionHint": "互动、决策、推断到访及研究证据最长保存 {{days}} 天，可随时清除互动记录或撤回研究授权。"
   },
   "composer": {
     "sync": {

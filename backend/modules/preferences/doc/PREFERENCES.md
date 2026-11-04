@@ -28,8 +28,10 @@ userVectorAdapter 收集固定快照，事务外调用 preference，写回前复
 
 ## 行为用途与保留
 
-地图点击/决策原 30 天清理规则不变；画像的 180 天读取窗口不等于存储期限。AlgorithmEventContext 记录采集时的来源、用途凭据和触发方式，随原事件删除。
+地图行为/点击/决策与派生到访证据采用 feedback-90d-v2：迁移后事件最长 90 天，迁移前事件仍按 30 天到期；画像的 180 天读取窗口不等于存储期限，30 天行为半衰期也不变。AlgorithmEventContext 记录采集时的来源、用途凭据和触发方式，随原事件删除。
 
 研究开关默认值不是明确选择凭据。仅操作既有研究设置开关时记录 ResearchConsentEvent；研究样本同时检查采集时依据、当前允许和撤回。撤回后的旧样本不会因重新开启而自动恢复。
 
 收藏反馈还会镜像到 MapInteraction，统一证据以 UserBehaviorEvent 为主，按 user/event_id 去重。导出默认关闭并先 dry-run，不能靠导出绕过保留期限。更多见评分服务接入中的研究包章节。
+
+90 天迁移：FeedbackRetentionPolicy 首次初始化时固定生效时间，不续期旧事件或恢复已删除历史。研究新选择使用 rating-research-v2-90d；rating-research-v1 仍限来源事件后 30 天，重新授权不恢复撤回样本。研究包期限取所有来源绝对期限的最小值，重复导出不续期，旧包 expires_at 不改写。无可核验收藏事件时间的 favorite_state 不进入研究快照。业务评分和日记保存规则独立；原始连续定位不导出。

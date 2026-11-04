@@ -68,3 +68,19 @@ export function summaryFromPlace(place) {
     const count = Number(place && place.rating_count) || 0;
     return { count, average: count ? Number(place.rating_average) : null };
 }
+
+// Display selection never mutates the legacy aggregates used by avoidance rules.
+export function ratingDisplay(data, place) {
+    const estimate = data ? data.estimate : place?.rating_estimate;
+    const prediction = data ? data.prediction : place?.predicted_rating;
+    const valid = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 1 && Number(value) <= 4;
+    const legacy = data?.summary || summaryFromPlace(place);
+    const summary = estimate?.active === true
+        ? { count: Number(estimate.evidence_count) || 0, average: valid(estimate.average) ? Number(estimate.average) : null, distribution: estimate.distribution }
+        : legacy;
+    const oldPersonal = data?.personalized || (valid(place?.personalized_average) ? { average: Number(place.personalized_average) } : null);
+    const personal = prediction?.active === true
+        ? (prediction.status === 'ready' && valid(prediction.average) ? { ...prediction, kind: 'prediction' } : null)
+        : (oldPersonal ? { ...oldPersonal, kind: 'legacy' } : null);
+    return { summary, personal };
+}

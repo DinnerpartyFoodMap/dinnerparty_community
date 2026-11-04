@@ -3,7 +3,7 @@ import ResponsivePanel from "../../components/overlay/ResponsivePanel";
 import SkinIcon from "../../skins/SkinIcon";
 import { t, tx } from "../../i18n/index.js";
 import {
-    RATING_TIERS, FEW_RATINGS, ratingTierFor, tierForAverage, tierLabel, tierHint, formatAverage, summaryFromPlace
+    RATING_TIERS, FEW_RATINGS, ratingTierFor, tierForAverage, tierLabel, tierHint, formatAverage, ratingDisplay
 } from "../rating";
 
 // 评价面板：上半部分是大家的评价（档位、分数、人数、分布、按口味加权），下半部分选自己的评价。
@@ -40,12 +40,12 @@ const sectionTitleStyle = { fontSize: 13, fontWeight: 700, color: 'var(--color-t
 
 function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, showTip }) {
     const data = rating.data;
-    const summary = data ? data.summary : summaryFromPlace(place);
+    const { summary, personal } = ratingDisplay(data, { ...place, predicted_rating: null, personalized_average: null });
     const tier = tierForAverage(summary.average);
     const mine = data && data.mine;
     const quota = data && data.quota;
     const exhausted = !!(quota && quota.remaining <= 0 && !quota.place_counted);
-    const distribution = data ? data.summary.distribution : null;
+    const distribution = summary.distribution;
     const maxCount = distribution ? Math.max(1, ...Object.values(distribution)) : 1;
 
     const choose = async (score) => {
@@ -110,22 +110,22 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
             )}
 
             {/* 按口味加权：鸭觅式“专属匹配度”的简化版，和公开分数并列显示，不替换它 */}
-            {data && data.personalized && (
+            {personal && (
                 <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--theme-secondary-0-12)', border: '1px solid var(--color-border)' }}>
-                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:rating.panel.personalizedTitle')}</div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{(personal.kind === 'prediction' ? t('map:rating.panel.predictionTitle') : t('map:rating.panel.personalizedTitle'))}</div>
                     <div style={{ marginTop: 2, fontSize: 16, fontWeight: 700 }}>
                         {tx('map:rating.panel.personalizedText', {
-                            tier: <span style={{ color: tierForAverage(data.personalized.average).tone }}>{tierLabel(tierForAverage(data.personalized.average))}</span>,
-                            average: formatAverage(data.personalized.average)
+                            tier: <span style={{ color: tierForAverage(personal.average).tone }}>{tierLabel(tierForAverage(personal.average))}</span>,
+                            average: formatAverage(personal.average)
                         })}
                     </div>
                     <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                        {t('map:rating.panel.personalizedHint', { matched: data.personalized.matched_raters })}
+                        {personal.kind === 'legacy' && t('map:rating.panel.personalizedHint', { matched: personal.matched_raters })}
                     </div>
                 </div>
             )}
-            {data && !data.personalized && isAuthenticated && summary.count > 1 && (
-                <div style={{ marginTop: 12, fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>{t('map:rating.panel.personalizedUnavailable')}</div>
+            {data && !personal && isAuthenticated && summary.count > 1 && (
+                <div style={{ marginTop: 12, fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>{data.prediction?.active === true ? t('map:rating.panel.predictionUnavailable') : t('map:rating.panel.personalizedUnavailable')}</div>
             )}
 
             {/* 我的评价 */}
@@ -185,9 +185,6 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
                     </button>
                 )}
             </div>
-            {mine && mine.source !== 'user' && (
-                <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:rating.panel.creatorNote')}</div>
-            )}
             {rating.error && !data && (
                 <button type="button" onClick={rating.reload} style={{ marginTop: 8, padding: 0, border: 0, background: 'transparent', color: 'var(--theme-primary)', fontSize: 13, cursor: 'pointer' }}>
                     {t('map:rating.panel.retry')}

@@ -1,5 +1,5 @@
 const {randomUUID}=require('node:crypto');
-const OPERATIONS=new Set(['preference','vectormean','ratingweights','ratingweightspage','ratingsummary','ratingview','personalaverages','ratingsort','evidence']);
+const OPERATIONS=new Set(['preference','vectormean','ratingweights','ratingweightspage','ratingsummary','ratingview','personalaverages','ratingsort','evidence','ratingestimate','ratingpredict','listrank']);
 const MAX_INPUT=32*1024*1024,MAX_OUTPUT=1024*1024;
 function failure(status=503,code='unavailable') {return Object.assign(new Error(status===409?'数据已变化，请重试':'计算服务暂不可用，请稍后重试'),{status,publicMessage:status===409?'数据已变化，请重试':'计算服务暂不可用，请稍后重试',code});}
 function configuration(){
@@ -31,6 +31,27 @@ function validateSummary(r){
 function unique(rows,key,allowed){if(!Array.isArray(rows))invalid();const ids=rows.map(key);if(new Set(ids).size!==ids.length||allowed&&ids.some(id=>!allowed.has(id)))invalid();return ids;}
 function validate(op,r,i={}){
     if(!r||typeof r!=='object')invalid();
+    if(['ratingestimate','ratingpredict','listrank'].includes(op)&&r.config_version!==i.config_version)invalid();
+    if(op==='ratingestimate'){
+        if(r.estimate_schema_version!==1||r.source_policy_version!==i.source_policy_version||r.config_hash!==i.estimator_config.config_hash)invalid();
+        const allowed=new Set(i.place_ids);if(unique(r.estimates,x=>x.place_id,allowed).length!==allowed.size)invalid();
+        const priors=new Map(i.priors.map(x=>[x.place_id,x.prior_version]));
+        for(const row of r.estimates){
+            if(!integer(row.evidence_count)||row.prior_version!==priors.get(row.place_id)||row.evidence_status!==(row.evidence_count?'sufficient':'insufficient'))invalid();
+            const evidence=i.ratings.filter(x=>x.place_id===row.place_id);
+            if(row.evidence_count!==evidence.length||[1,2,3,4].some(score=>row.distribution?.[score]!==evidence.filter(x=>x.score===score).length))invalid();
+            validateSummary({count:row.evidence_count,average:row.average,tier:row.average===null?null:Math.round(row.average),distribution:row.distribution});
+        }
+    }
+    if(op==='ratingpredict'){
+        const allowed=new Set(i.estimates.map(x=>x.place_id));if(unique(r.predictions,x=>x.place_id,allowed).length!==allowed.size)invalid();
+        for(const row of r.predictions){const n=i.viewer_history.filter(x=>x.place_id!==row.place_id).length,base=i.estimates.find(x=>x.place_id===row.place_id);
+            if(row.history_count!==n||row.method!=='public_estimate_viewer_bias'||row.status!==(base.average===null?'insufficient':n?'ready':'cold_start')||base.average===null&&row.average!==null||base.average!==null&&(!Number.isFinite(row.average)||row.average<1||row.average>4))invalid();}
+    }
+    if(op==='listrank'){
+        const allowed=new Set(i.candidates.map(x=>x.place_id));if(unique(r.ranked,x=>x.place_id,allowed).length!==allowed.size)invalid();
+        for(const row of r.ranked){const candidate=i.candidates.find(x=>x.place_id===row.place_id);if(!Number.isFinite(row.ranking_score)||!Number.isFinite(row.choice_boost)||row.choice_boost<0||row.choice_boost>(i.bonuses_by_choice_rank[0]||0)||row.ranking_score!==candidate.predicted_rating+row.choice_boost||row.choice_rank!==null&&(!integer(row.choice_rank)||row.choice_rank<1))invalid();}
+    }
     if(op==='preference')validatePreference(r,i);
     if(op==='vectormean'){if(!integer(r.count))invalid();vector(r.sum,8);if(r.count)vector(r.mean,8);else if(r.mean!==null)invalid();}
     if(op==='ratingsummary'){const allowed=i.place_ids?new Set(i.place_ids):null;const ids=unique(r.summaries,x=>x.place_id,allowed);if(allowed&&ids.length!==allowed.size)invalid();r.summaries.forEach(validateSummary);}

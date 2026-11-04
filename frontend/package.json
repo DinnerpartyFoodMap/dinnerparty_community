@@ -26,7 +26,7 @@
         "test:ios-back-browser": "node scripts/testing/test-ios-back-gesture-browser.mjs",
         "test:ui": "npm --prefix ../backend run test:ui",
         "test:overlay": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/overlay/test-overlay.mjs",
-        "test:rating": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-rating.mjs",
+        "test:rating": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-rating.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-visit-evidence.mjs",
         "test:place-draft": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-add-place-draft.mjs",
         "test:share-card": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/places/test-share-card.mjs",
         "test:native-chrome": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-chrome.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-settings.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-feedback.mjs && node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-native-place-form.mjs && node tests/unit/platform/test-native-edge-back.mjs",

@@ -187,7 +187,8 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
         assert.equal(form.fields.find((field) => field.id === 'research').requires, 'feedback');
         assert.ok(!settings.page.sections.some((section) => section.id === 'stats'), 'no interaction stats');
         assert.equal(settings.page.buttons.length, 0, 'no clear-interactions button');
-        assert.ok(!requests.some((line) => line.includes('/api/community/feedback')));
+        assert.ok(requests.some((line) => line.includes('/api/community/feedback')), 'settings reads retention metadata');
+        assert.ok(settings.page.sections[0].text.includes('90'), 'native settings explains the retention boundary');
     } finally {
         globalThis.fetch = originalFetch;
     }

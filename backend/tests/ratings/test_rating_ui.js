@@ -19,7 +19,7 @@ async function main(){
     for(const viewport of [{width:1100,height:850},{width:390,height:844}]){
         const page=await browser.newPage({viewport}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
         await page.goto(`http://127.0.0.1:${server.address().port}/__rating_ui`);
-        await page.waitForFunction(()=>JSON.parse(document.querySelector('#rating-state').textContent)?.summary);
+        await page.waitForFunction(()=>JSON.parse(document.querySelector('#rating-state')?.textContent||'null')?.summary);
         const panel=page.getByRole('dialog'),radios=panel.getByRole('radio');assert.equal(await radios.count(),4);assert.equal(await panel.locator('input,textarea').count(),0);
         const choice=radios.nth(1),save=async()=>{const response=page.waitForResponse(r=>r.url().includes('/api/ratings/places/1')&&r.request().method()==='PUT');await choice.click();assert.equal((await response).status(),200);await page.waitForFunction(()=>!document.querySelector('[role="radio"][aria-checked="true"]')?.disabled);};
         await save();await page.waitForFunction(()=>JSON.parse(document.querySelector('#rating-state').textContent)?.mine?.score===3);

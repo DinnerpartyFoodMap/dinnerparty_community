@@ -82,6 +82,40 @@ async function main() {
     // 4. 分页
     const page = await call('/places/list?offset=1&limit=2');
     assert.deepEqual(page.body.items.map((item) => item.id), [single, unrated]);
+    const first = await call('/places/list?limit=2', { who: 'fan' });
+    assert.equal(typeof first.body.snapshot, 'string');
+    const nextUrl = `/places/list?offset=2&limit=2&snapshot=${encodeURIComponent(first.body.snapshot)}`;
+    const numeric = require('../../infrastructure/numericAlgorithmClient'), compute = numeric.compute;
+    let next;
+    numeric.compute = async (operation, ...args) => {
+        assert.notEqual(operation, 'ratingsort', 'continuation must never rerank');
+        return compute(operation, ...args);
+    };
+    try {
+        next = await call(nextUrl, { who: 'fan' });
+        assert.equal(next.status, 200);
+        assert.deepEqual((await call(nextUrl, { who: 'fan' })).body, next.body, 'repeated pages reuse frozen rows and scores');
+    } finally { numeric.compute = compute; }
+    assert.equal(new Set([...first.body.items, ...next.body.items].map(item => item.id)).size, 4);
+    assert.equal((await call(nextUrl, { who: 'other' })).status, 409, 'snapshot belongs to its viewer');
+    assert.equal((await call(`${nextUrl}&maxCost=50`, { who: 'fan' })).status, 409, 'snapshot belongs to its filters');
+    const realNow = Date.now;
+    try {
+        Date.now = () => realNow() + 121000;
+        assert.equal((await call(nextUrl, { who: 'fan' })).status, 409, 'expired snapshot requires restart');
+    } finally { Date.now = realNow; }
+    const revoked = await call('/places/list?limit=2');
+    sql.prepare("UPDATE Place SET moderation_status='checking' WHERE id=?").run(disliked);
+    assert.equal((await call(`/places/list?offset=2&snapshot=${revoked.body.snapshot}`)).status, 409, 'visibility revoked after page one invalidates snapshot');
+    sql.prepare("UPDATE Place SET moderation_status='visible' WHERE id=?").run(disliked);
+    const blocked = await call('/places/list?limit=2', { who: 'fan' });
+    sql.prepare('INSERT INTO UserBlock(user_id, blocked_id) VALUES (?, ?)').run(users.fan, users.maker);
+    assert.equal((await call(`/places/list?offset=2&snapshot=${blocked.body.snapshot}`, { who: 'fan' })).status, 409, 'new viewer block invalidates cached candidates');
+    sql.prepare('DELETE FROM UserBlock WHERE user_id=?').run(users.fan);
+    const changed = await call('/places/list?limit=2');
+    sql.prepare('UPDATE PlaceRating SET score=3 WHERE place_id=? AND user_id=?').run(single, users.fan);
+    assert.equal((await call(`/places/list?offset=2&snapshot=${changed.body.snapshot}`)).status, 409, 'rating revision requires a fresh snapshot');
+    sql.prepare('UPDATE PlaceRating SET score=4 WHERE place_id=? AND user_id=?').run(single, users.fan);
 
     // 5. 住民主页：结构、六类偏好（创建时的评价不算；没有依据的轴为 null）、小组件默认值与内容
     const profile = await call(`/users/${users.fan}/profile`);
