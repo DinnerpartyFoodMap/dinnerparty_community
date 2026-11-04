@@ -75,3 +75,13 @@ assert.equal(ratingDisplay({...raw,prediction:{active:false,average:4}}).persona
 assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,active:false}}).summary.average,1);
 assert.equal(isAvoidedPlace({rating_count:9,rating_average:1,rating_estimate:raw.estimate}),true);
 assert.equal(ratingDisplay({...raw,prediction:{active:true,average:null,status:'insufficient'}}).personal,null);
+
+// The low-tail model adds a hint, never a third score or a permanent avoidance flag.
+const flaggedRisk = { status:'ready', flagged:true, probability:0.8, threshold:0.6, model_version:'test-v1' };
+assert.deepEqual(ratingDisplay({...raw,estimate:{...raw.estimate,risk:flaggedRisk}}).risk,flaggedRisk);
+assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,active:false,risk:flaggedRisk}}).risk,null);
+assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,risk:{...flaggedRisk,status:'insufficient'}}}).risk,null);
+assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,risk:{...flaggedRisk,flagged:false}}}).risk,null);
+assert.equal(ratingDisplay(null,{rating_estimate:raw.estimate,rating_risk:{...flaggedRisk,active:true}}).risk.flagged,true);
+assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,risk:flaggedRisk}}).personal.average,3.6);
+assert.equal(isAvoidedPlace({rating_count:3,rating_average:3.2,rating_risk:{...flaggedRisk,active:true}}),false);

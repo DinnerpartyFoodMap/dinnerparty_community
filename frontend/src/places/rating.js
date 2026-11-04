@@ -82,5 +82,8 @@ export function ratingDisplay(data, place) {
     const personal = prediction?.active === true
         ? (prediction.status === 'ready' && valid(prediction.average) ? { ...prediction, kind: 'prediction' } : null)
         : (oldPersonal ? { ...oldPersonal, kind: 'legacy' } : null);
-    return { summary, personal };
+    const candidateRisk = data ? (data.risk || estimate?.risk) : (place?.rating_risk || estimate?.risk);
+    const riskActive = candidateRisk?.active === true || (estimate?.active === true && candidateRisk?.active !== false);
+    const risk = riskActive && candidateRisk?.status === 'ready' && candidateRisk.flagged === true ? candidateRisk : null;
+    return { summary, personal, risk };
 }

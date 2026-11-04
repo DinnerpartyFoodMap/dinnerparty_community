@@ -6,7 +6,7 @@ import {
     RATING_TIERS, FEW_RATINGS, ratingTierFor, tierForAverage, tierLabel, tierHint, formatAverage, ratingDisplay
 } from "../rating";
 
-// 评价面板：上半部分是大家的评价（档位、分数、人数、分布、按口味加权），下半部分选自己的评价。
+// 评价面板：公开估计、本人预测和低分风险提示，下半部分选自己的评价。
 // 宽屏为居中对话框，窄屏为底部面板；iOS 原生地点卡片打开它时，原生面板暂时让位。
 export default function PlaceRatingPanel({ open, onClose, place, rating, isAuthenticated, banned, onRequireAuth, showTip }) {
     return (
@@ -40,7 +40,7 @@ const sectionTitleStyle = { fontSize: 13, fontWeight: 700, color: 'var(--color-t
 
 function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, showTip }) {
     const data = rating.data;
-    const { summary, personal } = ratingDisplay(data, { ...place, predicted_rating: null, personalized_average: null });
+    const { summary, personal, risk } = ratingDisplay(data, { ...place, predicted_rating: null, personalized_average: null });
     const tier = tierForAverage(summary.average);
     const mine = data && data.mine;
     const quota = data && data.quota;
@@ -90,6 +90,7 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
             {summary.count > 0 && summary.count < FEW_RATINGS && (
                 <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:rating.summary.few')}</div>
             )}
+            {risk && <p style={{ margin: '8px 0', fontSize: 12, color: 'var(--color-warning)', lineHeight: 1.5 }}>{t('map:rating.riskHint')}</p>}
 
             {distribution && summary.count > 0 && (
                 <div role="list" aria-label={t('map:rating.panel.distribution')} style={{ marginTop: 14, display: 'grid', gap: 6 }}>
@@ -109,7 +110,7 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
                 </div>
             )}
 
-            {/* 按口味加权：鸭觅式“专属匹配度”的简化版，和公开分数并列显示，不替换它 */}
+            {/* 本人预测分与公开估计并列；首选排序加成不进入显示分数。 */}
             {personal && (
                 <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--theme-secondary-0-12)', border: '1px solid var(--color-border)' }}>
                     <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{(personal.kind === 'prediction' ? t('map:rating.panel.predictionTitle') : t('map:rating.panel.personalizedTitle'))}</div>

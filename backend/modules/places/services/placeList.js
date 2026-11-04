@@ -2,12 +2,13 @@ const { db, isVectorSearchAvailable } = require('../../../infrastructure/databas
 const { RATING_COLUMNS_SQL, personalizedAveragesSnapshot } = require('../../ratings/services/placeRatings');
 const snapshot=require('../../ratings/services/ratingSnapshot');
 const client=require('../../../infrastructure/numericAlgorithmClient');
+const migration=require('../../ratings/services/ratingEstimateAdapter');
 const { publicPlaceSql } = require('./placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { parseCategoryNames } = require('./placeService');
 
 // 地点列表（GET /places/list，见 ../doc/README.md）：店名、简介、第一张图、评价，可按标签、人均与距离筛选，
-// 按“综合评价 + 与观看者口味相近的人的评价”排序。只给公开地点，
+// 模型可用时按本人预测分加首选前五名加成排序；否则使用保留的旧策略。只给公开地点，
 // 返回字段里没有经纬度、地址和距离：列表只链接 /p/:id，位置留在地图里看，整页抓取拿不到坐标。
 // 距离只用来筛选（lat / lng 为中心，radiusKm 为半径，只接受几档固定值），不返回每家店的具体距离。
 const LIST_PAGE_LIMIT = 30;
@@ -23,12 +24,12 @@ const { createHash, randomUUID } = require('node:crypto');
 const LIST_SNAPSHOT_TTL_MS = 2 * 60 * 1000;
 const listSnapshots = new Map();
 const MAX_SNAPSHOT_ROWS = 100000;
-function snapshotKey(filter, viewerId) {
+function snapshotKey(filter, viewerId, model) {
     const { offset, limit, ...criteria } = filter;
     criteria.tags = [...criteria.tags].sort();
     criteria.excludeTags = [...criteria.excludeTags].sort();
     return createHash('sha256').update(JSON.stringify({ viewerId, criteria, sort: 'ratingsort-v1',
-        dataset: process.env.ALGORITHM_DATASET_ID || 'primary', mode: process.env.RATING_LIST_RANK_MODE || '' })).digest('hex');
+        dataset: process.env.ALGORITHM_DATASET_ID || 'primary', modes: migration.modes(),model:model?.model??null })).digest('hex');
 }
 function pruneSnapshots(now) {
     for (const [token, entry] of listSnapshots) if (now >= entry.expires) listSnapshots.delete(token);
@@ -137,7 +138,8 @@ async function viewerAverages(viewerId, now = Date.now()) {
 
 async function listPlaces(query = {}, viewerId = null, database = db._raw) {
     const filter = normalizeListFilter(query);
-    const key = snapshotKey(filter, viewerId), now = Date.now();
+    const model=await migration.configuration();
+    const key = snapshotKey(filter, viewerId, model), now = Date.now();
     pruneSnapshots(now);
     if (query.snapshot !== undefined) {
         const entry = typeof query.snapshot === 'string' && listSnapshots.get(query.snapshot);
@@ -168,15 +170,17 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
     try{views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(filtered.map(row=>row.id),viewerId);}catch(e){if(e.status===409)continue;console.warn('Shadow list ratings unavailable');}
     if(views.input_revision!==undefined&&views.input_revision!==current.input_revision)continue;
     const estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
-    // Exercise the replacement ranker in shadow only; no trained choice model is configured.
-    // Empty bonuses keep this migration independent of fabricated choice scores.
-    if(process.env.RATING_LIST_RANK_MODE==='shadow'){
-        const candidates=filtered.map(row=>({place_id:row.id,predicted_rating:predictions.get(row.id)?.average??estimates.get(row.id)?.average})).filter(row=>Number.isFinite(row.predicted_rating));
-        try{await client.compute('listrank',{...current,config_version:'neutral-shadow-v1',candidates,bonuses_by_choice_rank:[]});}catch(e){if(e.status===409)continue;console.warn('Shadow list ranking unavailable');}
+    let replacement=null;
+    if(model&&migration.modes().rank!=='off'){
+        // Score the entire filtered set once, before pagination. Unrated places
+        // may use an internal prior; the public displayed score stays null.
+        const legacy=new Map(result.ranked.map(r=>[r.place_id,r.score]));
+        const candidates=filtered.map(row=>({place_id:row.id,predicted_rating:predictions.get(row.id)?.average??estimates.get(row.id)?.average??estimates.get(row.id)?.prior_average??legacy.get(row.id)??2.5}));
+        try{const ranked=await migration.rankCandidates(candidates,viewerId,current,{database,config:model});if(migration.modes().rank==='active')replacement=ranked;}catch(e){if(e.status===409)continue;console.warn('Bootstrap list ranking unavailable');}
     }
     if(!snapshot.same(current.input_revision))continue;
     const visible=new Set(database.prepare(`SELECT p.id FROM Place p WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId).map(p=>p.id));
-    const ranked=result.ranked.filter(r=>visible.has(r.place_id)).map(r=>({row:byId.get(r.place_id),score:r.score,personalized:personal.get(r.place_id)}));
+    const ranked=(replacement?replacement.ranked:result.ranked).filter(r=>visible.has(r.place_id)).map(r=>({row:byId.get(r.place_id),score:r.ranking_score??r.score,personalized:personal.get(r.place_id)}));
     const items = ranked.map(({ row, personalized, score }) => ({
         id: row.id,
         name: row.name,
@@ -188,6 +192,7 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
         rating_average: row.rating_average,
         personalized_average: personalized ?? null,
         rating_estimate: estimates.get(row.id)??null,
+        rating_risk: estimates.get(row.id)?.risk??null,
         predicted_rating: predictions.get(row.id)??null,
         score: Math.round(score * 10000) / 10000
     }));
@@ -198,7 +203,7 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
         cachedRows -= listSnapshots.get(oldest).items.length;
         listSnapshots.delete(oldest);
     }
-    const token = randomUUID(), entry = { key, database, revision: current.input_revision, expires: Date.now() + LIST_SNAPSHOT_TTL_MS, items, personalized: personal.size > 0 };
+    const token = randomUUID(), entry = { key, database, revision: current.input_revision, expires: Date.now() + LIST_SNAPSHOT_TTL_MS, items, personalized: replacement?!!viewerId:personal.size > 0 };
     listSnapshots.set(token, entry);
     return snapshotPage(entry, token, filter);
     }

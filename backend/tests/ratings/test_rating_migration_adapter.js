@@ -20,10 +20,15 @@ async function main(){
  assert.equal(r.estimates.length,2);assert.equal(r.estimates[0].evidence_count,1);
  assert.equal(r.estimates[0].active,false);assert.equal(r.predictions.length,2);
  assert.equal(r.predictions.find(x=>x.place_id===1).history_count,0,'own target rating excluded');
- assert.equal(r.predictions.find(x=>x.place_id===1).average,null,'own target rating does not leak into target baseline');
- assert.equal(r.estimates.find(x=>x.place_id===1).average,2.875);
+ const model=await adapter.configuration();
+ const ownTarget=r.predictions.find(x=>x.place_id===1);
+ assert.equal(ownTarget.status,'insufficient','own target vote cannot create target evidence');
+ if(model){assert.ok(Number.isFinite(ownTarget.average),'internal learned prior may seed an unrated target');assert.equal(r.estimates[0].prior_version,model.config_version);assert.equal(r.estimates[0].risk.active,false);}
+ else{assert.equal(ownTarget.average,null);assert.equal(r.estimates.find(x=>x.place_id===1).average,2.875);}
  process.env.RATING_ESTIMATE_MODE='active';process.env.RATING_PREDICTION_MODE='active';
- assert.equal((await adapter.ratingViews([1],'a')).estimates.length,0,'unvalidated configuration cannot be activated');
+ const active=await adapter.ratingViews([1],'a');
+ assert.equal(active.estimates.length,model?1:0,'activation requires a valid frozen model pack');
+ if(model){assert.equal(active.estimates[0].active,true);assert.equal(active.estimates[0].risk.active,true);assert.equal(active.predictions[0].active,true);}
  process.env.RATING_ESTIMATE_MODE='off';process.env.RATING_PREDICTION_MODE='off';
  assert.equal((await adapter.ratingViews([1],'a')).estimates.length,0);
  console.log('Migration adapter HTTP tests passed');

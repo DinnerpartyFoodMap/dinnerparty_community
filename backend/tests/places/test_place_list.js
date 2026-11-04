@@ -8,6 +8,9 @@ const { randomUUID } = require('crypto');
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'yuyuko-place-list-'));
 Object.assign(process.env, { LOG_TO_FILE: 'false', LOG_TO_CONSOLE: 'false', DB_FILE: path.join(temp, 'test.sqlite'), AMAP_WEB_SERVICE_KEY: '' });
+// This file covers the retained legacy policy. Active bootstrap behavior is
+// covered by ratings/test_bootstrap_product.js with the deployed model pack.
+Object.assign(process.env,{RATING_ESTIMATE_MODE:'off',RATING_PREDICTION_MODE:'off',RATING_LIST_RANK_MODE:'off'});
 require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
 
 const express = require('express');

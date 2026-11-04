@@ -62,6 +62,31 @@ function personalizeCandidates(database, candidates, preference) {
     };
 }
 
+async function prepareChoicePersonalizer(database,candidates,viewerId,fallback=null){
+    const migration=require('../../ratings/services/ratingEstimateAdapter');
+    if(migration.modes().random==='off')return fallback;
+    const snapshot=require('../../ratings/services/ratingSnapshot'),context=snapshot.context();
+    const fresh=()=>{if(!snapshot.same(context.input_revision))throw require('../../../infrastructure/numericAlgorithmClient').failure(409,'stale_input');};
+    try{
+        const scored=await migration.rankCandidates(candidates.map(c=>({place_id:c.place.id,predicted_rating:2.5})),viewerId,context,{database,bonuses:[]});
+        fresh();
+        if(!scored||migration.modes().random!=='active')return fallback;
+        const scores=new Map(scored.ranked.map(c=>[c.place_id,c.choice_score]));
+        if(candidates.some(c=>!Number.isFinite(scores.get(c.place.id))))return fallback;
+        // Re-normalize after the two-place cooldown, so every remaining POI
+        // retains at least 20% of its probability in the base distribution.
+        return remaining=>{
+            fresh();
+            const peak=Math.max(...remaining.map(c=>scores.get(c.place.id)));
+            const preferred=remaining.map(c=>c.weight*Math.exp(Math.max(-40,scores.get(c.place.id)-peak)));
+            const baseTotal=remaining.reduce((sum,c)=>sum+c.weight,0),total=preferred.reduce((a,b)=>a+b,0);
+            return {personalized:!!viewerId,algorithm:'research-choice-mixture-v1',model_version:scored.model,
+                feature_snapshot:Object.fromEntries(remaining.map(c=>[c.place.id,scored.feature_snapshot[c.place.id]])),
+                candidates:remaining.map((c,index)=>({...c,weight:0.2*c.weight+0.8*preferred[index]/total*baseTotal}))};
+        };
+    }catch(error){if(error.status===409)throw error;fresh();console.warn('Bootstrap random ranking unavailable');return fallback;}
+}
+
 function recommendationWeight(place, distanceKm) {
     const completeness = placeDetailCompleteness(place);
     const favorites = Math.max(0, Number(place.favorite_count) || 0);
@@ -125,8 +150,9 @@ function drawRecommendation(candidates, excludedIds = [], random = Math.random, 
     }
     if (onDecision) onDecision({ selected_probability: selected.weight / total,
         candidates: eligible.map(c => ({ place_id: c.place.id, probability: c.weight / total })),
-        eligible_count: eligible.length, algorithm: 'random-mixture-v1', personalized: selection.personalized });
+        eligible_count: eligible.length, algorithm: selection.algorithm||'random-mixture-v1', personalized: selection.personalized,
+        model_version:selection.model_version??null,feature_snapshot:selection.feature_snapshot??null });
     return { place: selected.place, distanceKm: selected.distanceKm, candidateCount: candidates.length, personalized: selection.personalized };
 }
 
-module.exports = { recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, EMPTY_MESSAGE };
+module.exports = { recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer, EMPTY_MESSAGE };

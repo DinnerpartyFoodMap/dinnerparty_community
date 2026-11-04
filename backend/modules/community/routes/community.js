@@ -97,24 +97,25 @@ router.post('/draw',run(async(req,res)=>{
     }
     chainIndex();
     if(sql.prepare('SELECT COUNT(*) AS n FROM MapDecision WHERE user_id=? AND created_at>?').get(req.user.id,new Date(Date.now()-60000).toISOString()).n>=30) fail('请稍后再抽取',429);
-    const {nearbyCandidates,drawRecommendation,personalizeCandidates}=require('../../discovery/services/randomRecommendation');
+    const {nearbyCandidates,drawRecommendation,personalizeCandidates,prepareChoicePersonalizer}=require('../../discovery/services/randomRecommendation');
     const {getUserPreference}=require('../../preferences/services/userPreferenceService');
     const {isVectorSearchAvailable}=require('../../../infrastructure/database');
     let snapshot={candidates:[],eligible_count:0,algorithm:'random-mixture-v1'};
     let preference=null;try{if(isVectorSearchAvailable())preference=await getUserPreference(req.user.id);}catch{}
     const candidates=await nearbyCandidates(sql,center);
+    const personalize=await prepareChoicePersonalizer(sql,candidates,req.user.id,candidates=>{
+        try { if(preference) return personalizeCandidates(sql,candidates,preference); } catch {}
+        return {candidates,personalized:false};
+    });
     if(consent(req.user.id).version!==c.version)fail('交互设置已改变，请重新抽取',409);
     const concurrent=sql.prepare('SELECT * FROM MapDecision WHERE id=?').get(draw_id);
     if(concurrent){if(concurrent.user_id!==req.user.id||concurrent.request_hash!==hash)fail('抽取 ID 已用于另一请求',409);res.json(JSON.parse(concurrent.result));return;}
     const draw_index=chainIndex();
-    const result=drawRecommendation(candidates,excluded,Math.random,candidates=>{
-        try { if(preference) return personalizeCandidates(sql,candidates,preference); } catch {}
-        return {candidates,personalized:false};
-    },data=>{snapshot=data;});
+    const result=drawRecommendation(candidates,excluded,Math.random,personalize,data=>{snapshot=data;});
     result.decision_id=draw_id;
     Object.assign(result,{recommendation_session_id,parent_decision_id,draw_index});
-    // Only probabilities and local POI IDs are retained. No raw center coordinates.
-    sql.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(draw_id,req.user.id,hash,JSON.stringify({...snapshot,surface:'random',recommendation_session_id,parent_decision_id,draw_index,selected_place_id:result.place?.id??null,policy_version:snapshot.algorithm,model_version:preference&&snapshot.personalized?{model:preference.model,algorithm_version:preference.algorithm_version}:null,feature_snapshot_version:1,display_version:'rating-summary-v1'}),JSON.stringify(result),now());
+    // Keep local candidates, probabilities and derived model features; no raw center coordinates.
+    sql.prepare('INSERT INTO MapDecision(id,user_id,request_hash,snapshot,result,created_at) VALUES(?,?,?,?,?,?)').run(draw_id,req.user.id,hash,JSON.stringify({...snapshot,surface:'random',recommendation_session_id,parent_decision_id,draw_index,selected_place_id:result.place?.id??null,policy_version:snapshot.algorithm,model_version:snapshot.model_version??(preference&&snapshot.personalized?{model:preference.model,algorithm_version:preference.algorithm_version}:null),feature_snapshot_version:2,display_version:'rating-bootstrap-v1'}),JSON.stringify(result),now());
     res.json(result);
 }));
 router.post('/feedback',run((req,res)=>{

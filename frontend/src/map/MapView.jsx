@@ -923,12 +923,13 @@ export default function MapView({
     // 标记的避雷图标随综合评价立即更新，不等下一次附近请求。值没变时不触发重渲染。
     const applyRatingSummary = (placeId, summary, data) => {
         if (placeId == null || !summary) return;
-        const patch = { rating_count: Number(summary.count) || 0, rating_average: summary.count ? summary.average : null, rating_estimate: data?.estimate ?? null, predicted_rating: data?.prediction ?? null };
+        const patch = { rating_count: Number(summary.count) || 0, rating_average: summary.count ? summary.average : null, rating_estimate: data?.estimate ?? null, predicted_rating: data?.prediction ?? null, rating_risk: data?.risk ?? data?.estimate?.risk ?? null };
         const matches = (place) => !!place && place.isMarked !== false && String(place.id) === String(placeId);
         const differs = (place) => (Number(place.rating_count) || 0) !== patch.rating_count
             || (place.rating_average ?? null) !== patch.rating_average
             || JSON.stringify(place.rating_estimate ?? null) !== JSON.stringify(patch.rating_estimate)
-            || JSON.stringify(place.predicted_rating ?? null) !== JSON.stringify(patch.predicted_rating);
+            || JSON.stringify(place.predicted_rating ?? null) !== JSON.stringify(patch.predicted_rating)
+            || JSON.stringify(place.rating_risk ?? null) !== JSON.stringify(patch.rating_risk);
         const patchList = (list) => (Array.isArray(list) && list.some((place) => matches(place) && differs(place))
             ? list.map((place) => (matches(place) ? { ...place, ...patch } : place))
             : list);

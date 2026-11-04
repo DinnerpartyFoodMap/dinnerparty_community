@@ -29,7 +29,7 @@ function buildDataset(db,{secret,localDataAllowed=false,now=Date.now()}={}) {
             recommendation_session_id:snapshot?.recommendation_session_id?hash(`${e.user_id}:${snapshot.recommendation_session_id}`):null,
             parent_decision_id:snapshot?.parent_decision_id??null,draw_index:snapshot?.draw_index??null,
             decision_surface:snapshot?.surface??null,policy_version:snapshot?.policy_version??null,model_version:snapshot?.model_version??null,
-            feature_snapshot_version:snapshot?.feature_snapshot_version??null,feature_snapshot:null,
+            feature_snapshot_version:snapshot?.feature_snapshot_version??null,feature_snapshot:snapshot?.feature_snapshot??null,
             display_version:snapshot?.display_version??null,
             selected_place_id:result?.place?.id||null,selected_probability:snapshot?.selected_probability||null,
             candidates:snapshot?.candidates||[],
@@ -39,7 +39,7 @@ function buildDataset(db,{secret,localDataAllowed=false,now=Date.now()}={}) {
 function evaluateLoggedRandom(rows){
     const decisions=new Map();
     for(const row of rows) {
-        if(row.algorithm!=='random-mixture-v1'||!row.decision_id||!(row.selected_probability>0)||!row.candidates.length)continue;
+        if(!['random-mixture-v1','research-choice-mixture-v1'].includes(row.algorithm)||!row.decision_id||!(row.selected_probability>0)||!row.candidates.length)continue;
         if(!decisions.has(row.decision_id))decisions.set(row.decision_id,{...row,exposed:false,clicked:false});
         const item=decisions.get(row.decision_id);
         if(row.place_id===item.selected_place_id){if(row.event==='exposure')item.exposed=true;if(row.event==='click')item.clicked=true;}

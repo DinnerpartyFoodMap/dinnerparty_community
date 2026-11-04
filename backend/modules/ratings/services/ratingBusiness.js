@@ -62,7 +62,7 @@ async function ratingState(placeId,viewer=null){
         try{views=await require('./ratingEstimateAdapter').ratingViews([id],viewer?.id);}catch(e){if(e.status===409)continue;console.warn('Shadow rating unavailable');}
         if(!same(publicResult.input_revision)||views.input_revision!==undefined&&views.input_revision!==publicResult.input_revision)continue;
         requirePlace(id,viewer?.id);
-        return {place_id:id,summary:publicResult.summary,mine:viewer?ownRating(id,viewer.id):null,personalized:personal?.personalized??null,quota:viewer?ratingQuota(viewer.id,id):null,estimate:views.estimates[0]??null,prediction:views.predictions[0]??null};
+        return {place_id:id,summary:publicResult.summary,mine:viewer?ownRating(id,viewer.id):null,personalized:personal?.personalized??null,quota:viewer?ratingQuota(viewer.id,id):null,estimate:views.estimates[0]??null,risk:views.estimates[0]?.risk??null,prediction:views.predictions[0]??null};
     }
     throw client.failure(409,'stale_input');
 }
@@ -110,7 +110,14 @@ async function mutate(user,placeId,score,options={}){
             if(requestId)db._raw.prepare('INSERT INTO RatingCommand(user_id,request_id,input_hash,place_id,action,committed_revision,committed_at) VALUES(?,?,?,?,?,?,?)').run(user.id,requestId,hash,id,withdraw?'withdraw':'rate',revision,now);
             return {state:{place_id:id,summary:result.summary,mine:ownRating(id,user.id),personalized:result.personalized,quota:ratingQuota(user.id,id,now)}};
         }).immediate();
-        if(committed?.already)return replay(user,id,committed.already);if(committed)return committed.state;
+        if(committed?.already)return replay(user,id,committed.already);
+        if(committed){
+            const migration=require('./ratingEstimateAdapter'),modes=migration.modes();
+            // Mutation responses feed the open panel and map cache directly.
+            // Return the same active fields as GET after the committed revision.
+            if((modes.estimate!=='off'||modes.prediction!=='off')&&await migration.configuration())return replay(user,id,{request_id:requestId});
+            return committed.state;
+        }
     }
     throw client.failure(409,'stale_input');
 }

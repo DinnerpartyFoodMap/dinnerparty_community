@@ -502,6 +502,8 @@
     "contributors": "贡献者"
   },
   "rating": {
+    "riskLabel": "低分风险较高",
+    "riskHint": "模型提示这家店更可能得到低分，建议结合已有评价判断。",
     "tier": {
       "strongYes": "强烈推荐",
       "aboveAverage": "均线之上",

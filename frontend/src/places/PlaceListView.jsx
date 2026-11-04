@@ -106,7 +106,7 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
 }
 
 function PlaceListItem({ place, onOpen }) {
-    const { summary, personal } = ratingDisplay(null, place);
+    const { summary, personal, risk } = ratingDisplay(null, place);
     const tier = tierForAverage(summary.average);
     const personalTier = tierForAverage(personal?.average);
     const tags = String(place.category || '').split(/[,，]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 4);
@@ -140,6 +140,7 @@ function PlaceListItem({ place, onOpen }) {
                             )
                             : <span>{t('map:rating.summary.none')}</span>}
                         {personalTier && <span className="fm-place-card__personal">{personal.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personal.average) }) : t('places:list.personalRating', { tier: tierLabel(personalTier) })}</span>}
+                        {risk && <span style={{ color: 'var(--color-warning)', fontSize: 12 }}>{t('map:rating.riskLabel')}</span>}
                     </span>
                     <span className="fm-place-card__tags">
                         {tags.length

@@ -9,6 +9,19 @@ function configuration(){
 }
 function invalid(){throw failure(502,'invalid_response');}
 const integer=n=>Number.isSafeInteger(n)&&n>=0;
+let capabilityCache=null;
+async function capabilities(){
+    const config=configuration();if(!config)return null;
+    const key=config.url+'|'+config.token;
+    if(capabilityCache?.key===key&&Date.now()<capabilityCache.until)return capabilityCache.value;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),3000);
+    try{const response=await fetch(`${config.url}/v1/capabilities`,{signal:controller.signal,redirect:'error',headers:{Authorization:`Bearer ${config.token}`,Accept:'application/json'}});
+        if(!response.ok||!/^application\/json\b/i.test(response.headers.get('content-type')||''))throw Error();
+        const data=await response.json(),model=data.bootstrap_model??data.result?.bootstrap_model;
+        const value=model?.status==='ready'&&model.method==='research_bootstrap'&&typeof model.model_id==='string'&&/^[a-f0-9]{64}$/.test(model.model_hash)?model:null;
+        capabilityCache={key,value,until:Date.now()+5000};return value;
+    }catch{return null;}finally{clearTimeout(timer);}
+}
 function vector(value,width=4){
     if(typeof value!=='string'||!/^[A-Za-z0-9+/]+={0,2}$/.test(value))invalid();
     const b=Buffer.from(value,'base64');if(b.length!==1024*width)invalid();
@@ -32,25 +45,28 @@ function unique(rows,key,allowed){if(!Array.isArray(rows))invalid();const ids=ro
 function validate(op,r,i={}){
     if(!r||typeof r!=='object')invalid();
     if(['ratingestimate','ratingpredict','listrank'].includes(op)&&r.config_version!==i.config_version)invalid();
+    if(i.model_hash!==undefined&&r.model_hash!==i.model_hash)invalid();
     if(op==='ratingestimate'){
-        if(r.estimate_schema_version!==1||r.source_policy_version!==i.source_policy_version||r.config_hash!==i.estimator_config.config_hash)invalid();
+        if(r.estimate_schema_version!==1||r.source_policy_version!==i.source_policy_version||r.config_hash!==i.estimator_config.config_hash||i.estimator_config.method==='research_bootstrap'&&r.model_hash!==i.estimator_config.config_hash)invalid();
         const allowed=new Set(i.place_ids);if(unique(r.estimates,x=>x.place_id,allowed).length!==allowed.size)invalid();
-        const priors=new Map(i.priors.map(x=>[x.place_id,x.prior_version]));
+        const bootstrap=i.estimator_config.method==='research_bootstrap',priors=new Map((i.priors||[]).map(x=>[x.place_id,x.prior_version]));
         for(const row of r.estimates){
-            if(!integer(row.evidence_count)||row.prior_version!==priors.get(row.place_id)||row.evidence_status!==(row.evidence_count?'sufficient':'insufficient'))invalid();
+            if(!integer(row.evidence_count)||row.prior_version!==(bootstrap?i.config_version:priors.get(row.place_id))||row.evidence_status!==(row.evidence_count?'sufficient':'insufficient'))invalid();
             const evidence=i.ratings.filter(x=>x.place_id===row.place_id);
             if(row.evidence_count!==evidence.length||[1,2,3,4].some(score=>row.distribution?.[score]!==evidence.filter(x=>x.score===score).length))invalid();
             validateSummary({count:row.evidence_count,average:row.average,tier:row.average===null?null:Math.round(row.average),distribution:row.distribution});
+            if(bootstrap){const risk=row.risk;if(!Number.isFinite(row.prior_average)||row.prior_average<1||row.prior_average>4||!risk||risk.model_version!==i.config_version||risk.status!==(row.evidence_count?'ready':'insufficient')||!Number.isFinite(risk.threshold)||risk.threshold<0||risk.threshold>1||typeof risk.flagged!=='boolean'||row.evidence_count&&(!Number.isFinite(risk.probability)||risk.probability<0||risk.probability>1)||!row.evidence_count&&(risk.probability!==null||risk.flagged))invalid();}
         }
     }
     if(op==='ratingpredict'){
         const allowed=new Set(i.estimates.map(x=>x.place_id));if(unique(r.predictions,x=>x.place_id,allowed).length!==allowed.size)invalid();
         for(const row of r.predictions){const n=i.viewer_history.filter(x=>x.place_id!==row.place_id).length,base=i.estimates.find(x=>x.place_id===row.place_id);
-            if(row.history_count!==n||row.method!=='public_estimate_viewer_bias'||row.status!==(base.average===null?'insufficient':n?'ready':'cold_start')||base.average===null&&row.average!==null||base.average!==null&&(!Number.isFinite(row.average)||row.average<1||row.average>4))invalid();}
+            const bootstrap=Number.isFinite(base.prior_average),method=bootstrap?'research_bootstrap_viewer_bias':'public_estimate_viewer_bias';
+            if(row.history_count!==n||row.method!==method||row.status!==(base.average===null?'insufficient':n?'ready':'cold_start')||!bootstrap&&base.average===null&&row.average!==null||(base.average!==null||bootstrap)&&(!Number.isFinite(row.average)||row.average<1||row.average>4))invalid();}
     }
     if(op==='listrank'){
         const allowed=new Set(i.candidates.map(x=>x.place_id));if(unique(r.ranked,x=>x.place_id,allowed).length!==allowed.size)invalid();
-        for(const row of r.ranked){const candidate=i.candidates.find(x=>x.place_id===row.place_id);if(!Number.isFinite(row.ranking_score)||!Number.isFinite(row.choice_boost)||row.choice_boost<0||row.choice_boost>(i.bonuses_by_choice_rank[0]||0)||row.ranking_score!==candidate.predicted_rating+row.choice_boost||row.choice_rank!==null&&(!integer(row.choice_rank)||row.choice_rank<1))invalid();}
+        for(const row of r.ranked){const candidate=i.candidates.find(x=>x.place_id===row.place_id);if(!Number.isFinite(row.ranking_score)||!Number.isFinite(row.choice_boost)||row.choice_boost<0||row.choice_boost>(i.bonuses_by_choice_rank?.[0]??0.3)||row.ranking_score!==candidate.predicted_rating+row.choice_boost||row.choice_rank!==null&&(!integer(row.choice_rank)||row.choice_rank<1)||row.choice_score!==null&&row.choice_score!==undefined&&!Number.isFinite(row.choice_score))invalid();}
     }
     if(op==='preference')validatePreference(r,i);
     if(op==='vectormean'){if(!integer(r.count))invalid();vector(r.sum,8);if(r.count)vector(r.mean,8);else if(r.mean!==null)invalid();}
@@ -104,4 +120,4 @@ async function computeRatingWeights(input,options={}){
     }
     delete result.ticket;delete result.next;return validate('ratingweights',result,context);
 }
-module.exports={compute,computeRatingWeights,configuration,validate,failure};
+module.exports={compute,computeRatingWeights,configuration,capabilities,validate,failure};

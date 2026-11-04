@@ -27,7 +27,7 @@ async function main(){
  const selectedEvent={...event,id:'selected_click_event_id',place_id:a.data.place.id};
  assert.equal((await call('/feedback',{consent_version:0,events:[selectedEvent]})).data.accepted,1);
  const rows=require('../../modules/community/services/feedbackDataset').buildDataset(sql,{secret:'s'.repeat(32),localDataAllowed:true});
- const exported=rows.find(row=>row.event_id===selectedEvent.id);assert.ok(exported);assert.equal(exported.draw_index,0);assert.equal(exported.decision_surface,'random');assert.equal(exported.parent_decision_id,null);assert.equal(exported.model_version,null);assert.equal(exported.feature_snapshot,null);assert.ok(exported.recommendation_session_id);
+ const exported=rows.find(row=>row.event_id===selectedEvent.id);assert.ok(exported);assert.equal(exported.draw_index,0);assert.equal(exported.decision_surface,'random');assert.equal(exported.parent_decision_id,null);assert.deepEqual(exported.model_version,snapshot.model_version??null);assert.deepEqual(exported.feature_snapshot,snapshot.feature_snapshot??null);assert.ok(exported.recommendation_session_id);
  console.log('Random chain ownership, retry, server index and selected feedback passed');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{if(server){server.closeAllConnections();await new Promise(r=>server.close(r));}db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});

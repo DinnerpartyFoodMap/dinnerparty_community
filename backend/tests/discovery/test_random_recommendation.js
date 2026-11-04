@@ -14,6 +14,7 @@ process.env.LOG_TO_FILE = 'false';
 process.env.LOG_TO_CONSOLE = 'false';
 process.env.SILICONFLOW_API_KEY = '';
 process.env.DEEPSEEK_API_KEY = '';
+process.env.RATING_RANDOM_RANK_MODE='off'; // Retained vector/base policy regressions.
 require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false, disconnect() { } } };
 const database = require('../../infrastructure/database');
 const { db, init } = database;

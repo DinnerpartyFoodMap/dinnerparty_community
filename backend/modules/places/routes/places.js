@@ -16,7 +16,7 @@ const {
     createPlace
 } = require('../services/placeService');
 const { createPlaceRequest } = require('../services/placeRequestService');
-const { nearbyCandidates, drawRecommendation, personalizeCandidates } = require('../../discovery/services/randomRecommendation');
+const { nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer } = require('../../discovery/services/randomRecommendation');
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
 const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
 const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
@@ -25,8 +25,8 @@ const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } =
 const { listPlaces } = require('../services/placeList');
 async function projectRatingViews(rows,viewerId){
     try{const views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(rows.map(r=>r.id),viewerId),estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
-        return rows.map(row=>({...row,rating_estimate:estimates.get(row.id)??null,predicted_rating:predictions.get(row.id)??null}));
-    }catch{return rows.map(row=>({...row,rating_estimate:null,predicted_rating:null}));}
+        return rows.map(row=>({...row,rating_estimate:estimates.get(row.id)??null,rating_risk:estimates.get(row.id)?.risk??null,predicted_rating:predictions.get(row.id)??null}));
+    }catch{return rows.map(row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null}));}
 }
 function visibleProjectedRows(rows,viewer,detail=false){
     // Synchronous final authorization: projection may have awaited a newer snapshot.
@@ -115,10 +115,12 @@ router.get("/random", (req, res, next) => {
             }
             return { candidates, personalized: false };
         };
-        res.json(drawRecommendation(await nearbyCandidates(db._raw, center), excludedIds, Math.random, personalize));
+        const candidates=await nearbyCandidates(db._raw,center);
+        const choice=await prepareChoicePersonalizer(db._raw,candidates,req.user?.id??null,personalize);
+        res.json(drawRecommendation(candidates, excludedIds, Math.random, choice));
     } catch (error) {
         console.error('随机推荐失败', error);
-        res.status(500).json({ error: '随机推荐加载失败，请稍后重试' });
+        res.status(error.status===409?409:500).json({ error: error.status===409?'地点已更新，请重新抽取':'随机推荐加载失败，请稍后重试' });
     }
 });
 

@@ -455,7 +455,7 @@ export default function MapUI(props) {
     useEffect(() => {
         if (!userFilter) setUserPlacesOpen(false);
     }, [userFilter]);
-    const { summary: ratingSummary, personal: personalizedRating } = ratingDisplay(placeRating.data, selectedPlace ? { ...selectedPlace, predicted_rating: null, personalized_average: null } : null);
+    const { summary: ratingSummary, personal: personalizedRating, risk: ratingRisk } = ratingDisplay(placeRating.data, selectedPlace ? { ...selectedPlace, predicted_rating: null, personalized_average: null } : null);
     const myRatingTier = placeRating.data && placeRating.data.mine ? ratingTierFor(placeRating.data.mine.score) : null;
 
     const [favPageOpen, setFavPageOpen] = useState(false);
@@ -1189,6 +1189,7 @@ export default function MapUI(props) {
             title: summaryText(ratingSummary),
             subtitle: [
                 personalizedRating ? (personalizedRating.kind === 'prediction' ? t('map:rating.native.rowSubtitlePrediction', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) }) : t('map:rating.native.rowSubtitlePersonalized', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) })) : null,
+                ratingRisk ? t('map:rating.riskLabel') : null,
                 myRatingTier ? t('map:rating.native.rowSubtitleMine', { tier: tierLabel(myRatingTier) }) : t('map:rating.native.rowSubtitleRate')
             ].filter(Boolean).join(' · '),
             symbol: ratingTier ? ratingTier.symbol : sfSymbol('thumbUp'),
@@ -1198,7 +1199,7 @@ export default function MapUI(props) {
         chromeSheet = {
             id: 'place',
             title: selectedPlace.name || t('common:label.unnamedPlace'),
-            subtitle: [moderationShort, ratingCompact, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
+            subtitle: [moderationShort, ratingCompact, ratingRisk ? t('map:rating.riskLabel') : null, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
             size: 'card',
             leading: unmarked ? undefined : { id: 'share', title: t('map:ui.share.title'), symbol: sfSymbol('share'), ...nativeIcon('cardActions.share'), keepsOpen: true },
             // 简介支持基础 Markdown：detail 是去掉标记的纯文本（旧版 App 只认它），detailMarkdown 是原生可显示的行内格式
@@ -1903,6 +1904,7 @@ export default function MapUI(props) {
                             {(personalizedRating.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personalizedRating.average) }) : t('map:rating.card.personalized', { average: formatAverage(personalizedRating.average) }))}
                         </span>
                     )}
+                    {ratingRisk && <span style={{ fontSize: 12, color: 'var(--color-warning)' }}>{t('map:rating.riskLabel')}</span>}
                 </span>
                 <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18, flexShrink: 0, color: 'var(--color-text-muted)' }}>chevron_right</span>
             </button>

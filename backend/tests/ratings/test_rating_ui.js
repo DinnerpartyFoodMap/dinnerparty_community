@@ -34,9 +34,21 @@ async function main(){
         assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM RatingRevision WHERE user_id='viewer'").get().n,revisions,'the lost response retry does not add another confirmation');
         await save();assert.notEqual(requests.at(-1).request_id,lost,'a later click starts a new confirmation');
         assert.deepEqual(db._raw.prepare("SELECT * FROM PlaceRating WHERE user_id='viewer'").get(),before);
-        assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM PlaceRatingEvent WHERE user_id='viewer'").get().n,quota);assert.deepEqual(errors,[]);await page.close();
+        assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM PlaceRatingEvent WHERE user_id='viewer'").get().n,quota);
+        // Frozen bootstrap projection: both scores and the independent risk hint render on narrow/wide layouts.
+        await page.route('**/api/ratings/places/1',async route=>{
+            const risk={active:true,status:'ready',flagged:true,probability:.8,threshold:.6,model_version:'ui-test'};
+            await route.fulfill({json:{summary:{count:9,average:1},estimate:{active:true,evidence_count:2,average:3.2,distribution:{1:0,2:0,3:2,4:0},risk},prediction:{active:true,status:'ready',average:3.6,ranking_score:3.9},mine:{score:3}}});
+        });
+        await page.reload();await page.waitForFunction(()=>JSON.parse(document.querySelector('#rating-state')?.textContent||'null')?.prediction?.active);
+        const projected=page.getByRole('dialog');
+        assert.equal(await projected.getByText('3.2',{exact:true}).count(),1);
+        assert.equal(await projected.getByText(/3\.6/).count(),1);
+        assert.equal(await projected.getByText(/模型提示这家店更可能得到低分/).count(),1);
+        assert.equal(await projected.getByText(/3\.9/).count(),0,'internal ranking score is not a displayed rating');
+        assert.deepEqual(errors,[]);await page.close();
     }
-    console.log('Rating browser tests passed on desktop and mobile: four choices, same-score confirmation, unchanged vote/quota, lost response retry and new-click identity.');
+    console.log('Rating browser tests passed on desktop and mobile: confirmation identity, two bootstrap scores, independent risk hint, hidden ranking boost.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
     if(browser)await browser.close();if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}if(vite)await vite.close();
