@@ -13,6 +13,7 @@ process.env.LOG_TO_FILE = 'false';
 const EMBEDDING_DIMENSIONS = 1024;
 const queryVector = Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => index === 0 ? 1 : 0);
 let deepseekMode = 'ok';
+let embeddingMode = 'ok';
 let deepseekContent = '{"ok":true}';
 
 const upstream = http.createServer((req, res) => {
@@ -22,7 +23,8 @@ const upstream = http.createServer((req, res) => {
         if (req.url === '/v1/embeddings') {
             const payload = JSON.parse(raw);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: payload.input.map((_, index) => ({ index, embedding: queryVector })) }));
+            res.end(JSON.stringify({ model: embeddingMode === 'wrong_model' ? 'wrong-model' : payload.model,
+                data: payload.input.map((_, index) => ({ index: embeddingMode === 'duplicate' ? 0 : index, embedding: queryVector })) }));
             return;
         }
         if (deepseekMode === 'stall') {
@@ -62,7 +64,7 @@ async function main() {
     });
 
     const { db, init, isVectorSearchAvailable } = require('../../infrastructure/database');
-    const { expandSearchIntent, completeDeepseekJson } = require('../../infrastructure/aiClients');
+    const { expandSearchIntent, completeDeepseekJson, createEmbeddings, EMBEDDING_MODEL } = require('../../infrastructure/aiClients');
     const { searchSemanticPlaces } = require('../../modules/discovery/services/semanticSearch');
 
     const warnings = [];
@@ -70,6 +72,14 @@ async function main() {
     console.warn = (...args) => { warnings.push(args.join(' ')); };
     try {
         init();
+
+        assert.deepEqual(await createEmbeddings(['one'], { expectedModel: EMBEDDING_MODEL, requireModel: true }), [queryVector]);
+        await assert.rejects(createEmbeddings(['one'], { expectedModel: 'wrong-model' }), /feature contract/);
+        embeddingMode = 'wrong_model';
+        await assert.rejects(createEmbeddings(['one'], { requireModel: true }), /model mismatch/);
+        embeddingMode = 'duplicate';
+        await assert.rejects(createEmbeddings(['one', 'two']), /indices mismatch/);
+        embeddingMode = 'ok';
 
         deepseekMode = 'stall';
         const stalledIntent = await expandSearchIntent('想吃一顿漂亮饭');

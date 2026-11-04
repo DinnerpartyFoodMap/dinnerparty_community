@@ -13,6 +13,20 @@ async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,
  await assert.rejects(profiles.syncProfile(1,model,contract,{complete}),/Malformed/);
  await profiles.syncProfile(1,model,contract,{complete:async()=>({ds:[7],rv:[4],categories:['Restaurant'],flags:[1],price_level:2})});
  assert.equal(profiles.readProfiles([{id:1}],model).get(1).review_count,1);
+ // A 4B model hash builds separate assets and leaves prior ratings/profiles intact.
+ const embeddings=require('../../modules/ratings/services/modelEmbeddings');
+ const spec={model:embeddings.MODEL,revision:embeddings.RECIPE,dimensions:1024,transport:'backend-embedding-api',pooling:'provider-l2-f32',max_characters:12000};
+ const transform={mean:new Array(1024).fill(0),components:[[1,...new Array(1023).fill(0)]],sd:[1]};
+ const nextModel={model_hash:'b'.repeat(64)},nextContract={...contract,encoders:{description:spec,review:spec},transforms:{description:transform,review:transform,risk_description:transform}};
+ let encoded=0;const nextAdapters={complete:async()=>({ds:[7],rv:[4],categories:['Restaurant'],flags:[1],price_level:2}),encode:(kind,input,s,assets)=>embeddings.encodeProfile(kind,input,s,assets,{config:{model:embeddings.MODEL,dimensions:1024},createEmbeddings:async texts=>{encoded++;return texts.map(()=>[3,4,...new Array(1022).fill(0)]);}})};
+ assert.equal(profiles.readProfiles([{id:1}],nextModel).size,0);
+ await profiles.syncProfile(1,nextModel,nextContract,nextAdapters);
+ const next=profiles.readProfiles([{id:1}],nextModel).get(1);
+ assert.equal(next.description_projected[0],Math.fround(.6));assert.equal(next.review_projected[0],Math.fround(.6));
+ assert.equal(next.risk_description_projected[0],Math.fround(.6));assert.equal(encoded,2);
+ assert.equal(profiles.readProfiles([{id:1}],model).get(1).review_count,1,'old cache remains available under its own hash');
+ await profiles.syncProfile(1,nextModel,nextContract,nextAdapters);assert.equal(encoded,2,'ready 4B assets are reused');
+ assert.equal(sql.prepare('SELECT count(*) AS n FROM PlaceRating').get().n,0,'migration never synthesizes votes');
  sql.prepare("UPDATE User SET is_banned=1 WHERE id='owner'").run();assert.equal(profiles.readProfiles([{id:1}],model).size,0,'banned author text is not reused');
  sql.prepare('UPDATE User SET is_banned=0').run();
  sql.prepare("UPDATE Place SET description='changed' WHERE id=1").run();

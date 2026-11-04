@@ -73,7 +73,10 @@ function validateEmbedding(value) {
     return vector;
 }
 
-async function createEmbeddings(inputs) {
+async function createEmbeddings(inputs, { expectedModel, requireModel = false } = {}) {
+    if (expectedModel && expectedModel !== EMBEDDING_MODEL) {
+        throw new Error('configured embedding model does not match the feature contract');
+    }
     if (!SILICONFLOW_API_KEY) {
         throw new Error('SILICONFLOW_API_KEY is not configured');
     }
@@ -90,10 +93,17 @@ async function createEmbeddings(inputs) {
         dimensions: EMBEDDING_DIMENSIONS
     }, SILICONFLOW_API_KEY, EMBEDDING_TIMEOUT_MS);
 
+    if ((requireModel || body.model) && body.model !== EMBEDDING_MODEL) {
+        throw new Error('embedding response model mismatch');
+    }
+
     const items = Array.isArray(body.data) ? body.data.slice() : [];
     items.sort((a, b) => Number(a.index) - Number(b.index));
     if (items.length !== normalizedInputs.length) {
         throw new Error('embedding response item count mismatch');
+    }
+    if (items.some((item, index) => item.index !== index)) {
+        throw new Error('embedding response indices mismatch');
     }
     return items.map((item) => validateEmbedding(item.embedding));
 }

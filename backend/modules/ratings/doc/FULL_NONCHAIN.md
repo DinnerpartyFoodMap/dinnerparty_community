@@ -16,24 +16,26 @@ Existing defaults and migrated ratings remain in scores/history. Withdrawals and
 
 ## Assets and model identity
 
-The private `research-full-nonchain-v2` directory carries the model files, manifest, feature contract, frozen profile normalization and PCA transforms, provenance and Python numeric fixtures. All inference model files and transforms are fingerprinted. Responses and pagination bind the actual model ID/hash; a same-name package with changed weights cannot silently reuse the previous identity.
+The private `research-full-nonchain-4b-v3` directory carries the model files, manifest, feature contract, profile normalization and newly fitted 4B PCA transforms, provenance and Python numeric fixtures. All inference model files and transforms are fingerprinted. Responses and pagination bind the actual model ID/hash; a same-name package with changed weights cannot silently reuse the previous identity.
 
-The source Qwen3-Embedding-0.6B checkpoint and the product's existing 4B map vectors are different assets. Full-model embeddings use revision `97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`, last-token left-padded L2 pooling and research float16 storage rounding. Description/P93 review inputs use 128 tokens. Model-specific PCA transforms remain frozen; matching dimension alone does not establish compatibility.
+Full-model embeddings now reuse the backend's existing `Qwen/Qwen3-Embedding-4B` API at 1024 dimensions. They use explicit L2 normalization then float32 rounding; real reviews are individually encoded before averaging. Descriptions use the research template with a 400-character description body, reviews are trimmed to 300 characters, and complete inputs are capped at 12000 characters. Provider tokenization/pooling replaces the old local 128-token/float16 path. The recipe ID `siliconflow-4b-1024-l2-f32-v1` is our preprocessing version, not a provider-pinned checkpoint. Hosted numerical variation/upstream changes remain possible; changing providers/models requires re-encoding and retraining. Map/six-axis vectors keep their existing 4B model, but the map text template differs and those cached vectors are not reused as rating features.
+
+Re-encoding uses the same previously seen Google development inputs: 58,723 descriptions and 1,166,202 eligible review records (1,156,532 unique texts), yielding mean review vectors for 48,136 restaurants. No production or confirmation/sealed data is introduced.
 
 `PlaceModelProfile` stores versioned derived assets and input hashes. The background worker processes visible places, retries malformed/failed extraction and rejects writes when content changes during a request. It reads genuine comments for review features. Ranking requests read current matching assets and do not call an LLM or encoder. Original-recipe mean imputation is explicit in the feature contract; raw missing status is retained.
 
 ## Deployment
 
-Paired private implementation and frozen package: private `main` commit `1690eb0`.
+Paired private implementation/package: private `main` commit `2d3ed8c`.
 
-Deploy the paired private Node model package before the backend. Configure the auxiliary frozen encoder on the private network using the private repository's `workers/README.md`:
+Deploy the paired private Node model package, including `research-full-nonchain-4b-v3`, before the backend. Remove an obsolete explicit `RECOMMENDATION_MODEL_DIR`, or point it to the 4B package. See the private repository's `docs/UNIFIED_4B.md`:
 
-- `MODEL_FEATURE_EMBEDDING_URL`: complete internal `/v1/embeddings` endpoint.
-- `MODEL_FEATURE_EMBEDDING_TOKEN`: private bearer token, matching the encoder's `FEATURE_EMBEDDING_TOKEN`.
+- Reuse existing `SILICONFLOW_API_KEY`, `SILICONFLOW_BASE_URL` and `EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B`.
+- `MODEL_FEATURE_EMBEDDING_URL/TOKEN` are obsolete and ignored; no auxiliary encoder, Python/Torch image or Hugging Face cache is required in production.
 - Existing DeepSeek configuration supplies asynchronous DS/RV profile extraction. No credentials or source user IDs enter the prompt.
 - `MODEL_PROFILE_MODE=off` disables profile extraction. Setting all four rating/ranking modes to `off` also stops background extraction during rollback.
 
-No bulk production backfill or deployment is performed by this code change. Without configured profile/encoder services, the contract's missing-feature behavior applies while the existing map aggregate fallback is preserved. Operational validation must check how many current places have ready profiles and matching embeddings; model availability alone does not mean all inputs are populated.
+No production database is accessed or deployed by this code change. Background profiles use the new model hash, so old 0.6B assets cannot be mistaken for 4B. While new assets warm or API calls fail, the contract's missing-feature behavior applies and existing map aggregate fallback is preserved. Operational validation must check ready profile/embedding coverage; model availability alone does not mean all inputs are populated. Frontend and iOS display contracts are unchanged and do not require rebuilding for this encoder migration.
 
 ## Four-level adaptation
 
@@ -43,12 +45,14 @@ Risk thresholds are calibrated on already-seen development data and do not guara
 
 ## Frozen development result and verification
 
-The full non-chain ranker uses 254 features and 300 LambdaRank trees, trained on 2,421,171 candidate rows (131,390 groups) and evaluated on 2,986,323 rows (161,694 groups). Target-micro first-pick hit with deterministic ascending-ID tie break is 21.9421%; the identical original benchmark identities give 18.0236% without history and 21.9551% for the original full feature reference. This is not the original user-macro/tie-credit metric and must not be compared directly to the 23.24% confirmation headline.
+The full non-chain ranker uses 254 features and 300 LambdaRank trees, trained on 2,421,171 candidate rows (131,390 groups) and evaluated on 2,986,323 rows (161,694 groups). The 4B target-micro first-pick hit is 21.9860%, versus the frozen 0.6B result 21.9421%; every evaluation target/user/candidate/label and row order is checked equal. This is a small development-set difference, not an established product gain. Identical original benchmark identities give 18.0236% without history and 21.9551% for the old full-feature reference. This is not the original user-macro/tie-credit metric and must not be compared directly to the 23.24% confirmation headline.
 
-Personal-rating training uses 89,492 examples across 12 quarters and 11,773 development-evaluation examples; native-five-star per-user MSE is 1.02938. Public P98 correction is a separate local fit, not a claim that this personal-rating metric measures the displayed public score.
+Personal-rating training uses 89,492 examples across 12 quarters and 11,773 development-evaluation examples; 4B native-five-star per-user MSE is 1.02630 versus 1.02938 for 0.6B on the same samples. Public P98 correction is a separate local fit, not a claim that this personal-rating metric measures the displayed public score.
 
-Matched development risk controls select content without chain features for prefixes 1 and 3; at prefix 5, the leniency-only model has stronger matched-threshold recall and is selected. This is post-hoc development selection, and the old requirement of content improvement at all tiers is not reproduced. Selected operating-point results are in the manifest's `deployed_risk_metrics`; original all-content metrics remain separately recorded.
+The risk recipe is frozen from v2 before the 4B evaluation: content without chain features at prefixes 1 and 3, leniency-only at prefix 5. The 4B AUCs are 0.78632/0.80650/0.84094; recall at approximately 5% development FPR is 0.26648/0.34808/0.39809. Risk does not improve consistently. Original recipe selection was post-hoc development selection; neither old nor new thresholds imply an independent future guarantee.
 
-Verification: actual Python/Node model predictions, all 254 original P93 synthetic-feature columns, P86 prefix/rater/content golden features, synthetic v2 authenticated HTTP integration and actual frozen-pack product regressions. Frozen encoder checks are separate from numerical tree parity because CPU/GPU arithmetic can differ. No production backfill, container build, Xcode build or server rollout is claimed.
+Verification covers actual Python/Node model predictions, all 254 original P93 synthetic-feature columns, P86 prefix/rater/content golden features, authenticated HTTP integration and actual frozen-pack product regressions. Hosted encoder compatibility is checked separately from deterministic numerical tree parity. No container build, Xcode build or server rollout is claimed.
+
+The completed 4B verification passes 71/71 private Node tests with zero skips, 63/63 paired backend test files, desktop/mobile browser regressions, standalone five-model own-data retraining and the encoding cache/protocol tests. The frozen manifest hash is `efc045a0254dc04c522e8b9414d18ee78370940b8b80e13db5e7a5485c7ee869`.
 
 The private `scripts/train_full_feature_tables.py` provides a standalone own-data retraining entry. It uses only a frozen base feature contract and ten prepared rating/choice/risk-tier fit/evaluation Parquet tables, fits five new models and emits a replacement schema2 package. The original research data directory is not required. See private `docs/FULL_NONCHAIN_TRAINING.md` for the explicit label-scale flag and table schema. Preparing genuine exposure negatives and time-correct future labels remains separate from fitting the models.

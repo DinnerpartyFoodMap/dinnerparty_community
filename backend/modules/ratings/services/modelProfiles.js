@@ -3,6 +3,7 @@
 const {createHash}=require('node:crypto');
 const {db}=require('../../../infrastructure/database');
 const ai=require('../../../infrastructure/aiClients');
+const {clip}=require('./modelEmbeddings');
 const {markdownToPlainText}=require('../../places/services/markdownText');
 const SCHEMA_VERSION=1;
 function initModelProfileSchema(database=db._raw){
@@ -20,9 +21,9 @@ function inputFor(placeId,database=db._raw){
  const comments=database.prepare(`SELECT c.id,c.content,c.time FROM Comment c JOIN User u ON u.id=c.user_id
  WHERE c.place_id=? AND COALESCE(u.is_banned,0)=0 AND length(trim(c.content))>=20 AND julianday(c.time)<=julianday('now')
  ORDER BY length(c.content) DESC,c.id ASC LIMIT 30`).all(placeId)
- .map(c=>({...c,content:markdownToPlainText(c.content).trim().slice(0,300)})).filter(c=>c.content.length>=20)
+ .map(c=>({...c,content:clip(markdownToPlainText(c.content).trim(),300)})).filter(c=>Array.from(c.content).length>=20)
  .sort((a,b)=>String(a.time).localeCompare(String(b.time))||a.id-b.id);
- return {place:{...place,description:markdownToPlainText(place.description||'').slice(0,400)},reviews:comments};
+ return {place:{...place,description:clip(markdownToPlainText(place.description||''),400)},reviews:comments};
 }
 function inputHash(input){return createHash('sha256').update(JSON.stringify([SCHEMA_VERSION,input])).digest('hex');}
 function vector(value,n,max=10){return Array.isArray(value)&&value.length===n&&value.every(v=>Number.isFinite(v)&&v>=0&&v<=max);}
@@ -60,8 +61,8 @@ async function syncProfile(placeId,model,contract,{database=db._raw,complete=ai.
  const args=prompt(input,schema);
  try{
   const assets=saved||parseAnswer(await complete({...args,temperature:0,maxTokens:2000}),schema,input.reviews.length>0);
-  // Existing map vectors have a different encoder. Only a dedicated exact-encoder
-  // adapter may populate these assets; absence is represented explicitly.
+  // Map vectors use a different input template. Re-encode with the shared 4B
+  // client under this model's preprocessing contract; never reuse map vectors.
   assets.description_embedding=null;assets.review_embedding=null;
   if(encode){
    if(contract.encoders?.description)assets.description_embedding=await encode('description',input,contract.encoders.description,assets);
