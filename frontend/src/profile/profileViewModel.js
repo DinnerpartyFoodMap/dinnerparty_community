@@ -1,6 +1,6 @@
 // 住民主页的原生视图模型：把后端 profile 整理成 SwiftUI 可直接显示的文案与数值。
 // 六轴雷达、小组件与屏蔽状态都沿用网页规则，文案仍走 i18n；原生不访问后端。
-import { axisLabel, normalizeTaste, selfLevelLabel, axisValueWord, axisEvidenceText } from './tasteAxes.js';
+import { axisLabel, normalizeTaste, selfLevelLabel, axisValueWord } from './tasteAxes.js';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating.js';
 import { imageThumbnailUrl } from '../platform/runtimeConfig.js';
 import { t } from '../i18n/index.js';
@@ -89,10 +89,8 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, avat
         key: axis.key,
         label: axisLabel(axis.key),
         value: axis.value,
-        estimated: axis.basis === 'embedding',
         selfLevel: axis.selfLevel,
         description: axisValueWord(axis),
-        evidence: axisEvidenceText(axis),
         accessible: t('profile:taste.axisAria', { axis: axisLabel(axis.key), value: axisValueWord(axis) })
     }));
     const name = user.username || t('profile:anonymous');

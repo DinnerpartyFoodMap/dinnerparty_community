@@ -46,11 +46,12 @@ async function main() {
         if (source === 'user') require('../../modules/ratings/services/ratingHistory').appendRatingRevision({userId:users[who],placeId:place,before:null,after:{score},action:'rate',origin:'active'});
     };
     const axis = (list, key) => list.find((item) => item.key === key);
-    // 2. 创建与迁移时补的评价不算偏好：只有这些评价的住民，六轴都是“待了解”
+    // 2. 已保存的创建/迁移默认评价继续参与偏好，不丢弃旧数据。
     rate('creator', hotpot, 4, 'create');
     rate('creator', cafe, 4, 'migration');
-    assert.ok((await taste.userTasteAxes(users.creator)).every((item) => item.value === null && item.basis === null));
-    assert.ok((await taste.userTasteAxes(users.creator)).every(item => item.unavailable_reason === 'no_eligible_evidence'));
+    assert.equal(axis(await taste.userTasteAxes(users.creator),'drinks').basis,'evidence');
+    assert.equal(axis(await taste.userTasteAxes(users.creator),'drinks').store_count,1);
+    assert.equal(axis(await taste.userTasteAxes(users.creator),'hotpotBbq').basis,'evidence');
     require('../../modules/ratings/services/ratingHistory').appendRatingRevision({userId:users.creator,placeId:hotpot,before:null,after:{score:4},action:'create',origin:'creation_explicit'});
     assert.equal(axis(await taste.userTasteAxes(users.creator),'hotpotBbq').basis,'evidence','explicit creation vote qualifies');
     // 3. 自己的评价是主要依据；同一家店只算一份证据；一次好评向全站水平收缩，不会满分

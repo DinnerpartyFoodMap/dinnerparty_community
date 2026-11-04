@@ -1,9 +1,11 @@
 const assert=require('node:assert/strict');
 const {classifyRatingEvidence}=require('../../modules/ratings/services/ratingSourcePolicy');
-assert.equal(classifyRatingEvidence({source:'migration'},[{action:'rate'}]).eligible,false);
+assert.equal(classifyRatingEvidence({source:'migration'},[]).eligible,true);
+assert.equal(classifyRatingEvidence({source:'migration',is_banned:1},[]).eligible,false);
+assert.equal(classifyRatingEvidence({source:'create'},[]).eligible,true);
 assert.equal(classifyRatingEvidence({source:'create'},[{action:'create',origin:'creation_explicit'}]).eligible,true);
 assert.equal(classifyRatingEvidence({source:'user'},[{action:'rate'}]).eligible,true);
-assert.equal(classifyRatingEvidence({source:'user'},[{action:'baseline_import'}]).eligible,false);
+assert.equal(classifyRatingEvidence({source:'user'},[{action:'baseline_import'}]).eligible,true);
 assert.equal(classifyRatingEvidence({source:'user'},[{action:'rate'},{action:'confirm'}]).eligible,true);
 assert.equal(classifyRatingEvidence({source:'user',is_banned:1},[{action:'rate'}]).eligible,false);
 assert.equal(classifyRatingEvidence({source:'user'},[{action:'rate'},{action:'withdraw'},{action:'baseline_import'}]).eligible,false,'withdrawn explicit history cannot qualify an unknown current vote');

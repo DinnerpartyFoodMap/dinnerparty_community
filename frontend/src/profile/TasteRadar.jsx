@@ -3,7 +3,7 @@ import { axisLabel, axisValueWord } from './tasteAxes';
 import { t } from '../i18n/index.js';
 
 // 六类餐饮偏好的雷达。每轴独立：有依据的轴画一个点，相邻两轴都有值时用粗线连起来；
-// 未知轴不画点；仅在两个相邻已知轴与中心围出的区域填色，避免给未知轴编造数值。估算轴用空心点区分。
+// 未知轴不画点；仅在两个相邻已知轴与中心围出的区域填色。所有已知轴使用相同点样式。
 // 轴值描述保留在读屏标签中，画面只显示类别名。
 const SIZE = 300;
 const CENTER = SIZE / 2;
@@ -46,10 +46,9 @@ export default function TasteRadar({ axes, selected, onSelect, accent = 'var(--t
             {axes.map((axis, index) => {
                 if (axis.value === null) return null;
                 const [x, y] = point(index, axis.value);
-                const estimated = axis.basis === 'embedding';
                 return (
                     <g key={`value-${axis.key}`}>
-                        <circle cx={x} cy={y} r={3.5} fill={estimated ? 'var(--color-bg-surface)' : accent} stroke={accent} strokeWidth={2} />
+                        <circle cx={x} cy={y} r={3.5} fill={accent} stroke={accent} strokeWidth={2} />
                     </g>
                 );
             })}

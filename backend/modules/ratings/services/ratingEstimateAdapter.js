@@ -3,10 +3,10 @@ const client=require('../../../infrastructure/numericAlgorithmClient');
 const snapshot=require('./ratingSnapshot');
 const {classifyRatingEvidence}=require('./ratingSourcePolicy');
 const {createFeatures}=require('./bootstrapFeatures');
-const CONFIG=Object.freeze({config_version:'neutral-shadow-v1',source_policy_version:'explicit-revisions-v1',estimator_config:{method:'equal_weight_shrinkage',m:3,config_hash:'neutral-shadow-m3-v1'}});
+const CONFIG=Object.freeze({config_version:'neutral-shadow-v1',source_policy_version:'retained-ratings-v2',estimator_config:{method:'equal_weight_shrinkage',m:3,config_hash:'neutral-shadow-m3-v1'}});
 function mode(name){const value=process.env[name];return value==='off'?'off':value==='shadow'?'shadow':'active';}
 function modes(){return {estimate:mode('RATING_ESTIMATE_MODE'),prediction:mode('RATING_PREDICTION_MODE'),rank:mode('RATING_LIST_RANK_MODE'),random:mode('RATING_RANDOM_RANK_MODE')};}
-async function configuration(){const model=await client.capabilities();return model?{config_version:model.model_id,source_policy_version:'explicit-revisions-v1',estimator_config:{method:'research_bootstrap',config_hash:model.model_hash},model}:null;}
+async function configuration(){const model=await client.capabilities();return model?{config_version:model.model_id,source_policy_version:'retained-ratings-v2',estimator_config:{method:'research_bootstrap',config_hash:model.model_hash},model}:null;}
 function qualified(ids,database=db._raw){
  const result=[];
  for(let offset=0;offset<ids.length;offset+=200){const batch=ids.slice(offset,offset+200),marks=batch.map(()=>'?').join(',');

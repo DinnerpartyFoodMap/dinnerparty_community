@@ -153,9 +153,7 @@ final class NativeProfileModel: ObservableObject {
         let label: String
         let accessible: String
         let description: String
-        let evidence: String
         let value: Double?
-        let estimated: Bool
         let selfLevel: Int?
         var id: String { key }
     }
@@ -302,9 +300,7 @@ final class NativeProfileModel: ObservableObject {
                 label: item["label"] as? String ?? key,
                 accessible: item["accessible"] as? String ?? (item["label"] as? String ?? key),
                 description: item["description"] as? String ?? "",
-                evidence: item["evidence"] as? String ?? "",
                 value: value,
-                estimated: (item["estimated"] as? Bool) ?? false,
                 selfLevel: level.flatMap { (1...4).contains($0) ? $0 : nil }
             )
         }
@@ -604,9 +600,6 @@ private struct NativeProfileView: View {
                         .font(.subheadline.weight(.semibold))
                     Text(axis.description)
                         .font(.subheadline)
-                    Text(axis.evidence)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     if model.view.canEditTaste {
                     Text(model.text("selfTitle", "自己填"))
                         .font(.caption2)
@@ -879,18 +872,14 @@ private struct NativeTasteRadar: View {
             line.addLine(to: secondPoint)
             context.stroke(line, with: .color(accent.opacity(0.65)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
         }
-        // 已知轴的点；估算轴用空心点
+        // 所有已知轴使用相同样式
         for (index, axis) in axes.enumerated() {
             guard let value = axis.value else { continue }
             let position = point(index, CGFloat(value), center: center, scale: scale)
             let rect = CGRect(x: position.x - 3.5 * scale, y: position.y - 3.5 * scale,
                               width: 7 * scale, height: 7 * scale)
             let path = Path(ellipseIn: rect)
-            if axis.estimated {
-                context.fill(path, with: .color(Color(uiColor: .systemBackground)))
-            } else {
-                context.fill(path, with: .color(accent))
-            }
+            context.fill(path, with: .color(accent))
             context.stroke(path, with: .color(accent), lineWidth: 2 * scale)
         }
     }

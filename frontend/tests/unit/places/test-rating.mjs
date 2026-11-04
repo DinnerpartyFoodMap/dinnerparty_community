@@ -73,6 +73,9 @@ assert.deepEqual(ratingDisplay(raw).summary.distribution,{3:2});
 assert.equal(ratingDisplay(raw).personal.kind,'prediction');
 assert.equal(ratingDisplay({...raw,prediction:{active:false,average:4}}).personal.kind,'legacy');
 assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,active:false}}).summary.average,1);
+const retainedPlace={rating_count:1,rating_average:3,rating_estimate:{active:true,evidence_count:0,average:null}};
+assert.deepEqual(ratingDisplay(null,retainedPlace).summary,{count:1,average:3},'map keeps stored default ratings when an estimate has no qualifying votes');
+assert.deepEqual(ratingDisplay({summary:{count:1,average:3},estimate:retainedPlace.rating_estimate}).summary,{count:1,average:3},'detail panel preserves the same fallback');
 assert.equal(isAvoidedPlace({rating_count:9,rating_average:1,rating_estimate:raw.estimate}),true);
 assert.equal(ratingDisplay({...raw,prediction:{active:true,average:null,status:'insufficient'}}).personal,null);
 

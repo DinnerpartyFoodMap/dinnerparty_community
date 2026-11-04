@@ -5,7 +5,7 @@ import PageHeading from '../components/layout/PageHeading';
 import { useTips } from '../components/feedback/Tips';
 import { useConfirm } from '../components/feedback/Confirm';
 import TasteRadar from './TasteRadar';
-import { axisLabel, normalizeTaste, SELF_LEVELS, selfLevelLabel, axisValueWord, axisEvidenceText } from './tasteAxes';
+import { axisLabel, normalizeTaste, SELF_LEVELS, selfLevelLabel, axisValueWord } from './tasteAxes';
 import { fetchUserProfile, saveProfileWidgets, saveTasteLevel, setUserBlocked } from '../api/client';
 import { userReportPrefill } from '../feedback/feedbackTypes';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating';
@@ -138,9 +138,8 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                 <section className="fm-profile__axis" aria-live="polite">
                     <div className="fm-profile__axis-title">
                         <strong>{axisLabel(axis.key)}</strong>
-                        <span>{axisValueWord(axis)}{axis.basis === 'embedding' ? ` · ${t('profile:taste.estimated')}` : ''}</span>
+                        <span>{axisValueWord(axis)}</span>
                     </div>
-                    <p>{axisEvidenceText(axis)}</p>
                     {self && token && <div className="fm-profile__self">
                         <div className="fm-profile__self-label">{t('profile:taste.self.title')}</div>
                         <div role="radiogroup" aria-label={t('profile:taste.self.title')} className="fm-profile__self-options">

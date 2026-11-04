@@ -44,8 +44,8 @@
       "dislike": "不太喜欢"
     },
     "self": {
-      "title": "自己填",
-      "auto": "按评价自动推断",
+      "title": "调整喜好",
+      "auto": "自动",
       "level4": "很喜欢",
       "level3": "喜欢",
       "level2": "一般",

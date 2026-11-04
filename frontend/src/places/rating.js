@@ -75,7 +75,7 @@ export function ratingDisplay(data, place) {
     const prediction = data ? data.prediction : place?.predicted_rating;
     const valid = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 1 && Number(value) <= 4;
     const legacy = data?.summary || summaryFromPlace(place);
-    const summary = estimate?.active === true
+    const summary = estimate?.active === true && Number(estimate.evidence_count) > 0 && valid(estimate.average)
         ? { count: Number(estimate.evidence_count) || 0, average: valid(estimate.average) ? Number(estimate.average) : null, distribution: estimate.distribution }
         : legacy;
     const oldPersonal = data?.personalized || (valid(place?.personalized_average) ? { average: Number(place.personalized_average) } : null);

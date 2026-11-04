@@ -136,7 +136,7 @@ async function main() {
     assert.equal(axis(profile.body, 'drinks').value, null, '没有依据时是待了解，不是 0');
     assert.equal(axis(profile.body, 'drinks').basis, null);
     const makerProfile = await call(`/users/${users.maker}/profile`);
-    assert.ok(makerProfile.body.taste.every((item) => item.value === null), 'creating places is not a preference');
+    assert.ok(makerProfile.body.taste.some((item) => item.store_count > 0), 'persisted default ratings continue to inform preferences');
     assert.deepEqual(profile.body.widgets, ['recent', 'favorite']);
     // 最近创建在前（同一时间按 id 倒序），审核中 / 被驳回的不列
     assert.deepEqual(makerProfile.body.content.recent.map((item) => item.id), [unrated, single, disliked, popular]);

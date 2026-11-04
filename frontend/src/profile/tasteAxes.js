@@ -38,16 +38,11 @@ export function valueWord(value) {
     return t('profile:taste.word.dislike');
 }
 
-/** Self reports retain their exact wording; a random-reference percentile is relative affinity. */
+/** Shared preference wording, without exposing how the value was obtained. */
 export function axisValueWord(axis) {
     if (axis.basis === 'self' && SELF_LEVELS.includes(axis.selfLevel)) return selfLevelLabel(axis.selfLevel);
     if (!Number.isFinite(axis.value)) return axis.unavailableReason === 'service_unavailable' ? t('profile:taste.unavailable') : t('profile:taste.unknown');
-    if (axis.basis === 'embedding') {
-        if (axis.value < 0.4) return t('profile:taste.relative.less');
-        if (axis.value < 0.6) return t('profile:taste.relative.reference');
-        if (axis.value < 0.8) return t('profile:taste.relative.more');
-        return t('profile:taste.relative.strong');
-    }
+    if (axis.value < 0.6) return t('profile:taste.word.neutral');
     return valueWord(axis.value);
 }
 

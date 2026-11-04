@@ -16,6 +16,9 @@ async function main(){
  appendRatingRevision({userId:user_id,placeId:place_id,before:null,after:{score},action:'rate',origin:'active'});
  }
  const adapter=require('../../modules/ratings/services/ratingEstimateAdapter');
+ db._raw.prepare("INSERT INTO Place(id,name,creator_id,moderation_status) VALUES(3,'retained legacy','a','visible')").run();
+ db._raw.prepare("INSERT INTO PlaceRating(place_id,user_id,score,source,created_at,updated_at,weight) VALUES(3,'b',3,'migration',0,0,1)").run();
+ assert.equal((await adapter.ratingViews([3])).estimates[0].evidence_count,1,'persisted migration defaults remain in model inputs');
  const r=await adapter.ratingViews([1,2],'a');
  assert.equal(r.estimates.length,2);assert.equal(r.estimates[0].evidence_count,1);
  assert.equal(r.estimates[0].active,false);assert.equal(r.predictions.length,2);

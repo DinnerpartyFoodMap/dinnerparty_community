@@ -4,6 +4,8 @@ The private Node service retains the legacy operations and adds `ratingestimate`
 
 Bootstrap package implementation: private `main` commit `5a59ce7`. This repository contains the backend/UI integration; the private repository contains the models and offline trainer.
 
+Current source policy `retained-ratings-v2` retains persisted migration and creation defaults in public estimates and preference histories. It preserves withdrawals and ban exclusions. Map/detail display keeps the existing aggregate when an active estimate has no usable score, so model eligibility changes do not erase existing ratings from the UI. Six-axis presentation uses one point style and shared preference wording, without source badges or inference explanations.
+
 ## Current switches
 
 - The paired private service packages `models/research-bootstrap-v1`: actual trained rating, low-tail risk, and choice trees. The backend activates a valid advertised immutable bundle by default. `RATING_ESTIMATE_MODE`, `RATING_PREDICTION_MODE`, `RATING_LIST_RANK_MODE`, and `RATING_RANDOM_RANK_MODE` support `active`, `shadow`, and `off`; explicit `off` restores the corresponding legacy path. Missing or incompatible capabilities retain the legacy path. A bootstrap result is published only with the matching model version/hash. A corrupt package disables bootstrap capability while preserving legacy private operations.
