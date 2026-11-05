@@ -36,8 +36,8 @@
     "noMatchEnterToCreate": "没有匹配的分类，按回车创建"
   },
   "comments": {
-    "title": "评论",
-    "empty": "还没有评论",
+    "title": "修改记录",
+    "empty": "暂无修改记录",
     "anonymous": "匿名",
     "placeholder": "写下你的评论…",
     "loginRequired": "请核验通行凭证后发表评论",
@@ -492,7 +492,7 @@
     "editPendingReview": "这次修改里有需要管理员审核的内容，已提交审核，通过后才会生效",
     "requestFailed": "提交申请失败：{{message}}",
     "commentBanned": "通行凭证已受限，无法发表评论",
-    "commentsLoadFailed": "加载评论失败",
+    "commentsLoadFailed": "加载修改记录失败",
     "commentPosted": "已发布",
     "commentFailed": "发布失败：{{message}}",
     "loadFailed": "地图加载失败",
@@ -643,11 +643,11 @@
     "rejectedBadge": "未通过"
   },
   "editEvidence": {
-    "history": "评论与修改记录",
+    "history": "修改记录",
     "noExperience": "仅纠错，没有实际体验",
     "ratingRequired": "请先选择你的评价",
-    "preview": "评论预览",
-    "notice": "修改生效后，以下内容将以你的名义发布为评论。",
+    "preview": "修改记录预览",
+    "notice": "修改生效后，将以你的名义保存修改记录，仅管理员可查看。",
     "noChanges": "暂无修改",
     "empty": "（空）",
     "imagesUpdated": "已更新",

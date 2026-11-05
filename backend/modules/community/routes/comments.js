@@ -2,9 +2,11 @@ const express = require("express");
 const router = express.Router();
 const { db } = require("../../../infrastructure/database");
 const { requireAuth } = require("../../accounts/middleware/auth");
+const requireAdmin = require("../../admin/middleware/adminAuth");
 
-// 获取某地点的评论
-router.get("/place/:placeId", (req, res) => {
+// 地点修改记录仅供管理员查看，包括不带 kind 的旧客户端请求。
+router.get("/place/:placeId", requireAuth, requireAdmin("manage_comments"), (req, res) => {
+    res.set('Cache-Control', 'private, no-store');
     const { placeId } = req.params;
     db.all("SELECT c.*,u.username AS username FROM Comment c JOIN Place p ON p.id=c.place_id LEFT JOIN User u ON u.id=c.user_id WHERE c.place_id = ? AND p.moderation_status='visible'"+(req.query.kind==='edit'?" AND c.place_revision_id IS NOT NULL":"")+" ORDER BY c.time DESC,c.id DESC", [placeId], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });

@@ -1272,7 +1272,7 @@ export default function MapUI(props) {
                     rows: [
                         moderationStatus && { id: 'moderation', title: moderationShort, subtitle: moderationNote, symbol: sfSymbol('hidden'), tone: 'warning', disabled: true },
                         diaryCount > 0 && { id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: sfSymbol('diaries'), keepsOpen: true },
-                        !unmarked && { id: 'comments', title: t('map:editEvidence.history'), symbol: sfSymbol('comments'), keepsOpen: true },
+                        !unmarked && isAdmin && { id: 'comments', title: t('map:editEvidence.history'), symbol: sfSymbol('comments'), keepsOpen: true },
                         lastModifier?.clickable && {
                             id: 'modifier',
                             title: t('map:ui.lastModified', { modifier: lastModifier.name }),
@@ -1397,7 +1397,7 @@ export default function MapUI(props) {
                     break;
                 case 'create': openCreateFromPoi?.(); break;
                 case 'edit': openManagePanel?.(); break;
-                case 'comments': openCommentPanel?.(); break;
+                case 'comments': if (isAdmin) openCommentPanel?.(); break;
                 case 'diaries': openDiaries(); break;
                 case 'rate':
                 case 'rating': openRating(); break;
@@ -1955,7 +1955,7 @@ export default function MapUI(props) {
         { id: 'details', title: t('map:ui.card.details'), icon: 'info', slot: 'cardActions.details', run: () => { setDetailFocus(null); setDetailOpen(true); } },
         { id: 'share', title: t('map:ui.share.title'), icon: 'share', slot: 'cardActions.share', run: () => setShareOpen(true) },
         { id: 'edit', title: t('map:ui.edit'), icon: 'edit', slot: 'cardActions.edit', run: () => openManagePanel?.() },
-        { id: 'comments', title:t('map:editEvidence.history'),icon:'history',slot:'cardActions.details',run:()=>openCommentPanel?.() },
+        isAdmin && { id: 'comments', title: t('map:editEvidence.history'), icon: 'history', slot: 'cardActions.details', run: () => openCommentPanel?.() },
         canReportPlace && { id: 'report', title: t('map:ui.report'), icon: 'flag', slot: 'cardActions.report', run: reportPlace }
     ].filter(Boolean);
 

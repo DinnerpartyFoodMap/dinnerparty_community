@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import MapView from "../../src/map/MapView";
 import { MotionProvider } from "../../src/motion/MotionProvider";
@@ -62,8 +62,10 @@ window.AMap = { Map: TestMap, Marker, LngLat, Pixel: class {}, plugin: (_name, c
 
 function Harness() {
     const contentRef = useOverlayContentRef();
+    const [viewer, setViewer] = useState({ token: window.__TEST_TOKEN, isAdmin: !!window.__TEST_ADMIN });
+    window.__TEST_SET_VIEWER = setViewer;
     return <main ref={contentRef} style={{ position: 'fixed', inset: 0 }}>
-        <MapView backendUrl={location.origin} token={window.__TEST_TOKEN} isAuthenticated mapPageActive
+        <MapView backendUrl={location.origin} token={viewer.token} isAuthenticated={!!viewer.token} isAdmin={viewer.isAdmin} mapPageActive
             initialCenter={{ lng: 120, lat: 30 }} onRequireAuth={() => { throw new Error('Unexpected auth request'); }}
             // Opt-in: a test that sets window.__TEST_FEEDBACK = [] records the feedback prefills instead of opening the form
             onOpenFeedback={window.__TEST_FEEDBACK ? (prefill) => window.__TEST_FEEDBACK.push(prefill) : undefined} />

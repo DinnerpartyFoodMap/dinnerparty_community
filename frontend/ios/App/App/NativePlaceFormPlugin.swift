@@ -611,8 +611,8 @@ private struct NativePlaceFormView: View {
                         ratingSection
                     }
                     if !model.isCreate {
-                        formSection(model.text("editPreview", "评论预览")) {
-                            Text(model.text("editNotice", "修改生效后，以下内容将以你的名义发布为评论。")).font(.caption).foregroundStyle(.secondary)
+                        formSection(model.text("editPreview", "修改记录预览")) {
+                            Text(model.text("editNotice", "修改生效后，将以你的名义保存修改记录，仅管理员可查看。")).font(.caption).foregroundStyle(.secondary)
                             Text(model.editPreview).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }

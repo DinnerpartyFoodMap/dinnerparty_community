@@ -1,18 +1,16 @@
 import React from 'react';
-import Button from "../../components/primitives/Button";
 import IconButton from "../../components/primitives/IconButton";
-import TextArea from "../../components/forms/TextArea";
 import ScrollableView from "../../components/layout/ScrollableView";
 import ResponsivePanel from "../../components/overlay/ResponsivePanel";
 import { t } from "../../i18n/index.js";
 
-// 评论：宽屏为右侧面板，窄屏为底部面板
+// 管理员修改记录：宽屏为右侧面板，窄屏为底部面板，只读。
 export default function CommentPanel({ open = true, place, onClose, onRefresh, loading, ...rest }) {
     return (
         <ResponsivePanel
             open={open && !!place}
             onClose={onClose}
-            title={place ? place.name : t('map:comments.title')}
+            title={t('map:editEvidence.history')}
             kind="comments"
             desktop="side-right"
             mobile="sheet"
@@ -30,16 +28,11 @@ function CommentBody({
     place,
     comments = [],
     loading,
-    message,
-    newComment,
-    setNewComment,
-    submitting,
-    onSubmit,
-    canPost,
-    readOnly=false
+    message
 }) {
     return (
         <div>
+            <div style={{ marginBottom: 8, fontWeight: 600 }}>{place.name}</div>
             <ScrollableView style={{ maxHeight: 320, overflowY: 'auto', paddingTop: 4 }}>
                 {loading ? (
                     <div>{t('common:status.loading')}</div>
@@ -60,12 +53,6 @@ function CommentBody({
             </ScrollableView>
 
             {message && <div role="alert" style={{ color: 'var(--color-danger)', marginTop:8 }}>{message}</div>}
-            {!readOnly&&<div style={{ marginTop: 8 }}>
-                <TextArea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder={canPost ? t('map:comments.placeholder') : t('map:comments.loginRequired')} disabled={!canPost} style={{ width: '100%', minHeight: 80, padding: 8, boxSizing: 'border-box' }} />
-                <div style={{ marginTop: 8, textAlign: 'right' }}>
-                    <Button onClick={onSubmit} disabled={!canPost || submitting || !newComment || !newComment.trim()} style={{ marginRight: 8 }}>{t('map:comments.post')}</Button>
-                </div>
-            </div>}
         </div>
     );
 }

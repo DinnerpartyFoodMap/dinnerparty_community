@@ -154,8 +154,15 @@ export default function MapView({
     const [commentsList, setCommentsList] = useState([]);
     const [commentsLoading, setCommentsLoading] = useState(false);
     const [commentMessage, setCommentMessage] = useState("");
-    const [newComment, setNewComment] = useState("");
-    const [commentSubmitting, setCommentSubmitting] = useState(false);
+    const commentRequestRef = useRef(0);
+    useEffect(() => {
+        commentRequestRef.current += 1;
+        setCommentOpen(false);
+        setCommentsList([]);
+        setCommentMessage("");
+        setCommentsLoading(false);
+        return () => { commentRequestRef.current += 1; };
+    }, [isAdmin, token, selectedPlace?.id]);
     const selectedPlaceRef = useRef(null);
     const manageOpenRef = useRef(false);
     const commentOpenRef = useRef(false);
@@ -1843,7 +1850,7 @@ export default function MapView({
     const handleSubmitModifyRequest = () => requestModifyWith();
 
     const openCommentPanel = async () => {
-        if (!selectedPlace) return;
+        if (!selectedPlace || !isAdmin || !token) return;
         setCommentMessage("");
         clearSearchState();
         setCommentOpen(true);
@@ -1851,56 +1858,30 @@ export default function MapView({
     };
 
     const closeCommentPanel = () => {
+        commentRequestRef.current += 1;
         setCommentOpen(false);
         setCommentsList([]);
-        setNewComment("");
         setCommentMessage("");
+        setCommentsLoading(false);
     };
 
     const fetchComments = async () => {
-        if (!selectedPlace) return;
+        if (!selectedPlace || !isAdmin || !token) return;
+        const requestId = ++commentRequestRef.current;
         setCommentsLoading(true);
         setCommentMessage("");
         try {
-            const res = await fetch(`${backendUrl}/comments/place/${selectedPlace.id}?kind=edit`);
+            const res = await fetch(`${backendUrl}/comments/place/${selectedPlace.id}?kind=edit`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             if (!res.ok) throw new Error(`fetch comments failed ${res.status}`);
             const data = await res.json();
-            setCommentsList(data || []);
+            if (requestId === commentRequestRef.current) setCommentsList(data || []);
         } catch (e) {
             console.error('fetchComments error', e);
-            setCommentMessage(t('map:main.commentsLoadFailed'));
+            if (requestId === commentRequestRef.current) setCommentMessage(t('map:main.commentsLoadFailed'));
         } finally {
-            setCommentsLoading(false);
-        }
-    };
-
-    const submitComment = async () => {
-        if (!selectedPlace) return;
-        if (!token) { onRequireAuth && onRequireAuth(); return; }
-        if (isBanned) { setCommentMessage(t('map:main.commentBanned')); return; }
-        if (!newComment || !newComment.trim()) return;
-        setCommentSubmitting(true);
-        setCommentMessage("");
-        try {
-            const res = await fetch(`${backendUrl}/comments`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ place_id: selectedPlace.id, content: newComment.trim() })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                if (res.status === 401) { onRequireAuth && onRequireAuth(); return; }
-                throw new Error(data.error || `post failed ${res.status}`);
-            }
-            // prepend new comment
-            setCommentsList(list => [data, ...list]);
-            setNewComment("");
-            setCommentMessage(t('map:main.commentPosted'));
-        } catch (e) {
-            console.error('submitComment failed', e);
-            setCommentMessage(t('map:main.commentFailed', { message: e.message || e }));
-        } finally {
-            setCommentSubmitting(false);
+            if (requestId === commentRequestRef.current) setCommentsLoading(false);
         }
     };
 
@@ -2068,21 +2049,15 @@ export default function MapView({
                 isAuthenticated={isAuthenticated} onRequireAuth={onRequireAuth} mapRef={mapRef} mapReady={mapReady}
                 selectedPlace={selectedPlace} feedback={feedback} onOpen={() => setAddMode(false)}
                 onShowPlace={focusPlaceById} onOpenFeedback={onOpenFeedback} initialPublic={initialDiary} mapPicker={FullScreenMapPicker} /></React.Suspense>}
-            {!pickerMode && (
+            {!pickerMode && isAdmin && !!token && (
                 <CommentPanel
                     open={commentOpen && !!selectedPlace}
                     place={selectedPlace}
                     comments={commentsList}
-                    readOnly
                     loading={commentsLoading}
                     message={commentMessage}
-                    newComment={newComment}
-                    setNewComment={setNewComment}
-                    submitting={commentSubmitting}
                     onClose={closeCommentPanel}
                     onRefresh={fetchComments}
-                    onSubmit={submitComment}
-                    canPost={isAuthenticated && !isBanned}
                 />
             )}
         </>

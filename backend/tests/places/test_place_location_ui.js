@@ -41,8 +41,8 @@ async function main() {
     vite = await createServer({ root: frontend, server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'warn' });
     const themeCss = (fs.readFileSync(path.join(frontend, 'index.html'), 'utf8').match(/:root(?:\[data-theme='dark'\])?\s*\{[^}]*\}/g) || []).join('\n');
     app.get('/__place_location_ui', async (req, res) => {
-        const id = req.query.user === 'visitor' ? visitor : owner;
-        res.type('html').send(await vite.transformIndexHtml(req.url, `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts/material-symbols.css"><style>${themeCss}body{margin:0;font-family:system-ui,sans-serif}</style></head><body><div id="root"></div><script>window.__TEST_TOKEN=${JSON.stringify(token(id))}</script><script type="module" src="/tests/integration/place-location-harness.jsx"></script></body></html>`));
+        const id = req.query.user === 'visitor' ? visitor : req.query.user === 'admin' ? admin : req.query.user === 'anonymous' ? null : owner;
+        res.type('html').send(await vite.transformIndexHtml(req.url, `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts/material-symbols.css"><style>${themeCss}body{margin:0;font-family:system-ui,sans-serif}</style></head><body><div id="root"></div><script>window.__TEST_TOKEN=${JSON.stringify(id ? token(id) : null)};window.__TEST_ADMIN=${JSON.stringify(id===admin)}</script><script type="module" src="/tests/integration/place-location-harness.jsx"></script></body></html>`));
     });
     app.use(vite.middlewares);
     server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
@@ -103,7 +103,8 @@ async function main() {
     assert.deepEqual(await page.evaluate(() => window.__TEST_MAPS.at(-1).center), [120.012345, 30.023456]);
     await page.keyboard.press('Escape');
     await checkForm(120.012345, 30.023456, '选点前填写的描述');
-    await form.getByText('评论预览', {exact:true}).waitFor();
+    await form.getByText('修改记录预览', {exact:true}).waitFor();
+    await form.getByText('修改生效后，将以你的名义保存修改记录，仅管理员可查看。', {exact:true}).waitFor();
     await form.getByRole('button', { name: '保存', exact: true }).click();
     await form.getByRole('alert').waitFor();
     assert.deepEqual(coords(),saved,'missing required vote does not save partial changes');
@@ -118,8 +119,22 @@ async function main() {
         m.options.content?.classList.contains('fm-marker') && Math.abs(m.position[0] - 120.012345) < 1e-6 && Math.abs(m.position[1] - 30.023456) < 1e-6));
     assert.equal(await page.evaluate(() => [...window.__TEST_MAPS[0].markers].filter(m => m.options.content?.classList.contains('fm-marker')).length), 1);
     await page.getByRole('button',{name:'测试面馆',exact:true}).click();await page.waitForTimeout(400);
-    await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'评论与修改记录',exact:true}).click();
-    const history=page.getByRole('dialog',{name:'测试面馆',exact:true});await history.getByText(/选点前填写的描述/).waitFor();assert.equal(await history.locator('textarea').count(),0,'edit history exposes approved comments without enabling free posting');await page.keyboard.press('Escape');
+    await page.getByRole('button',{name:'更多操作',exact:true}).click();
+    assert.equal(await page.getByRole('menuitem',{name:'修改记录',exact:true}).count(),0,'the creator cannot see the admin history entry');
+    await page.keyboard.press('Escape');
+    for(const user of ['admin','anonymous']){
+        await page.goto(`${base}/__place_location_ui?user=${user}`);
+        await page.getByRole('button',{name:'测试面馆',exact:true}).click();await page.waitForTimeout(400);
+        await page.getByRole('button',{name:'更多操作',exact:true}).click();
+        if(user==='anonymous')assert.equal(await page.getByRole('menuitem',{name:'修改记录',exact:true}).count(),0,'anonymous visitors cannot see history');
+        else{
+            await page.getByRole('menuitem',{name:'修改记录',exact:true}).click();
+            const history=page.getByRole('dialog',{name:'修改记录',exact:true});await history.getByText(/选点前填写的描述/).waitFor();assert.equal(await history.locator('textarea').count(),0,'admin history is read-only');
+            await page.evaluate(()=>window.__TEST_SET_VIEWER({token:null,isAdmin:false}));
+            await history.waitFor({state:'hidden'});
+            assert.equal(await page.getByText(/描述：原来的描述/).count(),0,'privileged history closes on logout');
+        }
+    }
 
     // Add mode: the blank area above the world still yields 85°–90°, which the marker layer
     // cannot show, so the click only explains itself; a click on the map opens the form.

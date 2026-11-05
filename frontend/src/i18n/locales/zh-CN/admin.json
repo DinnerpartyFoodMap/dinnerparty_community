@@ -53,12 +53,12 @@
     }
   },
   "comments": {
-    "forbidden": "权限不足，无法获取评论列表",
-    "confirmDelete": "确认删除此评论？",
-    "title": "评论管理",
+    "forbidden": "权限不足，无法获取修改记录",
+    "confirmDelete": "确认删除此修改记录？",
+    "title": "修改记录管理",
     "searchPlaceholder": "搜索 ID / 地点ID / 用户ID / 内容",
-    "empty": "当前没有评论记录。",
-    "noMatch": "未找到匹配的评论。",
+    "empty": "当前没有修改记录。",
+    "noMatch": "未找到匹配的修改记录。",
     "col": {
       "placeId": "地点ID",
       "userId": "用户ID",
