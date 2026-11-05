@@ -1272,7 +1272,7 @@ export default function MapUI(props) {
                     rows: [
                         moderationStatus && { id: 'moderation', title: moderationShort, subtitle: moderationNote, symbol: sfSymbol('hidden'), tone: 'warning', disabled: true },
                         diaryCount > 0 && { id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: sfSymbol('diaries'), keepsOpen: true },
-                        !unmarked && {id:'comments',title:t('map:editEvidence.history'),symbol:'text.bubble',keepsOpen:true},
+                        !unmarked && { id: 'comments', title: t('map:editEvidence.history'), symbol: sfSymbol('comments'), keepsOpen: true },
                         lastModifier?.clickable && {
                             id: 'modifier',
                             title: t('map:ui.lastModified', { modifier: lastModifier.name }),

@@ -33,6 +33,7 @@ const ICONS = Object.freeze({
     report: ['flag', 'flag'],
     hidden: ['visibility_off', 'eye.slash'],
     diaries: ['auto_stories', 'book.pages'],
+    comments: ['chat_bubble', 'text.bubble'],
     details: ['info', 'info.circle'],
     // 评价四档（设计参考 1.4）
     thumbUp: ['thumb_up', 'hand.thumbsup'],
