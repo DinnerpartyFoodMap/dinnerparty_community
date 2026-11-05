@@ -87,7 +87,7 @@ try {
     assert.equal(sql.prepare('SELECT creator_id FROM Place WHERE id = 4').get().creator_id, 'existing');
     const rating = sql.prepare('SELECT * FROM PlaceRating WHERE place_id = 1').get();
     assert.deepEqual([rating.user_id, rating.score, rating.source, rating.created_at, rating.weight], [users[0].id, 4, 'create', 100, 0.5]);
-    assert.equal(sql.prepare('SELECT user_id FROM PlaceRating WHERE place_id = 3').get().user_id, 'old');
+    assert.equal(sql.prepare('SELECT user_id FROM PlaceRating WHERE place_id = 3').get().user_id, users[1].id,'创建者后来手动修改的评分也随归属转移');
     for (const id of [5, 6, 7, 8]) assert.equal(sql.prepare('SELECT creator_id FROM Place WHERE id = ?').get(id).creator_id, 'old');
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM User').get().n, 5, '跳过的行不会创建账户');
     const backups = fs.readdirSync(temp).filter((name) => name.endsWith('.bak'));

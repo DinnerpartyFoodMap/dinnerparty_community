@@ -40,7 +40,7 @@ const sql = db._raw;
     const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}`;
     const call = (method, url, user, body) => fetch(`${base}${url}`, {
-        method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token(user)}` }, body: JSON.stringify(body)
+        method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token(user)}` }, body: JSON.stringify({...body,no_experience:true})
     });
     const coords = () => sql.prepare('SELECT longitude, latitude FROM Place WHERE id = 1').get();
     const placeCount = () => sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n;

@@ -55,6 +55,13 @@ try{
     const mixedBundle=bundles.exportBundle({apply:true,secret:'s'.repeat(32)}),mixedData=JSON.parse(fs.readFileSync(path.join(process.env.RATING_EVIDENCE_ROOT,`${mixedBundle.id}.json`),'utf8'));
     const uncertain=mixedData.description_revisions.find(r=>r.id===mixed);assert.equal(uncertain.text_basis,'mixed_or_replaced_unresolved');assert.equal(uncertain.contribution_text,null);
     assert.ok(!JSON.stringify(mixedData).includes('unconsented original text'),'arbitrary mixed replacements retain metadata without leaking predecessor text');
+    db._raw.prepare("INSERT INTO PlaceRating(place_id,user_id,score,source,created_at,updated_at) VALUES(?,'u',4,'user',?,?)").run(id,Date.now(),Date.now());
+    const textComment=Number(db._raw.prepare("INSERT INTO Comment(place_id,user_id,content) VALUES(?,'u','米饭是冷的')").run(id).lastInsertRowid);
+    require('../../modules/ratings/services/ratingTextEvidence').queueComment({commentId:textComment,userId:'u',placeId:id,text:'米饭是冷的'});
+    assert.equal(bundles.exportBundle({secret:'s'.repeat(32)}).text_evidence_count,1);
+    const textBundle=bundles.exportBundle({apply:true,secret:'s'.repeat(32)}),textPayload=JSON.parse(fs.readFileSync(path.join(process.env.RATING_EVIDENCE_ROOT,`${textBundle.id}.json`),'utf8'));
+    assert.equal(textPayload.text_evidence[0].contribution_text,'米饭是冷的');assert.ok(textPayload.text_evidence[0].user_key!=='u');assert.equal(textPayload.text_evidence[0].user_id,undefined);
+    db._raw.prepare('DELETE FROM Comment WHERE id=?').run(textComment);assert.equal(bundles.bundleStatus(textBundle.id).valid,false,'deleting the source invalidates research packages immediately');
     db._raw.prepare('DELETE FROM Place WHERE id=?').run(id);assert.equal(bundles.bundleStatus(rewritten.id).valid,false,'place deletion invalidates the bundle before its cleanup retry');
     assert.throws(()=>bundles.exportBundle({apply:true,secret:'s'.repeat(32),output:path.resolve(temp,'escape')}),/受控/);
     console.log('Research bundles: dry-run, pseudonymized export, status, revoke-before-delete and path bounds passed.');

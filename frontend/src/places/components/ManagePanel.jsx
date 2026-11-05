@@ -7,6 +7,8 @@ import ScrollableView from "../../components/layout/ScrollableView";
 import CategorySelector from './CategorySelector';
 import ResponsivePanel from "../../components/overlay/ResponsivePanel";
 import { t } from "../../i18n/index.js";
+import { RATING_TIERS } from '../rating';
+import { editCommentPreview } from '../editEvidence';
 
 // 管理地点：宽屏居中表单，窄屏底部面板。保存（或提交修改申请）在标题栏右侧，左侧关闭钮即取消；删除在内容最下方（设计参考 11.4）
 export default function ManagePanel({ open = true, onClose, selectedPlace, ...rest }) {
@@ -117,6 +119,16 @@ function ManageForm({
                 {!canDirectManage() && (
                     <div style={{ marginTop: 10, color: 'var(--color-text-secondary)', fontSize: 12 }}>{t('map:manage.needsReview')}</div>
                 )}
+                {!manageEdit.has_rating && <div style={{marginTop:12}}>
+                    <label><input type="checkbox" checked={!!manageEdit.no_experience} onChange={e=>setManageEdit(me=>({...me,no_experience:e.target.checked,rating:null}))}/>{t('map:editEvidence.noExperience')}</label>
+                    {!manageEdit.no_experience && <fieldset style={{marginTop:8}}><legend>{t('map:editEvidence.ratingRequired')}</legend>
+                        {RATING_TIERS.map(tier=><label key={tier.score} style={{display:'block',padding:4}}><input type="radio" name="edit-rating" value={tier.score} checked={manageEdit.rating===tier.score} onChange={()=>setManageEdit(me=>({...me,rating:tier.score}))}/>{tier.label}</label>)}
+                    </fieldset>}
+                </div>}
+                <div style={{marginTop:12}}><div>{t('map:editEvidence.preview')}</div>
+                    <p style={{fontSize:12,color:'var(--color-text-secondary)'}}>{t('map:editEvidence.notice')}</p>
+                    <div style={{whiteSpace:'pre-wrap',fontSize:13,maxHeight:180,overflowY:'auto'}}>{editCommentPreview(selectedPlace,manageEdit)||t('map:editEvidence.noChanges')}</div>
+                </div>
                 {manageMessage && <div role="alert" style={{ marginTop: 8, color: 'var(--color-danger-text)' }}>{manageMessage}</div>}
                 {canDirectManage() && (
                     <Button variant="destructive" full onClick={onDelete} disabled={manageSubmitting} style={{ marginTop: 16 }}>{t('common:action.delete')}</Button>

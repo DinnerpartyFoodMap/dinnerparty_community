@@ -113,8 +113,8 @@ async function main() {
             .run('original', target).lastInsertRowid);
         const expected = !who ? 401 : who === 'regular' ? 403 : 200;
         // Use a non-semantic update so the test never starts vector workers.
-        assert.equal((await request(`/places/${placeId}`, 'PUT', { latitude: 23, longitude: 113 }, who)).status, expected);
-        const proposal = await request('/place-requests', 'POST', { place_id: placeId, proposed: { latitude: 24, longitude: 114 } }, 'regular');
+        assert.equal((await request(`/places/${placeId}`, 'PUT', { latitude: 23, longitude: 113,no_experience:true }, who)).status, expected);
+        const proposal = await request('/place-requests', 'POST', { place_id: placeId, proposed: { latitude: 24, longitude: 114 },no_experience:true }, 'regular');
         assert.equal(proposal.status, 201);
         assert.equal((await request(`/place-requests/${proposal.body.id}/review`, 'POST', { action: 'approve' }, who)).status, expected);
         const place = db._raw.prepare('SELECT latitude FROM Place WHERE id = ?').get(placeId);

@@ -642,6 +642,18 @@
     "profileSelf": "我的主页",
     "rejectedBadge": "未通过"
   },
+  "editEvidence": {
+    "history": "评论与修改记录",
+    "noExperience": "仅纠错，没有实际体验",
+    "ratingRequired": "请先选择你的评价",
+    "preview": "评论预览",
+    "notice": "修改生效后，以下内容将以你的名义发布为评论。",
+    "noChanges": "暂无修改",
+    "empty": "（空）",
+    "imagesUpdated": "已更新",
+    "change": "{{field}}：{{before}} → {{after}}",
+    "field": {"name":"店名","description":"描述","category":"分类","per_person_cost":"人均","latitude":"纬度","longitude":"经度","exterior_images":"门面图片","menu_images":"菜单图片"}
+  },
   "placeForm": {
     "titleCreate": "添加地点",
     "expand": "展开全部",

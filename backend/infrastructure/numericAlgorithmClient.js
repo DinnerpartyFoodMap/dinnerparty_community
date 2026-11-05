@@ -45,6 +45,7 @@ function unique(rows,key,allowed){if(!Array.isArray(rows))invalid();const ids=ro
 function validate(op,r,i={}){
     if(!r||typeof r!=='object')invalid();
     if(i.calibration_policy!==undefined&&r.calibration_policy!==i.calibration_policy)invalid();
+    if(i.text_evidence_policy!==undefined&&(r.text_evidence_policy!==i.text_evidence_policy||r.text_evidence_mode!==i.text_evidence_mode))invalid();
     if(['ratingestimate','ratingpredict','listrank'].includes(op)&&r.config_version!==i.config_version)invalid();
     if(i.model_hash!==undefined&&r.model_hash!==i.model_hash)invalid();
     if(op==='modelcontract'){

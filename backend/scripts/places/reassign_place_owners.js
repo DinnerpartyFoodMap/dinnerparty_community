@@ -16,9 +16,11 @@
 //     否则行数与地点数相等时按 CSV 行序对应地点 id 从小到大，不相等就整组跳过（需手动处理）；
 //  4. 原最近修改人（updated_by）就是原所有者时一并改掉，否则卡片的「最近修改」仍显示原账号；
 //     别人改过的地点保留 updated_by；
-//  5. 原所有者的创建评分（PlaceRating.source 为 create / migration）转给新所有者，分数、来源和创建时间不变，
-//     权重取新所有者的；新所有者已经评过这家店时保留他的评分，只删掉原所有者那条。原所有者自己通过评分
-//     接口打的分（source = user）不动。删除 + 插入会触发两人的偏好重算，并各记一条评分历史（RatingRevision）。
+//  5. 原创建者在该地点对应的评分转给新创建者（包括创建后手动改过的分），分数、来源和创建时间不变，
+//     权重取新创建者的；新创建者已评过则保留其评分，只删原创建者那条。其他用户的评分不动。
+//     删除 + 插入会触发两人的偏好重算，并各记一条评分历史（RatingRevision）。
+//  6. 旧数据/创建时绑定的描述及对应评论一并转给新所有者；其他修改人的独立评论不动。
+//     同步评分版本但不新造评分，不延长派生文本的90天期限；与地点和创建评分处于同一事务。
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -67,7 +69,6 @@ function readEntries(file) {
 }
 
 const SCORE_LABELS = { 4: '强烈推荐', 3: '均线之上', 2: '均线之下', 1: '强烈拒绝' };
-const CREATION_SOURCES = ['create', 'migration'];
 const RATING_ORIGIN = 'owner_reassign';
 
 /** 使用系统安全随机数，并保证包含大小写字母、数字和符号。 */
@@ -87,27 +88,25 @@ function hasTable(sql, name) {
     return !!sql.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
 }
 
-/** 原所有者那条评分要怎么处理：none 没有 / personal 自己打的不动 / move 转给新所有者 / drop 新所有者已评过，删掉。 */
+/** 创建者对应的评分：none 没有 / move 转给新创建者 / drop 新创建者已评过，保留其评分。 */
 function ratingAction(sql, placeId, fromId, toId) {
     if (!hasTable(sql, 'PlaceRating')) return { kind: 'none' };
     const findRating = sql.prepare('SELECT * FROM PlaceRating WHERE place_id = ? AND user_id = ?');
     const old = fromId ? findRating.get(placeId, fromId) : null;
     if (!old) return { kind: 'none' };
-    if (!CREATION_SOURCES.includes(old.source)) return { kind: 'personal', old };
     return { kind: findRating.get(placeId, toId) ? 'drop' : 'move', old };
 }
 
 function describeRating(rating) {
     const label = rating.old ? SCORE_LABELS[rating.old.score] || rating.old.score : '';
     switch (rating.kind) {
-        case 'move': return `，创建评分「${label}」一并转移`;
-        case 'drop': return `，新所有者已评过，删除原创建评分「${label}」`;
-        case 'personal': return `，原所有者自己的评分「${label}」保留`;
+        case 'move': return `，附带评分「${label}」一并转移`;
+        case 'drop': return `，新创建者已评过，删除原附带评分「${label}」`;
         default: return '';
     }
 }
 
-/** 在事务里把原所有者的创建评分转给新所有者，返回实际执行的 kind。 */
+/** 在事务里把原创建者对应的评分转给新创建者，返回实际执行的 kind。 */
 function moveCreatorRating(sql, change, now) {
     const rating = ratingAction(sql, change.placeId, change.fromId, change.toId);
     if (rating.kind !== 'move' && rating.kind !== 'drop') return rating.kind;
@@ -259,20 +258,22 @@ async function main() {
                 passwordHashes.add(passwordHash);
                 insertUser.run(user.id, user.username, passwordHash, user.qq);
             }
-            const counts = { updated: 0, move: 0, drop: 0, personal: 0, none: 0 };
+            const counts = { updated: 0, move: 0, drop: 0, none: 0 };
             for (const change of changes) {
+                if(hasTable(sql,'CreatorDescription'))require('../../modules/places/services/creatorDescriptions').bindCreatorDescription(sql,change.placeId,{source:'legacy_creator',now});
                 const result = change.updateModifier
                     ? setOwnerAndModifier.run(change.toId, change.toId, change.placeId, change.fromId)
                     : setOwner.run(change.toId, change.placeId, change.fromId);
                 if (!result.changes) continue; // 预览之后所有者又变了，不再动它的评分
                 counts.updated++;
                 counts[moveCreatorRating(sql, change, now)]++;
+                if(hasTable(sql,'CreatorDescription')){const descriptions=require('../../modules/places/services/creatorDescriptions');descriptions.bindCreatorDescription(sql,change.placeId,{source:'legacy_creator',now});descriptions.syncCreatorDescriptionRating(sql,change.placeId);}
             }
             return counts;
         });
         const counts = run.immediate();
-        console.log(`已新建 ${newUsers.length} 个账户，改动 ${counts.updated} 个地点；创建评分转移 ${counts.move} 条，`
-            + `新所有者已评过而删除 ${counts.drop} 条，原所有者自己的评分保留 ${counts.personal} 条。`);
+        console.log(`已新建 ${newUsers.length} 个账户，改动 ${counts.updated} 个地点；附带评分转移 ${counts.move} 条，`
+            + `新创建者已评过而删除 ${counts.drop} 条。其他用户评分保持原归属。`);
     } finally {
         try { db.close(); } catch (_) { }
     }

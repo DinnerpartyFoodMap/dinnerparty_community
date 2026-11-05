@@ -64,10 +64,11 @@ function initModelProfileSchema(database=db._raw){
 function inputFor(placeId,database=db._raw){
  const place=database.prepare("SELECT id,name,category,description,per_person_cost FROM Place WHERE id=? AND moderation_status='visible'").get(placeId);
  if(!place)return null;
- const comments=database.prepare(`SELECT c.id,c.content,c.time FROM Comment c JOIN User u ON u.id=c.user_id
- WHERE c.place_id=? AND COALESCE(u.is_banned,0)=0 AND length(trim(c.content))>=20 AND julianday(c.time)<=julianday('now')
- ORDER BY length(c.content) DESC,c.id ASC LIMIT 30`).all(placeId)
- .map(c=>({...c,content:clip(markdownToPlainText(c.content).trim(),300)})).filter(c=>Array.from(c.content).length>=20)
+ const now=Date.now(),comments=database.prepare(`SELECT c.id,CASE WHEN c.place_revision_id IS NULL THEN c.content ELSE e.evidence_text END AS content,c.time FROM Comment c JOIN User u ON u.id=c.user_id LEFT JOIN RatingTextEvidence e ON e.comment_id=c.id
+ WHERE c.place_id=? AND COALESCE(u.is_banned,0)=0 AND julianday(c.time)<=julianday('now') AND
+ ((c.place_revision_id IS NULL AND length(trim(c.content))>=20) OR (c.place_revision_id IS NOT NULL AND e.expires_at_ms>? AND e.available_at_ms<=? AND length(trim(e.evidence_text))>0 AND EXISTS(SELECT 1 FROM PlaceRating r JOIN RatingStream s ON s.user_id=r.user_id AND s.place_id=r.place_id WHERE r.user_id=e.user_id AND r.place_id=e.place_id AND s.revision=e.rating_revision)))
+ ORDER BY length(content) DESC,c.id ASC LIMIT 30`).all(placeId,now,now)
+ .map(c=>({...c,content:clip(markdownToPlainText(c.content).trim(),300)})).filter(c=>c.content.length>0)
  .sort((a,b)=>String(a.time).localeCompare(String(b.time))||a.id-b.id);
  return {place:{...place,description:clip(markdownToPlainText(place.description||''),400)},reviews:comments};
 }

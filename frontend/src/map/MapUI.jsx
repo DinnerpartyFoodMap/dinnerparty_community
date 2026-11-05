@@ -938,6 +938,7 @@ export default function MapUI(props) {
         category: values.category,
         description: values.description,
         per_person_cost: values.perPersonCost ? parseInt(values.perPersonCost, 10) : null,
+        rating:values.rating,no_experience:values.noExperience===true,
         exterior_images: values.exteriorImages,
         menu_images: values.menuImages
     });
@@ -958,10 +959,14 @@ export default function MapUI(props) {
         const direct = canDirectManage();
         nativeFormSpec = {
             mode: 'edit',
+            ratingRequired:!manageEdit.has_rating,
+            original:selectedPlace,
+            originalPosition:coordinateText(selectedPlace.longitude,selectedPlace.latitude),
             key: `${selectedPlace.id}@${manageEdit.longitude},${manageEdit.latitude}`,
             values: {
                 name: manageEdit.name, category: manageEdit.category, description: manageEdit.description,
-                perPersonCost: manageEdit.per_person_cost, exteriorImages: manageEdit.exterior_images, menuImages: manageEdit.menu_images
+                perPersonCost: manageEdit.per_person_cost, exteriorImages: manageEdit.exterior_images, menuImages: manageEdit.menu_images,
+                rating:manageEdit.rating,noExperience:manageEdit.no_experience
             },
             position: coordinateText(manageEdit.longitude, manageEdit.latitude),
             canDirect: direct,
@@ -1243,6 +1248,7 @@ export default function MapUI(props) {
                     rows: [
                         moderationStatus && { id: 'moderation', title: moderationShort, subtitle: moderationNote, symbol: sfSymbol('hidden'), tone: 'warning', disabled: true },
                         diaryCount > 0 && { id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: sfSymbol('diaries'), keepsOpen: true },
+                        !unmarked && {id:'comments',title:t('map:editEvidence.history'),symbol:'text.bubble',keepsOpen:true},
                         lastModifier?.clickable && {
                             id: 'modifier',
                             title: t('map:ui.lastModified', { modifier: lastModifier.name }),
@@ -1366,6 +1372,7 @@ export default function MapUI(props) {
                     break;
                 case 'create': openCreateFromPoi?.(); break;
                 case 'edit': openManagePanel?.(); break;
+                case 'comments': openCommentPanel?.(); break;
                 case 'diaries': openDiaries(); break;
                 case 'rate':
                 case 'rating': openRating(); break;
@@ -1923,6 +1930,7 @@ export default function MapUI(props) {
         { id: 'details', title: t('map:ui.card.details'), icon: 'info', slot: 'cardActions.details', run: () => { setDetailFocus(null); setDetailOpen(true); } },
         { id: 'share', title: t('map:ui.share.title'), icon: 'share', slot: 'cardActions.share', run: () => setShareOpen(true) },
         { id: 'edit', title: t('map:ui.edit'), icon: 'edit', slot: 'cardActions.edit', run: () => openManagePanel?.() },
+        { id: 'comments', title:t('map:editEvidence.history'),icon:'history',slot:'cardActions.details',run:()=>openCommentPanel?.() },
         canReportPlace && { id: 'report', title: t('map:ui.report'), icon: 'flag', slot: 'cardActions.report', run: reportPlace }
     ].filter(Boolean);
 
@@ -2059,7 +2067,7 @@ export default function MapUI(props) {
                                 <span style={{ ...popupActionLabelStyle, fontSize: 15 }}>{t('map:ui.nav.title')}</span>
                             </Button>
                         </Tooltip>
-                        {/* 评论功能暂不开放，待敏感词机制完善后再开放（openCommentPanel） */}
+                        {/* 生效描述与修改评论从“更多”打开；自由评论发布继续沿用原有开关。 */}
                         <Tooltip text={favorited ? t('map:ui.card.favoritedTooltip') : (isAuthenticated ? t('map:ui.card.favoriteTooltip') : t('map:ui.card.loginToFavorite'))}>
                             <Button
                                 onClick={() => onToggleFavorite && onToggleFavorite(selectedPlace)}

@@ -42,6 +42,9 @@ function initAlgorithmSchema(db){
     add('ResearchConsentEvent','revoked_at_ms INTEGER');
     add('PlaceRequest','submitted_at_ms INTEGER');
     add('PlaceRequest','research_consent_id TEXT REFERENCES ResearchConsentEvent(id) ON DELETE SET NULL');
+    add('PlaceRequest','edit_rating TEXT');
+    add('PlaceRequest','edit_base_state TEXT');
+    require('./ratingTextEvidence').initTextEvidenceSchema(db);
     for(const table of ['User','Place','PlaceRating','Favorite','PlaceRequest','UserPreference'])for(const action of ['INSERT','UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS numeric_clock_${table}_${action} AFTER ${action} ON ${table} BEGIN UPDATE AlgorithmClock SET revision=revision+1 WHERE id=1; END;`);
     for(const [table,field,membership] of [['User','user_id','ResearchBundleMember'],['Place','place_id','ResearchBundlePlace']])db.exec(`CREATE TRIGGER IF NOT EXISTS numeric_bundle_delete_${table} BEFORE DELETE ON ${table} BEGIN
         UPDATE ResearchBundle SET status='invalid' WHERE id IN(SELECT bundle_id FROM ${membership} WHERE ${field}=OLD.id);
@@ -52,5 +55,6 @@ function initAlgorithmSchema(db){
     db.prepare(`INSERT OR IGNORE INTO RatingStream(user_id,place_id,revision) SELECT user_id,place_id,1 FROM PlaceRating`).run();
     const insert=db.prepare(`INSERT OR IGNORE INTO RatingRevision(event_id,user_id,place_id,revision,action,after_state,origin,recorded_at_ms,available_at_ms) VALUES(?,?,?,1,'baseline_import',?,'unknown',?,?)`);
     for(const row of db.prepare('SELECT * FROM PlaceRating').all())if(!db.prepare('SELECT 1 FROM RatingRevision WHERE user_id=? AND place_id=?').get(row.user_id,row.place_id))insert.run(`baseline:${row.place_id}:${row.user_id}`,row.user_id,row.place_id,JSON.stringify(row),now,now);
+    require('../../places/services/creatorDescriptions').initCreatorDescriptions(db,now);
 }
 module.exports={initAlgorithmSchema};

@@ -12,12 +12,13 @@ function placeRequestFailure(status, code, message) {
     return error;
 }
 
-const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed, note, moderation }) => {
-    const place = db._raw.prepare('SELECT id, creator_id, moderation_status FROM Place WHERE id = ?').get(placeId);
+const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed, note, moderation, rating, noExperience }) => {
+    const place = db._raw.prepare('SELECT * FROM Place WHERE id = ?').get(placeId);
     // 初筛中 / 待复核的地点对其他住民不存在（创建者本人直接编辑，不走申请）
     if (!place || (!isPublicPlace(place) && String(place.creator_id) !== String(requesterId))) {
         throw placeRequestFailure(404, 'PLACE_NOT_FOUND', '地点不存在');
     }
+    require('../../accounts/services/userAccess').requireWritableUser(requesterId);
     const coordinates = normalizePlaceCoordinates(proposed);
     if (coordinates.error) throw placeRequestFailure(400, 'INVALID_PLACE_COORDINATE', coordinates.error);
     // 描述与直接编辑相同：最多 1000 字，接受 HTML
@@ -38,10 +39,11 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
             ? { menu_images: normalizeImageUrls(proposed.menu_images) }
             : {})
     };
+    const intent=require('./placeEditRating').prepareEditRating(requesterId,Number(placeId),{rating,noExperience});
     // moderation：创建者的修改被 AI 初筛拦下时附上的报告（placeModeration.checkOwnerEdit），管理页显示拦截原因
     const info = db._raw.prepare(
-        'INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, moderation,submitted_at_ms,research_consent_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(placeId, requesterId, JSON.stringify(normalizedProposed), note || '', moderation ? JSON.stringify(moderation) : null,Date.now(),require('../../ratings/services/ratingEvidence').researchConsent(requesterId)?.id||null);
+        'INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, moderation,submitted_at_ms,research_consent_id,edit_rating,edit_base_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(placeId, requesterId, JSON.stringify(normalizedProposed), note || '', moderation ? JSON.stringify(moderation) : null,Date.now(),require('../../ratings/services/ratingEvidence').researchConsent(requesterId)?.id||null,JSON.stringify(intent),JSON.stringify(place));
     const row = db._raw.prepare('SELECT * FROM PlaceRequest WHERE id = ?').get(info.lastInsertRowid);
     insertAdminAction(
         requesterId,
@@ -57,11 +59,11 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
     return row;
 });
 
-function createPlaceRequest({ placeId, requesterId, proposed, note, moderation = null }) {
+function createPlaceRequest({ placeId, requesterId, proposed, note, moderation = null, rating, noExperience=false }) {
     if (!proposed || typeof proposed !== 'object' || Array.isArray(proposed)) {
         throw placeRequestFailure(400, 'INVALID_PLACE_REQUEST', '缺少参数或 proposed 格式错误');
     }
-    return createTransaction.immediate({ placeId, requesterId, proposed, note, moderation });
+    return createTransaction.immediate({ placeId, requesterId, proposed, note, moderation, rating, noExperience });
 }
 
 module.exports = { createPlaceRequest, placeRequestFailure };

@@ -287,6 +287,7 @@ startVectorRetryWorker();
 require('./modules/places/services/placeModeration').resumeModeration();
 const stopUserVectorWorker = startUserVectorWorker();
 const stopRatingEvidenceWorker=require('./modules/ratings/services/ratingEvidence').startEvidenceWorker();
+const stopRatingTextWorker=require('./modules/ratings/services/ratingTextEvidence').startTextEvidenceWorker();
 const stopRatingBundleWorker=require('./modules/ratings/services/ratingResearchBundles').startBundleWorker();
 const stopJourneyWorker = require('./modules/journeys/services/journeyAI').startJourneyWorker();
 // 住民主页六类餐饮偏好：规则分不了类的店铺交给模型后台补分类（modules/preferences/doc/TASTE_AXES.md）
@@ -357,7 +358,7 @@ function gracefulShutdown(signal) {
     shutdownStarted = true;
     stopRatingReputationWorker();
     stopUserVectorWorker();
-    stopRatingEvidenceWorker();stopRatingBundleWorker();
+    stopRatingEvidenceWorker();stopRatingTextWorker();stopRatingBundleWorker();
     stopJourneyWorker();
     stopTasteClassificationWorker();
     stopModelProfileWorker();

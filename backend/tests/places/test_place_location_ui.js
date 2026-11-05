@@ -31,6 +31,7 @@ async function main() {
     app.use('/users', require('../../modules/accounts/routes/users'));
     app.use('/places', require('../../modules/places/routes/places'));
     app.use('/place-requests', require('../../modules/places/routes/placeRequests'));
+    app.use('/comments',require('../../modules/community/routes/comments'));
     app.use('/categories', require('../../modules/places/routes/categories'));
     app.use('/api/favorites', require('../../modules/preferences/routes/favorites'));
     app.use('/api/ratings', require('../../modules/ratings/routes/placeRatings'));
@@ -49,6 +50,7 @@ async function main() {
     const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge' });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.addInitScript(()=>localStorage.setItem('foodmap.onboarding',JSON.stringify({version:3})));
     page.setDefaultTimeout(8000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -60,7 +62,8 @@ async function main() {
         await page.goto(`${base}/__place_location_ui?user=${user}`);
         await page.getByRole('button', { name: '测试面馆', exact: true }).click();
         await page.waitForTimeout(400);
-        await page.getByRole('button', { name: '编辑此地点' }).click();
+        await page.getByRole('button', { name: '更多操作',exact:true }).click();
+        await page.getByRole('menuitem', { name: '编辑',exact:true }).click();
         await form.waitFor();
     };
     const move = async (lng, lat) => {
@@ -100,14 +103,23 @@ async function main() {
     assert.deepEqual(await page.evaluate(() => window.__TEST_MAPS.at(-1).center), [120.012345, 30.023456]);
     await page.keyboard.press('Escape');
     await checkForm(120.012345, 30.023456, '选点前填写的描述');
+    await form.getByText('评论预览', {exact:true}).waitFor();
+    await form.getByRole('button', { name: '保存', exact: true }).click();
+    await form.getByRole('alert').waitFor();
+    assert.deepEqual(coords(),saved,'missing required vote does not save partial changes');
+    await form.getByRole('radio').nth(1).check();
     await form.getByRole('button', { name: '保存', exact: true }).click();
     await form.waitFor({ state: 'hidden' });
     assert.deepEqual(coords(), { longitude: 120.012345, latitude: 30.023456 });
     assert.equal(sql.prepare('SELECT description FROM Place WHERE id=1').get().description, '选点前填写的描述');
+    assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment WHERE place_id=1').get().n,1,'edit published as author comment');
     // The existing marker moves too, without leaving a ghost at the old position.
     await page.waitForFunction(() => [...window.__TEST_MAPS[0].markers].some(m =>
         m.options.content?.classList.contains('fm-marker') && Math.abs(m.position[0] - 120.012345) < 1e-6 && Math.abs(m.position[1] - 30.023456) < 1e-6));
     assert.equal(await page.evaluate(() => [...window.__TEST_MAPS[0].markers].filter(m => m.options.content?.classList.contains('fm-marker')).length), 1);
+    await page.getByRole('button',{name:'测试面馆',exact:true}).click();await page.waitForTimeout(400);
+    await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'评论与修改记录',exact:true}).click();
+    const history=page.getByRole('dialog',{name:'测试面馆',exact:true});await history.getByText(/选点前填写的描述/).waitFor();assert.equal(await history.locator('textarea').count(),0,'edit history exposes approved comments without enabling free posting');await page.keyboard.press('Escape');
 
     // Add mode: the blank area above the world still yields 85°–90°, which the marker layer
     // cannot show, so the click only explains itself; a click on the map opens the form.
@@ -169,13 +181,14 @@ async function main() {
     await startAdd(120.5, 30.5);
     await expectRestored();
     await addDialog.getByRole('button', { name: '清空', exact: true }).click();
-    await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '清空', exact: true }).click();
     await addDialog.getByText('已恢复上次没提交的内容').waitFor({ state: 'hidden' });
     assert.equal(await nameInput.inputValue(), '');
     assert.equal(await storedDraft(), null, 'clearing removes the draft');
     await nameInput.fill('草稿面馆');
     await addDialog.getByText('已自动保存草稿').waitFor();
     process.env.PLACE_MODERATION_ENABLED = 'false'; // no model call for this place
+    await addDialog.getByRole('radio').nth(1).click();
     await addDialog.getByRole('button', { name: '提交', exact: true }).click();
     await addDialog.waitFor({ state: 'hidden' });
     delete process.env.PLACE_MODERATION_ENABLED;
@@ -185,13 +198,13 @@ async function main() {
     assert.equal(await nameInput.inputValue(), '');
     assert.equal(await addDialog.getByText('已自动保存草稿').count(), 0);
     await page.keyboard.press('Escape');
-    // Narrow layout (the App bottom sheet, iOS included): tapping the map above the sheet keeps the text.
+    // Narrow layout (the App bottom sheet, iOS included): backing out keeps the text.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${base}/__place_location_ui?user=owner`);
     await startAdd(120.5, 30.5);
     await nameInput.fill('手机上写的店名');
     await addDialog.getByText('已自动保存草稿').waitFor();
-    await page.mouse.click(195, 40);
+    await page.keyboard.press('Escape');
     await addDialog.waitFor({ state: 'hidden' });
     await startAdd(120.5, 30.5);
     await addDialog.getByText('已恢复上次没提交的内容').waitFor();
@@ -221,6 +234,7 @@ async function main() {
     await checkForm(120.02, 30.025, '申请修改位置');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await snap('edit-mobile');
+    await form.getByRole('radio').nth(1).check();
     await form.getByRole('button', { name: '提交申请', exact: true }).click();
     await form.waitFor({ state: 'hidden' });
     assert.deepEqual(coords(), { longitude: 120.012345, latitude: 30.023456 }, 'a pending proposal cannot move the public marker');
@@ -236,7 +250,7 @@ async function main() {
     assert.deepEqual(coords(), { longitude: 120.012345, latitude: 30.023456 }, 'rejecting a proposal leaves the public position unchanged');
     const resubmitted = await fetch(`${base}/place-requests`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token(visitor)}` },
-        body: JSON.stringify({ place_id: 1, proposed: JSON.parse(request.proposed) })
+        body: JSON.stringify({ place_id: 1, proposed: JSON.parse(request.proposed),rating:3 })
     });
     assert.equal(resubmitted.status, 201);
     const review = await reviewRequest((await resubmitted.json()).id, 'approve');

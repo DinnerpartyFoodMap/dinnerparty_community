@@ -174,6 +174,13 @@ export async function putPlace(backendUrl, token, id, payload) {
     return data;
 }
 
+export async function fetchPlaceEditContext(backendUrl, token, id) {
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
+    try{const res=await fetch(`${backendUrl}/places/${id}/edit-context`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store',signal:controller.signal});
+        const data=await res.json();if(!res.ok)throw new Error(data.error||t('map:api.rating.loadFailed',{status:res.status}));return data;
+    }finally{clearTimeout(timer);}
+}
+
 export async function deletePlace(backendUrl, token, id) {
     const res = await fetch(`${backendUrl}/places/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json().catch(() => ({}));

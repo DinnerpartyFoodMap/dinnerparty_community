@@ -19,7 +19,7 @@ router.post("/", requireAuth, (req, res) => {
     if (!place_id || !proposed || typeof proposed !== "object") return res.status(400).json({ error: "缺少参数或 proposed 格式错误" });
 
     try {
-        const row = createPlaceRequest({ placeId: place_id, requesterId: requester_id, proposed, note });
+        const row = createPlaceRequest({ placeId: place_id, requesterId: requester_id, proposed, note, rating:req.body.rating,noExperience:req.body.no_experience });
         return res.status(201).json(row);
     } catch (error) {
         if (error && error.publicMessage) {
@@ -104,12 +104,15 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
         return proposed[key];
     });
     const beforePlace=db._raw.prepare('SELECT * FROM Place WHERE id=?').get(reqRow.place_id);
+    if(reqRow.edit_base_state){const base=JSON.parse(reqRow.edit_base_state);if(keys.some(key=>JSON.stringify(base[key]??null)!==JSON.stringify(beforePlace?.[key]??null)))throw reviewFailure(409,'PLACE_REQUEST_STALE','地点内容已变化，请重新提交修改');}
+    const intent=reqRow.edit_rating?JSON.parse(reqRow.edit_rating):null;
+    if(keys.some(key=>JSON.stringify(beforePlace?.[key]??null)!==JSON.stringify(proposed[key]??null)))require('../services/placeEditRating').commitEditRating(reqRow.requester_id,reqRow.place_id,intent);
     const placeUpdate = db._raw.prepare(`UPDATE Place SET ${sets} WHERE id = ?`)
         .run(...values, reqRow.place_id);
     if (placeUpdate.changes !== 1) {
         throw reviewFailure(409, 'PLACE_REQUEST_TARGET_MISSING', '申请对应的地点已不存在');
     }
-    require('../services/placeRevisions').recordPlaceRevision({placeId:reqRow.place_id,authorId:reqRow.requester_id,executorId:adminId,path:'request_approved',before:beforePlace,requestId:id,recordedAt:reqRow.submitted_at_ms||require('../../ratings/services/placeRatingSchema').creationTimestamp(reqRow.created_time,Date.now()),researchConsentId:reqRow.research_consent_id||null});
+    require('../services/placeRevisions').recordPlaceRevision({placeId:reqRow.place_id,authorId:reqRow.requester_id,executorId:adminId,path:'request_approved',before:beforePlace,requestId:id,recordedAt:reqRow.submitted_at_ms||require('../../ratings/services/placeRatingSchema').creationTimestamp(reqRow.created_time,Date.now()),researchConsentId:reqRow.research_consent_id||null,noExperience:intent?.noExperience||false});
 
     const reviewed = db._raw.prepare(
         `UPDATE PlaceRequest

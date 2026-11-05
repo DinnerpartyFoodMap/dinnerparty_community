@@ -35,7 +35,8 @@ function CommentBody({
     setNewComment,
     submitting,
     onSubmit,
-    canPost
+    canPost,
+    readOnly=false
 }) {
     return (
         <div>
@@ -49,8 +50,8 @@ function CommentBody({
                         ) : (
                             comments.map(c => (
                                 <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border)' }}>
-                                    <div style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>{c.content}</div>
-                                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-text-secondary)' }}>{c.user_id || c.userId || t('map:comments.anonymous')} · {c.created_time || c.createdTime || '-'}</div>
+                                    <div style={{ fontSize: 13, whiteSpace:'pre-wrap', color: 'var(--color-text-primary)' }}>{c.content}</div>
+                                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-text-secondary)' }}>{c.username || t('map:comments.anonymous')} · {c.time || c.created_time || c.createdTime || '-'}</div>
                                 </div>
                             ))
                         )}
@@ -58,13 +59,13 @@ function CommentBody({
                 )}
             </ScrollableView>
 
-            <div style={{ marginTop: 8 }}>
-                {message && <div style={{ color: 'var(--color-danger)', marginBottom: 8 }}>{message}</div>}
+            {message && <div role="alert" style={{ color: 'var(--color-danger)', marginTop:8 }}>{message}</div>}
+            {!readOnly&&<div style={{ marginTop: 8 }}>
                 <TextArea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder={canPost ? t('map:comments.placeholder') : t('map:comments.loginRequired')} disabled={!canPost} style={{ width: '100%', minHeight: 80, padding: 8, boxSizing: 'border-box' }} />
                 <div style={{ marginTop: 8, textAlign: 'right' }}>
                     <Button onClick={onSubmit} disabled={!canPost || submitting || !newComment || !newComment.trim()} style={{ marginRight: 8 }}>{t('map:comments.post')}</Button>
                 </div>
-            </div>
+            </div>}
         </div>
     );
 }

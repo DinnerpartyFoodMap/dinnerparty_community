@@ -103,7 +103,7 @@ async function main() {
                 'X-Request-ID': creationTraceId,
                 'X-Forwarded-For': '198.51.100.20'
             },
-            body: JSON.stringify({ place_id: placeId, proposed: { name: 'after-review' } })
+            body: JSON.stringify({ place_id: placeId, proposed: { name: 'after-review' },no_experience:true })
         });
         assert.strictEqual(createdRequest.response.status, 201, JSON.stringify(createdRequest.body));
         const requestId = Number(createdRequest.body.id);

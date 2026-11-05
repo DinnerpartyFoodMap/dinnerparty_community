@@ -234,7 +234,8 @@ function insertPlaceSync(place, creatorId, { source }) {
     // Non-admin places start hidden from others until the moderation check passes.
     registerNewPlaceSync(placeId, creatorId, source);
     insertCreationRating(placeId, creatorId, place.rating ?? defaultCreationScore(place.categoryNames),Date.now(),place.rating_input_kind==='explicit'?'creation_explicit':place.rating_input_kind==='default'?'creation_default':'unknown');
-    require('./placeRevisions').recordPlaceRevision({placeId,authorId:creatorId,path:source||'create'});
+    const revisionId=require('./placeRevisions').recordPlaceRevision({placeId,authorId:creatorId,path:source||'create'});
+    require('./creatorDescriptions').bindCreatorDescription(db._raw,placeId,{source:'creator_submission',revisionId});
     enqueuePlaceCreatedNotifications([placeId], { source });
     return placeId;
 }

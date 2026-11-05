@@ -9,4 +9,5 @@ assert.equal(classifyRatingEvidence({source:'user'},[{action:'baseline_import'}]
 assert.equal(classifyRatingEvidence({source:'user'},[{action:'rate'},{action:'confirm'}]).eligible,true);
 assert.equal(classifyRatingEvidence({source:'user',is_banned:1},[{action:'rate'}]).eligible,false);
 assert.equal(classifyRatingEvidence({source:'user'},[{action:'rate'},{action:'withdraw'},{action:'baseline_import'}]).eligible,false,'withdrawn explicit history cannot qualify an unknown current vote');
+assert.equal(classifyRatingEvidence({source:'create'},[{action:'withdraw'},{action:'create',origin:'owner_reassign'}]).basis,'administrative_reassignment','a new explicit owner-transfer command is retained without pretending it is a user submission');
 console.log('Rating source policy tests passed');

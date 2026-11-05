@@ -350,7 +350,7 @@ async function main() {
     // “简略”只在这次改了描述时才算：老地点描述本来是空的，改名不拦；把描述改成一个字要拦
     textBehavior = () => ({ flagged: true, reasons: ['brief'], confidence: 0.9, summary: '描述为空' });
     const legacy = Number(sql.prepare("INSERT INTO Place (name, description, latitude, longitude, creator_id) VALUES ('老店', '', 23.4, 113.4, ?)").run(users.owner).lastInsertRowid);
-    assert.equal((await call('PUT', `/places/${legacy}`, 'owner', { name: '老店新名' })).status, 200);
+    assert.equal((await call('PUT', `/places/${legacy}`, 'owner', { name: '老店新名',rating:3 })).status, 200);
     assert.equal(placeRow(legacy).name, '老店新名');
     const shortened = await call('PUT', `/places/${legacy}`, 'owner', { description: '好' });
     assert.deepEqual([shortened.status, shortened.body.reasons], [202, ['brief']]);
@@ -370,7 +370,7 @@ async function main() {
 
     // 管理员修改不检查；模型出错时修改照常保存
     before = textCalls();
-    assert.equal((await call('PUT', `/places/${good.id}`, 'admin', { name: '管理员改的电影院' })).status, 200);
+    assert.equal((await call('PUT', `/places/${good.id}`, 'admin', { name: '管理员改的电影院',no_experience:true })).status, 200);
     assert.equal(textCalls(), before);
     textBehavior = () => { throw new Error('upstream timed out'); };
     const failedEdit = await call('PUT', `/places/${failing.id}`, 'owner', { description: '新写的描述：汤底浓郁' });

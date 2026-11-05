@@ -210,6 +210,7 @@ final class NativePlaceFormModel: ObservableObject {
     @Published var description: String
     @Published var cost: String
     @Published var rating: Int?
+    @Published var noExperience: Bool
     /// 提交时还没选评价：评价选项标红
     @Published var ratingMissing = false
     @Published var exterior: [FormImage]
@@ -223,6 +224,9 @@ final class NativePlaceFormModel: ObservableObject {
     @Published var expanded = false
 
     let isCreate: Bool
+    let needsEditRating: Bool
+    private let original: JSObject
+    private let originalPosition: String
     let dark: Bool
     let tint: Color
     /// 住民设置的辅色（分类标签、次要强调）
@@ -248,6 +252,9 @@ final class NativePlaceFormModel: ObservableObject {
     init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
         self.send = send
         isCreate = call.getString("mode") != "edit"
+        needsEditRating = call.getBool("ratingRequired", false)
+        original = call.getObject("original") ?? [:]
+        originalPosition = call.getString("originalPosition") ?? ""
         expanded = call.getString("mode") == "edit"
         dark = call.getBool("dark", false)
         let colors = NativeThemeColors(primary: call.getString("primary"), secondary: call.getString("secondary"))
@@ -285,6 +292,7 @@ final class NativePlaceFormModel: ObservableObject {
         cost = String((values["perPersonCost"] as? String ?? "").filter(\.isNumber).prefix(6))
         let rawRating = (values["rating"] as? NSNumber)?.intValue
         rating = rawRating.flatMap { (1...4).contains($0) ? $0 : nil }
+        noExperience = (values["noExperience"] as? Bool) ?? false
         let images = { (key: String) -> [FormImage] in
             ((values[key] as? JSArray) ?? []).compactMap { raw -> FormImage? in
                 guard let item = raw as? JSObject, let url = item["url"] as? String, url.hasPrefix("http") else { return nil }
@@ -305,7 +313,7 @@ final class NativePlaceFormModel: ObservableObject {
     // MARK: 内容
 
     private var contentKey: String {
-        [name, categories.joined(separator: ","), description, cost, String(rating ?? 0),
+        [name, categories.joined(separator: ","), description, cost, String(rating ?? 0), String(noExperience),
          (exterior + menu).compactMap(\.url).joined(separator: "|")].joined(separator: "\u{1}")
     }
 
@@ -336,10 +344,30 @@ final class NativePlaceFormModel: ObservableObject {
             "exteriorImages": exterior.compactMap { $0.state == .done ? $0.url : nil },
             "menuImages": menu.compactMap { $0.state == .done ? $0.url : nil }
         ]
-        if isCreate {
-            if let rating { result["rating"] = rating } else { result["rating"] = NSNull() }
-        }
+        if let rating, !noExperience { result["rating"] = rating } else { result["rating"] = NSNull() }
+        result["noExperience"] = noExperience
         return result
+    }
+
+    var editPreview: String {
+        func old(_ key: String) -> String {
+            guard let value = original[key], !(value is NSNull) else { return "" }
+            return String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let fields = [(text("name", "店名"), old("name"), trimmedName),
+                      (text("category", "分类"), old("category").replacingOccurrences(of: ", ", with: ","), categories.joined(separator: ",")),
+                      (text("description", "描述"), old("description"), description.trimmingCharacters(in: .whitespacesAndNewlines)),
+                      (text("cost", "人均"), old("per_person_cost"), cost)]
+        var lines = fields.filter { $0.1 != $0.2 }.map { "\($0.0)：\($0.1.isEmpty ? "（空）" : $0.1) → \($0.2.isEmpty ? "（空）" : $0.2)" }
+        if !originalPosition.isEmpty && originalPosition != positionText { lines.append("\(text("position", "位置"))：\(originalPosition) → \(positionText)") }
+        func oldImages(_ key: String) -> [String] {
+            if let list = original[key] as? [String] { return list }
+            if let value = original[key] as? String, let data = value.data(using: .utf8), let list = try? JSONSerialization.jsonObject(with: data) as? [String] { return list }
+            return []
+        }
+        if oldImages("exterior_images") != exterior.compactMap({ $0.url }) { lines.append("\(text("exteriorImages", "门面图片"))：已更新") }
+        if oldImages("menu_images") != menu.compactMap({ $0.url }) { lines.append("\(text("menuImages", "菜单图片"))：已更新") }
+        return lines.isEmpty ? text("noChanges", "暂无修改") : lines.joined(separator: "\n")
     }
 
     // MARK: 分类
@@ -468,7 +496,7 @@ final class NativePlaceFormModel: ObservableObject {
             return
         }
         // 新增地点必须自己选评价，不预选
-        if isCreate && rating == nil {
+        if (isCreate || (needsEditRating && !noExperience)) && rating == nil {
             ratingMissing = true
             alertMessage = text("ratingRequired", "请选择你的评价")
             return
@@ -575,8 +603,18 @@ private struct NativePlaceFormView: View {
                         }
                     }
                     descriptionSection
-                    if model.isCreate && !model.tiers.isEmpty {
+                    if !model.isCreate && model.needsEditRating {
+                        Toggle(model.text("noExperience", "仅纠错，没有实际体验"), isOn: $model.noExperience)
+                            .onChange(of: model.noExperience) { _, value in if value { model.rating = nil } }
+                    }
+                    if (model.isCreate || (model.needsEditRating && !model.noExperience)) && !model.tiers.isEmpty {
                         ratingSection
+                    }
+                    if !model.isCreate {
+                        formSection(model.text("editPreview", "评论预览")) {
+                            Text(model.text("editNotice", "修改生效后，以下内容将以你的名义发布为评论。")).font(.caption).foregroundStyle(.secondary)
+                            Text(model.editPreview).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     imagesSection(.exterior)
                     imagesSection(.menu)

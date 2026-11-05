@@ -1705,6 +1705,8 @@ export default function MapView({
                 setFetchingUser(false);
             }
         }
+        let mine=null;try{mine=(await Api.fetchPlaceEditContext(backendUrl,token,selectedPlace.id)).mine;}catch{/* The server validates again on save. */}
+        if(selectedPlaceRef.current?.id!==selectedPlace.id)return;
         setManageEdit({
             name: selectedPlace.name || "",
             category: selectedPlace.category || "",
@@ -1713,7 +1715,8 @@ export default function MapView({
             longitude: selectedPlace.longitude,
             latitude: selectedPlace.latitude,
             exterior_images: MapUtils.parseImageList(selectedPlace.exterior_images),
-            menu_images: MapUtils.parseImageList(selectedPlace.menu_images)
+            menu_images: MapUtils.parseImageList(selectedPlace.menu_images),
+            has_rating:!!mine,rating:null,no_experience:false
         });
         setManageMessage("");
         setManagePositionOpen(false);
@@ -1784,6 +1787,7 @@ export default function MapView({
         setManageSubmitting(true);
         try {
             const payload = buildManagePayload(edit);
+            Object.assign(payload,edit.no_experience?{no_experience:true}:Number.isInteger(edit.rating)?{rating:edit.rating}:{});
             const result = await Api.putPlace(backendUrl, token, selectedPlace.id, payload);
             // 改出了明显不合规的内容：这次修改转成修改申请等管理员审核，地点保持原样（backend placeModeration.md）
             if (result && result.pending_review) {
@@ -1818,6 +1822,7 @@ export default function MapView({
             const payload = {
                 place_id: selectedPlace.id,
                 proposed: buildManagePayload(edit),
+                ...(edit.no_experience?{no_experience:true}:Number.isInteger(edit.rating)?{rating:edit.rating}:{}),
                 note: t('map:main.requestNote')
             };
             await Api.postPlaceRequest(backendUrl, token, payload);
@@ -1840,15 +1845,7 @@ export default function MapView({
     const openCommentPanel = async () => {
         if (!selectedPlace) return;
         setCommentMessage("");
-        if (!token) {
-            onRequireAuth && onRequireAuth();
-            return;
-        }
         clearSearchState();
-        // 当用户被封禁时显示提示（仍允许查看评论，但不能发布）
-        if (isBanned) {
-            showTip(t('map:main.commentBanned'));
-        }
         setCommentOpen(true);
         await fetchComments();
     };
@@ -1865,7 +1862,7 @@ export default function MapView({
         setCommentsLoading(true);
         setCommentMessage("");
         try {
-            const res = await fetch(`${backendUrl}/comments/place/${selectedPlace.id}`);
+            const res = await fetch(`${backendUrl}/comments/place/${selectedPlace.id}?kind=edit`);
             if (!res.ok) throw new Error(`fetch comments failed ${res.status}`);
             const data = await res.json();
             setCommentsList(data || []);
@@ -2076,6 +2073,7 @@ export default function MapView({
                     open={commentOpen && !!selectedPlace}
                     place={selectedPlace}
                     comments={commentsList}
+                    readOnly
                     loading={commentsLoading}
                     message={commentMessage}
                     newComment={newComment}

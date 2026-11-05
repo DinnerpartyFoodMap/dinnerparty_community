@@ -48,3 +48,6 @@ MAP_EAGER_RATING_LIMIT=100
 - `encoder_contract_mismatch`：确认私有服务加载的是 `research-full-nonchain-4b-v3`，并同步更新后端。
 
 临时需要停止画像任务时可设置 `MODEL_PROFILE_MODE=off` 并重启；地图已有评价会保留。完整诊断和快照性能测量见 [MAP_RATING_PERFORMANCE.md](MAP_RATING_PERFORMANCE.md)。
+## 编辑评论与文本证据
+
+后续迁移包含创建者描述/附带评分转移、编辑评论、补评分和后台LLM质量证据，见 [EDIT_TEXT_EVIDENCE.md](EDIT_TEXT_EVIDENCE.md)。按用户质量目标默认启用有界证据权重，保留shadow/off；本次涉及iOS Swift表单，需重新编译App。

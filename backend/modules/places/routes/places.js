@@ -39,7 +39,7 @@ function visibleProjectedRows(rows,viewer,detail=false){
     const {isBlocked}=require('../../accounts/services/userRelations');
     return rows.filter(row=>{const current=read.get(row.id);return current&&!isBlocked(viewer?.id,current.creator_id)&&(detail?canViewPlace(current,viewer):current.moderation_status==='visible'||String(current.creator_id)===String(viewer?.id));});
 }
-router.use((req,res,next)=>req.method==='GET'&&!req.path.endsWith('/diaries')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
+router.use((req,res,next)=>req.method==='GET'&&!req.path.endsWith('/diaries')&&!req.path.endsWith('/edit-context')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
 
 // 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
 // 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者；
@@ -153,6 +153,13 @@ router.get("/:id/diaries", attachViewer, (req, res) => {
     }
 });
 
+router.get('/:id/edit-context',requireAuth,(req,res)=>{
+    res.set('Cache-Control','no-store');
+    const place=db._raw.prepare('SELECT * FROM Place WHERE id=?').get(req.params.id);
+    if(!place||!canViewPlace(place,req.user))return res.status(404).json({error:'地点不存在'});
+    const mine=db._raw.prepare('SELECT score FROM PlaceRating WHERE place_id=? AND user_id=?').get(place.id,req.user.id)||null;
+    res.json({place_id:place.id,mine});
+});
 // 获取单个地点（隐藏中的地点只给创建者和管理员）
 router.get("/:id", attachViewer, (req, res) => {
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
@@ -196,7 +203,7 @@ router.post("/:id/requests", requireAuth, (req, res) => {
     if (!place_id || !proposed || typeof proposed !== "object") return res.status(400).json({ error: "缺少参数或 proposed 格式错误" });
 
     try {
-        const row = createPlaceRequest({ placeId: place_id, requesterId: requester_id, proposed, note });
+        const row = createPlaceRequest({ placeId: place_id, requesterId: requester_id, proposed, note, rating:req.body.rating, noExperience:req.body.no_experience });
         return res.status(201).json(row);
     } catch (error) {
         if (error && error.publicMessage) {
@@ -287,6 +294,7 @@ router.put("/:id", requireAuth, (req, res) => {
                     checkCurrentEditor();
                     const request = createPlaceRequest({
                         placeId: place.id, requesterId: req.user.id, proposed,
+                        rating:req.body.rating,noExperience:req.body.no_experience,
                         note: `创建者的修改未通过 AI 初筛：${reviewNote(verdict.report)}`, moderation: verdict.report
                     });
                     return res.status(202).json({
@@ -315,13 +323,16 @@ router.put("/:id", requireAuth, (req, res) => {
             await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
             db._raw.transaction(()=>{
                 const current=checkCurrentEditor();
-                if(['name','description','category','per_person_cost'].some(key=>current[key]!==place[key]))throw Object.assign(new Error('地点已被修改，请重新打开'),{status:409});
+                if(Object.keys(updates).some(key=>JSON.stringify(current[key]??null)!==JSON.stringify(place[key]??null)))throw Object.assign(new Error('地点已被修改，请重新打开'),{status:409});
+                const intent=require('../services/placeEditRating').prepareEditRating(req.user.id,Number(id),{rating:req.body.rating,noExperience:req.body.no_experience});
+                if(Object.entries(updates).some(([key,value])=>current[key]!==value))require('../services/placeEditRating').commitEditRating(req.user.id,Number(id),intent);
                 syncCategoryRegistry(normalizedCategoryNames,req.user.id);
                 db._raw.prepare(sql).run(...values);
-                require('../services/placeRevisions').recordPlaceRevision({placeId:Number(id),authorId:req.user.id,path:isCreator?'owner_edit':'admin_edit',before:current});
+                require('../services/placeRevisions').recordPlaceRevision({placeId:Number(id),authorId:req.user.id,path:isCreator?'owner_edit':'admin_edit',before:current,noExperience:intent.noExperience});
             }).immediate();
         }catch(e){return res.status(e.status||500).json({error:e.publicMessage||e.message});}
         {
+            try{await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();}catch{/* The edit is committed; following reads rebuild the projection. */}
             // 创建者改了复核中的地点：重新初筛；改了被驳回的地点：重新提交人工复核
             if (isCreator && place.moderation_status !== 'visible') {
                 try { afterOwnerEdit(id); } catch (moderationError) { res.locals.unhandledError = moderationError; }

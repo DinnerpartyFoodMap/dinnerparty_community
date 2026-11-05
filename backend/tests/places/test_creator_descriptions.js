@@ -1,0 +1,36 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawnSync}=require('node:child_process');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'creator-text-'));
+Object.assign(process.env,{DB_FILE:path.join(temp,'test.sqlite'),LOG_TO_FILE:'false',LOG_TO_CONSOLE:'false',SILICONFLOW_API_KEY:'',DEEPSEEK_API_KEY:'',PLACE_MODERATION_ENABLED:'false'});
+const {db,init}=require('../../infrastructure/database');
+async function main(){
+ init();const sql=db._raw;for(const id of ['old','new','editor'])sql.prepare('INSERT INTO User(id,username,password,qq) VALUES(?,?,?,?)').run(id,id,'unused',id==='new'?'10001':null);
+ for(const id of [1,2,3,4])sql.prepare("INSERT INTO Place(id,name,description,category,creator_id,updated_by,moderation_status) VALUES(?,?,?,'中餐','old','old','visible')").run(id,'place'+id,id===4?'':'菜一般，等了四十分钟');
+ const ratings=require('../../modules/ratings/services/placeRatings'),edit=require('../../modules/places/services/placeEditRating');ratings.insertCreationRating(1,'old',2,100,'creation_default');ratings.insertCreationRating(2,'old',1,100,'creation_default');ratings.insertCreationRating(4,'old',4,100,'creation_default');edit.commitEditRating('old',3,{rating:2});edit.commitEditRating('new',2,{rating:4});
+ const longDescription='菜单价格和体验细节。'.repeat(180);sql.prepare('UPDATE Place SET description=? WHERE id=2').run(longDescription);
+ edit.commitEditRating('new',1,{rating:3});const priorNewVote=sql.prepare("SELECT * FROM PlaceRating WHERE user_id='new' AND place_id=1").get();sql.prepare("DELETE FROM PlaceRating WHERE user_id='new' AND place_id=1").run();require('../../modules/ratings/services/ratingHistory').appendRatingRevision({userId:'new',placeId:1,before:priorNewVote,after:null,action:'withdraw',origin:'active'});
+ const descriptions=require('../../modules/places/services/creatorDescriptions');descriptions.initCreatorDescriptions(sql);descriptions.initCreatorDescriptions(sql);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM CreatorDescription').get().n,3);assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment').get().n,3,'legacy creator descriptions bind once, empty descriptions stay absent');
+ assert.equal(sql.prepare('SELECT c.content FROM Comment c JOIN CreatorDescription d ON d.comment_id=c.id WHERE d.place_id=2').get().content,longDescription,'full legacy prose is retained even when the LLM input is bounded');
+ const before=sql.prepare('SELECT * FROM Place WHERE id=1').get();edit.commitEditRating('editor',1,{rating:2});sql.prepare("UPDATE Place SET description=description||'，价格高' WHERE id=1").run();require('../../modules/places/services/placeRevisions').recordPlaceRevision({placeId:1,authorId:'editor',path:'request_approved',before});
+ const expiry=sql.prepare('SELECT e.expires_at_ms FROM RatingTextEvidence e JOIN CreatorDescription c ON c.comment_id=e.comment_id WHERE c.place_id=1').get().expires_at_ms;
+ const csv=path.join(temp,'owners.csv');fs.writeFileSync(csv,'名称,创建人,qq\nplace1,new,10001\nplace2,new,10001\nplace3,new,10001\nplace4,new,10001\n','utf8');
+ const run=()=>spawnSync(process.execPath,[path.resolve(__dirname,'../../scripts/places/reassign_place_owners.js'),csv,'--apply'],{env:process.env,encoding:'utf8',timeout:30000});let result=run();assert.equal(result.status,0,result.stderr);
+ assert.equal(sql.prepare("SELECT COUNT(*) n FROM CreatorDescription WHERE user_id='new'").get().n,3);
+ assert.equal(sql.prepare("SELECT COUNT(*) n FROM Comment c JOIN CreatorDescription d ON d.comment_id=c.id WHERE c.user_id='new'").get().n,3,'creator-bound comments follow owner');
+ assert.equal(sql.prepare("SELECT COUNT(*) n FROM Comment WHERE user_id='editor'").get().n,1,'independent editors retain their own comments');
+ assert.equal(sql.prepare("SELECT score FROM PlaceRating WHERE place_id=1 AND user_id='new'").get().score,2);assert.equal(sql.prepare("SELECT created_at FROM PlaceRating WHERE place_id=1 AND user_id='new'").get().created_at,100);
+ assert.ok(require('../../modules/ratings/services/ratingEstimateAdapter').qualified([1]).some(r=>r.user_id==='new'&&r.score===2),'the transferred score is also available to model estimates after prior withdrawn history');
+ assert.equal(sql.prepare("SELECT score FROM PlaceRating WHERE place_id=2 AND user_id='new'").get().score,4,'existing new-owner vote wins collision');assert.equal(sql.prepare("SELECT 1 FROM PlaceRating WHERE place_id=2 AND user_id='old'").get(),undefined);
+ assert.equal(sql.prepare("SELECT score FROM PlaceRating WHERE place_id=3 AND user_id='new'").get().score,2,'creator rating edited through the rating UI also follows ownership');assert.equal(sql.prepare("SELECT 1 FROM PlaceRating WHERE place_id=3 AND user_id='old'").get(),undefined);
+ assert.equal(sql.prepare("SELECT score FROM PlaceRating WHERE place_id=4 AND user_id='new'").get().score,4,'creation rating transfers even with empty description');
+ assert.equal(sql.prepare('SELECT e.expires_at_ms FROM RatingTextEvidence e JOIN CreatorDescription c ON c.comment_id=e.comment_id WHERE c.place_id=1').get().expires_at_ms,expiry,'transfer cannot renew source lifetime');
+ const attached=sql.prepare('SELECT c.user_id,c.rating,e.user_id AS evidence_owner,e.rating_revision,s.revision FROM CreatorDescription d JOIN Comment c ON c.id=d.comment_id JOIN RatingTextEvidence e ON e.comment_id=c.id JOIN RatingStream s ON s.user_id=e.user_id AND s.place_id=e.place_id WHERE d.place_id=1').get();assert.equal(attached.user_id,'new');assert.equal(attached.evidence_owner,'new');assert.equal(attached.rating,2);assert.equal(attached.rating_revision,attached.revision);
+ result=run();assert.equal(result.status,0,result.stderr);assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment').get().n,4,'repeated transfer creates no extra comments');
+ sql.prepare("UPDATE User SET qq='10002' WHERE id='editor'").run();fs.writeFileSync(csv,'名称,创建人,qq\nplace1,editor,10002\nplace2,editor,10002\n');
+ sql.exec("CREATE TRIGGER creator_test_rollback BEFORE UPDATE OF creator_id ON Place WHEN NEW.id=2 BEGIN SELECT RAISE(ABORT,'owner-text rollback'); END;");result=run();assert.equal(result.status,1);assert.equal(sql.prepare('SELECT user_id FROM CreatorDescription WHERE place_id=1').get().user_id,'new');assert.equal(sql.prepare("SELECT score FROM PlaceRating WHERE place_id=1 AND user_id='new'").get().score,2,'a later failure rolls back owner, descriptor and attached score together');sql.exec('DROP TRIGGER creator_test_rollback');
+ const created=await require('../../modules/places/services/placeService').createPlace({name:'created',description:'拿铁20元，奶泡细腻',category:'咖啡',latitude:23,longitude:113,rating:4,rating_input_kind:'explicit'},'new',{source:'web'});
+ assert.equal(sql.prepare('SELECT user_id FROM CreatorDescription WHERE place_id=?').get(created.id).user_id,'new');
+ console.log('Creator text migration and script transfer passed: whole legacy description, initial submissions, attached default vote, conflicts, independent edits, empty text, expiry and idempotence.');
+}
+main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{db._raw.close();assert.equal(path.dirname(path.resolve(temp)),path.resolve(os.tmpdir()));fs.rmSync(temp,{recursive:true,force:true});});

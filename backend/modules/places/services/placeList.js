@@ -29,7 +29,7 @@ function snapshotKey(filter, viewerId, model) {
     criteria.tags = [...criteria.tags].sort();
     criteria.excludeTags = [...criteria.excludeTags].sort();
     return createHash('sha256').update(JSON.stringify({ viewerId, criteria, sort: 'ratingsort-v1',
-        dataset: process.env.ALGORITHM_DATASET_ID || 'primary', modes: migration.modes(),model:model?.model??null,calibration_policy:model?.calibration_policy??null })).digest('hex');
+        dataset: process.env.ALGORITHM_DATASET_ID || 'primary', modes: migration.modes(),model:model?.model??null,calibration_policy:model?.calibration_policy??null,text_evidence_mode:require('../../ratings/services/ratingTextEvidence').mode(),text_evidence_revision:require('../../ratings/services/ratingTextEvidence').revision() })).digest('hex');
 }
 function pruneSnapshots(now) {
     for (const [token, entry] of listSnapshots) if (now >= entry.expires) listSnapshots.delete(token);

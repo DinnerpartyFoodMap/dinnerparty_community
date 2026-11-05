@@ -29,6 +29,7 @@ function qualified(ids,database=db._raw){
 }
 function features(viewerId,now=Date.now(),database=db._raw){const places=database.prepare("SELECT id,name,category,latitude,longitude FROM Place WHERE moderation_status='visible'").all(),ratings=qualified(places.map(p=>p.id),database);return createFeatures(places,ratings,viewerId,now);}
 const featureCache=new Map(),builderCache=new Map(),qualityCache=new Map(),graphCache=new Map();
+let textShadow=null;
 function featureGraph(context,config,database){
  const graphKey=JSON.stringify([context.input_revision,config.model.model_hash]);let graph=graphCache.get(graphKey);
  if(!graph||graph.database!==database||context.as_of_ms<graph.from||context.as_of_ms>=graph.until){const places=database.prepare("SELECT id,name,category,description,address,latitude,longitude,per_person_cost FROM Place WHERE moderation_status='visible'").all(),allRatings=qualified(places.map(p=>p.id),database),ratings=allRatings.filter(r=>Number(r.created_at??r.updated_at??0)<=context.as_of_ms),assets=profiles.readProfiles(places,config.model,database),future=allRatings.map(r=>Number(r.created_at??r.updated_at??0)).filter(t=>t>context.as_of_ms);graph={database,places,ratings,assets,covisit:covisitGraph(ratings),from:context.as_of_ms,until:future.length?Math.min(...future):Infinity};if(graphCache.size>=4)graphCache.delete(graphCache.keys().next().value);graphCache.set(graphKey,graph);}
@@ -45,11 +46,16 @@ function fullFeatures(viewerId,context,config,database=db._raw,candidateCount=1)
  if(featureCache.size>=16)featureCache.delete(featureCache.keys().next().value);featureCache.set(key,{database,value});return value;
 }
 async function quality(context,config,excludeViewer=null){
- const key=JSON.stringify([context.input_revision,config.model.model_hash,excludeViewer,config.calibration_policy]),cached=qualityCache.get(key);if(cached&&context.as_of_ms>=cached.from&&context.as_of_ms<cached.until)return cached.result;
+ const text=require('./ratingTextEvidence'),textMode=text.mode(),textFactors=text.factors(context.as_of_ms),hasText=textFactors.size>0&&textMode!=='off';
+ const key=JSON.stringify([context.input_revision,config.model.model_hash,excludeViewer,config.calibration_policy,textMode,[...textFactors]]),cached=qualityCache.get(key);if(cached&&context.as_of_ms>=cached.from&&context.as_of_ms<cached.until)return cached.result;
  const graph=featureGraph(context,config,db._raw),places=graph.places,ratings=graph.ratings.filter(r=>r.user_id!==excludeViewer).map(({place_id,user_id,score})=>({place_id,user_id,score})),assets=graph.assets,rated=new Set(ratings.map(r=>r.place_id));
  const place_groups=places.filter(p=>rated.has(p.id)).map(p=>{const raw=assets.get(p.id)?.primary_style||assets.get(p.id)?.categories?.[0]||String(p.category||'').split(/[,，|]/)[0].trim();return {place_id:p.id,group_id:raw&&!['其他','未分类','餐厅','地点'].includes(raw)?raw:null,avoid:hasAvoidTag(p.category)};});
- const result=client.compute('ratingquality',{...context,config_version:config.config_version,model_hash:config.model.model_hash,calibration_policy:config.calibration_policy,ratings,place_groups},{timeoutMs:30000}).then(r=>new Map(r.qualities.map(p=>[p.place_id,p.average]))).catch(e=>{qualityCache.delete(key);throw e;});
- if(qualityCache.size>=16)qualityCache.delete(qualityCache.keys().next().value);qualityCache.set(key,{result,from:context.as_of_ms,until:graph.until});return result;
+ const weighted=hasText?ratings.map(r=>({...r,text_weight:textFactors.get(JSON.stringify([r.place_id,r.user_id]))??1})):ratings;
+ const result=client.compute('ratingquality',{...context,config_version:config.config_version,model_hash:config.model.model_hash,calibration_policy:config.calibration_policy,...(hasText?{text_evidence_policy:text.POLICY,text_evidence_mode:textMode}:{}),ratings:weighted,place_groups},{timeoutMs:30000}).then(r=>{
+  if(excludeViewer===null&&(r.shadow_qualities||r.baseline_qualities)){const base=new Map((r.baseline_qualities||r.qualities).map(p=>[p.place_id,p.average])),deltas=(r.shadow_qualities||r.qualities).map(p=>p.average-base.get(p.place_id));textShadow={mode:textMode,input_revision:context.input_revision,as_of_ms:context.as_of_ms,places:deltas.length,changed:deltas.filter(v=>Math.abs(v)>1e-12).length,mean_shift:deltas.length?deltas.reduce((a,b)=>a+b,0)/deltas.length:0,max_absolute_shift:deltas.length?deltas.reduce((a,b)=>Math.max(a,Math.abs(b)),0):0};}
+  return new Map(r.qualities.map(p=>[p.place_id,p.average]));
+ }).catch(e=>{qualityCache.delete(key);throw e;});
+ if(qualityCache.size>=16)qualityCache.delete(qualityCache.keys().next().value);qualityCache.set(key,{result,from:context.as_of_ms,until:Math.min(graph.until,context.as_of_ms+15000)});return result;
 }
 const yieldToRequests=()=>new Promise(resolve=>setImmediate(resolve));
 function estimateScope(config){return ['full-nonchain-features-v2','full-nonchain-4b-features-v3'].includes(config.contract?.schema_version)?'estimate':'all';}
@@ -88,4 +94,4 @@ async function rankCandidates(candidates,viewerId,context,{bonuses=[0.3,0.24,0.1
  const result=await client.compute('listrank',{...context,config_version:config.config_version,model_hash:config.model.model_hash,candidates:candidates.map(c=>({...c,features:featureSnapshot[c.place_id]})),bonuses_by_choice_rank:bonuses});
  return {...result,model:config.model,feature_snapshot:featureSnapshot};
 }
-module.exports={ratingViews,qualified,CONFIG,CALIBRATION_POLICY,modes,configuration,features,rankCandidates,fullFeatures};
+module.exports={ratingViews,qualified,CONFIG,CALIBRATION_POLICY,modes,configuration,features,rankCandidates,fullFeatures,textEvidenceShadow:()=>textShadow};

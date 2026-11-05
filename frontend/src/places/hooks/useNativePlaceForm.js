@@ -62,6 +62,10 @@ function formLabels(mode, canDirect) {
         costUnit: t('map:placeForm.costUnit'),
         rating: t('map:addForm.ratingLabel'),
         ratingRequired: t('map:addForm.ratingRequired'),
+        noExperience:t('map:editEvidence.noExperience'),
+        editPreview:t('map:editEvidence.preview'),
+        editNotice:t('map:editEvidence.notice'),
+        noChanges:t('map:editEvidence.noChanges'),
         exteriorImages: t('map:addForm.exteriorImages'),
         menuImages: t('map:addForm.menuImages'),
         addImage: t('map:placeForm.addImage'),
@@ -123,6 +127,9 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
             const values = current.values || {};
             const snapshot = {
                 mode: current.mode,
+                ratingRequired:current.ratingRequired===true,
+                original:current.original||{},
+                originalPosition:current.originalPosition||'',
                 dark: latest.current.dark,
                 ...nativeThemeColors(),
                 categories: categories.map((item) => ({ name: item.name, common: !!item.is_common })),
@@ -139,6 +146,7 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
                     description: values.description || '',
                     perPersonCost: values.perPersonCost != null ? String(values.perPersonCost) : '',
                     rating: values.rating ?? null,
+                    noExperience:values.noExperience===true,
                     exteriorImages: imageEntries(values.exteriorImages),
                     menuImages: imageEntries(values.menuImages)
                 },
