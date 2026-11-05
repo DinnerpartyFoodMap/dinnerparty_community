@@ -1,6 +1,6 @@
 const { db, isVectorSearchAvailable } = require('../../../infrastructure/database');
 const botConfig = require('./config');
-const { nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer } = require('../../discovery/services/randomRecommendation');
+const { drawRecommendation, personalizeCandidates, prepareNearbyRecommendation } = require('../../discovery/services/randomRecommendation');
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
 const { getUserLocation } = require('../../accounts/services/userLocation');
 const { resolveQQUser } = require('./qqIdentity');
@@ -49,8 +49,7 @@ async function pickRandomPlace(ctx, { random = Math.random } = {}) {
             return { candidates, personalized: false };
         }
     } : null;
-    const candidates=await nearbyCandidates(db._raw,center);
-    const choice=await prepareChoicePersonalizer(db._raw,candidates,user?.id??null,personalize);
+    const {candidates,personalize:choice}=await prepareNearbyRecommendation(db._raw,center,user?.id??null,personalize);
     const result = drawRecommendation(candidates, recentIds(ctx.senderQq, now), random, choice);
     if (result.place) remember(ctx.senderQq, result.place.id, now);
     return {

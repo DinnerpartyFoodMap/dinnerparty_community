@@ -141,6 +141,22 @@ export async function runRandomFoodBrowserTests() {
         equal(selections, [302], 'selection delivers the currently rendered place');
         equal(state().config.open, false, 'selection closes the session');
         ok(feedbackEvents.some(event => event[0] === 'click' && event[1] === 'random' && event[2] === 302), 'selection records random feedback for that place');
+        await configure({open:true});
+        const conflicted=await waitRequest(15);
+        conflicted.respond({error:'数据已变化，请重试',code:'RANDOM_INPUT_CHANGED'},409);
+        const recovered=await waitRequest(16);
+        equal(recovered.body,conflicted.body,'automatic conflict retry preserves draw and chain identity');
+        equal(state().error,'','transient conflict is recovered without a visible error');
+        await respond(recovered,303);
+        controls.drawNext();const persistent=await waitRequest(17);
+        persistent.respond({error:'数据已变化，请重试',code:'stale_input'},409);
+        const finalAttempt=await waitRequest(18);finalAttempt.respond({error:'仍在更新',code:'RANDOM_INPUT_CHANGED'},409);
+        await until(()=>state().error==='仍在更新'&&!state().busy,'bounded persistent conflict');
+        equal(requests.length,18,'a conflict retries at most once in the client');
+        controls.drawNext();const chainConflict=await waitRequest(19);
+        chainConflict.respond({error:'抽取会话已改变，请重新抽取'},409);
+        await until(()=>state().error==='抽取会话已改变，请重新抽取'&&!state().busy,'business conflict must not auto retry');
+        equal(requests.length,19,'chain/consent conflicts are distinct from stale model inputs');
         equal(errors, [], 'React lifecycle has no browser errors');
         return { passed: true, requests: requests.length, coverage: ['one draw per open', 'fixed center and recent-two history', 'recenter clears history', 'close abort and late result isolation', 'token replacement', 'origin replacement', 'community idempotent retry'] };
     } finally {

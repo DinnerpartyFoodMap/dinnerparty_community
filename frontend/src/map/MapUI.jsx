@@ -459,8 +459,8 @@ export default function MapUI(props) {
         if (!userFilter) setUserPlacesOpen(false);
     }, [userFilter]);
     const preloadedRatingPlace=ratingPlaceForViewer(selectedPlace,isAuthenticated?currentUser?.id:null);
-    const { summary: ratingSummary, personal: personalizedRating, risk: ratingRisk } = ratingDisplay(placeRating.data, preloadedRatingPlace);
-    const myRatingTier = placeRating.data && placeRating.data.mine ? ratingTierFor(placeRating.data.mine.score) : null;
+    const { summary: ratingSummary, personal: personalizedRating, risk: ratingRisk, mine: ownRating } = ratingDisplay(placeRating.data, preloadedRatingPlace);
+    const myRatingTier = ratingTierFor(ownRating?.score);
 
     const [favPageOpen, setFavPageOpen] = useState(false);
     const [pickedPageOpen, setPickedPageOpen] = useState(false);
@@ -1939,6 +1939,7 @@ export default function MapUI(props) {
                             {(personalizedRating.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personalizedRating.average) }) : t('map:rating.card.personalized', { average: formatAverage(personalizedRating.average) }))}
                         </span>
                     )}
+                    {myRatingTier && <span style={{ whiteSpace: 'nowrap', fontSize: 12, color: myRatingTier.tone }}>{t('map:rating.card.mine', { tier: tierLabel(myRatingTier) })}</span>}
                     {ratingRisk && <span style={{ fontSize: 12, color: 'var(--color-warning)' }}>{t('map:rating.riskLabel')}</span>}
                 </span>
                 <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18, flexShrink: 0, color: 'var(--color-text-muted)' }}>chevron_right</span>

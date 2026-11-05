@@ -931,7 +931,7 @@ export default function MapView({
     // 标记的避雷图标随综合评价立即更新，不等下一次附近请求。值没变时不触发重渲染。
     const applyRatingSummary = (placeId, summary, data) => {
         if (placeId == null || !summary) return;
-        const patch = { rating_count: Number(summary.count) || 0, rating_average: summary.count ? summary.average : null, rating_negative_count:summary.distribution?(Number(summary.distribution[1])||0)+(Number(summary.distribution[2])||0):undefined, rating_estimate: data?.estimate ?? null, predicted_rating: data?.prediction ?? null, rating_risk: data?.risk ?? data?.estimate?.risk ?? null, rating_viewer_id:currentUser?.id??null, rating_deferred:false };
+        const patch = { rating_count: Number(summary.count) || 0, rating_average: summary.count ? summary.average : null, rating_negative_count:summary.distribution?(Number(summary.distribution[1])||0)+(Number(summary.distribution[2])||0):undefined, rating_estimate: data?.estimate ?? null, predicted_rating: data?.prediction ?? null, rating_mine:data?.mine??null, rating_risk: data?.risk ?? data?.estimate?.risk ?? null, rating_viewer_id:currentUser?.id??null, rating_deferred:false };
         const matches = (place) => !!place && place.isMarked !== false && String(place.id) === String(placeId);
         const differs = (place) => (Number(place.rating_count) || 0) !== patch.rating_count
             || place.rating_viewer_id !== patch.rating_viewer_id || place.rating_deferred === true
@@ -939,6 +939,7 @@ export default function MapView({
             || (place.rating_average ?? null) !== patch.rating_average
             || JSON.stringify(place.rating_estimate ?? null) !== JSON.stringify(patch.rating_estimate)
             || JSON.stringify(place.predicted_rating ?? null) !== JSON.stringify(patch.predicted_rating)
+            || JSON.stringify(place.rating_mine ?? null) !== JSON.stringify(patch.rating_mine)
             || JSON.stringify(place.rating_risk ?? null) !== JSON.stringify(patch.rating_risk);
         const patchList = (list) => (Array.isArray(list) && list.some((place) => matches(place) && differs(place))
             ? list.map((place) => (matches(place) ? { ...place, ...patch } : place))

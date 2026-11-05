@@ -9,6 +9,7 @@ import { t } from '../i18n/index.js';
 import './placeList.css';
 
 const PAGE_SIZE = 20;
+const INITIAL_STATE = { items: [], total: 0, loading: true, error: '', done: false, personalized: false };
 
 export { RADIUS_OPTIONS_KM } from './placeFilter';
 
@@ -18,7 +19,7 @@ export { RADIUS_OPTIONS_KM } from './placeFilter';
  * 点开时交给 onOpenPlace（在地图上打开这个地点）。toolbar 放在数量说明右侧。
  */
 export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_FILTER, distance = null, onOpenPlace, toolbar = null, children = null }) {
-    const [state, setState] = useState({ items: [], total: 0, loading: true, error: '', done: false, personalized: false });
+    const [storedState, setState] = useState(INITIAL_STATE);
     const requestRef = useRef(0);
     const sentinelRef = useRef(null);
     const queryRef = useRef(null);
@@ -26,10 +27,12 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
     queryRef.current = placeListQuery(filter, distance);
     // 同样的条件不重复请求
     const queryKey = queryRef.current.toString() || placeFilterKey(filter);
+    const identity = `${backendUrl}|${token || ''}|${queryKey}`;
+    const state = storedState.identity === identity ? storedState : INITIAL_STATE;
 
     const load = useCallback(async (offset) => {
         const requestId = ++requestRef.current;
-        setState((current) => ({ ...current, loading: true, error: '', ...(offset === 0 ? { items: [], done: false } : null) }));
+        setState((current) => ({ ...current, identity, loading: true, error: '', ...(offset === 0 ? { items: [], done: false } : null) }));
         try {
             if (offset === 0) snapshotRef.current = null;
             let data;
@@ -50,6 +53,7 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
             const items = Array.isArray(data.items) ? data.items : [];
             const total = Number(data.total) || 0;
             setState((current) => ({
+                identity,
                 items: offset === 0 ? items : [...current.items, ...items],
                 total,
                 loading: false,
@@ -118,9 +122,10 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
 }
 
 function PlaceListItem({ place, onOpen }) {
-    const { summary, personal, risk } = ratingDisplay(null, place);
+    const { summary, personal, risk, mine } = ratingDisplay(null, place);
     const tier = tierForAverage(summary.average);
     const personalTier = tierForAverage(personal?.average);
+    const myTier = tierForAverage(mine?.score);
     const tags = String(place.category || '').split(/[,，]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 4);
     const href = `/p/${encodeURIComponent(place.id)}`;
     const open = (event) => {
@@ -152,6 +157,7 @@ function PlaceListItem({ place, onOpen }) {
                             )
                             : <span>{t('map:rating.summary.none')}</span>}
                         {personalTier && <span className="fm-place-card__personal">{personal.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personal.average) }) : t('places:list.personalRating', { tier: tierLabel(personalTier) })}</span>}
+                        {myTier && <span className="fm-place-card__personal">{t('map:rating.card.mine', { tier: tierLabel(myTier) })}</span>}
                         {risk && <span style={{ color: 'var(--color-warning)', fontSize: 12 }}>{t('map:rating.riskLabel')}</span>}
                     </span>
                     <span className="fm-place-card__tags">

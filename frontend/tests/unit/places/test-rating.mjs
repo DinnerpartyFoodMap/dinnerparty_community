@@ -78,6 +78,15 @@ const raw = { summary: { count: 9, average: 1, distribution: {1:9} }, personaliz
 assert.equal(ratingDisplay(raw).summary.count,2);
 assert.deepEqual(ratingDisplay(raw).summary.distribution,{3:2});
 assert.equal(ratingDisplay(raw).personal.kind,'prediction');
+for(const source of ['user','create','migration']){
+    const mine={score:2,source};
+    assert.equal(ratingDisplay({...raw,mine}).personal,null,'actual ratings suppress predictions regardless of origin');
+    assert.deepEqual(ratingDisplay({...raw,mine}).mine,mine);
+    const saved={...preloaded,rating_mine:mine};
+    assert.equal(ratingDisplay(null,ratingPlaceForViewer(saved,'alice')).personal,null,'preloads must not flash predictions on a rated place');
+    for(const viewer of ['bob',null])assert.equal(ratingDisplay(null,ratingPlaceForViewer(saved,viewer)).mine,null,'own rating is scoped to its response owner');
+    assert.equal(ratingDisplay({...raw,mine:null},saved).personal.kind,'prediction','withdrawal overrides an old cached own rating');
+}
 assert.equal(ratingDisplay({...raw,prediction:{active:false,average:4}}).personal.kind,'legacy');
 assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,active:false}}).summary.average,1);
 const retainedPlace={rating_count:1,rating_average:3,rating_estimate:{active:true,evidence_count:0,average:null}};

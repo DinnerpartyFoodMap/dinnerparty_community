@@ -38,11 +38,21 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
         setResult(null);
         try {
             let data;
-            if (feedback?.consent?.feedback && token) {
+            const community=feedback?.consent?.feedback && token;
+            if (community) {
                 pendingDrawRef.current ||= { draw_id: eventId(), recommendation_session_id: recommendationRef.current, parent_decision_id: parentDecisionRef.current, center: centerRef.current, exclude_ids: [...recentRef.current] };
-                data = await request(backendUrl, token, '/api/community/draw', { method: 'POST', signal: controller.signal,
-                    body: JSON.stringify({ ...pendingDrawRef.current, consent_version: feedback.consent.version }) });
-            } else data = await fetchRandomPlace(backendUrl, centerRef.current, recentRef.current, { signal: controller.signal, token });
+            }
+            for(let attempt=0;attempt<2;attempt++){
+                try{
+                    data=community?await request(backendUrl, token, '/api/community/draw', { method: 'POST', signal: controller.signal,
+                        body: JSON.stringify({ ...pendingDrawRef.current, consent_version: feedback.consent.version }) })
+                        :await fetchRandomPlace(backendUrl, centerRef.current, recentRef.current, { signal: controller.signal, token });
+                    break;
+                }catch(err){
+                    const retry=err.status===409&&(!community||['stale_input','RANDOM_INPUT_CHANGED'].includes(err.code));
+                    if(attempt===1||!retry||requestRef.current!==controller||controller.signal.aborted)throw err;
+                }
+            }
             if (requestRef.current !== controller) return;
             pendingDrawRef.current = null;
             parentDecisionRef.current = data.decision_id || null;

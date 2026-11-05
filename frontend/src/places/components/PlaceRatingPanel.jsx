@@ -40,9 +40,8 @@ const sectionTitleStyle = { fontSize: 13, fontWeight: 700, color: 'var(--color-t
 
 function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, showTip }) {
     const data = rating.data;
-    const { summary, personal, risk } = ratingDisplay(data, place);
+    const { summary, personal, risk, mine } = ratingDisplay(data, place);
     const tier = tierForAverage(summary.average);
-    const mine = data && data.mine;
     const quota = data && data.quota;
     const exhausted = !!(quota && quota.remaining <= 0 && !quota.place_counted);
     const distribution = summary.distribution;
@@ -125,7 +124,7 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
                     </div>
                 </div>
             )}
-            {data && !personal && isAuthenticated && summary.count > 1 && (
+            {data && !personal && !mine && isAuthenticated && summary.count > 1 && (
                 <div style={{ marginTop: 12, fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>{data.prediction?.active === true ? t('map:rating.panel.predictionUnavailable') : t('map:rating.panel.personalizedUnavailable')}</div>
             )}
 

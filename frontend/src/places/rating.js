@@ -75,24 +75,26 @@ export function summaryFromPlace(place) {
 export function ratingPlaceForViewer(place,viewerId) {
     if(!place)return null;
     if(viewerId!=null&&place.rating_viewer_id!=null&&String(viewerId)===String(place.rating_viewer_id))return place;
-    return {...place,predicted_rating:null,personalized_average:null};
+    return {...place,predicted_rating:null,personalized_average:null,rating_mine:null};
 }
 
 // Display selection never mutates the legacy aggregates used by avoidance rules.
 export function ratingDisplay(data, place) {
     const estimate = data ? data.estimate : place?.rating_estimate;
     const prediction = data ? data.prediction : place?.predicted_rating;
+    const own = data ? data.mine : place?.rating_mine;
+    const mine = ratingTierFor(own?.score) ? own : null;
     const valid = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 1 && Number(value) <= 4;
     const legacy = data?.summary || summaryFromPlace(place);
     const summary = estimate?.active === true && Number(estimate.evidence_count) > 0 && valid(estimate.average)
         ? { count: Number(estimate.evidence_count) || 0, average: valid(estimate.average) ? Number(estimate.average) : null, distribution: estimate.distribution }
         : legacy;
     const oldPersonal = data?.personalized || (valid(place?.personalized_average) ? { average: Number(place.personalized_average) } : null);
-    const personal = prediction?.active === true
+    const personal = mine ? null : prediction?.active === true
         ? (prediction.status === 'ready' && valid(prediction.average) ? { ...prediction, kind: 'prediction' } : null)
         : (oldPersonal ? { ...oldPersonal, kind: 'legacy' } : null);
     const candidateRisk = data ? (data.risk || estimate?.risk) : (place?.rating_risk || estimate?.risk);
     const riskActive = candidateRisk?.active === true || (estimate?.active === true && candidateRisk?.active !== false);
     const risk = riskActive && candidateRisk?.status === 'ready' && candidateRisk.flagged === true ? candidateRisk : null;
-    return { summary, personal, risk };
+    return { summary, personal, risk, mine };
 }

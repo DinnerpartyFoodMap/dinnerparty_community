@@ -36,16 +36,21 @@ async function main(){
         assert.deepEqual(db._raw.prepare("SELECT * FROM PlaceRating WHERE user_id='viewer'").get(),before);
         assert.equal(db._raw.prepare("SELECT COUNT(*) AS n FROM PlaceRatingEvent WHERE user_id='viewer'").get().n,quota);
         // Frozen bootstrap projection: both scores and the independent risk hint render on narrow/wide layouts.
+        let projectedMine={score:3};
         await page.route('**/api/ratings/places/1',async route=>{
             const risk={active:true,status:'ready',flagged:true,probability:.8,threshold:.6,model_version:'ui-test'};
-            await route.fulfill({json:{summary:{count:9,average:1},estimate:{active:true,evidence_count:2,average:3.2,distribution:{1:0,2:0,3:2,4:0},risk},prediction:{active:true,status:'ready',average:3.6,ranking_score:3.9},mine:{score:3}}});
+            await route.fulfill({json:{summary:{count:9,average:1},estimate:{active:true,evidence_count:2,average:3.2,distribution:{1:0,2:0,3:2,4:0},risk},prediction:{active:true,status:'ready',average:3.6,ranking_score:3.9},mine:projectedMine}});
         });
         await page.reload();await page.waitForFunction(()=>JSON.parse(document.querySelector('#rating-state')?.textContent||'null')?.prediction?.active);
         const projected=page.getByRole('dialog');
         assert.equal(await projected.getByText('3.2',{exact:true}).count(),1);
-        assert.equal(await projected.getByText(/3\.6/).count(),1);
+        assert.equal(await projected.getByText(/3\.6/).count(),0,'actual rating takes precedence over prediction');
+        assert.equal(await projected.getByText('预计你会给',{exact:true}).count(),0);
+        assert.equal(await projected.getByRole('radio',{checked:true}).count(),1);
         assert.equal(await projected.getByText(/模型提示这家店更可能得到低分/).count(),1);
         assert.equal(await projected.getByText(/3\.9/).count(),0,'internal ranking score is not a displayed rating');
+        projectedMine=null;await page.reload();await page.waitForFunction(()=>JSON.parse(document.querySelector('#rating-state')?.textContent||'null')?.prediction?.active);
+        assert.equal(await page.getByRole('dialog').getByText(/3\.6/).count(),1,'unrated places still show a prediction');
         await page.unroute('**/api/ratings/places/1');
         let release;const blocked=new Promise(resolve=>{release=resolve;});
         await page.route('**/api/ratings/places/1',async route=>{await blocked;await route.fulfill({json:{summary:{count:2,average:3.2},prediction:{active:true,status:'ready',average:3.6}}});});

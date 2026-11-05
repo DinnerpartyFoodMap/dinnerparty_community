@@ -94,7 +94,7 @@ function recommendationWeight(place, distanceKm) {
         + 0.3 * completeness + 0.4 * favorites / (favorites + 5);
 }
 
-async function nearbyCandidates(database, center) {
+async function nearbyCandidates(database, center, viewerId=null) {
     await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     // A spherical bounding box first, then exact great-circle distance. At the
     // poles or across the date line, latitude alone is a safe coarse filter.
@@ -118,13 +118,29 @@ async function nearbyCandidates(database, center) {
         LEFT JOIN User u ON p.creator_id = u.id
         LEFT JOIN User uu ON p.updated_by = uu.id
         WHERE p.moderation_status = 'visible' AND p.latitude BETWEEN ? AND ?${longitudeFilter}`).all(...params);
+    const mine=require('../../ratings/services/ratingSnapshot').viewerRatings(viewerId,database);
     return rows.flatMap((place) => {
         // 显式社区“避雷”标签和低于均线的实际评价，都不参与随机推荐。
-        if (isAvoidedPlace(place)) return [];
+        if (isAvoidedPlace(place)||mine.get(place.id)?.score<=2) return [];
         const distanceKm = haversineDistanceKm(center, { lat: place.latitude, lng: place.longitude });
         if (distanceKm === null || distanceKm > RADIUS_KM) return [];
-        return [{ place, distanceKm, weight: recommendationWeight(place, distanceKm) }];
+        return [{ place:{...place,rating_mine:mine.get(place.id)??null,rating_viewer_id:viewerId}, distanceKm, weight: recommendationWeight(place, distanceKm) }];
     });
+}
+
+async function prepareNearbyRecommendation(database,center,viewerId,fallback=null){
+    // Retry the pool AND its ranking together. Reusing a pool after a source
+    // edit could recommend a newly hidden/avoided place or mix input revisions.
+    for(let attempt=0;attempt<3;attempt++){
+        try{
+            const candidates=await nearbyCandidates(database,center,viewerId);
+            const personalize=candidates.length<MIN_CANDIDATES?fallback:await prepareChoicePersonalizer(database,candidates,viewerId,fallback);
+            return {candidates,personalize};
+        }catch(error){
+            if(error.status!==409||error.code!=='stale_input')throw error;
+            if(attempt===2)throw Object.assign(error,{code:'RANDOM_INPUT_CHANGED'});
+        }
+    }
 }
 
 function drawRecommendation(candidates, excludedIds = [], random = Math.random, personalize = null, onDecision = null) {
@@ -155,4 +171,4 @@ function drawRecommendation(candidates, excludedIds = [], random = Math.random, 
     return { place: selected.place, distanceKm: selected.distanceKm, candidateCount: candidates.length, personalized: selection.personalized };
 }
 
-module.exports = { recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer, EMPTY_MESSAGE };
+module.exports = { recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer, prepareNearbyRecommendation, EMPTY_MESSAGE };

@@ -166,6 +166,7 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
         FROM Place p
         WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId);
     const filtered=rows.filter(row=>matchesFilter(row,filter)),byId=new Map(filtered.map(row=>[row.id,row]));
+    const mine=snapshot.viewerRatings(viewerId,database),rejected=new Set([...mine].filter(([,rating])=>rating.score<=2).map(([id])=>id));
     const result=await client.compute('ratingsort',{...current,places:filtered.map(row=>({id:row.id,rating_count:row.rating_count,rating_average:row.rating_average})),personal:[...personal].map(([place_id,average])=>({place_id,average}))});
     let views={estimates:[],predictions:[]};
     try{views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(filtered.map(row=>row.id),viewerId);}catch(e){if(e.status===409)continue;console.warn('Shadow list ratings unavailable');}
@@ -176,12 +177,16 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
         // Score the entire filtered set once, before pagination. Unrated places
         // may use an internal prior; the public displayed score stays null.
         const legacy=new Map(result.ranked.map(r=>[r.place_id,r.score]));
-        const candidates=filtered.map(row=>({place_id:row.id,predicted_rating:predictions.get(row.id)?.average??estimates.get(row.id)?.average??estimates.get(row.id)?.prior_average??legacy.get(row.id)??2.5}));
+        const candidates=filtered.filter(row=>!rejected.has(row.id)).map(row=>({place_id:row.id,predicted_rating:mine.get(row.id)?.score??predictions.get(row.id)?.average??estimates.get(row.id)?.average??estimates.get(row.id)?.prior_average??legacy.get(row.id)??2.5}));
         try{const ranked=await migration.rankCandidates(candidates,viewerId,current,{database,config:model});if(migration.modes().rank==='active')replacement=ranked;}catch(e){if(e.status===409)continue;console.warn('Bootstrap list ranking unavailable');}
     }
     if(!snapshot.same(current.input_revision))continue;
     const visible=new Set(database.prepare(`SELECT p.id FROM Place p WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId).map(p=>p.id));
-    const ranked=(replacement?replacement.ranked:result.ranked).filter(r=>visible.has(r.place_id)).map(r=>({row:byId.get(r.place_id),score:r.ranking_score??r.score,personalized:personal.get(r.place_id)}));
+    // Explicit personal dislikes are retained for browsing, after the other
+    // places. They cannot consume a top-five choice bonus or become first pick.
+    const order=replacement?[...replacement.ranked,...result.ranked.filter(r=>rejected.has(r.place_id))]:result.ranked;
+    const ranked=order.filter(r=>visible.has(r.place_id)).map(r=>({row:byId.get(r.place_id),score:rejected.has(r.place_id)?mine.get(r.place_id).score:r.ranking_score??r.score,personalized:personal.get(r.place_id)}))
+        .sort((a,b)=>Number(rejected.has(a.row.id))-Number(rejected.has(b.row.id))||(rejected.has(a.row.id)?b.score-a.score:0));
     const items = ranked.map(({ row, personalized, score }) => ({
         id: row.id,
         name: row.name,
@@ -195,6 +200,8 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
         rating_estimate: estimates.get(row.id)??null,
         rating_risk: estimates.get(row.id)?.risk??null,
         predicted_rating: predictions.get(row.id)??null,
+        rating_mine: mine.get(row.id)??null,
+        rating_viewer_id: viewerId??null,
         score: Math.round(score * 10000) / 10000
     }));
     if (items.length > MAX_SNAPSHOT_ROWS) throw client.failure(503, 'snapshot_capacity');

@@ -16,7 +16,7 @@ const {
     createPlace
 } = require('../services/placeService');
 const { createPlaceRequest } = require('../services/placeRequestService');
-const { nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer } = require('../../discovery/services/randomRecommendation');
+const { drawRecommendation, personalizeCandidates, prepareNearbyRecommendation } = require('../../discovery/services/randomRecommendation');
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
 const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
 const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
@@ -27,9 +27,11 @@ async function projectRatingViews(rows,viewerId,{map=false,bounds=null}={}){
     const configured=Number(process.env.MAP_EAGER_RATING_LIMIT??100),limit=Number.isSafeInteger(configured)&&configured>=0&&configured<=500?configured:100;
     const visible=rows.filter(r=>!bounds||r.longitude>=bounds.minLng&&r.longitude<=bounds.maxLng&&r.latitude>=bounds.minLat&&r.latitude<=bounds.maxLat);
     const candidates=map&&visible.length>limit?[]:visible,ids=new Set(candidates.map(r=>r.id));
-    const base=row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null,rating_viewer_id:viewerId??null,...(map?{rating_deferred:!ids.has(row.id),rating_eager_limit:limit}:{})});
+    let mine=require('../../ratings/services/ratingSnapshot').viewerRatings(viewerId);
+    const base=row=>({...row,rating_estimate:null,rating_risk:null,predicted_rating:null,rating_mine:mine.get(row.id)??null,rating_viewer_id:viewerId??null,...(map?{rating_deferred:!ids.has(row.id),rating_eager_limit:limit}:{})});
     if(!candidates.length)return rows.map(base);
     try{const views=await require('../../ratings/services/ratingEstimateAdapter').ratingViews(candidates.map(r=>r.id),viewerId),estimates=new Map(views.estimates.map(r=>[r.place_id,r])),predictions=new Map(views.predictions.map(r=>[r.place_id,r]));
+        mine=require('../../ratings/services/ratingSnapshot').viewerRatings(viewerId);
         return rows.map(row=>({...base(row),rating_estimate:estimates.get(row.id)??null,rating_risk:estimates.get(row.id)?.risk??null,predicted_rating:predictions.get(row.id)??null}));
     }catch{return rows.map(base);}
 }
@@ -129,8 +131,7 @@ router.get("/random", (req, res, next) => {
             }
             return { candidates, personalized: false };
         };
-        const candidates=await nearbyCandidates(db._raw,center);
-        const choice=await prepareChoicePersonalizer(db._raw,candidates,req.user?.id??null,personalize);
+        const {candidates,personalize:choice}=await prepareNearbyRecommendation(db._raw,center,req.user?.id??null,personalize);
         res.json(drawRecommendation(candidates, excludedIds, Math.random, choice));
     } catch (error) {
         console.error('随机推荐失败', error);

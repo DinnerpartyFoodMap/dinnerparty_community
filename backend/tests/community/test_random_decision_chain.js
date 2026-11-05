@@ -3,7 +3,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'random-chain-'));Object.assign(
 const {db,init}=require('../../infrastructure/database');init();const sql=db._raw;
 require('../../modules/accounts/middleware/auth').requireAuth=(req,res,next)=>{req.user={id:req.headers['x-user']||'a'};next();};
 require('../../modules/preferences/services/userPreferenceService').getUserPreference=async()=>null;
-require('../../modules/discovery/services/randomRecommendation').nearbyCandidates=async()=>[1,2,3,4,5].map(id=>({place:{id,name:'p'+id},distanceKm:1,weight:1}));
+require('../../modules/discovery/services/randomRecommendation').prepareNearbyRecommendation=async()=>({candidates:[1,2,3,4,5].map(id=>({place:{id,name:'p'+id},distanceKm:1,weight:1})),personalize:null});
 const app=require('express')();app.use(require('express').json());app.use(require('../../modules/community/routes/community'));let server;
 async function main(){
  for(const id of ['a','b'])sql.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)').run(id,id,'x');

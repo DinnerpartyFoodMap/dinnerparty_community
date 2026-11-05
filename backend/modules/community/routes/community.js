@@ -97,13 +97,12 @@ router.post('/draw',run(async(req,res)=>{
     }
     chainIndex();
     if(sql.prepare('SELECT COUNT(*) AS n FROM MapDecision WHERE user_id=? AND created_at>?').get(req.user.id,new Date(Date.now()-60000).toISOString()).n>=30) fail('请稍后再抽取',429);
-    const {nearbyCandidates,drawRecommendation,personalizeCandidates,prepareChoicePersonalizer}=require('../../discovery/services/randomRecommendation');
+    const {drawRecommendation,personalizeCandidates,prepareNearbyRecommendation}=require('../../discovery/services/randomRecommendation');
     const {getUserPreference}=require('../../preferences/services/userPreferenceService');
     const {isVectorSearchAvailable}=require('../../../infrastructure/database');
     let snapshot={candidates:[],eligible_count:0,algorithm:'random-mixture-v1'};
     let preference=null;try{if(isVectorSearchAvailable())preference=await getUserPreference(req.user.id);}catch{}
-    const candidates=await nearbyCandidates(sql,center);
-    const personalize=await prepareChoicePersonalizer(sql,candidates,req.user.id,candidates=>{
+    const {candidates,personalize}=await prepareNearbyRecommendation(sql,center,req.user.id,candidates=>{
         try { if(preference) return personalizeCandidates(sql,candidates,preference); } catch {}
         return {candidates,personalized:false};
     });
@@ -166,6 +165,6 @@ router.delete('/feedback',run((req,res)=>{
     require('../../ratings/services/ratingEvidence').queueEvidence(req.user.id);
     res.json(consent(req.user.id));
 }));
-router.use((err,_req,res,_next)=>res.status(err.status||500).json({error:err.status?err.message:'同好与反馈服务暂不可用'}));
+router.use((err,_req,res,_next)=>res.status(err.status||500).json({error:err.status?err.message:'同好与反馈服务暂不可用',...(err.code==='RANDOM_INPUT_CHANGED'?{code:err.code}:{})}));
 module.exports=router;
 module.exports.consent=consent;

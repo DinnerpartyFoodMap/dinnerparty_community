@@ -12,7 +12,7 @@ export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { s
         signal, cache: 'no-store', ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {})
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t('map:api.random.loadFailed'));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.random.loadFailed')), { status: res.status, code: data.code });
     if (!Number.isInteger(data.candidateCount) || !Object.prototype.hasOwnProperty.call(data, 'place')) {
         throw new Error(t('map:api.random.invalid'));
     }
