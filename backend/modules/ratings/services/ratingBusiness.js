@@ -54,14 +54,20 @@ async function ratingState(placeId,viewer=null){
     const id=requirePlace(placeId,viewer?.id);
     for(let attempt=0;attempt<2;attempt++){
         let personal=null;
-        if(viewer)try{personal=await personalizedSummarySnapshot(id,viewer.id);}catch(e){if(e.status===409)continue;console.warn('Personalized rating unavailable');}
         let publicResult;
         try{publicResult=await summaryAdapter.ratingSummarySnapshot(id);}catch(e){if(e.status===409)continue;throw e;}
-        if(!same(publicResult.input_revision)||personal&&personal.input_revision!==publicResult.input_revision)continue;
+        if(!same(publicResult.input_revision))continue;
         requirePlace(id,viewer?.id);
         let views={estimates:[],predictions:[]};
         try{views=await require('./ratingEstimateAdapter').ratingViews([id],viewer?.id);}catch(e){if(e.status===409)continue;console.warn('Shadow rating unavailable');}
         if(!same(publicResult.input_revision)||views.input_revision!==undefined&&views.input_revision!==publicResult.input_revision)continue;
+        // The active personal prediction is the displayed second score. Avoid
+        // initializing the legacy vector profile just to discard its result.
+        const prediction=views.predictions[0];
+        if(viewer&&!(prediction?.active&&Number.isFinite(prediction.average))){
+            try{personal=await personalizedSummarySnapshot(id,viewer.id);}catch(e){if(e.status===409)continue;console.warn('Personalized rating unavailable');}
+        }
+        if(!same(publicResult.input_revision)||personal&&personal.input_revision!==publicResult.input_revision)continue;
         requirePlace(id,viewer?.id);
         return {place_id:id,summary:publicResult.summary,mine:viewer?ownRating(id,viewer.id):null,personalized:personal?.personalized??null,quota:viewer?ratingQuota(viewer.id,id):null,estimate:views.estimates[0]??null,risk:views.estimates[0]?.risk??null,prediction:views.predictions[0]??null};
     }

@@ -12,7 +12,9 @@ async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,
  assert.deepEqual(profiles.parseAnswer({...base,ds:{d00:7},categories:['c000'],flags:{}},schema,false).ds,[7]);
  assert.deepEqual(profiles.parseAnswer({...base,ds:{},rv:{r00:null},categories:[' restaurant '],flags:{}},schema,true),{ds:[null],rv:[null],categories:['Restaurant'],flags:[null],price_level:null});
  assert.deepEqual(profiles.parseAnswer({...base,ds:[null],flags:{}},schema,false).ds,[null],'explicit unknowns use the existing model mean-imputation path');
- for(const ds of [[7,8],['7'],[11],{d01:7},{d00:'7'},null])assert.throws(()=>profiles.parseAnswer({...base,ds,flags:{}},schema,false),/profile/,'no padding, coercing or positional shifts');
+ assert.deepEqual(profiles.parseAnswer({...base,ds:null,rv:null,flags:{}},schema,true).ds,[null]);
+ assert.deepEqual(profiles.parseAnswer({...base,ds:null,rv:null,flags:{}},schema,true).rv,[null],'an unknown group is distinct from no review input');
+ for(const ds of [[7,8],['7'],[11],{d01:7},{d00:'7'}])assert.throws(()=>profiles.parseAnswer({...base,ds,flags:{}},schema,false),/profile/,'no padding, coercing or positional shifts');
  for(const categories of [['中文编造类别'],['c999'],[null],null])assert.throws(()=>profiles.parseAnswer({...base,categories,flags:{}},schema,false),/categories/);
  const excluded=profiles.profileSchema({profiles:{ds:{properties:['excluded','active'],excluded_indices:[0]},rv:{properties:['review']}},categories:[],flags:[]});
  assert.deepEqual(profiles.parseAnswer({ds:{d00:8},rv:null,categories:[],flags:{},price_level:null},excluded,false).ds,[null,8]);
@@ -22,7 +24,7 @@ async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,
  const oldRevision=sql.prepare('SELECT revision FROM AlgorithmClock').get().revision;
  sql.prepare("INSERT INTO Comment(place_id,user_id,content,rating) VALUES(1,'owner','这是足够长的真实评论正文，包含菜品体验和服务感受。',3)").run();
  assert.ok(sql.prepare('SELECT revision FROM AlgorithmClock').get().revision>oldRevision);assert.equal(profiles.readProfiles([{id:1}],model).size,0,'new review invalidates old assets synchronously');
- await assert.rejects(profiles.syncProfile(1,model,contract,{complete}),/Malformed/);
+ await assert.rejects(profiles.syncProfile(1,model,contract,{complete:async()=>({...base,ds:[11],flags:{}})}),/Malformed/);
  await profiles.syncProfile(1,model,contract,{complete:async()=>({ds:[7],rv:[4],categories:['Restaurant'],flags:[1],price_level:2})});
  assert.equal(profiles.readProfiles([{id:1}],model).get(1).review_count,1);
  // A 4B model hash builds separate assets and leaves prior ratings/profiles intact.
@@ -49,6 +51,17 @@ async function main(){init();const sql=db._raw;sql.prepare("INSERT INTO User(id,
  sql.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,attempts,retry_at,updated_at) VALUES(?,?,?,1,'failed',10,?,0)`).run(2,model.model_hash,profiles.inputHash(profiles.inputFor(2)),Date.now()+86400000);
  let enabled=true;const attempted=await profiles.processProfiles(model,contract,{enabled:()=>enabled,complete:async()=>{enabled=false;return {ds:[7],rv:null,categories:['Restaurant'],flags:[null],price_level:null};}});assert.equal(attempted,1,'rollback stops the next paid extraction within an active batch');
  assert.equal(sql.prepare('SELECT status FROM PlaceModelProfile WHERE place_id=2 AND model_hash=?').get(model.model_hash).status,'ready','old extraction failures bypass the obsolete retry delay');
+ let repairCalls=0;
+ await profiles.syncProfile(3,model,contract,{complete:async args=>{
+  repairCalls++;assert.equal(args.maxTokens,4000);
+  if(repairCalls===1)return {...base,ds:{d00:'7'},flags:{}};
+  assert.match(args.system,/field ds/);assert.ok(!args.system.includes('"d00":"7"'),'repair instructions do not echo untrusted model output');
+  return {...base,ds:{d00:7},flags:{}};
+ }});
+ assert.equal(repairCalls,2,'one invalid response gets one bounded background repair');
+ let failures=0;
+ await assert.rejects(profiles.syncProfile(3,{model_hash:'c'.repeat(64)},contract,{complete:async()=>{failures++;return {...base,ds:['7'],flags:{}};}}),e=>e.profileField==='ds'&&e.profileValueType==='array'&&e.profileExpected===1);
+ assert.equal(failures,2,'persistent invalid output stops after one repair');
  console.log('Restaurant model profiles passed: async cache, genuine text only, retry, clock, ban invalidation and stale writes.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});

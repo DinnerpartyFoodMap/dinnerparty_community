@@ -103,6 +103,14 @@ async function main() {
         assert.deepEqual((await call(nextUrl, { who: 'fan' })).body, next.body, 'repeated pages reuse frozen rows and scores');
     } finally { numeric.compute = compute; }
     assert.equal(new Set([...first.body.items, ...next.body.items].map(item => item.id)).size, 4);
+    const beforeDerived = sql.prepare('SELECT revision FROM AlgorithmClock WHERE id=1').get().revision;
+    sql.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,assets,updated_at) VALUES(?,'background','input',1,'ready','{}',0)`).run(popular);
+    sql.prepare('UPDATE RatingTextClock SET revision=revision+1 WHERE id=1').run();
+    sql.prepare('UPDATE Place SET vector_updated_at=123 WHERE id=?').run(popular);
+    sql.prepare("UPDATE User SET username='fan-renamed' WHERE id=?").run(users.fan);
+    assert.ok(sql.prepare('SELECT revision FROM AlgorithmClock WHERE id=1').get().revision>beforeDerived);
+    assert.deepEqual((await call(nextUrl, { who: 'fan' })).body, next.body,'background profiles, text judgments, vector refresh and unrelated account writes keep the frozen ranking');
+    sql.prepare("UPDATE User SET username='fan' WHERE id=?").run(users.fan);
     assert.equal((await call(nextUrl, { who: 'other' })).status, 409, 'snapshot belongs to its viewer');
     assert.equal((await call(`${nextUrl}&maxCost=50`, { who: 'fan' })).status, 409, 'snapshot belongs to its filters');
     const realNow = Date.now;

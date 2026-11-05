@@ -32,7 +32,19 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
         setState((current) => ({ ...current, loading: true, error: '', ...(offset === 0 ? { items: [], done: false } : null) }));
         try {
             if (offset === 0) snapshotRef.current = null;
-            const data = await fetchPlaceList(backendUrl, { query: queryRef.current, offset, limit: PAGE_SIZE, token, snapshot: snapshotRef.current });
+            let data;
+            try {
+                data = await fetchPlaceList(backendUrl, { query: queryRef.current, offset, limit: PAGE_SIZE, token, snapshot: snapshotRef.current });
+            } catch (error) {
+                if (requestId !== requestRef.current) return;
+                if (error.status !== 409 || offset === 0) throw error;
+                // Expired/revoked/process-local snapshot: restart once, replacing
+                // the old rows so pages from different rankings never mix.
+                snapshotRef.current = null;
+                offset = 0;
+                setState(current => ({ ...current, items: [], done: false }));
+                data = await fetchPlaceList(backendUrl, { query: queryRef.current, offset, limit: PAGE_SIZE, token });
+            }
             if (requestId !== requestRef.current) return;
             snapshotRef.current = data.snapshot || null;
             const items = Array.isArray(data.items) ? data.items : [];
@@ -51,7 +63,7 @@ export default function PlaceListView({ backendUrl, token, filter = EMPTY_PLACE_
         }
     }, [backendUrl, token, queryKey]);
 
-    useEffect(() => { load(0); }, [load]);
+    useEffect(() => { load(0); return () => { requestRef.current++; }; }, [load]);
 
     // 滚到底部自动读下一页
     useEffect(() => {

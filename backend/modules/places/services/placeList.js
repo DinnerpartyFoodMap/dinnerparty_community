@@ -29,8 +29,9 @@ function snapshotKey(filter, viewerId, model) {
     criteria.tags = [...criteria.tags].sort();
     criteria.excludeTags = [...criteria.excludeTags].sort();
     return createHash('sha256').update(JSON.stringify({ viewerId, criteria, sort: 'ratingsort-v1',
-        dataset: process.env.ALGORITHM_DATASET_ID || 'primary', modes: migration.modes(),model:model?.model??null,calibration_policy:model?.calibration_policy??null,text_evidence_mode:require('../../ratings/services/ratingTextEvidence').mode(),text_evidence_revision:require('../../ratings/services/ratingTextEvidence').revision() })).digest('hex');
+        dataset: process.env.ALGORITHM_DATASET_ID || 'primary', modes: migration.modes(),model:model?.model??null,calibration_policy:model?.calibration_policy??null,text_evidence_mode:require('../../ratings/services/ratingTextEvidence').mode() })).digest('hex');
 }
+function listRevision(database) { return database.prepare('SELECT revision FROM PlaceListClock WHERE id=1').get().revision; }
 function pruneSnapshots(now) {
     for (const [token, entry] of listSnapshots) if (now >= entry.expires) listSnapshots.delete(token);
 }
@@ -143,7 +144,7 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
     pruneSnapshots(now);
     if (query.snapshot !== undefined) {
         const entry = typeof query.snapshot === 'string' && listSnapshots.get(query.snapshot);
-        if (!entry || entry.key !== key || entry.database !== database || !snapshot.same(entry.revision)) throw client.failure(409, 'stale_input');
+        if (!entry || entry.key !== key || entry.database !== database || entry.sourceRevision !== listRevision(database)) throw client.failure(409, 'stale_input');
         // Recheck every candidate, including rows outside this page, before returning cached data.
         const visible = visibleIds(database, viewerId);
         if (entry.items.some(item => !visible.has(item.id))) {
@@ -203,7 +204,7 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
         cachedRows -= listSnapshots.get(oldest).items.length;
         listSnapshots.delete(oldest);
     }
-    const token = randomUUID(), entry = { key, database, revision: current.input_revision, expires: Date.now() + LIST_SNAPSHOT_TTL_MS, items, personalized: replacement?!!viewerId:personal.size > 0 };
+    const token = randomUUID(), entry = { key, database, sourceRevision: listRevision(database), expires: Date.now() + LIST_SNAPSHOT_TTL_MS, items, personalized: replacement?!!viewerId:personal.size > 0 };
     listSnapshots.set(token, entry);
     return snapshotPage(entry, token, filter);
     }

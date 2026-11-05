@@ -7,7 +7,7 @@ const ai=require('../../../infrastructure/aiClients');
 const {clip}=require('./modelEmbeddings');
 const {markdownToPlainText}=require('../../places/services/markdownText');
 const SCHEMA_VERSION=1;
-const EXTRACTION_FORMAT_VERSION=2;
+const EXTRACTION_FORMAT_VERSION=3;
 const initializedDatabases=new WeakSet();
 function profileTimeoutMs(){const n=Number(process.env.MODEL_PROFILE_TIMEOUT_MS);return Number.isSafeInteger(n)&&n>0&&n<=180000?n:60000;}
 const failureCodes=new Map([
@@ -32,13 +32,15 @@ function failureDetails(error){
  if(Number.isSafeInteger(error?.profileRetryAt))details.retry_at=error.profileRetryAt;
  if(Number.isSafeInteger(error?.profileExpected))details.expected_count=error.profileExpected;
  if(Number.isSafeInteger(error?.profileActual))details.actual_count=error.profileActual;
+ if(['ds','rv'].includes(error?.profileField))details.field=error.profileField;
+ if(['missing','null','array','object','string','number','boolean'].includes(error?.profileValueType))details.value_type=error.profileValueType;
  return details;
 }
 function warnFailure(message,error,placeId){
  const fields=failureDetails(error);
  if(Number.isSafeInteger(placeId))fields.place_id=placeId;
  // Keep stage/code visible in pretty console output as well as JSON log fields.
- logger.warn(`${message} stage=${fields.stage} code=${fields.code}${fields.http_status?' http_status='+fields.http_status:''}${fields.timeout_ms?' timeout_ms='+fields.timeout_ms:''}${fields.place_id?' place_id='+fields.place_id:''}${fields.expected_count!==undefined?' expected_count='+fields.expected_count:''}${fields.actual_count!==undefined?' actual_count='+fields.actual_count:''}`,{event:'ratings.profile.failed',...fields});
+ logger.warn(`${message} stage=${fields.stage} code=${fields.code}${fields.http_status?' http_status='+fields.http_status:''}${fields.timeout_ms?' timeout_ms='+fields.timeout_ms:''}${fields.place_id?' place_id='+fields.place_id:''}${fields.field?' field='+fields.field:''}${fields.value_type?' value_type='+fields.value_type:''}${fields.expected_count!==undefined?' expected_count='+fields.expected_count:''}${fields.actual_count!==undefined?' actual_count='+fields.actual_count:''}`,{event:'ratings.profile.failed',...fields});
 }
 function initModelProfileSchema(database=db._raw){
  if(initializedDatabases.has(database))return;
@@ -76,8 +78,8 @@ function inputHash(input){return createHash('sha256').update(JSON.stringify([SCH
 const fieldId=(prefix,k)=>prefix+String(k).padStart(prefix==='c'?3:2,'0');
 function profileValues(raw,n,prefix){
  const keys=Array.from({length:n},(_,k)=>fieldId(prefix,k));
- const value=Array.isArray(raw)?raw:raw&&typeof raw==='object'&&Object.keys(raw).every(k=>keys.includes(k))?keys.map(k=>Object.hasOwn(raw,k)?raw[k]:null):null;
- if(!value||value.length!==n||value.some(v=>v!==null&&(!Number.isFinite(v)||v<0||v>10)))throw Object.assign(Error('Malformed restaurant profile'),{profileExpected:n,profileActual:Array.isArray(raw)?raw.length:undefined});
+ const value=raw==null?keys.map(()=>null):Array.isArray(raw)?raw:typeof raw==='object'&&Object.keys(raw).every(k=>keys.includes(k))?keys.map(k=>Object.hasOwn(raw,k)?raw[k]:null):null;
+ if(!value||value.length!==n||value.some(v=>v!==null&&(!Number.isFinite(v)||v<0||v>10)))throw Object.assign(Error('Malformed restaurant profile'),{profileField:prefix==='d'?'ds':'rv',profileValueType:raw===undefined?'missing':raw===null?'null':Array.isArray(raw)?'array':typeof raw,profileExpected:n,profileActual:Array.isArray(raw)?raw.length:undefined});
  return value;
 }
 function profileSchema(contract){
@@ -121,7 +123,20 @@ async function syncProfile(placeId,model,contract,{database=db._raw,complete=ai.
  const args=prompt(input,schema);
  let stage='profile_request',assets=saved;
  try{
-  if(!assets){const answer=await complete({...args,temperature:0,maxTokens:2000,timeoutMs:profileTimeoutMs()});stage='profile_parse';assets=parseAnswer(answer,schema,input.reviews.length>0);}
+  if(!assets){
+   for(let attempt=0;attempt<2;attempt++){
+    stage='profile_request';
+    const answer=await complete({...args,temperature:0,maxTokens:4000,timeoutMs:profileTimeoutMs()});
+    stage='profile_parse';
+    try{assets=parseAnswer(answer,schema,input.reviews.length>0);break;}
+    catch(error){
+     if(attempt===1)throw error;
+     // One schema repair, still in the background worker. Do not guess numeric
+     // strings or pad positional arrays, and never log the raw response.
+     args.system+=`\nThe previous response failed validation (${failureCodes.get(error.message)||'invalid_profile'}${error.profileField?', field '+error.profileField:''}). Re-extract from the original input. Use exact schema IDs, JSON numbers or null (never strings). Unknown ds/rv properties may be omitted or null. Return one complete valid JSON object.`;
+    }
+   }
+  }
   assets.review_count=input.reviews.length;assets.profile_schema_version=SCHEMA_VERSION;
   // Map vectors use a different input template. Re-encode with the shared 4B
   // client under this model's preprocessing contract; never reuse map vectors.

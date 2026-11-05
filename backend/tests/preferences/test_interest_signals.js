@@ -24,8 +24,14 @@ let server;
  sql.prepare("UPDATE Place SET category='甜品店' WHERE id=1").run();assert.ok(sql.prepare('SELECT prototype_revision FROM TasteAxisClock').get().prototype_revision>clock.prototype_revision);
  const source=fs.readFileSync(path.resolve(__dirname,'../../../frontend/src/places/detailTiming.js'),'utf8');const {createDetailTiming}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  let now=0;const timing=createDetailTiming(()=>now);timing.resume();now=2000;assert.equal(timing.flush(),0);now=50000;timing.resume();now=54000;assert.equal(timing.flush(),6000,'background time is excluded');assert.equal(timing.flush(),0,'cleanup cannot double count');timing.resume();now+=400000;assert.equal(timing.flush(),300000);
- const express=require('express'),app=express();app.use('/api/visits',require('../../modules/places/routes/placeVisits'));server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
+ const express=require('express'),app=express();app.use(express.json());
+ const mount=fs.readFileSync(path.resolve(__dirname,'../../index.js'),'utf8').match(/app.use\('([^']+)', require\('\.\/modules\/places\/routes\/placeVisits'\)\)/)[1];
+ app.use(mount,require('../../modules/places/routes/placeVisits'));server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
  const token=require('jsonwebtoken').sign({id:'u'},process.env.JWT_SECRET||'yuyuko_secret_key');
  for(const mode of ['off','active']){process.env.PLACE_VISIT_MODE=mode;const response=await fetch(`http://127.0.0.1:${server.address().port}/api/visits/status`,{headers:{Authorization:'Bearer '+token}});assert.equal(response.status,200);assert.equal((await response.json()).enabled,mode==='active');}
+ sql.prepare("UPDATE MapConsent SET feedback=1 WHERE user_id='u'").run();
+ const visited=await fetch(`http://127.0.0.1:${server.address().port}/api/visits/places/1/view`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'});
+ assert.equal(visited.status,200,'the production mount serves both status and place actions at the client URLs');
+ assert.ok((await visited.json()).id);
  console.log('Interest signals passed: visible timing, validated dwell, cooldown/idempotency, weak evidence, retained defaults, manual override and scoped invalidation.');
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}require('../../modules/preferences/services/userPreferenceService').startUserVectorWorker()();db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});

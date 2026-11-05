@@ -26,6 +26,7 @@ const cf=covisitGraph(ratings);assert.equal(cf(1,1),0);assert.ok(cf(1,2)>0);asse
 const b=raterEventFeatures(ratings,4);assert.equal(b.get(ratings[0]).known,0);assert.equal(b.get(ratings[0]).bias,0);
 const schema=profileSchema(contract);assert.deepEqual(schema.ds,['quality']);
 const parsed=parseAnswer({ds:[7],rv:[6,4],categories:['Chinese restaurant'],flags:[],price_level:2},schema,true);assert.deepEqual(parsed.ds,[null,7]);
-assert.throws(()=>parseAnswer({ds:[7],rv:null,categories:[],flags:[],price_level:null},schema,true),/Malformed/);
+assert.deepEqual(parseAnswer({ds:[7],rv:null,categories:[],flags:[],price_level:null},schema,true).rv,[null,null],'unknown review attributes use mean imputation rather than invented scores');
+assert.throws(()=>parseAnswer({ds:[7],rv:['6',4],categories:[],flags:[],price_level:null},schema,true),/Malformed/);
 console.log('Full non-chain features passed: complete families, risk prefix/bin mass, exact CF, profile schema and target-excluded personal features.');
 require('../../infrastructure/database').db._raw.close();fs.rmSync(temp,{recursive:true,force:true});

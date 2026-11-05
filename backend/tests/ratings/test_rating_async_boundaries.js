@@ -32,11 +32,23 @@ async function main(){
         let changed=false;
         const business=load('../../modules/ratings/services/ratingBusiness.js',{
             '../../../infrastructure/database':{db,isVectorSearchAvailable:()=>false},
+            './ratingEstimateAdapter':{ratingViews:async()=>({estimates:[],predictions:[]})},
             '../../preferences/services/userPreferenceService':{getUserPreference:async()=>({generation:snapshot.revision()})},
             './ratingSummaryAdapter':{...summary,ratingSummary:async()=>{if(!changed){changed=true;bump();}return empty;},ratingSummarySnapshot:async()=>{if(!changed){changed=true;bump();}return {summary:empty,input_revision:snapshot.revision()};}},
             '../../../infrastructure/numericAlgorithmClient':{...client,compute:async(_op,input)=>({personalized:input.viewer.generation})}
         });
         const result=await business.ratingState(place,{id:'viewer'});assert.equal(result.personalized,snapshot.revision());
+    });
+    await check('active prediction bypasses unused legacy vector initialization',async()=>{
+        const prediction={active:true,average:3.1};let legacyCalls=0;
+        const business=load('../../modules/ratings/services/ratingBusiness.js',{
+            './ratingEstimateAdapter':{ratingViews:async()=>({input_revision:snapshot.revision(),estimates:[],predictions:[prediction]})},
+            './ratingSummaryAdapter':{...summary,ratingSummarySnapshot:async()=>({summary:empty,input_revision:snapshot.revision()})},
+            '../../preferences/services/userPreferenceService':{getUserPreference:async()=>{legacyCalls++;return null;}},
+            '../../../infrastructure/numericAlgorithmClient':{...client,compute:async()=>{legacyCalls++;return {personalized:null};}}
+        });
+        const result=await business.ratingState(place,{id:'viewer'});
+        assert.deepEqual(result.prediction,prediction);assert.equal(result.personalized,null);assert.equal(legacyCalls,0,'no discarded legacy calls, including swallowed failures');
     });
     await check('list does not reuse personal values across an awaited summary refresh',async()=>{
         let changed=false,lastDerived;
