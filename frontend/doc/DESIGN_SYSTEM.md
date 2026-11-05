@@ -206,6 +206,8 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 44 × 44 圆形；默认透明底；需要底时用 `color-mix(text-primary 8%)`（原生 `Color.primary.opacity(0.08)`）。关闭按钮图标 `close` / `xmark`，17 号 semibold。iOS 地点卡标题栏左右圆钮统一为 `NativeCloseButton.diameter`（52pt），使用同种 regular interactive glass；不能只把 44pt 按钮外面的占位扩大成 52pt。
 网页实现：`components/primitives/IconButton.jsx`（`.fm-icon-button`，与面板关闭钮同一样式；`spinning` 时图标转圈，用于刷新进行中）。所有关闭 X 固定在所属容器右上角；iOS 用 `NativeCloseButton` 复用搜索收键盘按钮的外观：52 × 52 圆形、18pt semibold `xmark`、primary 前景、regular interactive glass（旧系统回退 regular material）。X 不使用皮肤自定义图案。清空输入、删除图片等非关闭动作不受此规则影响。
 
+iOS 添加地点选点阶段的搜索栏保留左侧取消入口，与右侧收键盘入口都直接复用 `NativeCloseButton`，保留各自的玻璃形变 ID。这里取消的是选点模式，不是关闭表单面板；不使用工具栏传入的 `xmark.circle.fill` 或皮肤图案，也不重复叠加玻璃底。
+
 ### 7.3 输入框
 
 - 高 44，圆角 md 12，底 `bg-overlay`，1px `border`；聚焦描边换 `theme-primary` 并加 3px `--theme-primary-0-25` 外圈；错误用 danger。

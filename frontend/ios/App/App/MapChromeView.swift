@@ -614,11 +614,12 @@ struct MapChromeView: View {
         let cancelAdd = model.toolbarItems.first { $0.id == "add" && $0.selected }
         return HStack(spacing: 10) {
             if let cancelAdd {
-                circleButton(symbol: cancelAdd.symbol, label: cancelAdd.title, glassID: "searchBack") {
+                NativeCloseButton(label: cancelAdd.title) {
                     searchFocused = false
                     focusPending = false
                     model.tap(cancelAdd)
                 }
+                .glassEffectID("searchBack", in: glassNamespace)
             } else if showBack {
                 circleButton(symbol: "chevron.backward", label: model.text("exitSearch", "退出搜索"), glassID: "searchBack") {
                     searchFocused = false
@@ -640,20 +641,21 @@ struct MapChromeView: View {
     /// 输入中占用头像位置；与头像共用玻璃 ID，玻璃不动、只替换内容。
     /// 点按收起键盘；还没输入内容时同时退出搜索，回到工具栏。
     private func searchCloseButton(slotID: String) -> some View {
-        circleButton(symbol: "xmark", label: model.text("dismissKeyboard", "收起键盘"), glassID: slotID) {
+        NativeCloseButton(label: model.text("dismissKeyboard", "收起键盘")) {
             searchFocused = false
             focusPending = false
             if model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 model.closeSearch()
             }
         }
+        .glassEffectID(slotID, in: glassNamespace)
     }
 
     private func circleButton(symbol: String, label: String, glassID: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 18, weight: .semibold))
-                .frame(width: 52, height: 52)
+                .frame(width: NativeCloseButton.diameter, height: NativeCloseButton.diameter)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
