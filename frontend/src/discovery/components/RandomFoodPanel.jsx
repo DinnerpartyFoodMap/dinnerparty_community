@@ -6,7 +6,7 @@ import { markdownToPlainText } from "../../components/markdown/markdownText";
 import { t, tx } from "../../i18n/index.js";
 import IconButton from "../../components/primitives/IconButton";
 import AnchoredPopover from '../../components/overlay/AnchoredPopover';
-import MapCenterMenu from '../../map/MapCenterMenu';
+import { MapScopeMenu, radiusText } from '../../map/MapCenterMenu';
 
 // 随机美食卡片：宽屏从按钮附近展开，窄屏浮在搜索框上方；非模态，地图仍可操作。
 // 抽取由 MapUI 持有的 useRandomFood 会话负责，网页和原生共享，关闭时立即取消请求。
@@ -26,7 +26,7 @@ export default function RandomFoodPanel({ open, isNarrow, placement, onClose, or
                 position: 'absolute', zIndex: 2300,
                 ...(isNarrow ? { left: 12, right: 12, bottom: 'calc(184px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))', transformOrigin: '50% 100%' } : { top: 72, [placement || 'left']: 64, width: 320, transformOrigin: placement === 'right' ? 'right top' : 'left top' }),
                 maxHeight: isNarrow ? 'calc(100% - 260px)' : 'calc(100% - 100px)', overflowY: 'auto',
-                padding: 16, boxSizing: 'border-box', borderRadius: 'var(--radius-md)',
+                padding: 16, boxSizing: 'border-box', borderRadius: 'var(--radius-xl)',
                 background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)',
                 border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-surface)'
             }}
@@ -38,7 +38,7 @@ export default function RandomFoodPanel({ open, isNarrow, placement, onClose, or
 }
 
 function RandomFoodContent({ session, onClose, feedback, centerOptions = [], onPickCenter }) {
-    const { result, activeOrigin, busy, error, drawNext, selectPlace } = session;
+    const { result, activeOrigin, busy, error, drawNext, selectPlace, radiusKm, changeRadius } = session;
     const [centerOpen, setCenterOpen] = useState(false);
     const centerRef = useRef(null);
     const closeRef = useRef(null);
@@ -85,12 +85,13 @@ function RandomFoodContent({ session, onClose, feedback, centerOptions = [], onP
                 <button ref={centerRef} type="button" className="fm-map-list__scope fm-pressable" disabled={busy}
                     aria-haspopup="menu" aria-expanded={centerOpen} onClick={() => setCenterOpen(open => !open)}>
                     <span className="material-symbols-outlined" aria-hidden="true">{activeOrigin?.source === 'location' ? 'my_location' : !activeOrigin || activeOrigin.source === 'map' ? 'map' : 'location_on'}</span>
-                    <span>{activeOrigin?.label || t('places:list.center.map')}</span>
+                    <span className="fm-map-list__scope-text">{t('places:list.scope', { center: activeOrigin?.label || t('places:list.center.map'), distance: radiusText(radiusKm) })}</span>
                     <span className="material-symbols-outlined" aria-hidden="true">expand_more</span>
                 </button>
                 <AnchoredPopover open={centerOpen} onClose={() => setCenterOpen(false)} anchorRef={centerRef}
                     placement="top-start" label={t('places:list.center.pickTitle')} style={{ minWidth: 240 }}>
-                    <MapCenterMenu options={centerOptions.map(option => ({ ...option, select: () => { setCenterOpen(false); option.select(); } }))}
+                    <MapScopeMenu radiusKm={radiusKm} onRadiusChange={km => { setCenterOpen(false); changeRadius(km); }}
+                        options={centerOptions.map(option => ({ ...option, select: () => { setCenterOpen(false); option.select(); } }))}
                         selected={activeOrigin?.source || (activeOrigin ? 'origin' : 'map')} disabled={busy} onPickCenter={() => { setCenterOpen(false); onPickCenter?.(); }} />
                 </AnchoredPopover>
             </div>

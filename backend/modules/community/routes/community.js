@@ -80,12 +80,13 @@ router.post('/draw',run(async(req,res)=>{
     const c=consent(req.user.id);
     if(!c.feedback||req.body.consent_version!==c.version) fail('交互设置已改变，请重新抽取',409);
     const {draw_id,center}=req.body;
+    const radiusKm=require('../../discovery/services/randomRecommendation').randomRadius(req.body.radiusKm);
     const recommendation_session_id=req.body.recommendation_session_id||draw_id,parent_decision_id=req.body.parent_decision_id??null;
     if(!/^[a-zA-Z0-9_-]{16,80}$/.test(recommendation_session_id||'')||parent_decision_id!==null&&!/^[a-zA-Z0-9_-]{16,80}$/.test(parent_decision_id))fail('抽取会话无效');
     if(!/^[a-zA-Z0-9_-]{16,80}$/.test(draw_id||'')||!center||typeof center.lng!=='number'||typeof center.lat!=='number'||!Number.isFinite(center.lng)||!Number.isFinite(center.lat)||Math.abs(center.lng)>180||Math.abs(center.lat)>90) fail('抽取参数无效');
     const excluded=Array.isArray(req.body.exclude_ids)?req.body.exclude_ids.slice(-2):[];
     if(excluded.some(n=>!Number.isSafeInteger(n)||n<1)) fail('排除地点无效');
-    const hash=createHash('sha256').update(JSON.stringify({center,excluded,recommendation_session_id,parent_decision_id})).digest('hex');
+    const hash=createHash('sha256').update(JSON.stringify({center,excluded,recommendation_session_id,parent_decision_id,...(req.body.radiusKm===undefined?{}:{radiusKm})})).digest('hex');
     const old=sql.prepare('SELECT * FROM MapDecision WHERE id=?').get(draw_id);
     if(old) {if(old.user_id!==req.user.id||old.request_hash!==hash) fail('抽取 ID 已用于另一请求',409);res.json(JSON.parse(old.result));return;}
     function chainIndex(){
@@ -105,7 +106,7 @@ router.post('/draw',run(async(req,res)=>{
     const {candidates,personalize}=await prepareNearbyRecommendation(sql,center,req.user.id,candidates=>{
         try { if(preference) return personalizeCandidates(sql,candidates,preference); } catch {}
         return {candidates,personalized:false};
-    });
+    },radiusKm);
     if(consent(req.user.id).version!==c.version)fail('交互设置已改变，请重新抽取',409);
     const concurrent=sql.prepare('SELECT * FROM MapDecision WHERE id=?').get(draw_id);
     if(concurrent){if(concurrent.user_id!==req.user.id||concurrent.request_hash!==hash)fail('抽取 ID 已用于另一请求',409);res.json(JSON.parse(concurrent.result));return;}

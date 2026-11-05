@@ -215,6 +215,7 @@ struct MapChromeMenuPanel: View {
     /// 面板可用的最大高度（工具栏上方的空间）
     let maxHeight: CGFloat
     @State private var contentHeight: CGFloat = 0
+    @State private var randomScopeOpen = false
     /// 拖动整个共享外壳，避免文字与玻璃分离。
     @Binding var dragOffset: CGFloat
     /// 系统中断手势时 onEnded 不一定执行，GestureState 仍会自动复位并通知外壳。
@@ -379,6 +380,8 @@ struct MapChromeMenuPanel: View {
             ForEach(sheet.sections) { section in
                 if sheet.sheetId == "random" && section.id == "random-center" {
                     randomCenterMenu(section)
+                } else if sheet.sheetId == "random" && section.id == "random-radius" {
+                    EmptyView() // 范围芯片与中心选项共同呈现在同一个弹出面板。
                 } else {
                     sectionView(section)
                 }
@@ -395,7 +398,7 @@ struct MapChromeMenuPanel: View {
                                     .frame(maxWidth: .infinity, minHeight: 52)
                                     .padding(.horizontal, 10)
                                     .foregroundStyle(row.tone == "accent" ? Color(uiColor: model.theme.onPrimary) : Color.primary)
-                                    .background(row.tone == "accent" ? accent : groupFill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .background(row.tone == "accent" ? accent : FM.bgOverlay, in: Capsule())
                             }
                             .buttonStyle(.plain)
                             .disabled(row.disabled)
@@ -438,10 +441,11 @@ struct MapChromeMenuPanel: View {
                         .textSelection(.enabled)
                 }
             }
-            .foregroundStyle(FM.onScrim)
+            .foregroundStyle(Color.primary)
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(FM.scrim, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(FM.bgSurface, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous).strokeBorder(FM.border, lineWidth: 1))
         }
         if let candidates = sheet.paragraphs.first(where: { $0.id == "candidates" }) {
             Text(candidates.text).font(.footnote).foregroundStyle(.secondary)
@@ -450,14 +454,7 @@ struct MapChromeMenuPanel: View {
     }
 
     private func randomCenterMenu(_ section: MapChromeSheetSection) -> some View {
-        Menu {
-            ForEach(section.rows) { row in
-                Button { model.selectSheetRow(row) } label: {
-                    Label(row.title, systemImage: row.tone == "accent" ? "checkmark" : (row.symbol ?? "map"))
-                }
-                .disabled(row.disabled)
-            }
-        } label: {
+        Button { randomScopeOpen.toggle() } label: {
             HStack(spacing: 8) {
                 Image(systemName: "mappin.and.ellipse")
                 Text(section.title ?? "").fixedSize(horizontal: false, vertical: true)
@@ -467,10 +464,50 @@ struct MapChromeMenuPanel: View {
             .font(.subheadline.weight(.semibold))
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
-            .foregroundStyle(Color.primary)
-            .background(groupFill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .foregroundStyle(accent.fmReadableText)
         }
+        .buttonStyle(.plain)
         .disabled(section.rows.allSatisfy { $0.disabled })
+        .popover(isPresented: $randomScopeOpen) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(section.footer ?? "").font(.footnote).foregroundStyle(.secondary)
+                ForEach(section.rows) { row in
+                    Button {
+                        randomScopeOpen = false
+                        model.selectSheetRow(row)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: row.symbol ?? "map").frame(width: 24)
+                            Text(row.title)
+                            Spacer(minLength: 4)
+                            if row.tone == "accent" { Image(systemName: "checkmark").foregroundStyle(accent) }
+                        }
+                        .font(.body).foregroundStyle(Color.primary)
+                        .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).disabled(row.disabled)
+                }
+                if let radius = sheet.sections.first(where: { $0.id == "random-radius" }) {
+                    Text(radius.title ?? "").font(.footnote).foregroundStyle(.secondary)
+                    NativeFlowLayout(spacing: 8, lineSpacing: 8) {
+                        ForEach(radius.rows) { row in
+                            Button {
+                                randomScopeOpen = false
+                                model.selectSheetRow(row)
+                            } label: {
+                                Text(row.title).font(.footnote.weight(row.tone == "accent" ? .semibold : .medium))
+                                    .foregroundStyle(row.tone == "accent" ? accent.fmReadableText : Color.primary)
+                                    .nativeChip(selected: row.tone == "accent", tint: accent)
+                            }
+                            .buttonStyle(.plain).disabled(row.disabled)
+                        }
+                    }
+                }
+            }
+            .padding(16).frame(width: 288)
+            .background(FM.bgSurface)
+            .presentationCompactAdaptation(.popover)
+        }
     }
 
     private func messageView(_ message: String) -> some View {
@@ -941,7 +978,7 @@ struct MapChromePlaceCard: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .foregroundStyle(tint)
-            .frame(width: 44, height: 44)
+            .frame(width: NativeCloseButton.diameter, height: NativeCloseButton.diameter)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)

@@ -96,7 +96,7 @@ router.get("/list", attachViewer, async (req, res) => {
     }
 });
 
-// Random discovery queries the full 5 km circle, independently of map zoom.
+// Discovery uses the selected circle, independently of map zoom (legacy default 5 km).
 router.get("/random", (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     // Public discovery remains available, but a supplied identity must pass the
@@ -120,6 +120,7 @@ router.get("/random", (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     try {
         const center = { lat: Number(req.query.lat), lng: Number(req.query.lng) };
+        const radiusKm = require('../../discovery/services/randomRecommendation').randomRadius(req.query.radiusKm);
         let preference=null;try{if(req.user&&isVectorSearchAvailable())preference=await getUserPreference(req.user.id);}catch{}
         const personalize = (candidates) => {
             if (req.user && isVectorSearchAvailable()) {
@@ -131,9 +132,10 @@ router.get("/random", (req, res, next) => {
             }
             return { candidates, personalized: false };
         };
-        const {candidates,personalize:choice}=await prepareNearbyRecommendation(db._raw,center,req.user?.id??null,personalize);
+        const {candidates,personalize:choice}=await prepareNearbyRecommendation(db._raw,center,req.user?.id??null,personalize,radiusKm);
         res.json(drawRecommendation(candidates, excludedIds, Math.random, choice));
     } catch (error) {
+        if (error.status === 400) return res.status(400).json({ error: error.message });
         console.error('随机推荐失败', error);
         res.status(error.status===409?409:500).json({ error: error.status===409?'地点已更新，请重新抽取':'随机推荐加载失败，请稍后重试' });
     }

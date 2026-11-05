@@ -5,8 +5,9 @@ export async function fetchPlaces(backendUrl) {
     return res.json();
 }
 
-export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { signal, token } = {}) {
+export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { signal, token, radiusKm } = {}) {
     const params = new URLSearchParams({ lat: String(center.lat), lng: String(center.lng) });
+    if (radiusKm !== undefined) params.set('radiusKm', String(radiusKm));
     if (excludedIds.length) params.set('excludeIds', excludedIds.slice(-2).join(','));
     const res = await fetch(`${backendUrl}/places/random?${params}`, {
         signal, cache: 'no-store', ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {})

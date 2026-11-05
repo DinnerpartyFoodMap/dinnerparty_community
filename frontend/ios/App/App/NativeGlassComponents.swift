@@ -1,5 +1,24 @@
 import SwiftUI
 
+/// 整页内容分组使用品牌不透明表面；玻璃只用于地图浮层。
+struct NativePageCard<Content: View>: View {
+    let padding: CGFloat
+    let content: Content
+
+    init(padding: CGFloat = 16, @ViewBuilder content: () -> Content) {
+        self.padding = padding
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FM.bgSurface, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous).strokeBorder(FM.border, lineWidth: 1))
+    }
+}
+
 /// iOS 26 的原生液态玻璃卡片；更早的系统退回半透明材质，保持与网页一致的可读性。
 /// 玻璃本身不承载业务状态：文案、颜色与数据都由网页下发或由各面板模型持有。
 struct NativeGlassCard<Content: View>: View {
@@ -363,6 +382,7 @@ struct NativeSheetRow<Content: View>: View {
 
 /// 所有关闭入口共用搜索关闭钮的系统图案、尺寸和玻璃样式。
 struct NativeCloseButton: View {
+    static let diameter: CGFloat = 52
     let label: String
     let action: () -> Void
 
@@ -378,7 +398,7 @@ struct NativeCloseButton: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.system(size: 18, weight: .semibold))
-                .frame(width: 52, height: 52)
+                .frame(width: Self.diameter, height: Self.diameter)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

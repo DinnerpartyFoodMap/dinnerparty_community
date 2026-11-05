@@ -4,6 +4,14 @@ const { ALGORITHM_VERSION } = require('../../preferences/services/userPreference
 const { RATING_COLUMNS_SQL, isAvoidedPlace } = require('../../ratings/services/placeRatings');
 
 const RADIUS_KM = 5;
+const RADIUS_OPTIONS_KM = [0.5, 1, 3, 5, 10];
+function randomRadius(value) {
+    if (value === undefined) return RADIUS_KM;
+    if ((typeof value !== 'number' && typeof value !== 'string') || !RADIUS_OPTIONS_KM.includes(Number(value))) {
+        throw Object.assign(new Error('距离范围无效'), { status: 400 });
+    }
+    return Number(value);
+}
 const MIN_CANDIDATES = 5;
 const EMPTY_MESSAGE = '附近好像没有结果，换个地方试试吧';
 const MAX_PERSONALIZATION = 0.8;
@@ -94,11 +102,12 @@ function recommendationWeight(place, distanceKm) {
         + 0.3 * completeness + 0.4 * favorites / (favorites + 5);
 }
 
-async function nearbyCandidates(database, center, viewerId=null) {
+async function nearbyCandidates(database, center, viewerId=null, radiusKm=RADIUS_KM) {
+    radiusKm = randomRadius(radiusKm);
     await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     // A spherical bounding box first, then exact great-circle distance. At the
     // poles or across the date line, latitude alone is a safe coarse filter.
-    const angularRadius = RADIUS_KM / 6371.0088;
+    const angularRadius = radiusKm / 6371.0088;
     const latDelta = angularRadius * 180 / Math.PI;
     const minLat = Math.max(-90, center.lat - latDelta);
     const maxLat = Math.min(90, center.lat + latDelta);
@@ -123,17 +132,17 @@ async function nearbyCandidates(database, center, viewerId=null) {
         // 显式社区“避雷”标签和低于均线的实际评价，都不参与随机推荐。
         if (isAvoidedPlace(place)||mine.get(place.id)?.score<=2) return [];
         const distanceKm = haversineDistanceKm(center, { lat: place.latitude, lng: place.longitude });
-        if (distanceKm === null || distanceKm > RADIUS_KM) return [];
+        if (distanceKm === null || distanceKm > radiusKm) return [];
         return [{ place:{...place,rating_mine:mine.get(place.id)??null,rating_viewer_id:viewerId}, distanceKm, weight: recommendationWeight(place, distanceKm) }];
     });
 }
 
-async function prepareNearbyRecommendation(database,center,viewerId,fallback=null){
+async function prepareNearbyRecommendation(database,center,viewerId,fallback=null,radiusKm=RADIUS_KM){
     // Retry the pool AND its ranking together. Reusing a pool after a source
     // edit could recommend a newly hidden/avoided place or mix input revisions.
     for(let attempt=0;attempt<3;attempt++){
         try{
-            const candidates=await nearbyCandidates(database,center,viewerId);
+            const candidates=await nearbyCandidates(database,center,viewerId,radiusKm);
             const personalize=candidates.length<MIN_CANDIDATES?fallback:await prepareChoicePersonalizer(database,candidates,viewerId,fallback);
             return {candidates,personalize};
         }catch(error){
@@ -171,4 +180,4 @@ function drawRecommendation(candidates, excludedIds = [], random = Math.random, 
     return { place: selected.place, distanceKm: selected.distanceKm, candidateCount: candidates.length, personalized: selection.personalized };
 }
 
-module.exports = { recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer, prepareNearbyRecommendation, EMPTY_MESSAGE };
+module.exports = { randomRadius, recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer, prepareNearbyRecommendation, EMPTY_MESSAGE };

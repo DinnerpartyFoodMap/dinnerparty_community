@@ -52,6 +52,9 @@ async function main() {
         }
         const candidates = await nearbyCandidates(db._raw, center);
         assert.deepEqual(candidates.map(({ place }) => place.id).sort((a, b) => a - b), ids);
+        assert.equal((await nearbyCandidates(db._raw, center, null, 0.5)).length, 1, '500 m excludes farther shops');
+        assert.equal((await nearbyCandidates(db._raw, center, null, 3)).length, 4, 'selected radius includes its boundary');
+        assert.equal((await nearbyCandidates(db._raw, center, null, 10)).length, 7, '10 km includes shops outside the legacy 5 km circle');
         assert.equal(candidates.find(({ place }) => place.id === ids[0]).place.favorite_count, 5);
         assert.ok(Math.abs(recommendationWeight({}, 5) - 9 / 7) < 1e-12);
         assert.equal(recommendationWeight({}, 0), 2, 'missing details and favorites keep the base weight');
@@ -122,9 +125,13 @@ async function main() {
         app.use('/places', placesRouter);
         server = await new Promise((resolve) => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
         const url = `http://127.0.0.1:${server.address().port}/places/random`;
-        for (const query of ['', '?lat=&lng=0', '?lat=91&lng=0', '?lat=0&lng=NaN', '?lat=0&lat=1&lng=0', '?lat=0&lng=0&excludeIds=1,2,3']) {
+        for (const query of ['', '?lat=&lng=0', '?lat=91&lng=0', '?lat=0&lng=NaN', '?lat=0&lat=1&lng=0', '?lat=0&lng=0&excludeIds=1,2,3', '?lat=0&lng=0&radiusKm=0', '?lat=0&lng=0&radiusKm=50', '?lat=0&lng=0&radiusKm=NaN', '?lat=0&lng=0&radiusKm=1&radiusKm=3']) {
             assert.equal((await fetch(url + query)).status, 400, query);
         }
+        const narrow = await (await fetch(`${url}?lat=0&lng=0&radiusKm=0.5`)).json();
+        assert.equal(narrow.candidateCount, 1); assert.equal(narrow.place, null, 'range cannot be silently widened to reach five candidates');
+        const wide = await (await fetch(`${url}?lat=0&lng=0&radiusKm=10`)).json();
+        assert.equal(wide.candidateCount, 7); assert.ok(wide.distanceKm <= 10);
         const response = await fetch(`${url}?lat=0&lng=0&excludeIds=${ids[0]},${ids[1]}`);
         assert.equal(response.status, 200);
         assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -169,9 +176,10 @@ async function main() {
         try {
             global.fetch = async (...args) => { frontendRequest = args; return { ok: true, json: async () => body }; };
             const controller = new AbortController();
-            await fetchRandomPlace('https://example.test', center, ids.slice(0, 3), { token: 'test-token', signal: controller.signal });
+            await fetchRandomPlace('https://example.test', center, ids.slice(0, 3), { token: 'test-token', signal: controller.signal, radiusKm: 0.5 });
             assert.equal(frontendRequest[1].headers.Authorization, 'Bearer test-token');
             assert.equal(frontendRequest[1].signal, controller.signal);
+            assert.equal(new URL(frontendRequest[0]).searchParams.get('radiusKm'), '0.5');
             assert.equal(new URL(frontendRequest[0]).searchParams.get('excludeIds'), ids.slice(1, 3).join(','));
             await fetchRandomPlace('https://example.test', center);
             assert.equal(frontendRequest[1].headers, undefined, 'guest requests must not send an invalid token');

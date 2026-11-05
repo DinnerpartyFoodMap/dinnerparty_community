@@ -1,12 +1,11 @@
 import React, { useRef, useState } from 'react';
 import ScrollableView from '../components/layout/ScrollableView';
 import AnchoredPopover from '../components/overlay/AnchoredPopover';
-import MapCenterMenu from './MapCenterMenu';
-import PlaceListView, { RADIUS_OPTIONS_KM } from '../places/PlaceListView';
+import { MapScopeMenu, radiusText } from './MapCenterMenu';
+import PlaceListView from '../places/PlaceListView';
 import { t } from '../i18n/index.js';
 import '../places/placeList.css';
 
-const radiusText = (km) => (km < 1 ? t('places:list.distanceWithinMeters', { meters: km * 1000 }) : t('places:list.distanceWithin', { km }));
 
 /**
  * 地图的列表模式：列表 / 地图切换按钮打开后盖在地图上（工具栏与浮动按钮仍在上面）。
@@ -73,22 +72,8 @@ export default function MapListMode({ backendUrl, token, filter, locatedCenter, 
                                 <span className="material-symbols-outlined" aria-hidden="true">expand_more</span>
                             </button>
                             <AnchoredPopover open={menuOpen} onClose={() => setMenuOpen(false)} anchorRef={buttonRef} placement="bottom-start" label={t('places:list.center.pickTitle')} style={{ minWidth: 240 }}>
-                                <MapCenterMenu options={centerOptions} selected={source} onPickCenter={pickCenter} />
-                                <div className="fm-map-list__menu-heading" role="presentation">{t('places:list.distanceLabel')}</div>
-                                <div className="fm-map-list__radius-options">
-                                    {RADIUS_OPTIONS_KM.map((km) => (
-                                        <button
-                                            key={km}
-                                            type="button"
-                                            role="menuitemradio"
-                                            aria-checked={radiusKm === km}
-                                            className="fm-map-list__radius-chip"
-                                            onClick={() => { setRadiusKm(km); setMenuOpen(false); }}
-                                        >
-                                            {radiusText(km)}
-                                        </button>
-                                    ))}
-                                </div>
+                                <MapScopeMenu options={centerOptions} selected={source} onPickCenter={pickCenter}
+                                    radiusKm={radiusKm} onRadiusChange={km => { setRadiusKm(km); setMenuOpen(false); }} />
                             </AnchoredPopover>
                         </div>
                     </PlaceListView>

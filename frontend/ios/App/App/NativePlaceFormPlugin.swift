@@ -564,7 +564,7 @@ final class NativePlaceFormModel: ObservableObject {
 
 /// 添加 / 修改地点表单。与地点卡片同一种做法：不套 NavigationStack、不铺底色，面板底色完全交给系统
 /// （iOS 26 半屏是 Liquid Glass，拉到全屏由系统过渡为不透明）；顶部是与收藏面板一致的标题行
-/// （左关闭、居中标题、右提交），各栏是 tertiarySystemFill 的圆角分组，与收藏面板的分组底色、透明度相同。
+/// （左提交、居中标题、右关闭），各栏是 tertiarySystemFill 的圆角分组，与收藏面板的分组底色、透明度相同。
 private struct NativePlaceFormView: View {
     @ObservedObject var model: NativePlaceFormModel
     /// 相册选图：点“添加图片”菜单里的“从相册选择”后弹出系统相册，选好的图放进 pickerTarget 这一组
@@ -699,7 +699,7 @@ private struct NativePlaceFormView: View {
 
     // MARK: 标题行
 
-    /// 与收藏面板的标题行一致：左边关闭、居中标题、右边提交（圆形按钮，不再有展开按钮）
+    /// 与收藏面板的标题行一致：左边提交、居中标题、右边统一关闭钮
     private var header: some View {
         NativeSheetHeader(title: model.text("title", model.isCreate ? "添加地点" : "修改地点"),
                           closeLabel: model.text("cancel", "取消"),
@@ -710,20 +710,13 @@ private struct NativePlaceFormView: View {
                     .accessibilityLabel(Text(model.text("submitting", "提交中...")))
             } else {
                 let enabled = !(model.trimmedName.isEmpty || model.uploading || model.loadingImages)
-                Button {
-                    model.submit()
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        // 主色底上的符号用算好的对比色（默认粉色上白色不够清楚）
-                        .foregroundStyle(enabled ? Color(uiColor: .fmOnColor(UIColor(model.tint))) : Color.secondary)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(enabled ? model.tint : Color.primary.opacity(0.1)))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!enabled)
-                .accessibilityLabel(Text(model.text("submit", "提交")))
+                Button(model.text("submit", "提交")) { model.submit() }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(model.tint.fmReadableText)
+                    .frame(minHeight: 44)
+                    .buttonStyle(.plain)
+                    .disabled(!enabled)
+                    .opacity(enabled ? 1 : 0.45)
             }
         }
     }

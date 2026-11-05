@@ -666,6 +666,7 @@ private struct NativeSettingsView: View {
                     Button { perform("back") } label: {
                         Image(systemName: "chevron.backward").font(.headline)
                     }
+                    .foregroundStyle(store.primaryColor.fmReadableText)
                     .accessibilityLabel(store.text("backToMap", "返回地图"))
                 }
             }
@@ -685,7 +686,7 @@ private struct NativeSettingsView: View {
                 }
             }
         }
-        .tint(store.primaryColor)
+        .tint(store.primaryColor.fmReadableText)
         // 二级页请求失败或超时的提示（任何一页都显示在这里）
         .alert(store.alertMessage ?? "", isPresented: Binding(get: { store.alertMessage != nil }, set: { if !$0 { store.alertMessage = nil } })) {
             Button(store.text("ok", "好"), role: .cancel) {}
@@ -920,6 +921,7 @@ private struct NativeAvatarView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
                             Slider(value: $zoom, in: 1...4)
+                                .tint(store.primaryColor)
                                 .accessibilityLabel(Text(store.text("avatarZoom", "缩放")))
                             Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
                         }
@@ -1152,6 +1154,7 @@ private struct NativeThemesView: View {
                 Toggle(isOn: Binding(get: { store.dark }, set: { store.setDarkMode($0) })) {
                     Text(store.text("darkMode", "暗黑模式"))
                 }
+                .tint(store.primaryColor)
                 .disabled(store.isBusy("setDarkMode"))
             } footer: {
                 Text(store.text("darkModeHint", "使用“冥界·夜樱”暗色主题"))
@@ -1262,6 +1265,7 @@ private struct NativeMapSettingsView: View {
                             }
                             .padding(.vertical, 2)
                         }
+                        .tint(store.primaryColor)
                     }
                 } header: {
                     Text(store.mapText("motionTitle", "动效"))

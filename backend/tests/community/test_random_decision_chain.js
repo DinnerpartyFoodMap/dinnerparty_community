@@ -3,7 +3,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'random-chain-'));Object.assign(
 const {db,init}=require('../../infrastructure/database');init();const sql=db._raw;
 require('../../modules/accounts/middleware/auth').requireAuth=(req,res,next)=>{req.user={id:req.headers['x-user']||'a'};next();};
 require('../../modules/preferences/services/userPreferenceService').getUserPreference=async()=>null;
-require('../../modules/discovery/services/randomRecommendation').prepareNearbyRecommendation=async()=>({candidates:[1,2,3,4,5].map(id=>({place:{id,name:'p'+id},distanceKm:1,weight:1})),personalize:null});
+require('../../modules/discovery/services/randomRecommendation').prepareNearbyRecommendation=async(database,center,viewer,fallback,radiusKm)=>{assert.ok([0.5,1,3,5,10].includes(radiusKm));return {candidates:[1,2,3,4,5].map(id=>({place:{id,name:'p'+id},distanceKm:1,weight:1})),personalize:null};};
 const app=require('express')();app.use(require('express').json());app.use(require('../../modules/community/routes/community'));let server;
 async function main(){
  for(const id of ['a','b'])sql.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)').run(id,id,'x');
@@ -16,6 +16,10 @@ async function main(){
  const second={...first,draw_id:'second_draw_identifier',parent_decision_id:first.draw_id};const b=await call('/draw',second);assert.equal(b.data.draw_index,1);
  assert.equal((await call('/draw',{...second,draw_id:'stolen_parent_draw'},'b')).status,409);
  assert.equal((await call('/draw',{...second,draw_id:'forked_draw_identifier'})).status,409);
+ const scoped={...first,draw_id:'scoped_draw_identifier',recommendation_session_id:'scoped_recommendation',radiusKm:0.5};
+ assert.equal((await call('/draw',scoped)).status,200);
+ assert.equal((await call('/draw',{...scoped,radiusKm:10})).status,409,'same ID cannot replay a different range');
+ assert.equal((await call('/draw',{...scoped,draw_id:'invalid_radius_identifier',radiusKm:2})).status,400);
  const unselected=[1,2,3,4,5].find(id=>id!==a.data.place.id);
  const event={id:'unselected_click_event',session_id:'feedback_session_id',kind:'click',surface:'random',place_id:unselected,decision_id:first.draw_id};
  assert.equal((await call('/feedback',{consent_version:0,events:[event]})).data.accepted,0);

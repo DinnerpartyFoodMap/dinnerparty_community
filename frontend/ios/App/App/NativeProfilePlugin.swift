@@ -449,7 +449,7 @@ private struct NativeProfileView: View {
                             .frame(maxWidth: .infinity, minHeight: 240)
                             .accessibilityLabel(Text(model.text("loading", "加载中")))
                     } else if let error = model.loadError {
-                        NativeGlassCard(padding: 16) {
+                        NativePageCard(padding: 16) {
                             VStack(spacing: 12) {
                                 Text(error)
                                     .font(.footnote)
@@ -469,7 +469,7 @@ private struct NativeProfileView: View {
                 .padding(.bottom, 32)
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(NativeSheetBackground().ignoresSafeArea())
+            .nativePageBackground()
             .navigationTitle(model.text("title", "住民主页"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -480,6 +480,7 @@ private struct NativeProfileView: View {
                         Image(systemName: "chevron.backward")
                             .font(.headline)
                     }
+                    .tint(model.tint.fmReadableText)
                     .accessibilityLabel(Text(model.text("back", "返回")))
                 }
             }
@@ -505,7 +506,7 @@ private struct NativeProfileView: View {
     private var loadedContent: some View {
         headerCard
         if model.view.blocked {
-            NativeGlassCard(padding: 16) {
+            NativePageCard(padding: 16) {
                 Text(model.text("blockedNote", "你已屏蔽这位住民，TA 的地点和收藏不会显示给你。"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -518,7 +519,7 @@ private struct NativeProfileView: View {
     }
 
     private var headerCard: some View {
-        NativeGlassCard(padding: 16) {
+        NativePageCard(padding: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 14) {
                     AvatarImage(url: model.view.avatarURL)
@@ -565,7 +566,7 @@ private struct NativeProfileView: View {
     }
 
     private var radarCard: some View {
-        NativeGlassCard(padding: 14) {
+        NativePageCard(padding: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(model.text("tasteTitle", "餐饮偏好"))
@@ -594,7 +595,7 @@ private struct NativeProfileView: View {
     @ViewBuilder
     private var axisEditor: some View {
         if let axis = model.selectedAxisValue {
-            NativeGlassCard(padding: 14) {
+            NativePageCard(padding: 14) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(axis.label)
                         .font(.subheadline.weight(.semibold))
@@ -629,7 +630,7 @@ private struct NativeProfileView: View {
     @ViewBuilder
     private var widgets: some View {
         ForEach(model.view.sections) { section in
-            NativeGlassCard(padding: 14) {
+            NativePageCard(padding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(section.title)
                         .font(.caption.weight(.semibold))

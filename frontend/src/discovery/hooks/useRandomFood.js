@@ -3,6 +3,7 @@ import { fetchRandomPlace } from '../../api/client';
 import { normalizeLngLat } from '../../map/utils';
 import { eventId, request } from '../../journey/feedback';
 import { t } from '../../i18n/index.js';
+import { RADIUS_OPTIONS_KM } from '../../places/placeFilter';
 
 // 网页与原生弹窗共用一轮抽取，固定中心、短历史、失败重试和取消规则。
 export default function useRandomFood({ open, mapRef, backendUrl, token, feedback, origin, onSelectPlace, onClose }) {
@@ -10,6 +11,7 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
     const [activeOrigin, setActiveOrigin] = useState(origin || null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const [radiusKm, setRadiusKm] = useState(5);
     const centerRef = useRef(null);
     const recentRef = useRef([]);
     const requestRef = useRef(null);
@@ -18,7 +20,7 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
     const recommendationRef = useRef(null);
     const parentDecisionRef = useRef(null);
 
-    const draw = async (reset = false, from = activeOrigin, recordPrevious = true) => {
+    const draw = async (reset = false, from = activeOrigin, recordPrevious = true, radius = radiusKm) => {
         if (!open || requestRef.current) return;
         const center = !reset ? centerRef.current
             : from ? { lat: from.lat, lng: from.lng } : normalizeLngLat(mapRef.current?.getCenter?.());
@@ -40,13 +42,13 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
             let data;
             const community=feedback?.consent?.feedback && token;
             if (community) {
-                pendingDrawRef.current ||= { draw_id: eventId(), recommendation_session_id: recommendationRef.current, parent_decision_id: parentDecisionRef.current, center: centerRef.current, exclude_ids: [...recentRef.current] };
+                pendingDrawRef.current ||= { draw_id: eventId(), recommendation_session_id: recommendationRef.current, parent_decision_id: parentDecisionRef.current, center: centerRef.current, radiusKm: radius, exclude_ids: [...recentRef.current] };
             }
             for(let attempt=0;attempt<2;attempt++){
                 try{
                     data=community?await request(backendUrl, token, '/api/community/draw', { method: 'POST', signal: controller.signal,
                         body: JSON.stringify({ ...pendingDrawRef.current, consent_version: feedback.consent.version }) })
-                        :await fetchRandomPlace(backendUrl, centerRef.current, recentRef.current, { signal: controller.signal, token });
+                        :await fetchRandomPlace(backendUrl, centerRef.current, recentRef.current, { signal: controller.signal, token, radiusKm: radius });
                     break;
                 }catch(err){
                     const retry=err.status===409&&(!community||['stale_input','RANDOM_INPUT_CHANGED'].includes(err.code));
@@ -87,6 +89,12 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
         setActiveOrigin(null);
         draw(true, null);
     };
+    const changeRadius = (radius) => {
+        if (!currentSession || requestRef.current || !RADIUS_OPTIONS_KM.includes(radius) || radius === radiusKm) return;
+        setRadiusKm(radius);
+        // Keep the selected center, including a map center frozen at the start of this round.
+        draw(true, activeOrigin || centerRef.current, false, radius);
+    };
     const selectPlace = () => {
         if (!currentSession || busy || !result?.place) return;
         feedback?.record('click', 'random', result.place.id, { decision_id: result.decision_id || null, recommendation_session_id: result.recommendation_session_id, draw_index: result.draw_index });
@@ -100,6 +108,7 @@ export default function useRandomFood({ open, mapRef, backendUrl, token, feedbac
         activeOrigin: currentSession ? activeOrigin : origin || null,
         busy: open && (!currentSession || busy),
         error: currentSession ? error : '',
+        radiusKm, changeRadius,
         drawNext: () => draw(!centerRef.current), redrawAtMapCenter, selectPlace
     };
 }

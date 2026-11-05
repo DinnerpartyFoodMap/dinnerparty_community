@@ -228,8 +228,9 @@ try {
     longList = false;
 
     // Random discovery shares the list's center choices and keeps the choice above its actions.
-    for (const [width, height] of [[1280, 900], [390, 844]]) {
+    for (const [width, height, dark] of [[1280, 900, false], [390, 844, false], [320, 844, true]]) {
         await navigate('map&random=1', width, height);
+        await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(dark ? 'dark' : 'light')}`);
         await waitFor(`!!document.querySelector('[aria-labelledby="random-food-title"] .fm-map-list__scope:not([disabled])')`);
         const panel = '[aria-labelledby="random-food-title"]';
         const layout = await evaluate(`(() => {
@@ -257,6 +258,25 @@ try {
         await click('.fm-notice button');
         await waitFor(`document.querySelector('${panel} .fm-map-list__scope:not([disabled])')?.textContent.includes('选定的位置')`);
         assert.equal(requests.filter(entry => entry.path === '/places/random').length, before + 2, 'custom map selection starts one fresh draw');
+        const chosenCenter = requests.filter(entry => entry.path === '/places/random').at(-1).query;
+        await click(`${panel} .fm-map-list__scope`);
+        await waitFor(`document.querySelectorAll('.fm-map-list__radius-chip').length === 5`);
+        const scopeGeometry = await evaluate(`(() => {
+            const menu = document.querySelector('.fm-map-list__radius-options').closest('[role="menu"]');
+            const r = menu.getBoundingClientRect();
+            return { left:r.left, right:r.right, top:r.top, bottom:r.bottom,
+                selected:[...menu.querySelectorAll('.fm-map-list__radius-chip')].find(e=>e.getAttribute('aria-checked')==='true').textContent };
+        })()`);
+        assert.ok(scopeGeometry.left >= 0 && scopeGeometry.right <= width && scopeGeometry.top >= 0 && scopeGeometry.bottom <= height, 'scope popover stays within viewport');
+        assert.equal(scopeGeometry.selected, '5 公里内', 'random keeps the legacy default');
+        await screenshot(`random-scope-${width}-${dark ? 'dark' : 'light'}`);
+        await click('.fm-map-list__radius-chip');
+        await waitFor(`document.querySelector('${panel} .fm-map-list__scope:not([disabled])')?.textContent.includes('500 米内')`);
+        const scoped = requests.filter(entry => entry.path === '/places/random').at(-1).query;
+        assert.equal(scoped.radiusKm, '0.5');
+        assert.equal(scoped.lat, chosenCenter.lat); assert.equal(scoped.lng, chosenCenter.lng);
+        assert.equal(scoped.excludeIds, undefined, 'range change clears recent places');
+        assert.equal(requests.filter(entry => entry.path === '/places/random').length, before + 3, 'range selection starts exactly one draw');
         await screenshot(`random-center-${width}`);
         assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'random center controls have no browser errors');
     }

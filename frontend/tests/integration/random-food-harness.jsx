@@ -62,7 +62,7 @@ export async function runRandomFoodBrowserTests() {
         await configure({ open: true });
         const first = await waitRequest(1);
         equal({ path: first.path, method: first.method, query: first.query, authorization: first.authorization }, {
-            path: '/places/random', method: 'GET', query: { lat: '30', lng: '120' }, authorization: 'Bearer account-a'
+            path: '/places/random', method: 'GET', query: { lat: '30', lng: '120', radiusKm: '5' }, authorization: 'Bearer account-a'
         }, 'opening draws once at the map center with the current token');
         controls.drawNext(); controls.drawNext(); await frames();
         equal(requests.length, 1, 'busy draws cannot start concurrent requests');
@@ -72,17 +72,17 @@ export async function runRandomFoodBrowserTests() {
 
         mapCenter = { lng: 121, lat: 31 };
         controls.drawNext(); const second = await waitRequest(2);
-        equal(second.query, { lat: '30', lng: '120', excludeIds: '101' }, 'another place keeps the original center after the map moves');
+        equal(second.query, { lat: '30', lng: '120', radiusKm: '5', excludeIds: '101' }, 'another place keeps the original center after the map moves');
         await respond(second, 102);
         controls.drawNext(); const third = await waitRequest(3);
-        equal(third.query, { lat: '30', lng: '120', excludeIds: '101,102' }, 'a third draw excludes both recent places');
+        equal(third.query, { lat: '30', lng: '120', radiusKm: '5', excludeIds: '101,102' }, 'a third draw excludes both recent places');
         await respond(third, 103);
         controls.drawNext(); const fourth = await waitRequest(4);
-        equal(fourth.query, { lat: '30', lng: '120', excludeIds: '102,103' }, 'only the last two successful places are excluded');
+        equal(fourth.query, { lat: '30', lng: '120', radiusKm: '5', excludeIds: '102,103' }, 'only the last two successful places are excluded');
         await respond(fourth, 104);
 
         controls.redrawAtMapCenter(); const recentered = await waitRequest(5);
-        equal(recentered.query, { lat: '31', lng: '121' }, 'redrawing at the current center clears recent history');
+        equal(recentered.query, { lat: '31', lng: '121', radiusKm: '5' }, 'redrawing at the current center clears recent history');
         await respond(recentered, 105);
         equal(state().activeOrigin, null, 'redrawing uses the map origin');
 
@@ -96,14 +96,14 @@ export async function runRandomFoodBrowserTests() {
         equal(requests.length, 6, 'draw actions cannot fetch while closed');
         await configure({ open: true });
         const reopened = await waitRequest(7);
-        equal(reopened.query, { lat: '31', lng: '121' }, 'reopening draws once with fresh history and current center');
+        equal(reopened.query, { lat: '31', lng: '121', radiusKm: '5' }, 'reopening draws once with fresh history and current center');
         await respond(reopened, 106);
 
         controls.drawNext(); const oldAccount = await waitRequest(8);
         await configure({ token: 'account-b' });
         const newAccount = await waitRequest(9);
         ok(oldAccount.signal.aborted, 'changing token aborts the previous account request');
-        equal({ query: newAccount.query, authorization: newAccount.authorization }, { query: { lat: '31', lng: '121' }, authorization: 'Bearer account-b' }, 'new account gets a new round without the old exclusion history');
+        equal({ query: newAccount.query, authorization: newAccount.authorization }, { query: { lat: '31', lng: '121', radiusKm: '5' }, authorization: 'Bearer account-b' }, 'new account gets a new round without the old exclusion history');
         await respond(newAccount, 201);
         oldAccount.respond(resultFor(998)); await frames();
         equal(state().result.place.id, 201, 'the previous account cannot overwrite the new result');
@@ -113,11 +113,11 @@ export async function runRandomFoodBrowserTests() {
         await configure({ origin: exhibition });
         const originDraw = await waitRequest(10);
         equal(feedbackEvents.length, eventsBeforeOrigin, 'opening a new round does not report the previous session as skipped');
-        equal(originDraw.query, { lat: '32', lng: '122' }, 'changing origin starts exactly one fresh round');
+        equal(originDraw.query, { lat: '32', lng: '122', radiusKm: '5' }, 'changing origin starts exactly one fresh round');
         await respond(originDraw, 202);
         equal(state().activeOrigin.key, 'exhibition-one', 'the active origin follows the explicit origin');
         controls.redrawAtMapCenter(); const exitOrigin = await waitRequest(11);
-        equal(exitOrigin.query, { lat: '31', lng: '121' }, 'leaving the exhibition clears its history and reads the map center');
+        equal(exitOrigin.query, { lat: '31', lng: '121', radiusKm: '5' }, 'leaving the exhibition clears its history and reads the map center');
         await respond(exitOrigin, 203);
 
         await configure({ open: false });
@@ -157,6 +157,28 @@ export async function runRandomFoodBrowserTests() {
         chainConflict.respond({error:'抽取会话已改变，请重新抽取'},409);
         await until(()=>state().error==='抽取会话已改变，请重新抽取'&&!state().busy,'business conflict must not auto retry');
         equal(requests.length,19,'chain/consent conflicts are distinct from stale model inputs');
+        // A different radius starts a new idempotent chain at the SAME center.
+        controls.changeRadius(0.5); const smaller = await waitRequest(20);
+        equal(smaller.body.radiusKm, 0.5, 'community request carries the chosen radius');
+        equal(smaller.body.center, chainConflict.body.center, 'range changes keep the selected center');
+        equal(smaller.body.exclude_ids, [], 'range changes clear repeat history');
+        equal(smaller.body.parent_decision_id, null, 'range changes clear the old chain');
+        ok(smaller.body.draw_id !== chainConflict.body.draw_id, 'changed scope gets a fresh draw ID');
+        ok(smaller.body.recommendation_session_id !== chainConflict.body.recommendation_session_id, 'changed scope gets a fresh session');
+        controls.changeRadius(10); await frames();
+        equal(requests.length, 20, 'a busy range change cannot start concurrent draws');
+        await respond(smaller, 304);
+        await configure({ open: false, consentEnabled: false });
+        await configure({ open: true });
+        const smallGet = await waitRequest(21);
+        equal(smallGet.query.radiusKm, '0.5', 'GET drawing preserves the selected range');
+        await respond(smallGet, 305);
+        mapCenter = { lng: 123, lat: 33 };
+        controls.changeRadius(10); const wider = await waitRequest(22);
+        equal(wider.query, { lat: '31', lng: '121', radiusKm: '10' }, 'range changes keep the frozen map center and clear history');
+        await respond(wider, 306);
+        controls.changeRadius(2); await frames();
+        equal(requests.length, 22, 'unsupported ranges cannot draw');
         equal(errors, [], 'React lifecycle has no browser errors');
         return { passed: true, requests: requests.length, coverage: ['one draw per open', 'fixed center and recent-two history', 'recenter clears history', 'close abort and late result isolation', 'token replacement', 'origin replacement', 'community idempotent retry'] };
     } finally {

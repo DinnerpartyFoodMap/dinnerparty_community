@@ -198,11 +198,12 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 - 一组按钮里只放一个 primary。禁用：透明度 0.45，不改颜色。
 - 按压：`.fm-pressable`（缩放 0.97）；原生系统按压效果。
 - iOS：工具栏上的文字按钮（提交、保存、存草稿、管理）`.tint` 用加深的主色（`primaryText`），主色实心圆钮里的符号用 `onPrimary`。
+- 住民设置的一级返回图标与二级系统返回统一使用 `primaryText`，由同一个 NavigationStack 继承。开关、滑杆的填充仍使用原始主色，不能随导航文字一起加深。
 - 网页实现：`components/primitives/Button.jsx` + `button.css`（`variant`、`size`、`full`；另有 `menu` 变体给菜单行）。调用方用 `style` 自定义了底色时自动按 secondary 的基础样式（正文色文字、细边框），避免主色上的文字色落到别的底色上。日记模块的裸 `<button>` 由 `journey.css` 给同一规格（胶囊、44 高），整行 / 列表式按钮单独用矩形圆角。
 
 ### 7.2 图标按钮
 
-44 × 44 圆形；默认透明底；需要底时用 `color-mix(text-primary 8%)`（原生 `Color.primary.opacity(0.08)`）。关闭按钮图标 `close` / `xmark`，17 号 semibold。
+44 × 44 圆形；默认透明底；需要底时用 `color-mix(text-primary 8%)`（原生 `Color.primary.opacity(0.08)`）。关闭按钮图标 `close` / `xmark`，17 号 semibold。iOS 地点卡标题栏左右圆钮统一为 `NativeCloseButton.diameter`（52pt），使用同种 regular interactive glass；不能只把 44pt 按钮外面的占位扩大成 52pt。
 网页实现：`components/primitives/IconButton.jsx`（`.fm-icon-button`，与面板关闭钮同一样式；`spinning` 时图标转圈，用于刷新进行中）。所有关闭 X 固定在所属容器右上角；iOS 用 `NativeCloseButton` 复用搜索收键盘按钮的外观：52 × 52 圆形、18pt semibold `xmark`、primary 前景、regular interactive glass（旧系统回退 regular material）。X 不使用皮肤自定义图案。清空输入、删除图片等非关闭动作不受此规则影响。
 
 ### 7.3 输入框
@@ -330,9 +331,10 @@ frontend/src/styles/tokens.json       ← 唯一来源（字体、颜色含 ligh
 
 ### 11.3.2 随机美食
 
-- 信息层次：地点名称 → 分类、距离、人均 → 地点简介 → 推荐/候选说明 → 中心选择 → 查看地点/再换一家。
-- iOS 地点信息使用独立深色半透明卡片，简介为白色 body 字体，支持动态字号、换行与选取；名称不压缩成小字，元信息与说明分层，操作按钮并排。此白字为可读性例外，不使用普通辅助文字灰色。
-- 中心按钮放在地点详情与操作按钮之间。网页/Android 与列表复用 `MapCenterMenu`：我的位置（定位可用时）、地图中心、已选位置、在地图上选；iOS 在同一位置用系统 Menu 显示同组选项。展会入口保留展会中心，换中心后开启新一轮，清空历史并取消旧请求。
+- 信息层次：地点名称 → 分类、距离、人均 → 地点简介 → 推荐/候选说明 → 中心与距离选择 → 查看地点/再换一家。
+- iOS 地点信息使用品牌 `FM.bgSurface` 卡片、`FM.border` 描边与系统 primary 正文色；简介为 body 字体，支持动态字号、换行与选取。取消固定黑色遮罩和白字例外，浅深主题均使用品牌表面色。名称不压缩成小字，元信息与说明分层，操作按钮并排、使用胶囊形状，次要按钮底为 `FM.bgOverlay`。
+- 范围按钮放在地点详情与操作按钮之间，显示「中心 · 距离内」。网页/Android 与列表复用 `MapScopeMenu`：先显示中心分组（我的位置、地图中心、已选位置、在地图上选），再显示距离芯片分组（500 米、1、3、5、10 公里）。iOS 在同一位置用 popover 展示相同分组与可换行芯片；窄屏不变成全屏表单，选中主色样式与列表一致。
+- 随机默认 5 公里，保留原有行为；列表默认 3 公里。更换范围保留已选中心；更换中心或范围均开启新一轮、清空最近地点与抽取链。重试保留本轮中心、范围和抽取编号。展会入口保留展会中心。
 - 移除独立的「按当前地图中心重新抽取」操作；「再换一家」沿用当前已选中心。
 
 ### 11.4 主要操作的位置

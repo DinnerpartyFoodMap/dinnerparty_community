@@ -1372,6 +1372,7 @@ export default function MapUI(props) {
             if (type === 'dismiss') setRandomFoodOpen(false);
             else if (rowId === 'view') randomFood.selectPlace();
             else if (rowId === 'another') randomFood.drawNext();
+            else if (rowId?.startsWith('radius:')) randomFood.changeRadius(Number(rowId.slice(7)));
             else if (rowId === 'center:pick') pickRandomCenter();
             else if (rowId?.startsWith('center:') && !randomFood.busy) randomCenterOptions.find(option => `center:${option.id}` === rowId)?.select();
         } else if (sheetId === 'filter') {
