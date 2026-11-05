@@ -170,6 +170,7 @@ try {
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_PICK_CENTERS'), [{lng:120,lat:30}], 'changing the center passes the existing center to the picker boundary');
     const customCenter = await waitForRequest(query => query.lat === '31.500000' && query.lng === '121.500000');
     assert.deepEqual(customCenter.query, {lat:'31.500000',lng:'121.500000',radiusKm:'0.5',offset:'0',limit:'20'}, 'the selected center is sent to the list API while retaining the 500m radius');
+    await waitFor(`!document.querySelector('[role="menuitemradio"]')`);
     await click('.fm-map-list__scope');
     await waitFor(`[...document.querySelectorAll('[role="menuitemradio"]')].some(e=>e.textContent.includes('地图中心'))`);
     await screenshot('list-custom-center-menu');
@@ -259,6 +260,7 @@ try {
         await waitFor(`document.querySelector('${panel} .fm-map-list__scope:not([disabled])')?.textContent.includes('选定的位置')`);
         assert.equal(requests.filter(entry => entry.path === '/places/random').length, before + 2, 'custom map selection starts one fresh draw');
         const chosenCenter = requests.filter(entry => entry.path === '/places/random').at(-1).query;
+        await waitFor(`!document.querySelector('[role="menuitemradio"]')`);
         await click(`${panel} .fm-map-list__scope`);
         await waitFor(`document.querySelectorAll('.fm-map-list__radius-chip').length === 5`);
         const scopeGeometry = await evaluate(`(() => {
@@ -272,6 +274,7 @@ try {
         await screenshot(`random-scope-${width}-${dark ? 'dark' : 'light'}`);
         await click('.fm-map-list__radius-chip');
         await waitFor(`document.querySelector('${panel} .fm-map-list__scope:not([disabled])')?.textContent.includes('500 米内')`);
+        assert.ok(await evaluate(`document.querySelector('${panel}').querySelector('p').textContent.includes('500 米内')`), 'intro follows the selected radius');
         const scoped = requests.filter(entry => entry.path === '/places/random').at(-1).query;
         assert.equal(scoped.radiusKm, '0.5');
         assert.equal(scoped.lat, chosenCenter.lat); assert.equal(scoped.lng, chosenCenter.lng);

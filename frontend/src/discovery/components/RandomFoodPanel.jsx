@@ -59,7 +59,7 @@ function RandomFoodContent({ session, onClose, feedback, centerOptions = [], onP
                 <IconButton ref={closeRef} icon="close" label={t('map:randomFood.close')} onClick={onClose} />
             </div>
             <p style={{ margin: '4px 0 16px', fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                {activeOrigin ? t('map:randomFood.introOrigin', { name: activeOrigin.label }) : t('map:randomFood.intro')}
+                {activeOrigin ? t('map:randomFood.introOrigin', { name: activeOrigin.label, distance: radiusText(radiusKm) }) : t('map:randomFood.intro', { distance: radiusText(radiusKm) })}
             </p>
             <div aria-live="polite" aria-atomic="true">
                 {busy && <p role="status">{t('map:randomFood.picking')}</p>}

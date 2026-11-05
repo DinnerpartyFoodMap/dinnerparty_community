@@ -11,7 +11,7 @@
     "showVenue": "查看位置",
     "showVenueLabel": "在地图上查看展会地点：{{location}}",
     "randomNearby": "展会附近随机美食",
-    "randomHint": "以展会地点为中心，在 5km 内随机挑一家。"
+    "randomHint": "以展会地点为中心随机挑一家，可选择距离范围。"
   },
   "category": {
     "placeholder": "搜索或输入新分类",
@@ -429,8 +429,8 @@
     "mapNotReady": "地图尚未就绪，请稍后重试",
     "loadFailed": "随机推荐加载失败，请稍后重试",
     "close": "关闭随机美食",
-    "intro": "从本轮地图中心 5km 内，为你挑一家。",
-    "introOrigin": "以「{{name}}」为中心，在 5km 内为你挑一家。",
+    "intro": "从本轮地图中心 {{distance}}，为你挑一家。",
+    "introOrigin": "以「{{name}}」为中心，在 {{distance}}为你挑一家。",
     "picking": "正在挑选附近的美食…",
     "personalized": "已参考你的收藏、导航和分享偏好",
     "meta": "{{category}} · 距本轮中心 {{distance}}",

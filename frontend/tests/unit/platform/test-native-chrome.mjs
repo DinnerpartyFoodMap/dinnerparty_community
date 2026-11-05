@@ -35,6 +35,7 @@ const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
     assert.equal(ready.paragraphs[0].title, '店名');
     assert.equal(ready.paragraphs[1].text, '简介');
     assert.ok(ready.subtitle.includes('展会'));
+    assert.ok(randomFoodChromeSheet({ radiusKm: 0.5 }).subtitle.includes('500 米内'));
     assert.equal(JSON.stringify(ready).includes('latitude'), false, 'native receives display data, not coordinates');
 }
 

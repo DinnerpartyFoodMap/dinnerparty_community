@@ -16,7 +16,7 @@ export function randomFoodChromeSheet({ result, activeOrigin, busy, error, radiu
     const category = place?.category || t('common:label.uncategorized');
     return {
         id: 'random', size: 'fit', title: t('map:randomFood.title'),
-        subtitle: activeOrigin ? t('map:randomFood.introOrigin', { name: activeOrigin.label }) : t('map:randomFood.intro'),
+        subtitle: activeOrigin ? t('map:randomFood.introOrigin', { name: activeOrigin.label, distance: radiusText(radiusKm) }) : t('map:randomFood.intro', { distance: radiusText(radiusKm) }),
         message: busy ? t('map:randomFood.picking') : error || (!place ? result?.message : undefined),
         messageTone: busy ? 'loading' : error ? 'danger' : undefined,
         paragraphs: place ? [
