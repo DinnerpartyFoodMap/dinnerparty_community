@@ -297,7 +297,7 @@ button,
     background: var(--color-border);
 }
 
-/* 面板标题栏（PanelHeader）：左边 44 圆形关闭钮、标题居中、右边操作；两侧等宽，标题始终居中。
+/* 面板标题栏（PanelHeader）：左边操作、标题居中、右上角 44 圆形关闭钮；两侧等宽，标题始终居中。
    浏览器、App 内网页面板与 iOS 原生面板同一布局（设计参考 7.6） */
 .fm-panel__header {
     flex-shrink: 0;
@@ -318,6 +318,7 @@ button,
 
 .fm-panel__header-side--end {
     justify-content: flex-end;
+    align-self: start;
 }
 
 .fm-panel__title {

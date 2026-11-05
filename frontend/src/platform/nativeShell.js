@@ -3,11 +3,12 @@
 
 import { isNativePlatform, getPlatform } from './env.js';
 import { dispatchBack, hasBackTarget, subscribeBackTarget } from './backButton.js';
-import { initNavigationState, placeSharePath } from './navigation.js';
+import { getCurrentPath, initNavigationState, placeSharePath } from './navigation.js';
 import { initLifecycle } from './lifecycle.js';
 import { getRuntimeConfig } from './runtimeConfig.js';
 import { startGlassRefraction } from './glassRefraction.js';
-import { createIosBackGesture } from './iosBackGesture.js';
+import { createIosBackGesture, iosBackGestureRegion } from './iosBackGesture.js';
+import { subscribeOverlays } from '../components/overlay/overlayStack.js';
 
 function setKeyboardInset(height) {
     const root = document.documentElement;
@@ -40,22 +41,33 @@ export function toInAppPath(rawUrl, base = getRuntimeConfig().publicWebBaseUrl) 
 // iOS 左边缘返回：新壳派发进度事件，拖动/取消保持真实页面与输入；完成后走 dispatchBack。
 // 旧壳继续派发 foodmap:edge-back。只在有东西可返回时让原生接管左边缘，
 // 根页面不拦截，地图从左边缘开始的拖动不受影响。
-function setupIosEdgeBack() {
+export function setupIosEdgeBack() {
     const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.foodMapEdgeBack;
     if (!handler) return;
     let last = null;
-    const report = (enabled) => {
-        if (enabled === last) return;
-        last = enabled;
-        try { handler.postMessage({ enabled, interactive: true }); } catch (e) { /* 原生未注册时忽略 */ }
+    const report = () => {
+        const state = { enabled: hasBackTarget(), interactive: true, region: iosBackGestureRegion(getCurrentPath()) };
+        const key = JSON.stringify(state);
+        if (key === last) return;
+        last = key;
+        try { handler.postMessage(state); } catch (e) { /* 原生未注册时忽略 */ }
     };
-    subscribeBackTarget(report);
-    report(hasBackTarget());
-    window.addEventListener('foodmap:edge-back', () => { dispatchBack(); });
+    const unsubscribeBack = subscribeBackTarget(report);
+    // 选点器 → 表单/确认框时 enabled 可能不变，仍要同步热区档位。
+    const unsubscribeOverlays = subscribeOverlays(report);
+    report();
+    const legacyBack = () => { dispatchBack(); };
+    window.addEventListener('foodmap:edge-back', legacyBack);
     const gesture = createIosBackGesture();
-    window.addEventListener('foodmap:edge-back-progress', event => {
+    const progress = event => {
         Promise.resolve(gesture.handle(event.detail)).catch(error => console.warn('侧滑返回失败', error));
-    });
+    };
+    window.addEventListener('foodmap:edge-back-progress', progress);
+    return () => {
+        unsubscribeBack(); unsubscribeOverlays(); gesture.dispose();
+        window.removeEventListener('foodmap:edge-back', legacyBack);
+        window.removeEventListener('foodmap:edge-back-progress', progress);
+    };
 }
 
 async function setupNative() {

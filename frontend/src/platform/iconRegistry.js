@@ -13,6 +13,8 @@ const ICONS = Object.freeze({
     exclude: ['block', 'nosign'],
     random: ['casino', 'dice'],
     redraw: ['filter_center_focus', 'scope'],
+    centerMap: ['map', 'map'],
+    centerLocation: ['my_location', 'location'],
     alongRoute: ['route', 'point.topleft.down.to.point.bottomright.curvepath'],
     journey: ['menu_book', 'book.closed'],
     admin: ['admin_panel_settings', 'gearshape.2'],

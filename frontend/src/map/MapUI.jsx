@@ -25,6 +25,7 @@ import { recordPlaceBehavior, sharePlaceContent, copyPlaceContent } from "../pla
 import { buildShareCardModel } from "../places/shareCard";
 import useShareCard from "../places/hooks/useShareCard";
 import RandomFoodPanel from "../discovery/components/RandomFoodPanel";
+import IconButton from '../components/primitives/IconButton';
 import useRandomFood from '../discovery/hooks/useRandomFood';
 import { randomFoodChromeSheet } from '../discovery/randomFoodSheet';
 import { Exposure } from '../journey/feedback';
@@ -541,6 +542,8 @@ export default function MapUI(props) {
     }, [filterOpen, backendUrl]);
     // 随机美食的固定中心（展会地点）；null 表示按地图中心
     const [randomFoodOrigin, setRandomFoodOrigin] = useState(null);
+    const [randomCustomCenter, setRandomCustomCenter] = useState(null);
+    const randomCenterRevision = useRef(0);
     const handledRandomFoodRequest = useRef(0);
     // 布局策略集中判断（640px 窄屏基线）
     const layout = useLayoutPolicy();
@@ -698,6 +701,27 @@ export default function MapUI(props) {
         mapRef, backendUrl, token: isAuthenticated ? token : null, feedback, origin: randomFoodOrigin,
         onSelectPlace: onSelectRandomPlace, onClose: () => setRandomFoodOpen(false)
     });
+
+    const changeRandomCenter = (point, source, label) => {
+        if (!point || randomFood.busy) return;
+        setRandomFoodOrigin({ ...point, source, label, key: `random-center-${++randomCenterRevision.current}` });
+    };
+    const pickRandomCenter = () => {
+        if (randomFood.busy) return;
+        props.onPickListCenter?.(randomFood.activeOrigin || currentMapCenter(mapRef), point => {
+            setRandomCustomCenter(point);
+            changeRandomCenter(point, 'custom', t('places:list.center.custom'));
+        });
+    };
+    const randomCenterOptions = [
+        props.locatedCenter && { id: 'location', label: t('places:list.center.location'), icon: 'my_location', symbol: sfSymbol('centerLocation'),
+            select: () => changeRandomCenter(props.locatedCenter, 'location', t('places:list.center.location')) },
+        { id: 'map', label: t('places:list.center.map'), icon: 'map', symbol: sfSymbol('centerMap'),
+            select: () => changeRandomCenter(currentMapCenter(mapRef), 'map', t('places:list.center.map')) },
+        randomCustomCenter && { id: 'custom', label: t('places:list.center.custom'), icon: 'location_on', symbol: sfSymbol('place'),
+            select: () => changeRandomCenter(randomCustomCenter, 'custom', t('places:list.center.custom')) },
+        randomFood.activeOrigin && !randomFood.activeOrigin.source && { id: 'origin', label: randomFood.activeOrigin.label, icon: 'location_on', symbol: sfSymbol('place'), select: () => {} }
+    ].filter(Boolean);
 
     const openRandomFoodAt = (origin) => {
         setAlongRouteOpen(false);
@@ -1169,7 +1193,7 @@ export default function MapUI(props) {
             }]
         };
     } else if (openSheetId === 'random') {
-        chromeSheet = randomFoodChromeSheet(randomFood);
+        chromeSheet = randomFoodChromeSheet(randomFood, { centerOptions: randomCenterOptions });
     } else if (openSheetId === 'filter') {
         chromeSheet = filterChromeSheet({ filter: placeFilter, categories: filterDirectory.list, showAll: filterShowAll, loading: filterDirectory.loading, error: filterDirectory.error });
     } else if (openSheetId === 'exhibition') {
@@ -1342,7 +1366,8 @@ export default function MapUI(props) {
             if (type === 'dismiss') setRandomFoodOpen(false);
             else if (rowId === 'view') randomFood.selectPlace();
             else if (rowId === 'another') randomFood.drawNext();
-            else if (rowId === 'redraw') randomFood.redrawAtMapCenter();
+            else if (rowId === 'center:pick') pickRandomCenter();
+            else if (rowId?.startsWith('center:') && !randomFood.busy) randomCenterOptions.find(option => `center:${option.id}` === rowId)?.select();
         } else if (sheetId === 'filter') {
             if (type === 'dismiss') { setFilterOpen(false); return; }
             const change = applyFilterSheetRow(placeFilter, rowId);
@@ -1948,14 +1973,12 @@ export default function MapUI(props) {
         >
             <SkinFrame slot="placeCard.frame" disabled={inSheet && platform !== 'web'} />
             {/* 首屏：店名、分类与人均、简介、评价；修改人与日期放到最下面 */}
-            {/* 关闭钮在店名左侧（与所有面板、iOS 原生店卡相同，设计参考 7.6） */}
+            {/* 关闭钮统一放在容器右上角（设计参考 7.6） */}
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                {!hideNonSearchButtons && (
-                    <Button onClick={closePopup} style={{ flexShrink: 0, minWidth: 32, minHeight: 32, padding: 0, borderRadius: 'var(--radius-full)', border: "none", background: 'color-mix(in srgb, var(--color-text-primary) 8%, transparent)', cursor: "pointer", fontSize: 18, lineHeight: 1, color: 'var(--color-text-primary)' }} title={t('common:action.close')} aria-label={t('common:action.close')}>
-                        <SkinIcon slot="cardActions.close" size={18}>×</SkinIcon>
-                    </Button>
-                )}
                 <strong style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 600, lineHeight: 1.35, paddingTop: 4, color: 'var(--color-text-primary)', overflowWrap: 'anywhere' }}>{selectedPlace.name}</strong>
+                {!hideNonSearchButtons && (
+                    <IconButton icon="close" label={t('common:action.close')} onClick={closePopup} style={{ flexShrink: 0 }} />
+                )}
             </div>
             {/* 展会地点没有分类和人均，不显示这一行 */}
             {!selectedPlace.exhibitionVenue && (
@@ -2515,6 +2538,8 @@ export default function MapUI(props) {
                 open={randomFoodOpen && !nativeChrome && !chrome.holdWeb}
                 origin={randomFoodOrigin}
                 session={randomFood}
+                centerOptions={randomCenterOptions}
+                onPickCenter={pickRandomCenter}
                 feedback={feedback}
                 mapRef={mapRef} backendUrl={backendUrl} isNarrow={isNarrow}
                 token={isAuthenticated ? token : null}

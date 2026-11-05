@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import ScrollableView from '../components/layout/ScrollableView';
 import AnchoredPopover from '../components/overlay/AnchoredPopover';
+import MapCenterMenu from './MapCenterMenu';
 import PlaceListView, { RADIUS_OPTIONS_KM } from '../places/PlaceListView';
 import { t } from '../i18n/index.js';
 import '../places/placeList.css';
@@ -72,18 +73,7 @@ export default function MapListMode({ backendUrl, token, filter, locatedCenter, 
                                 <span className="material-symbols-outlined" aria-hidden="true">expand_more</span>
                             </button>
                             <AnchoredPopover open={menuOpen} onClose={() => setMenuOpen(false)} anchorRef={buttonRef} placement="bottom-start" label={t('places:list.center.pickTitle')} style={{ minWidth: 240 }}>
-                                <div className="fm-map-list__menu-heading" role="presentation">{t('places:list.center.heading')}</div>
-                                {centerOptions.map((option) => (
-                                    <button key={option.id} type="button" role="menuitemradio" aria-checked={source === option.id} className="fm-map-list__menu-item" onClick={option.select}>
-                                        <span className="material-symbols-outlined" aria-hidden="true">{option.icon}</span>
-                                        <span>{option.label}</span>
-                                        {source === option.id && <span className="material-symbols-outlined fm-map-list__menu-check" aria-hidden="true">check</span>}
-                                    </button>
-                                ))}
-                                <button type="button" role="menuitem" className="fm-map-list__menu-item" onClick={pickCenter}>
-                                    <span className="material-symbols-outlined" aria-hidden="true">add_location_alt</span>
-                                    <span>{t('places:list.center.change')}</span>
-                                </button>
+                                <MapCenterMenu options={centerOptions} selected={source} onPickCenter={pickCenter} />
                                 <div className="fm-map-list__menu-heading" role="presentation">{t('places:list.distanceLabel')}</div>
                                 <div className="fm-map-list__radius-options">
                                     {RADIUS_OPTIONS_KM.map((km) => (

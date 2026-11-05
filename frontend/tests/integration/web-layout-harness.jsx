@@ -122,6 +122,7 @@ function MapHarness() {
     const exhibition = { id: 7, name: '远距离展会', location_name: '广州展会场馆', longitude: 113.36, latitude: 23.1, description: '展会简介', information: '展会信息' };
     return <main ref={contentRef} className="fm-app-root" style={{ position: 'fixed', left: 0, right: 0, top: 'var(--safe-top, 0px)', height: 'calc(100vh - var(--safe-top, 0px))', overflow: 'hidden' }}>
         <MapView backendUrl={location.origin} token="synthetic-web-layout" isAuthenticated mapPageActive
+            randomFoodRequestId={new URLSearchParams(location.search).has('random') ? 1 : 0}
             initialCenter={{ lng: 120, lat: 30 }} alongRouteRequestId={alongRouteRequestId} desktopHeaderMenu={desktopHeaderMenu}
             exhibition={exhibition} exhibitionOpen={exhibitionOpen} onCloseExhibition={() => setExhibitionOpen(false)}
             onRequireAuth={() => { throw new Error('Unexpected auth request'); }} />

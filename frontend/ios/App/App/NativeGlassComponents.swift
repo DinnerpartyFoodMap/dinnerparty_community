@@ -361,7 +361,55 @@ struct NativeSheetRow<Content: View>: View {
     }
 }
 
-/// 半屏面板的标题行，与收藏面板一致：左边圆形关闭钮、居中标题、右边自定（提交钮或等宽占位）
+/// 所有关闭入口共用搜索关闭钮的系统图案、尺寸和玻璃样式。
+struct NativeCloseButton: View {
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            button.glassEffect(Glass.regular.interactive(), in: .circle)
+        } else {
+            button.background(.regularMaterial, in: Circle())
+        }
+    }
+
+    private var button: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 52, height: 52)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .accessibilityLabel(Text(label))
+    }
+}
+
+/// 导航栏里隐藏系统附加的共享玻璃底，避免与统一关闭钮叠加。
+struct NativeCloseToolbarItem: ToolbarContent {
+    let label: String
+    var disabled = false
+    let action: () -> Void
+
+    @ToolbarContentBuilder var body: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            item.sharedBackgroundVisibility(.hidden)
+        } else {
+            item
+        }
+    }
+
+    private var item: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            NativeCloseButton(label: label, action: action)
+                .disabled(disabled)
+        }
+    }
+}
+
+/// 半屏面板标题行：左边自定操作、居中标题、右上角统一关闭钮。
 struct NativeSheetHeader<Trailing: View>: View {
     let title: String
     let closeLabel: String
@@ -380,25 +428,16 @@ struct NativeSheetHeader<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.primary.opacity(0.1)))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(closeDisabled)
-            .accessibilityLabel(Text(closeLabel))
+            trailing
+                .frame(width: 52, height: 52)
             Text(title)
                 .font(.title3.weight(.bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
                 .accessibilityAddTraits(.isHeader)
-            trailing
-                .frame(width: 44, height: 44)
+            NativeCloseButton(label: closeLabel, action: onClose)
+                .disabled(closeDisabled)
         }
         .padding(.horizontal, 16)
         // 系统拖动条在上方

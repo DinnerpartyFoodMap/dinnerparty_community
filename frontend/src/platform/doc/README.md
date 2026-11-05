@@ -31,6 +31,16 @@ flowchart TD
 
 已有 test:platform / test:native-chrome（含设置）/ test:native-panels，真机另看 [原生文档](../../../native/doc/README.md)。案例见 [TEST_CASES.md](TEST_CASES.md)，待办 PLT-01 / PLT-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
 
+## iOS 返回手势热区（2026-11-05）
+
+`nativeShell.js` 通过 `foodMapEdgeBack` 上报 `{ enabled, interactive: true, region: 'map' | 'content' }`。地图首页、地图选点器（聚餐、海报、日记、地点位置、列表中心等）和日记地图预览用左侧 **24pt**；普通网页内容页及其表单、确认框用 **80pt**。按最上层消费返回的浮层判断，选点器底下的页面路径不参与覆盖；浮层打开/关闭、路径改变时，即使 `enabled` 未变也重新上报档位。无返回目标时手势关闭。
+
+Swift 的 `NativeBackGestureRegion` 统一两档，`UIPanGestureRecognizer` 在 delegate 的 `shouldReceive touch` 按触摸按下位置过滤，限制单指，并只接受水平向右移动。热区之外直接交还地图/滚动；纵向移动不触发返回。完成阈值与进度协议保持原值，取消保留输入。旧网页缺少/传入未知 `region` 时新壳采用 24pt；旧壳忽略新字段，仍使用它已有的系统边缘宽度。调整原生热区需要重新构建安装 iOS App。
+
+原生住民设置首页与 `NativeScreenPresenter` 共用整页（住民主页、管理后台等）也使用 80pt。**设置二级页仍由 SwiftUI `NavigationStack` 的系统交互返回管理，宽度随系统，不属于这次 80pt 自定义热区**；二级页打开时关闭整页手势，避免一次拖动同时退出两层。没有使用私有导航 selector 扩展系统手势。
+
+验证入口：`npm run test:platform` 检查实际档位和桥接状态切换，`node tests/unit/platform/test-native-edge-back.mjs` 检查 Swift 源码契约，`npm run test:ios-back-browser` 检查跟手、取消、草稿与确认保护。Windows 上这些验证不编译 Swift。真机需检查地图选点从 x=24pt 内外开始右拖、地图双指缩放、设置首页及共用整页从 x=24–80pt 右拖、80pt 外拖动、纵向滚动、取消回弹，以及设置子页仍只返回上一级。
+
 ## 2026-10-30：顺路吃与住民主页原生页
 
 `NativeAlongRoutePlugin.swift` 与 `NativeProfilePlugin.swift` 沿用“网页执行业务、原生只显示白名单快照”的模式：

@@ -32,6 +32,7 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
         const responses = {
             '/users/me': { user: { id: 'web-layout-user', username: '布局测试住民', is_banned: false } },
             '/places/nearby': [], '/api/favorites': [], '/categories': ['面食'],
+            '/places/random': { place: focusPlace, distanceKm: 0.3, candidateCount: 8 },
             '/api/community/consent': { feedback: false, version: 1 },
             '/api/places/search/fast': searchResults,
             '/places/list': { items: longList ? longListPlaces : listHasPlace ? [focusPlace] : [], total: longList ? 20 : listHasPlace ? 1 : 0, personalized: false },
@@ -226,11 +227,45 @@ try {
     }
     longList = false;
 
+    // Random discovery shares the list's center choices and keeps the choice above its actions.
+    for (const [width, height] of [[1280, 900], [390, 844]]) {
+        await navigate('map&random=1', width, height);
+        await waitFor(`!!document.querySelector('[aria-labelledby="random-food-title"] .fm-map-list__scope:not([disabled])')`);
+        const panel = '[aria-labelledby="random-food-title"]';
+        const layout = await evaluate(`(() => {
+            const panel = document.querySelector('${panel}'), choice = panel.querySelector('.fm-map-list__scope').getBoundingClientRect();
+            const close = panel.querySelector('[aria-label="关闭随机美食"]') || panel.querySelector('.fm-icon-button');
+            const heading = panel.querySelector('h3').getBoundingClientRect();
+            return { text: panel.textContent, choice: choice.top, details: panel.querySelector('h4').getBoundingClientRect().bottom,
+                actions: [...panel.querySelectorAll('button')].find(button => button.textContent.includes('再换一家')).getBoundingClientRect().top,
+                close: close.getBoundingClientRect().left, title: heading.right };
+        })()`);
+        assert.ok(!layout.text.includes('按当前地图中心重新抽取'), 'obsolete redraw action is gone');
+        assert.ok(layout.choice > layout.details && layout.choice < layout.actions, 'center choice sits between details and actions');
+        assert.ok(layout.close >= layout.title, 'random close is in the top-right header slot');
+        const before = requests.filter(entry => entry.path === '/places/random').length;
+        await click(`${panel} .fm-map-list__scope`);
+        await waitFor(`!!document.querySelector('[role="menuitemradio"]')`);
+        await evaluate(`[...document.querySelectorAll('[role="menuitemradio"]')].find(button => button.textContent.includes('地图中心')).click()`);
+        await waitFor(`!!document.querySelector('${panel} .fm-map-list__scope:not([disabled])')`);
+        assert.equal(requests.filter(entry => entry.path === '/places/random').length, before + 1, 'choosing map center starts one fresh draw');
+        assert.equal(requests.filter(entry => entry.path === '/places/random').at(-1).query.exclude_ids, undefined, 'changing center clears prior exclusions');
+        await click(`${panel} .fm-map-list__scope`);
+        await waitFor(`!!document.querySelector('[role="menuitem"]')`);
+        await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(button => button.textContent.includes('在地图上选')).click()`);
+        await waitFor(`!!document.querySelector('.fm-notice button')`);
+        await click('.fm-notice button');
+        await waitFor(`document.querySelector('${panel} .fm-map-list__scope:not([disabled])')?.textContent.includes('选定的位置')`);
+        assert.equal(requests.filter(entry => entry.path === '/places/random').length, before + 2, 'custom map selection starts one fresh draw');
+        await screenshot(`random-center-${width}`);
+        assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'random center controls have no browser errors');
+    }
+
     await navigate('radar', 500, 500);
     await waitFor(`document.querySelectorAll('svg text').length===6`);
     const radar = await evaluate(`(() => {const s=document.querySelector('svg');return {texts:[...s.querySelectorAll('text')].map(e=>e.textContent),labels:[...s.querySelectorAll('[role="button"]')].map(e=>e.getAttribute('aria-label')),fills:[...s.querySelectorAll('polygon')].filter(e=>e.getAttribute('fill')!=='none').map(e=>({points:e.getAttribute('points'),opacity:e.getAttribute('fill-opacity')})),circles:s.querySelectorAll('circle').length};})()`);
-    assert.deepEqual(radar.texts, ['家常正餐','粉面简餐','火锅烧烤','甜品烘焙','咖啡茶饮','异国料理'], 'the radar draws only the six category names');
-    assert.deepEqual(radar.labels, ['家常正餐：很喜欢','粉面简餐：喜欢','火锅烧烤：待了解','甜品烘焙：一般','咖啡茶饮：不太喜欢','异国料理：很喜欢'], 'axis values remain available to screen readers');
+    assert.deepEqual(radar.texts, ['中式正餐','快餐简餐','火锅烧烤','甜品烘焙','咖啡茶饮','异国料理'], 'the radar draws only the six category names');
+    assert.deepEqual(radar.labels, ['中式正餐：很喜欢','快餐简餐：喜欢','火锅烧烤：待了解','甜品烘焙：一般','咖啡茶饮：一般','异国料理：很喜欢'], 'axis values remain available to screen readers');
     assert.equal(radar.fills.length, 4, 'only four adjacent known-axis pairs get fills');
     assert.ok(radar.fills.every(fill => fill.points.startsWith('150,150 ') && fill.points.split(' ').length===3 && fill.opacity==='0.2'), 'each fill is a translucent triangle rooted at the center');
     assert.equal(radar.circles, 5, 'the unknown axis has no fabricated value marker');

@@ -2,6 +2,8 @@
 
 Settings.jsx 为主页和原生设置驱动入口；EditAvatar/Username/Password、PersonalizeMap、CustomThemes、MotionSettings 是页面；accountSettings/mapSettings/themeOptions 共享网页与原生业务；useNativeSettings 建立桥接会话；media/cropImage 是裁图工具。
 
+iOS 原生设置首页的交互返回起点为左侧 80pt，网页设置页也上报普通内容档。原生二级页保留 `NavigationStack` 的系统跟手返回（系统决定边缘宽度）；进入二级页时停用整页返回，取消拖动保留编辑内容。两档协议和真机验收边界见 [平台文档](../../platform/doc/README.md#ios-返回手势热区2026-11-05)。
+
 ```mermaid
 flowchart TD
     Enter[进入设置] --> Supported{原生设置可用?}

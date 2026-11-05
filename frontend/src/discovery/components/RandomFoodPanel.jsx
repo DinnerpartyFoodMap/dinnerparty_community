@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Button from "../../components/primitives/Button";
 import { Exposure } from "../../journey/feedback";
 import MotionSurface from "../../components/overlay/MotionSurface";
 import { markdownToPlainText } from "../../components/markdown/markdownText";
 import { t, tx } from "../../i18n/index.js";
 import IconButton from "../../components/primitives/IconButton";
+import AnchoredPopover from '../../components/overlay/AnchoredPopover';
+import MapCenterMenu from '../../map/MapCenterMenu';
 
 // 随机美食卡片：宽屏从按钮附近展开，窄屏浮在搜索框上方；非模态，地图仍可操作。
 // 抽取由 MapUI 持有的 useRandomFood 会话负责，网页和原生共享，关闭时立即取消请求。
@@ -35,8 +37,10 @@ export default function RandomFoodPanel({ open, isNarrow, placement, onClose, or
     );
 }
 
-function RandomFoodContent({ session, onClose, feedback }) {
-    const { result, activeOrigin, busy, error, drawNext, redrawAtMapCenter, selectPlace } = session;
+function RandomFoodContent({ session, onClose, feedback, centerOptions = [], onPickCenter }) {
+    const { result, activeOrigin, busy, error, drawNext, selectPlace } = session;
+    const [centerOpen, setCenterOpen] = useState(false);
+    const centerRef = useRef(null);
     const closeRef = useRef(null);
     useEffect(() => {
         const previousFocus = document.activeElement;
@@ -51,8 +55,8 @@ function RandomFoodContent({ session, onClose, feedback }) {
     return (
         <div aria-busy={busy}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h3 id="random-food-title" style={{ margin: 0, flex: 1, fontSize: 'var(--text-title3-size)', fontWeight: 700 }}>{t('map:randomFood.title')}</h3>
                 <IconButton ref={closeRef} icon="close" label={t('map:randomFood.close')} onClick={onClose} />
-                <h3 id="random-food-title" style={{ margin: 0, fontSize: 'var(--text-title3-size)', fontWeight: 700 }}>{t('map:randomFood.title')}</h3>
             </div>
             <p style={{ margin: '4px 0 16px', fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {activeOrigin ? t('map:randomFood.introOrigin', { name: activeOrigin.label }) : t('map:randomFood.intro')}
@@ -77,6 +81,19 @@ function RandomFoodContent({ session, onClose, feedback }) {
                     <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{tx('map:randomFood.candidates', { candidateCount: result.candidateCount })}</p>
                 </Exposure>}
             </div>
+            <div style={{ marginTop: 14 }}>
+                <button ref={centerRef} type="button" className="fm-map-list__scope fm-pressable" disabled={busy}
+                    aria-haspopup="menu" aria-expanded={centerOpen} onClick={() => setCenterOpen(open => !open)}>
+                    <span className="material-symbols-outlined" aria-hidden="true">{activeOrigin?.source === 'location' ? 'my_location' : !activeOrigin || activeOrigin.source === 'map' ? 'map' : 'location_on'}</span>
+                    <span>{activeOrigin?.label || t('places:list.center.map')}</span>
+                    <span className="material-symbols-outlined" aria-hidden="true">expand_more</span>
+                </button>
+                <AnchoredPopover open={centerOpen} onClose={() => setCenterOpen(false)} anchorRef={centerRef}
+                    placement="top-start" label={t('places:list.center.pickTitle')} style={{ minWidth: 240 }}>
+                    <MapCenterMenu options={centerOptions.map(option => ({ ...option, select: () => { setCenterOpen(false); option.select(); } }))}
+                        selected={activeOrigin?.source || (activeOrigin ? 'origin' : 'map')} disabled={busy} onPickCenter={() => { setCenterOpen(false); onPickCenter?.(); }} />
+                </AnchoredPopover>
+            </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
                 {place && <Button disabled={busy} style={{ flex: 1 }}
                     onClick={selectPlace}>{t('map:randomFood.viewPlace')}</Button>}
@@ -84,9 +101,6 @@ function RandomFoodContent({ session, onClose, feedback }) {
                     {busy ? t('map:randomFood.pickingShort') : place ? t('map:randomFood.another') : t('map:randomFood.tryAgain')}
                 </Button>
             </div>
-            <Button variant="plain" disabled={busy} full style={{ marginTop: 8 }} onClick={redrawAtMapCenter}>
-                {t('map:randomFood.redraw')}
-            </Button>
         </div>
     );
 }

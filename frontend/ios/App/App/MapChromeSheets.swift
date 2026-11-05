@@ -289,23 +289,22 @@ struct MapChromeMenuPanel: View {
     @ViewBuilder
     private var header: some View {
         if let leading = sheet.leading {
-            // v15 的文字按钮（筛选的“清除筛选”，协议字段仍叫 leading）：关闭钮在左、文字按钮在右（设计参考 7.6），
+            // 协议字段 leading 的文字操作放左，关闭钮固定右上角，
             // 标题仍在整行居中，两侧按钮叠在上面
-            ZStack {
+            ZStack(alignment: .top) {
                 titleBlock
                     .padding(.horizontal, 104)
-                HStack {
-                    closeButton
-                    Spacer(minLength: 0)
+                HStack(alignment: .top) {
                     leadingButton(leading)
+                    Spacer(minLength: 0)
+                    closeButton
                 }
             }
         } else {
-            HStack(alignment: .center, spacing: 12) {
-                closeButton
+            HStack(alignment: .top, spacing: 12) {
+                Color.clear.frame(width: 52, height: 52)
                 titleBlock
-                // 与左侧关闭钮等宽的占位，标题保持居中
-                Color.clear.frame(width: 44, height: 44)
+                closeButton
             }
         }
     }
@@ -339,7 +338,7 @@ struct MapChromeMenuPanel: View {
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(sheet.sheetId == "random" ? 3 : 1)
             }
         }
         .multilineTextAlignment(.center)
@@ -349,19 +348,9 @@ struct MapChromeMenuPanel: View {
     }
 
     private var closeButton: some View {
-        Button {
+        NativeCloseButton(label: model.text("close", "关闭")) {
             model.dismissSheet()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.primary)
-                .frame(width: 44, height: 44)
-                // 与工具栏一致：面板是一整块玻璃，内部按钮不再叠加玻璃
-                .background(Circle().fill(Color.primary.opacity(0.1)))
-                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(model.text("close", "关闭")))
     }
 
     private var content: some View {
@@ -374,7 +363,9 @@ struct MapChromeMenuPanel: View {
                     .font(.body)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(sheet.paragraphs) { paragraph in
+            if sheet.sheetId == "random" {
+                randomPlaceContent
+            } else { ForEach(sheet.paragraphs) { paragraph in
                 VStack(alignment: .leading, spacing: 6) {
                     if let title = paragraph.title, !title.isEmpty {
                         Text(title).font(.headline)
@@ -384,11 +375,33 @@ struct MapChromeMenuPanel: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
+            } }
             ForEach(sheet.sections) { section in
-                sectionView(section)
+                if sheet.sheetId == "random" && section.id == "random-center" {
+                    randomCenterMenu(section)
+                } else {
+                    sectionView(section)
+                }
             }
             if !sheet.actions.isEmpty {
+                if sheet.sheetId == "random" {
+                    HStack(spacing: 10) {
+                        ForEach(sheet.actions) { row in
+                            Button { model.selectSheetRow(row) } label: {
+                                Label(row.title, systemImage: row.symbol ?? "arrow.clockwise")
+                                    .font(.subheadline.weight(.semibold))
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, minHeight: 52)
+                                    .padding(.horizontal, 10)
+                                    .foregroundStyle(row.tone == "accent" ? Color(uiColor: model.theme.onPrimary) : Color.primary)
+                                    .background(row.tone == "accent" ? accent : groupFill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(row.disabled)
+                        }
+                    }
+                } else {
                 VStack(spacing: 0) {
                     ForEach(Array(sheet.actions.enumerated()), id: \.element.id) { index, row in
                         if index > 0 { Divider().padding(.leading, 56) }
@@ -397,6 +410,7 @@ struct MapChromeMenuPanel: View {
                 }
                 .background(groupFill)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
             }
             if let caption = sheet.caption, !caption.isEmpty {
                 Text(caption)
@@ -406,6 +420,57 @@ struct MapChromeMenuPanel: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 14)
+    }
+
+    @ViewBuilder
+    private var randomPlaceContent: some View {
+        let paragraphs = sheet.paragraphs.filter { $0.id != "candidates" }
+        if !paragraphs.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(paragraphs) { paragraph in
+                    if let title = paragraph.title, !title.isEmpty {
+                        Text(title).font(.title3.weight(.semibold))
+                    }
+                    Text(paragraph.text)
+                        .font(paragraph.id == "description" ? .body : .subheadline)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+            .foregroundStyle(FM.onScrim)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FM.scrim, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        if let candidates = sheet.paragraphs.first(where: { $0.id == "candidates" }) {
+            Text(candidates.text).font(.footnote).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func randomCenterMenu(_ section: MapChromeSheetSection) -> some View {
+        Menu {
+            ForEach(section.rows) { row in
+                Button { model.selectSheetRow(row) } label: {
+                    Label(row.title, systemImage: row.tone == "accent" ? "checkmark" : (row.symbol ?? "map"))
+                }
+                .disabled(row.disabled)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "mappin.and.ellipse")
+                Text(section.title ?? "").fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down")
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .foregroundStyle(Color.primary)
+            .background(groupFill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .disabled(section.rows.allSatisfy { $0.disabled })
     }
 
     private func messageView(_ message: String) -> some View {
@@ -765,30 +830,32 @@ struct MapChromePlaceCard: View {
     }
 
     private var header: some View {
-        // 关闭钮在左（设计参考 7.6），分享钮（协议字段 leading）或展会图标在右
-        HStack(alignment: .center, spacing: 12) {
-            circleButton(symbol: "xmark", image: sheet.closeImage, template: sheet.closeImageTemplate,
-                         label: model.text("close", "关闭"), tint: Color.primary, disabled: false) {
-                model.dismissSheet()
+        // 分享操作或展会图标在左，关闭钮固定右上角。
+        HStack(alignment: .top, spacing: 12) {
+            Group {
+                if let leading = sheet.leading {
+                    circleButton(
+                        symbol: leading.symbol ?? "square.and.arrow.up",
+                        image: leading.image,
+                        template: leading.imageTemplate,
+                        label: leading.title,
+                        tint: leading.tone == "accent" ? accent : Color.primary,
+                        disabled: leading.disabled
+                    ) {
+                        model.selectSheetRow(leading)
+                    }
+                } else if let image = sheet.image {
+                    headerImage(image)
+                } else {
+                    Color.clear.frame(width: 52, height: 52)
+                }
             }
+            .frame(width: 52, height: 52)
             headerTitle
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-            if let leading = sheet.leading {
-                circleButton(
-                    symbol: leading.symbol ?? "square.and.arrow.up",
-                    image: leading.image,
-                    template: leading.imageTemplate,
-                    label: leading.title,
-                    tint: leading.tone == "accent" ? accent : Color.primary,
-                    disabled: leading.disabled
-                ) {
-                    model.selectSheetRow(leading)
-                }
-            } else if let image = sheet.image {
-                headerImage(image)
-            } else {
-                Color.clear.frame(width: 44, height: 44)
+            NativeCloseButton(label: model.text("close", "关闭")) {
+                model.dismissSheet()
             }
         }
     }
@@ -1225,19 +1292,10 @@ struct MapChromeImagePreview: View {
             }
             .tabViewStyle(.page(indexDisplayMode: item.images.count > 1 ? .automatic : .never))
             .ignoresSafeArea()
-            Button {
+            NativeCloseButton(label: closeLabel) {
                 dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .glassEffect(Glass.regular.interactive(), in: .circle)
             .padding(16)
-            .accessibilityLabel(Text(closeLabel))
         }
         .environment(\.colorScheme, .dark)
     }

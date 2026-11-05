@@ -362,14 +362,10 @@ private struct NativeFeedbackView: View {
             .navigationTitle(model.text("title", "意见反馈"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { model.requestCancel() } label: {
-                        Image(systemName: "xmark").font(.headline)
-                    }
-                    .accessibilityLabel(Text(model.text("cancel", "取消")))
-                    .disabled(model.submitting)
+                NativeCloseToolbarItem(label: model.text("cancel", "取消"), disabled: model.submitting) {
+                    model.requestCancel()
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarLeading) {
                     if model.submitting {
                         ProgressView()
                             .accessibilityLabel(Text(model.text("submitting", "提交中...")))

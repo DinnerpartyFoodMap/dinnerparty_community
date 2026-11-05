@@ -871,17 +871,21 @@ private struct NativePageList: View {
         .navigationTitle(spec.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if isRoot {
+            if isRoot && model.presentation == "sheet" {
+                NativeCloseToolbarItem(label: spec.closeTitle) {
+                    model.close()
+                }
+            } else if isRoot {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         model.close()
                     } label: {
-                        Image(systemName: model.presentation == "sheet" ? "xmark" : "chevron.backward").font(.headline)
+                        Image(systemName: "chevron.backward").font(.headline)
                     }
                     .accessibilityLabel(Text(spec.closeTitle))
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: isRoot && model.presentation == "sheet" ? .topBarLeading : .topBarTrailing) {
                 if model.loading && model.busyRow == nil {
                     ProgressView()
                 } else if !spec.refreshAction.isEmpty {
