@@ -1,6 +1,24 @@
 import SwiftUI
 import UIKit
 
+/// 两档只限制触摸起点，完成距离仍按整页宽度计算；不能用 began 时已移动的位置判断起点。
+enum NativeBackGestureRegion {
+    static let map: CGFloat = 24
+    static let content: CGFloat = 80
+
+    static func accepts(_ touch: UITouch, for gesture: UIGestureRecognizer, width: CGFloat) -> Bool {
+        guard let view = gesture.view else { return false }
+        let x = touch.location(in: view).x - view.bounds.minX
+        return x >= 0 && x <= min(width, view.bounds.width)
+    }
+
+    static func isBackPan(_ gesture: UIGestureRecognizer) -> Bool {
+        guard let pan = gesture as? UIPanGestureRecognizer else { return false }
+        let velocity = pan.velocity(in: pan.view)
+        return velocity.x > 0 && velocity.x > abs(velocity.y)
+    }
+}
+
 /// 与住民设置一致的整页呈现：地图与网页留在下方，页面从右侧推入、向右退出。
 /// 由于不能移除 presenter view（否则返回时地图会重新挂载并闪一帧），这里使用自定义
 /// presentation controller；根页面的左边缘侧滑跟手关闭整页（可拖回取消），子页面交给页面栈返回。
@@ -99,9 +117,9 @@ final class NativeScreenSlideAnimator: NSObject, UIViewControllerAnimatedTransit
 
 /// 持有转场并安装左边缘侧滑。根页面时手势直接驱动退场动画（与住民设置相同，松手按距离与速度决定关闭或回弹）；
 /// 插件通过 dismiss(_:animated:completion:) 关闭，回弹取消时 completion 不会执行，改为通知 onDismissCancelled。
-final class NativeScreenPresenter: NSObject {
+final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
     private let transition = NativeScreenTransitionDelegate()
-    private weak var gesture: UIScreenEdgePanGestureRecognizer?
+    private weak var gesture: UIPanGestureRecognizer?
     private weak var host: UIViewController?
     private var tracking = false
 
@@ -130,8 +148,9 @@ final class NativeScreenPresenter: NSObject {
         host.modalPresentationStyle = .custom
         host.transitioningDelegate = transition
         host.modalPresentationCapturesStatusBarAppearance = true
-        let gesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdge(_:)))
-        gesture.edges = .left
+        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleEdge(_:)))
+        gesture.maximumNumberOfTouches = 1
+        gesture.delegate = self
         gesture.isEnabled = edgeEnabled
         host.view.addGestureRecognizer(gesture)
         self.gesture = gesture
@@ -157,7 +176,20 @@ final class NativeScreenPresenter: NSObject {
         return host.presentingViewController != nil && host.presentedViewController == nil && host.transitionCoordinator == nil
     }
 
-    @objc private func handleEdge(_ gesture: UIScreenEdgePanGestureRecognizer) {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        NativeBackGestureRegion.accepts(touch, for: gestureRecognizer, width: NativeBackGestureRegion.content)
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        canBeginInteraction && NativeBackGestureRegion.isBackPan(gestureRecognizer)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        otherGestureRecognizer is UIPanGestureRecognizer && !(otherGestureRecognizer is UIScreenEdgePanGestureRecognizer)
+    }
+
+    @objc private func handleEdge(_ gesture: UIPanGestureRecognizer) {
         guard let view = gesture.view else { return }
         let distance = max(0, gesture.translation(in: view).x)
         let progress = min(1, distance / max(1, view.bounds.width))

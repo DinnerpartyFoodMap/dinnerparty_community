@@ -671,7 +671,7 @@ private struct NativeProfileView: View {
         }
     }
 
-    /// 调整小组件：系统表单，每个位置一个选择器；右上角保存
+    /// 调整小组件：系统表单，每个位置一个选择器；左上保存，右上关闭
     private var widgetEditor: some View {
         NavigationStack {
             Form {
@@ -697,13 +697,10 @@ private struct NativeProfileView: View {
             .navigationTitle(model.text("widgetsEdit", "调整小组件"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { model.editingWidgets = nil } label: {
-                        Image(systemName: "xmark").font(.headline)
-                    }
-                    .accessibilityLabel(Text(model.text("cancel", "取消")))
+                NativeCloseToolbarItem(label: model.text("cancel", "取消")) {
+                    model.editingWidgets = nil
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarLeading) {
                     if model.busy {
                         ProgressView()
                     } else {

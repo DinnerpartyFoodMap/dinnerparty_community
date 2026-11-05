@@ -24,7 +24,9 @@ const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
     const ready = sanitizeSheet(randomFoodChromeSheet({ result: {
         place: { id: 7, name: '店名', category: '面馆', description: '**简介**', latitude: 30, longitude: 120 }, distanceKm: 0.3, candidateCount: 4
     }, activeOrigin: { label: '展会' } }));
-    assert.deepEqual(ready.actions.map(action => action.id), ['view', 'another', 'redraw']);
+    assert.deepEqual(ready.actions.map(action => action.id), ['view', 'another']);
+    assert.deepEqual(ready.sections[0].rows.map(row => row.id), ['center:map', 'center:pick']);
+    assert.equal(ready.sections[0].title, '展会');
     assert.ok(ready.actions.every(action => action.keepsOpen && !action.disabled));
     assert.equal(ready.paragraphs[0].title, '店名');
     assert.equal(ready.paragraphs[1].text, '简介');

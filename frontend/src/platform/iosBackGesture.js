@@ -5,6 +5,15 @@ import { getMotionPolicy } from '../motion/policy.js';
 const clamp = value => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 const topOverlay = () => getOverlayEntries().filter(entry => entry.status === 'open' && entry.consumeBack !== false).at(-1);
 
+const MAP_BACK_KINDS = new Set(['map-picker', 'journey-map-picker', 'place-location-picker', 'journey-map-view']);
+
+/** 地图拖动优先用窄档；只看最上层，底下保留的地图选点不缩小上层表单/确认框的返回热区。 */
+export function iosBackGestureRegion(pathname, overlays = getOverlayEntries()) {
+    const top = overlays.filter(entry => entry.consumeBack !== false).at(-1);
+    if (top) return MAP_BACK_KINDS.has(top.kind) ? 'map' : 'content';
+    return pathname === '/' ? 'map' : 'content';
+}
+
 /** 原生只传进度；网页保留真实页面和输入，确认返回前不调用业务关闭函数。 */
 export function createIosBackGesture({ dispatch = dispatchBack, duration = 180 } = {}) {
     let active = null;

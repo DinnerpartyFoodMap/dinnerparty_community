@@ -21,6 +21,16 @@ const between = (source, start, end) => {
 };
 
 const bridge = read('FoodMapBridgeViewController');
+const presentation = read('NativeScreenPresentation');
+
+// Width is a touch-down gate, not the moved position or the distance needed to commit.
+assert.match(presentation, /static let map: CGFloat = 24/);
+assert.match(presentation, /static let content: CGFloat = 80/);
+assert.match(presentation, /touch\.location\(in: view\)\.x - view\.bounds\.minX/);
+assert.match(presentation, /x >= 0 && x <= min\(width, view\.bounds\.width\)/);
+assert.match(bridge, /body\["region"\] as\? String\) == "content"[\s\S]*NativeBackGestureRegion\.content : NativeBackGestureRegion\.map/);
+assert.match(bridge, /shouldReceive touch: UITouch[\s\S]*width: startWidth/);
+assert.match(bridge, /maximumNumberOfTouches = 1/);
 const gesture = between(bridge, '@objc private func handleEdgeBack(', 'private func flushEdgeBackProgress()');
 const began = between(gesture, 'case .began:', 'case .changed:');
 const ended = between(gesture, 'case .ended:', 'case .cancelled, .failed:');
@@ -44,6 +54,12 @@ assert.match(flush, /edgeBackChangeInFlightGeneration == nil/);
 assert.match(flush, /self\.edgeBackChangeInFlightGeneration == generation else\s*\{\s*return\s*\}/);
 
 const settings = read('NativeSettingsPlugin');
+for (const source of [settings, presentation]) {
+    assert.match(source, /UIPanGestureRecognizer\(target:/);
+    assert.match(source, /shouldReceive touch: UITouch[\s\S]*width: NativeBackGestureRegion\.content/);
+    assert.match(source, /maximumNumberOfTouches = 1/);
+    assert.doesNotMatch(source, /UIScreenEdgePanGestureRecognizer\(target:/);
+}
 const settingsGesture = between(settings, '@objc private func edgeBack(', '/// 自定义导航式呈现');
 const cancelledDismissal = between(settings, 'self.screenTransition.onDismissalEnd =', 'let root = NativeSettingsView');
 const completedDismissal = between(settings, 'let complete = { [weak self] in', '// 从父控制器关闭整个设置页');

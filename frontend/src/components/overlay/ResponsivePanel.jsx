@@ -11,7 +11,6 @@ import MotionSurface from './MotionSurface.jsx';
 import { useSheetDrag } from './useSheetDrag.js';
 import { useLayoutPolicy, useMotionFlags } from '../../motion/MotionProvider.jsx';
 import { getPlatform } from '../../platform/env';
-import FullPageHeader from "../layout/FullPageHeader";
 import { t } from '../../i18n/index.js';
 
 const SIDE_TOP = 76;
@@ -101,20 +100,20 @@ function outerStyle(mode, { width, maxHeight, sheetHeight, sideInset = 20, sideT
 
 /**
  * 面板标题栏（弹窗、侧面板、底部面板，浏览器与 App 相同，与 iOS 原生 NativeSheetHeader 一致）：
- * 左边 44 圆形关闭钮，标题居中，右边放操作（没有时留出与关闭钮等宽的位置，标题保持居中）。
+ * 左边放操作，标题居中，关闭钮固定右上角；两侧等宽，标题保持居中。
  */
 export function PanelHeader({ title, titleId, onClose, closeLabel = t('common:action.close'), right = null, titleAs: Title = 'h2', style }) {
     return (
         <div className="fm-panel__header" data-sheet-header="" style={style}>
-            <div className="fm-panel__header-side">
+            <div className="fm-panel__header-side">{right}</div>
+            {title ? <Title id={titleId} className="fm-panel__title">{title}</Title> : <span />}
+            <div className="fm-panel__header-side fm-panel__header-side--end">
                 {onClose && (
                     <button type="button" className="fm-panel__close fm-pressable" aria-label={closeLabel} onClick={onClose}>
                         <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>
                 )}
             </div>
-            {title ? <Title id={titleId} className="fm-panel__title">{title}</Title> : <span />}
-            <div className="fm-panel__header-side fm-panel__header-side--end">{right}</div>
         </div>
     );
 }
@@ -154,8 +153,7 @@ function PanelChrome({ mode, onClose, title, children, footer, showClose = true,
     return (
         <motion.div ref={sheetRef} className={classes.join(' ')} style={isSheet ? { ...style, y } : style}>
             {mode === 'sheet' && <div className="fm-sheet__grabber" data-sheet-grabber="" aria-hidden="true" />}
-            {iosFull && !plain && <FullPageHeader title={title} onBack={showClose ? () => onClose?.('button') : undefined} backLabel={closeLabel} right={headerExtra} />}
-            {!iosFull && !plain && (title || showClose || headerExtra) && (
+            {!plain && (title || showClose || headerExtra) && (
                 <PanelHeader title={title} onClose={showClose ? () => onClose && onClose('button') : undefined} closeLabel={closeLabel}
                     right={headerExtra} style={mode === 'sheet' ? { paddingTop: 4 } : undefined} />
             )}

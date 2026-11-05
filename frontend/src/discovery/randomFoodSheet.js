@@ -2,7 +2,9 @@ import { t, tx } from '../i18n/index.js';
 import { markdownToPlainText } from '../components/markdown/markdownText.js';
 import { sfSymbol } from '../platform/iconRegistry.js';
 
-export function randomFoodChromeSheet({ result, activeOrigin, busy, error }) {
+export function randomFoodChromeSheet({ result, activeOrigin, busy, error }, { centerOptions = [
+    { id: 'map', label: t('places:list.center.map'), symbol: sfSymbol('centerMap') }
+] } = {}) {
     const place = result?.place;
     const distance = Number(result?.distanceKm);
     const distanceText = Number.isFinite(distance) ? (distance < 1
@@ -22,10 +24,15 @@ export function randomFoodChromeSheet({ result, activeOrigin, busy, error }) {
             place.description && { id: 'description', text: markdownToPlainText(place.description) },
             { id: 'candidates', text: [result.personalized && t('map:randomFood.personalized'), tx('map:randomFood.candidates', { candidateCount: result.candidateCount })].filter(Boolean).join('\n') }
         ].filter(Boolean) : [],
+        sections: [{ id: 'random-center', title: activeOrigin?.label || t('places:list.center.map'), rows: [
+            ...centerOptions.map(option => ({ id: `center:${option.id}`, title: option.label, symbol: option.symbol,
+                tone: (activeOrigin?.source || (activeOrigin ? 'origin' : 'map')) === option.id ? 'accent' : undefined,
+                disabled: busy, keepsOpen: true })),
+            { id: 'center:pick', title: t('places:list.center.change'), symbol: sfSymbol('place'), disabled: busy, keepsOpen: true }
+        ] }],
         actions: [
             place && { id: 'view', title: t('map:randomFood.viewPlace'), symbol: sfSymbol('place'), tone: 'accent', disabled: busy, keepsOpen: true },
-            { id: 'another', title: busy ? t('map:randomFood.pickingShort') : place ? t('map:randomFood.another') : t('map:randomFood.tryAgain'), symbol: sfSymbol('random'), disabled: busy, keepsOpen: true },
-            { id: 'redraw', title: t('map:randomFood.redraw'), symbol: sfSymbol('redraw'), disabled: busy, keepsOpen: true }
+            { id: 'another', title: busy ? t('map:randomFood.pickingShort') : place ? t('map:randomFood.another') : t('map:randomFood.tryAgain'), symbol: sfSymbol('random'), disabled: busy, keepsOpen: true }
         ].filter(Boolean)
     };
 }

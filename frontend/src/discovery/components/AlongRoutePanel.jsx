@@ -421,7 +421,6 @@ export default function AlongRoutePanel({
                     boxShadow: 'var(--shadow-surface)', backdropFilter: 'blur(12px)', pointerEvents: 'auto'
                 } : (isNarrow ? { paddingTop: 'calc(12px + env(safe-area-inset-top))' } : {}))
             }}>
-                <IconButton icon="close" label={t('map:alongRoute.closeLabel')} onClick={closePanel} />
                 {mobileRoutePreview ? (
                     <Button
                         type="button"
@@ -442,6 +441,7 @@ export default function AlongRoutePanel({
                         {mobileRoutePreview ? t('map:alongRoute.compareHint') : t('map:alongRoute.subtitle')}
                     </div>
                 </div>
+                <IconButton icon="close" label={t('map:alongRoute.closeLabel')} onClick={closePanel} style={{ alignSelf: 'flex-start' }} />
             </header>}
 
             <ScrollableView style={mobileRoutePreview ? {

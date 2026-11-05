@@ -18,7 +18,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
     /// 原生面板的呈现器（iOS 26，MapChromeSheetPresenter）；存储属性不能声明可用版本，这里只持有引用
     private var sheetPresenter: AnyObject?
     /// 左边缘侧滑返回：只在网页报告“有东西可返回”时启用
-    private var edgeBackGesture: UIScreenEdgePanGestureRecognizer?
+    private var edgeBackGesture: UIPanGestureRecognizer?
     private let edgeBackDelegate = EdgeBackGestureDelegate()
     /// 新网页声明支持交互进度后，手势开始时锁定本轮协议；旧网页仍只接收最终返回事件。
     private enum EdgeBackProtocol: Equatable { case legacy, progress }
@@ -91,12 +91,13 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
     private static let edgeBackMessageName = "foodMapEdgeBack"
 
     /// iOS 没有系统返回键：识别左边缘侧滑后通知网页执行与 Android 返回键相同的 dispatchBack。
-    /// 网页通过 foodMapEdgeBack 上报 { enabled, interactive? }；根页面时手势关闭，不抢地图拖动。
+    /// 网页通过 foodMapEdgeBack 上报 { enabled, interactive?, region? }；地图 24pt、普通内容 80pt。
+    /// region 缺失或未知时使用地图窄档，兼容旧网页；无返回目标时关闭手势。
     /// interactive 为真时发送 begin / change / end / cancel，网页按进度显示跟手反馈；否则保持旧版 ended-only 事件。
     private func installEdgeBack() {
         guard let webView = webView else { return }
-        let gesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdgeBack(_:)))
-        gesture.edges = .left
+        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleEdgeBack(_:)))
+        gesture.maximumNumberOfTouches = 1
         gesture.isEnabled = false
         gesture.delegate = edgeBackDelegate
         webView.addGestureRecognizer(gesture)
@@ -109,13 +110,15 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
                 let enabled = (body["enabled"] as? Bool) ?? false
                 if !enabled { self.cancelEdgeBackProgress() }
                 self.edgeBackInteractive = (body["interactive"] as? Bool) ?? false
+                self.edgeBackDelegate.startWidth = (body["region"] as? String) == "content"
+                    ? NativeBackGestureRegion.content : NativeBackGestureRegion.map
                 self.edgeBackGesture?.isEnabled = enabled
             },
             name: Self.edgeBackMessageName
         )
     }
 
-    @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
+    @objc private func handleEdgeBack(_ gesture: UIPanGestureRecognizer) {
         guard let webView else { cancelEdgeBackProgress(); return }
         let translation = gesture.translation(in: webView).x
         let rawVelocity = gesture.velocity(in: webView).x
@@ -302,10 +305,14 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
 
 /// 侧滑返回手势优先于 WebView 自身的滚动拖动；不是从左边缘开始的触摸会让它立即失败，不影响其他手势。
 private final class EdgeBackGestureDelegate: NSObject, UIGestureRecognizerDelegate {
+    var startWidth = NativeBackGestureRegion.map
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        NativeBackGestureRegion.accepts(touch, for: gestureRecognizer, width: startWidth)
+    }
+
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
-        let velocity = pan.velocity(in: pan.view)
-        return velocity.x > 0 && velocity.x > abs(velocity.y)
+        NativeBackGestureRegion.isBackPan(gestureRecognizer)
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,

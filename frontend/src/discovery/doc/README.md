@@ -4,6 +4,8 @@ hooks/useSearchPanel 控制搜索面板；components/RandomFoodPanel 与 AlongRo
 
 随机美食的抽取生命周期由 `hooks/useRandomFood.js` 统一持有：网页 `RandomFoodPanel` 与 iOS 原生 `random` 弹窗（工具栏协议 v13，`randomFoodSheet.js`）共用一次请求、固定中心与最近两家的排除记录。原生的查看、换一家、重定中心动作仍回网页执行。关闭、换账号与换中心会取消旧轮次，迟到结果不回写；失败重试保留社区抽取的 `draw_id`。`npm run test:random-browser` 用真实 React 与受控 HTTP 边界覆盖这些交互。
 
+中心选择放在地点详情与查看/换一家按钮之间：网页和 Android 复用列表的 `map/MapCenterMenu.jsx`（我的位置、地图中心、已选位置、在地图上选），iOS 由 `random-center` section 在同一位置渲染系统 Menu，回传 `center:<选项>`。选择中心后开启新轮次；「再换一家」沿用当前中心。不再显示独立的「按当前地图中心重新抽取」。iOS 地点信息卡用 `FM.scrim` 深底和 `FM.onScrim` 白字，简介用 body、自然换行，候选说明单独呈现，底部操作并排。关闭 X 在右上并复用搜索关闭按钮样式。`test:web-layout-browser` 覆盖两种宽度的中心菜单位置、自选点和新轮次请求。
+
 输入预览和回车只查询站内地点，回车保留 AI 推荐。网页和 iOS 原生输入共用这一规则；点击“没找到？查找未收录地点”才经后端查询高德。`useExternalSearch` 管理本次结果、错误、重复点击及过期响应；自有标记更新会刷新本地结果，但不会触发外部查询。额度与上线步骤见[外部搜索配置](../../../../backend/modules/maps/doc/search-budget.md)。
 
 ```mermaid

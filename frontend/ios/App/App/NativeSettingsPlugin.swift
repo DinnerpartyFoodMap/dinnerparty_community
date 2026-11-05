@@ -33,7 +33,7 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
     /// 本次呈现的设置状态（二级页共用）
     private var store: NativeSettingsStore?
     /// 左边缘侧滑关闭整个设置；推入二级页时停用，让系统侧滑返回上一级
-    private weak var edgeGesture: UIScreenEdgePanGestureRecognizer?
+    private weak var edgeGesture: UIPanGestureRecognizer?
     /// 手指仍在驱动退场；松手后的完成 / 回弹由 UIKit 继续执行。
     private var trackingEdgeBack = false
     /// 每次退场有独立序号；取消后旧的 UIKit completion 不能结束之后的会话。
@@ -102,8 +102,8 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
             self.pending = call
             self.requestID = id
             self.presenting = true
-            let back = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(self.edgeBack(_:)))
-            back.edges = .left
+            let back = UIPanGestureRecognizer(target: self, action: #selector(self.edgeBack(_:)))
+            back.maximumNumberOfTouches = 1
             back.delegate = self.screenTransition
             host.view.addGestureRecognizer(back)
             self.edgeGesture = back
@@ -185,7 +185,7 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
         finish(action: queued.action, animated: queued.animated)
     }
 
-    @objc private func edgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
+    @objc private func edgeBack(_ gesture: UIPanGestureRecognizer) {
         guard let view = gesture.view else { return }
         let distance = max(0, gesture.translation(in: view).x)
         let progress = min(1, distance / max(1, view.bounds.width))
@@ -246,9 +246,16 @@ private final class NativeSettingsTransitionDelegate: NSObject, UIViewController
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard canBeginInteraction?() == true, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
-        let velocity = pan.velocity(in: pan.view)
-        return velocity.x > 0 && velocity.x > abs(velocity.y)
+        canBeginInteraction?() == true && NativeBackGestureRegion.isBackPan(gestureRecognizer)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        NativeBackGestureRegion.accepts(touch, for: gestureRecognizer, width: NativeBackGestureRegion.content)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        otherGestureRecognizer is UIPanGestureRecognizer && !(otherGestureRecognizer is UIScreenEdgePanGestureRecognizer)
     }
 }
 

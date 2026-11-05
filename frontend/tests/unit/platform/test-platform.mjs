@@ -3,11 +3,67 @@ import assert from 'node:assert/strict';
 import { resolveRuntimeConfig, resolveResourceUrl, buildPublicUrl, getRuntimeConfig, buildImageThumbnailUrl } from "../../../src/platform/runtimeConfig.js";
 import { wgs84ToGcj02, isOutOfChina } from "../../../src/platform/coordTransform.js";
 import { isInAmapChinaRegion, rectTouchesAmapChinaRegion, rectWithinAmapChinaRegion } from "../../../src/platform/chinaRegion.js";
-import { pushBackHandler, dispatchBack, BACK_PRIORITY } from "../../../src/platform/backButton.js";
+import { pushBackHandler, dispatchBack, refreshBackTarget, BACK_PRIORITY } from "../../../src/platform/backButton.js";
 import { decodeTokenPayload, getTokenUserId } from "../../../src/platform/credentialStore.js";
-import { toInAppPath } from "../../../src/platform/nativeShell.js";
+import { toInAppPath, setupIosEdgeBack } from "../../../src/platform/nativeShell.js";
 import { placeSharePath, shareParamValue } from "../../../src/platform/navigation.js";
 import { shouldForceAmapWebGL, resolveAmapJsKey } from "../../../src/platform/amapLoader.js";
+
+import { iosBackGestureRegion } from '../../../src/platform/iosBackGesture.js';
+import { registerOverlay } from '../../../src/components/overlay/overlayStack.js';
+
+{
+    // Actual JS policy and outgoing bridge messages: map/tool overlays override their underlying route.
+    assert.equal(iosBackGestureRegion('/', []), 'map');
+    assert.equal(iosBackGestureRegion('/settings', []), 'content');
+    for (const kind of ['map-picker', 'journey-map-picker', 'place-location-picker', 'journey-map-view']) {
+        assert.equal(iosBackGestureRegion('/settings', [{ kind, status: 'open' }]), 'map', kind);
+    }
+    assert.equal(iosBackGestureRegion('/settings', [{ kind: 'map-picker' }, { kind: 'dialog' }]), 'content');
+    assert.equal(iosBackGestureRegion('/settings', [{ kind: 'map-picker' }, { kind: 'native', consumeBack: false }]), 'map');
+    assert.equal(iosBackGestureRegion('/settings', [{ kind: 'map-picker', status: 'closing' }]), 'map', 'keep the outgoing picker region until it is removed');
+
+    const previousWindow = globalThis.window;
+    const messages = [];
+    const events = new Map();
+    globalThis.window = {
+        location: { pathname: '/settings', hash: '' },
+        webkit: { messageHandlers: { foodMapEdgeBack: { postMessage: state => messages.push(state) } } },
+        addEventListener: (name, handler) => events.set(name, handler),
+        removeEventListener: name => events.delete(name)
+    };
+    const removePage = pushBackHandler(() => true, BACK_PRIORITY.PAGE);
+    const stop = setupIosEdgeBack();
+    let picker, dialog;
+    try {
+        await Promise.resolve();
+        assert.deepEqual(messages.at(-1), { enabled: true, interactive: true, region: 'content' });
+        picker = registerOverlay({ kind: 'journey-map-picker', onClose: () => {} });
+        await Promise.resolve();
+        assert.deepEqual(messages.at(-1), { enabled: true, interactive: true, region: 'map' });
+        dialog = registerOverlay({ kind: 'dialog', onClose: () => {} });
+        await Promise.resolve();
+        assert.equal(messages.at(-1).region, 'content', 'same enabled state still reports the new top region');
+        dialog.unregister(); dialog = null;
+        await Promise.resolve();
+        assert.equal(messages.at(-1).region, 'map');
+        picker.unregister(); picker = null;
+        await Promise.resolve();
+        assert.equal(messages.at(-1).region, 'content');
+        window.location.pathname = '/';
+        refreshBackTarget(); await Promise.resolve();
+        assert.equal(messages.at(-1).region, 'map', 'route changes report region even when enabled remains true');
+        const count = messages.length;
+        refreshBackTarget(); await Promise.resolve();
+        assert.equal(messages.length, count, 'unchanged state does not flood the bridge');
+        removePage(); await Promise.resolve();
+        assert.equal(messages.at(-1).enabled, false, 'map root with no return target releases map drags');
+    } finally {
+        stop(); picker?.unregister(); dialog?.unregister(); removePage();
+        if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
+    }
+    assert.equal(events.size, 0);
+}
 
 const webLocation = { protocol: 'https:', hostname: 'cn.dinnerparty.cc', origin: 'https://cn.dinnerparty.cc' };
 

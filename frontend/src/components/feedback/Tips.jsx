@@ -67,9 +67,8 @@ export function TipsProvider({ children }) {
 
     const closeStyle = {
         position: 'absolute',
-        top: '50%',
+        top: 10,
         right: 14,
-        transform: 'translateY(-50%)',
         border: 'none',
         background: 'transparent',
         color: 'var(--color-text-secondary)',
