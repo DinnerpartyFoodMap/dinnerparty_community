@@ -12,6 +12,10 @@ import { OverlayHost, useOverlayContentRef } from '../../src/components/overlay/
 import { ConfirmProvider } from '../../src/components/feedback/Confirm';
 import TipsProvider from '../../src/components/feedback/Tips';
 import '../../src/styles/tokens.css';
+import { initNavigationState } from '../../src/platform/navigation';
+
+const fixtureParams = new URLSearchParams(location.search);
+initNavigationState();
 
 // Mirror AppFrame's iOS safe-area origin while keeping the real map underneath the list.
 const iosSafeArea = new URLSearchParams(location.search).has('iosSafeArea');
@@ -38,7 +42,7 @@ class Marker {
 class TestMap {
     constructor(el, options) {
         this.el = el; this.center = options.center; this.zoom = options.zoom; this.handlers = {}; this.markers = new Set();
-        this.deferredCamera = new URLSearchParams(location.search).has('deferredCamera');
+        this.deferredCamera = fixtureParams.has('deferredCamera');
         this.cameraMoves = []; this.autoPans = [];
         window.__WEB_LAYOUT_MAP = this;
         Object.assign(el.style, { background: '#e2eee5' });

@@ -1499,7 +1499,7 @@ export default function MapView({
         return () => window.removeEventListener('journey:places-changed', onChanged);
     }, []);
 
-    // 处理分享链接中的 ?place=<id> 参数：加载单个地点并居中（兼容 #/?place= 形式；App 内通过应用链接打开时 routeSearch 会变化）
+    // 分享链接（/p/:id 归一化为 ?place=）：定位后自动打开地点卡片，网页与 iOS 共用。
     useEffect(() => {
         if (!mapReady || !backendUrl) return;
         const params = getQueryParams();
@@ -1516,7 +1516,9 @@ export default function MapView({
                 const res = await Api.fetchPlace(backendUrl, placeId, { token });
                 if (!res.ok || cancelled) return;
                 const place = await res.json();
-                if (!place || !place.longitude || !place.latitude || cancelled) return;
+                if (!place || place.longitude == null || place.latitude == null || cancelled || !mapRef.current) return;
+                const lng = Number(place.longitude), lat = Number(place.latitude);
+                if (!isMappableCoordinate(lng, lat)) return;
 
                 if (isNavShare) {
                     // 高德导航分享：App 内直接唤起高德地图（未安装时打开网页版），网页跳转到高德导航网页
@@ -1527,12 +1529,15 @@ export default function MapView({
                 }
 
                 exitUserFilter();
+                setAlongRouteResults(null);
+                alongRouteResultsRef.current = null;
                 setSearchTerm(place.name || '');
                 setSearchResults([place]);
                 setSearchResetKey((v) => v + 1); // 通知 MapUI 关闭搜索建议面板，呈现"已提交"状态
                 armSkipAutoSearch(800);
-                mapRef.current.setCenter([place.longitude, place.latitude]);
-                mapRef.current.setZoom(16);
+                // 先完成定位，再让卡片测量和避让，避免平移动画覆盖分享目标。
+                mapRef.current.setZoomAndCenter(16, [lng, lat], true);
+                showPopup(place);
             } catch (e) {
                 console.warn('加载分享地点失败', e);
             }

@@ -28,7 +28,7 @@ localStorage.setItem('yuyuko.motion.v1', JSON.stringify({webMotion:false,cluster
 const server = await createServer({ root, configFile: resolve(root, 'vite.config.js'), server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'web-layout-regression', configureServer(server) {
     server.middlewares.use((req, res, next) => {
         const url = new URL(req.url, 'http://localhost');
-        if (url.pathname === '/__web-layout') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); return; }
+        if (url.pathname === '/__web-layout' || url.pathname === '/p/99') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); return; }
         const responses = {
             '/users/me': { user: { id: 'web-layout-user', username: '布局测试住民', is_banned: false } },
             '/places/nearby': [], '/api/favorites': [], '/categories': ['面食'],
@@ -315,6 +315,30 @@ try {
         assert.ok(venue.card.includes('广州展会场馆') && venue.card.includes('导航'), 'the venue card still opens with navigation');
         assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'exhibition address focus has no browser errors');
         await screenshot(`exhibition-venue-${width}`);
+    }
+
+    // A public /p/:id link normalizes through the real navigation code and opens its card without a marker click.
+    for (const [width, height] of [[1280, 900], [390, 844]]) {
+        await command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 640 }, sessionId);
+        await command('Page.navigate', { url: `http://127.0.0.1:${server.httpServer.address().port}/p/99?deferredCamera=1&qq_aio_chat_type=2` }, sessionId);
+        await waitFor(`!!document.querySelector('.fm-card-host,.fm-skin-card') && !!window.__WEB_LAYOUT_MAP && !window.__WEB_LAYOUT_MAP.pendingCamera`);
+        const shared = await evaluate(`(() => {
+            const map = window.__WEB_LAYOUT_MAP;
+            return { text:document.querySelector('.fm-card-host,.fm-skin-card').textContent, zoom:map.getZoom(), pans:map.autoPans,
+                point:map.lngLatToContainer([120.025,30.02]), cameras:map.cameraMoves.length, url:location.pathname+location.search };
+        })()`);
+        assert.ok(shared.text.includes(focusPlace.name) && shared.text.includes('导航'), 'share links automatically open the matching place card');
+        assert.equal(shared.url, '/', 'share parameters are consumed after normalization');
+        assert.equal(shared.zoom, 16);
+        assert.equal(shared.cameras, 1, 'a share link focuses exactly once');
+        assert.ok(shared.pans.every(pan => !pan.duringCameraMove), 'card positioning cannot interrupt share navigation');
+        assert.ok(shared.point.x >= 12 && shared.point.x <= width - 12 && shared.point.y >= 12 && shared.point.y <= height - 12, 'shared marker stays on screen');
+        await screenshot(`share-link-card-${width}`);
+        await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }, sessionId);
+        await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' }, sessionId);
+        await waitFor(`!document.querySelector('.fm-card-host,.fm-skin-card')`);
+        assert.equal(await evaluate('window.__WEB_LAYOUT_MAP.cameraMoves.length'), 1, 'closing a shared card does not reopen it');
+        assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'share links have no browser errors');
     }
 
     // Exercise the real list -> MapView -> card flow, including AMap's default deferred camera move.
