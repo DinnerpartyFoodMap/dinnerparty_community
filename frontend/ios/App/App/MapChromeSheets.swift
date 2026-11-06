@@ -437,6 +437,8 @@ struct MapChromeMenuPanel: View {
                     Text(paragraph.text)
                         .font(paragraph.id == "description" ? .body : .subheadline)
                         .lineSpacing(4)
+                        .lineLimit(paragraph.id == "description" ? 3 : nil)
+                        .truncationMode(.tail)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
@@ -505,7 +507,13 @@ struct MapChromeMenuPanel: View {
                 }
             }
             .padding(16).frame(width: 288)
-            .background(FM.bgSurface)
+            // Popover 是独立的呈现层，不能只依赖地图正文的 colorScheme。
+            // 同步 SwiftUI 和系统呈现的外观，让文字与 Liquid Glass 都跟随地图主题。
+            .glassEffect(Glass.regular, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
+            .environment(\.colorScheme, model.theme.dark ? .dark : .light)
+            .preferredColorScheme(model.theme.dark ? .dark : .light)
+            .tint(accent)
+            .presentationBackground(.clear)
             .presentationCompactAdaptation(.popover)
         }
     }
