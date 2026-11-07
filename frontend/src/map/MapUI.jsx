@@ -2278,7 +2278,7 @@ export default function MapUI(props) {
                                 <Button type="button" onClick={searchUnlistedPlaces}
                                     disabled={!mapReady || externalSearch.loading || externalSearch.loaded}
                                     aria-busy={externalSearch.loading}
-                                    style={{ width: '100%', textAlign: 'center', padding: '10px 12px', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                    style={{ width: '100%', textAlign: 'center', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
                                     {externalSearch.loading ? t('map:ui.search.externalLoading') : externalSearch.loaded ? t('map:ui.search.externalLoaded') : externalSearch.error ? t('map:ui.search.externalRetry') : t('map:ui.search.findUnlisted')}
                                 </Button>
                             </div>

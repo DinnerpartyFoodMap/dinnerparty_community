@@ -108,9 +108,18 @@ try {
 
     await navigate('map', 390, 844);
     await waitFor(`!!document.querySelector('.fm-map-search__input:not([disabled])')`);
+    await evaluate(`document.documentElement.dataset.theme = 'dark'`);
     await click('.fm-map-search__input');
     await command('Input.insertText', { text: '面馆' }, sessionId);
     await waitFor(`document.querySelector('.fm-search-results')?.textContent.includes('搜索结果面馆 12')`);
+    const externalSearchButton = await evaluate(`(() => {
+        const button = [...document.querySelectorAll('.fm-search-results button')].find(el => el.textContent.trim() === '没找到？查找未收录地点');
+        if (!button) return null;
+        const style = getComputedStyle(button);
+        return { text: style.color, background: style.backgroundColor };
+    })()`);
+    assert.ok(externalSearchButton, 'external search button shows its label');
+    assert.notEqual(externalSearchButton.text, externalSearchButton.background, 'external search label is not the same color as its background in dark mode');
     await evaluate(`document.fonts.ready`);
     const overlap = await evaluate(`(() => {
         const results = document.querySelector('.fm-search-results'), r = results.getBoundingClientRect();
