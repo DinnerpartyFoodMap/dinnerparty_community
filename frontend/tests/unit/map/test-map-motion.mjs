@@ -49,10 +49,10 @@ function shuffle(list, seed) {
 
 // ---- 尺寸曲线与数量格式 ----
 assert.equal(glyphSize({ kind: 'cluster', count: 2 }).width, 36);
-assert.ok(Math.abs(glyphSize({ kind: 'cluster', count: 10 }).width - 44) < 1, `10 → ${glyphSize({ kind: 'cluster', count: 10 }).width}`);
-assert.ok(Math.abs(glyphSize({ kind: 'cluster', count: 50 }).width - 51) < 1);
-assert.ok(Math.abs(glyphSize({ kind: 'cluster', count: 200 }).width - 55.8) < 0.2);
-assert.equal(clusterScale(100000), 1.55);
+assert.ok(Math.abs(glyphSize({ kind: 'cluster', count: 10 }).width - 40.1) < 0.2, `10 → ${glyphSize({ kind: 'cluster', count: 10 }).width}`);
+assert.ok(Math.abs(glyphSize({ kind: 'cluster', count: 50 }).width - 44.2) < 0.2);
+assert.ok(Math.abs(glyphSize({ kind: 'cluster', count: 200 }).width - 46.8) < 0.2);
+assert.equal(clusterScale(100000), 1.3);
 assert.equal(clusterScale(1), 1);
 assert.deepEqual(glyphSize({ kind: 'place', count: 1 }), { width: 36, height: 43, scale: 1 });
 assert.ok(hitSize(glyphSize({ kind: 'place' })).width >= 44 && hitSize(glyphSize({ kind: 'place' })).height >= 44);

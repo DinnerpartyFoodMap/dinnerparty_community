@@ -7,10 +7,11 @@ export const LABEL_MAX_WIDTH = 140;
 export const LABEL_HEIGHT = 22;
 export const LABEL_GAP = 3;
 
-/** s(n) = min(1.55, 1 + 0.09 × log2(max(1, n / 2)))，n ≥ 2；表达密度，不表示面积与数量成比例。 */
+/** 保持 2 个点的原尺寸，将原 1–1.55 的对数曲线按比例压缩到 1–1.3；表达密度，不表示面积与数量成比例。 */
 export function clusterScale(count) {
     if (!(count >= 2)) return 1;
-    return Math.min(1.55, 1 + 0.09 * Math.log2(Math.max(1, count / 2)));
+    const growth = Math.min(0.55, 0.09 * Math.log2(Math.max(1, count / 2)));
+    return 1 + growth * (0.3 / 0.55);
 }
 
 export function glyphSize(node) {
