@@ -287,6 +287,7 @@
     "collapseMore": "收起更多功能",
     "versionFooter": "东方饭联地图 · v{{version}}",
     "searchPlaceholderShort": "搜店名，或说想吃什么",
+    "addSearchPlaceholder": "搜索店名",
     "loadFavoritesFailed": "加载收藏失败：{{message}}",
     "collapseResults": "折叠搜索结果",
     "expandResults": "展开搜索结果",
