@@ -283,7 +283,8 @@ async function createPlace(input, creatorId, { source }) {
         if(creatorId)require('../../accounts/services/userAccess').requireWritableUser(creatorId);
         const {context,same}=require('../../ratings/services/ratingSnapshot');
         const snapshot=context(),score=validated.value.rating,weight=require('../../ratings/services/ratingReputation').userRatingWeight(creatorId);
-        const result=await require('../../../infrastructure/numericAlgorithmClient').compute('ratingsummary',{...snapshot,place_ids:[1],ratings:creatorId?[{place_id:1,user_id:creatorId,score,weight}]:[]});
+        // 待探索 places have no creator rating (score null): summarise them like a place nobody has rated.
+        const result=await require('../../../infrastructure/numericAlgorithmClient').compute('ratingsummary',{...snapshot,place_ids:[1],ratings:creatorId&&isValidScore(score)?[{place_id:1,user_id:creatorId,score,weight}]:[]});
         placeId=db._raw.transaction(()=>{
             if(creatorId)require('../../accounts/services/userAccess').requireWritableUser(creatorId);
             // A duplicate that committed meanwhile also changes the snapshot; report the duplicate, not a retry.

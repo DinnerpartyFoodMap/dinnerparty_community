@@ -43,7 +43,22 @@ function regionFromComponent(component) {
  * 批量逆地理编码（最多 20 个点）：返回与输入同序的数组，元素为 region 或 null（境外 / 无结果）。
  * 没有配置 key、请求失败时抛错（调用方不记录，下一轮再试）。
  */
-async function reverseGeocodeRegions(points, { fetchImpl = fetch } = {}) {
+// 每秒请求数超限（个人 key 的 QPS 很低；后端的后台任务与补齐脚本同时跑时也会撞上）：等一会儿重试
+const RATE_LIMIT_RETRY_MS = [1000, 2000, 4000, 8000];
+const isRateLimited = (error) => !!error && /QPS|TOO_FREQUENT|OVER_LIMIT_PER_SECOND/i.test(String(error.info || ''));
+
+async function reverseGeocodeRegions(points, options = {}) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await requestRegions(points, options);
+        } catch (error) {
+            if (!isRateLimited(error) || attempt >= RATE_LIMIT_RETRY_MS.length) throw error;
+            await new Promise((resolve) => setTimeout(resolve, (options.retryDelays || RATE_LIMIT_RETRY_MS)[attempt]));
+        }
+    }
+}
+
+async function requestRegions(points, { fetchImpl = fetch } = {}) {
     const key = webServiceKey();
     if (!key) throw new Error('AMAP_WEB_SERVICE_KEY 未配置');
     if (!points.length) return [];
@@ -100,7 +115,7 @@ function saveRegions(places, regions, sql = db._raw) {
     treeCache = null;
 }
 
-const PER_POINT_DELAY_MS = 150;
+const PER_POINT_DELAY_MS = 400;
 const isParamError = (error) => !!error && error.info === 'INVALID_PARAMS';
 
 /**
@@ -129,10 +144,10 @@ async function regionsOneByOne(places, options) {
 }
 
 /** 补一批：返回 { checked, more, rejected }（more 只是“这批取满了，可能还有”；rejected 为高德不接受坐标的地点） */
-async function refreshPendingBatch({ limit = BATCH_SIZE, sql = db._raw, fetchImpl } = {}) {
+async function refreshPendingBatch({ limit = BATCH_SIZE, sql = db._raw, fetchImpl, retryDelays } = {}) {
     const places = pendingPlaces(limit, sql);
     if (!places.length) return { checked: 0, more: false, rejected: [] };
-    const options = fetchImpl ? { fetchImpl } : undefined;
+    const options = { ...(fetchImpl ? { fetchImpl } : null), ...(retryDelays ? { retryDelays } : null) };
     let regions;
     let rejected = [];
     try {
