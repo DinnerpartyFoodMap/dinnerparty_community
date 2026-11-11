@@ -565,6 +565,7 @@ export default function MapUI(props) {
     // iOS App 窄屏：搜索框不常驻，点工具栏“搜索”后工具栏变成输入框（原生玻璃控件，或同样布局的网页控件）。
     // 输入中右侧头像位置变为“收起键盘”按钮；收起键盘后头像回来，左侧返回圆钮退出搜索。
     const compactSearch = iosApp && isNarrow && !pickerMode;
+    const addSearchPlaceholder = addMode ? t('map:ui.addSearchPlaceholder') : null;
     const [searchExpandedState, setSearchExpanded] = useState(false);
     const searchExpanded = searchExpandedState || (compactSearch && addMode);
     // 网页输入框的“输入中”布局：失焦稍后生效，避免点“收起键盘”时按钮先被换回头像、点击落空
@@ -1443,7 +1444,7 @@ export default function MapUI(props) {
         floatingGap: 14,
         search: compactSearch ? {
             expanded: searchExpanded,
-            placeholder: t('map:ui.searchPlaceholderShort'),
+            placeholder: addSearchPlaceholder ?? t('map:ui.searchPlaceholderShort'),
             hint: addMode ? t('map:ui.search.amapResults') : t('map:ui.search.nativeHint'),
             busyLabel: externalSearch.loading ? t('map:ui.search.externalLoading') : t('map:ui.search.loading'),
             busy: !!searching || externalSearch.loading,
@@ -2349,7 +2350,7 @@ export default function MapUI(props) {
                         className="fm-compact-search__input"
                         aria-label={t('map:ui.search.label')}
                         enterKeyHint="search"
-                        placeholder={t('map:ui.searchPlaceholderShort')}
+                        placeholder={addSearchPlaceholder ?? t('map:ui.searchPlaceholderShort')}
                         value={searchTerm}
                         disabled={!mapReady}
                         onFocus={() => {
@@ -2440,7 +2441,7 @@ export default function MapUI(props) {
                         className="fm-map-search__input"
                         aria-label={t('map:ui.search.label')}
                         enterKeyHint="search"
-                        placeholder={t('map:ui.searchPlaceholder')}
+                        placeholder={addSearchPlaceholder ?? t('map:ui.searchPlaceholder')}
                         value={searchTerm}
                         onFocus={() => { setSearchFocused(true); stabilizeMobileSearchViewport(); }}
                         onBlur={() => setSearchFocused(false)}
