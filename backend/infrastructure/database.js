@@ -747,6 +747,7 @@ function init() {
         require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
         require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);
+        require('../modules/places/services/placeRegionSchema').initPlaceRegionSchema(rawDb);
         require('../modules/preferences/services/tasteAxes').initTasteAxesSchema(rawDb);
         require('../modules/ratings/services/modelProfiles').initModelProfileSchema(rawDb);
         rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_sitenotice_active_created_time ON SiteNotice(is_active, created_time DESC);`);

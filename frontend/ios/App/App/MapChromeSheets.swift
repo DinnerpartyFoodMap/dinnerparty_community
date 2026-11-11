@@ -544,7 +544,10 @@ struct MapChromeMenuPanel: View {
                     .padding(.horizontal, 4)
                     .accessibilityAddTraits(.isHeader)
             }
-            if section.chips {
+            if section.menu {
+                // v16 下拉菜单（地图筛选的省 / 市 / 区）：标题在上，菜单按钮显示当前选中项
+                menuPicker(section)
+            } else if section.chips {
                 // v14 标签（地图筛选）：可换行排列，点按不收起面板
                 NativeFlowLayout(spacing: 8, lineSpacing: 8) {
                     ForEach(section.rows) { row in
@@ -632,6 +635,41 @@ struct MapChromeMenuPanel: View {
         case "exclude": return FM.dangerText
         default: return accent.fmReadableText
         }
+    }
+
+    /// v16 下拉菜单：系统 Menu，选中项打勾；按钮与列表分组同一种底色与圆角
+    private func menuPicker(_ section: MapChromeSheetSection) -> some View {
+        let selected = section.rows.first { $0.tone == "accent" } ?? section.rows.first
+        return Menu {
+            ForEach(section.rows) { row in
+                Button {
+                    model.selectSheetRow(row)
+                } label: {
+                    if row.tone == "accent" {
+                        Label(row.title, systemImage: "checkmark")
+                    } else {
+                        Text(row.title)
+                    }
+                }
+                .disabled(row.disabled)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(selected?.title ?? "")
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 48)
+            .background(groupFill)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text([section.title, selected?.title].compactMap { $0 }.joined(separator: "，")))
     }
 
     private func chipButton(_ row: MapChromeSheetRow) -> some View {
@@ -836,6 +874,8 @@ struct MapChromePlaceCard: View {
                     .onGeometryChange(for: CGFloat.self, of: { proxy in
                         proxy.size.height
                     }, action: { height in
+                        // 展开后副标题变成两行：摘要高度只按收起时量，避免第一段停靠位置跟着变
+                        guard !model.cardExpanded else { return }
                         model.setCardSummaryHeight(Self.topInset + height + Self.summaryGap)
                     })
                 details
@@ -929,7 +969,15 @@ struct MapChromePlaceCard: View {
         } else {
             VStack(spacing: 2) {
                 titleText
-                if let subtitle = sheet.subtitle {
+                if model.cardExpanded && !sheet.subtitleExpanded.isEmpty {
+                    // 展开后：第一行评分（人数）与人均，第二行标签（可换行）
+                    ForEach(Array(sheet.subtitleExpanded.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                    }
+                } else if let subtitle = sheet.subtitle {
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

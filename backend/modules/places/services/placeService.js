@@ -3,6 +3,8 @@ const { normalizeImageUrls } = require('../../media/services/imageUrls');
 const { enqueuePlaceCreatedNotifications, wakeNotificationWorker } = require('./placeNotifications');
 const { RATING_COLUMNS_SQL, isValidScore, defaultCreationScore, insertCreationRating } = require('../../ratings/services/placeRatings');
 const { registerNewPlaceSync, scheduleModeration } = require('./placeModeration');
+const { canonicalCategoryNames } = require('./categoryMerges');
+const { hasExploreTag } = require('../../ratings/services/ratingWarning');
 
 // Shared validation and creation for every path that adds a marker (web/App,
 // QQ Bot, public diaries). Insertion is synchronous so callers can run it
@@ -39,8 +41,9 @@ function getCategoryNameLength(value) {
     ), 0);
 }
 
+// 相同或相近的标签换成保留的标签（categoryMerges.json），所有写入路径都经过这里
 function normalizeCategoryList(value) {
-    const names = parseCategoryNames(value);
+    const names = canonicalCategoryNames(parseCategoryNames(value));
     const invalidName = names.find((name) => /[,，]/.test(name) || HTML_TAG_PATTERN.test(name) || getCategoryNameLength(name) > 16);
     if (invalidName) {
         return { error: `分类“${invalidName}”不能超过8个汉字或16个英文字符，且仅支持纯文本` };
@@ -152,10 +155,14 @@ function validateNewPlace(input = {}) {
     const cost = normalizePerPersonCost(input.per_person_cost);
     if (cost.error) return cost;
     // The creator's own rating; without one, 避雷 → 强烈拒绝 and anything else → 强烈推荐.
-    const rating = input.rating === undefined || input.rating === null
-        ? defaultCreationScore(categoryList.names)
-        : input.rating;
-    if (!isValidScore(rating)) return { error: '评价无效' };
+    // 待探索 places (not visited yet) get no creator rating at all.
+    const exploring = hasExploreTag(categoryList.names);
+    const rating = exploring
+        ? null
+        : input.rating === undefined || input.rating === null
+            ? defaultCreationScore(categoryList.names)
+            : input.rating;
+    if (!exploring && !isValidScore(rating)) return { error: '评价无效' };
     return {
         value: {
             name: name.value,
@@ -167,7 +174,7 @@ function validateNewPlace(input = {}) {
             categoryNames: categoryList.names,
             per_person_cost: cost.value,
             rating,
-            rating_input_kind:['explicit','default'].includes(input.rating_input_kind)?input.rating_input_kind:input.rating==null?'default':'unknown',
+            rating_input_kind:exploring?'none':['explicit','default'].includes(input.rating_input_kind)?input.rating_input_kind:input.rating==null?'default':'unknown',
             exterior_images: input.exterior_images ? JSON.stringify(normalizeImageUrls(input.exterior_images)) : null,
             menu_images: input.menu_images ? JSON.stringify(normalizeImageUrls(input.menu_images)) : null
         }
@@ -233,7 +240,9 @@ function insertPlaceSync(place, creatorId, { source }) {
     const placeId = Number(info.lastInsertRowid);
     // Non-admin places start hidden from others until the moderation check passes.
     registerNewPlaceSync(placeId, creatorId, source);
-    insertCreationRating(placeId, creatorId, place.rating ?? defaultCreationScore(place.categoryNames),Date.now(),place.rating_input_kind==='explicit'?'creation_explicit':place.rating_input_kind==='default'?'creation_default':'unknown');
+    if (!hasExploreTag(place.categoryNames || place.category)) {
+        insertCreationRating(placeId, creatorId, place.rating ?? defaultCreationScore(place.categoryNames),Date.now(),place.rating_input_kind==='explicit'?'creation_explicit':place.rating_input_kind==='default'?'creation_default':'unknown');
+    }
     const revisionId=require('./placeRevisions').recordPlaceRevision({placeId,authorId:creatorId,path:source||'create'});
     require('./creatorDescriptions').bindCreatorDescription(db._raw,placeId,{source:'creator_submission',revisionId});
     enqueuePlaceCreatedNotifications([placeId], { source });
@@ -250,6 +259,8 @@ function afterPlacesCreated(placeIds) {
             ids.forEach((id) => queuePlaceVectorSync(id));
         } catch (_) { /* the vector retry worker picks it up later */ }
         wakeNotificationWorker();
+        // 省 / 市 / 区（地区筛选）：后台批量逆地理编码
+        try { require('./placeRegions').wakePlaceRegionWorker(); } catch (_) { /* the region worker picks it up later */ }
     });
     scheduleModeration(ids);
 }

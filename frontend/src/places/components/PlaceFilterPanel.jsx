@@ -3,8 +3,10 @@ import Button from '../../components/primitives/Button';
 import Chip from '../../components/primitives/Chip';
 import { materialIcon } from '../../platform/iconRegistry.js';
 import RangeSlider from '../../components/forms/RangeSlider';
+import SelectInput from '../../components/forms/SelectInput';
 import { loadCategoryDirectory } from '../categoryDirectory';
-import { COST_SLIDER, EMPTY_PLACE_FILTER, cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState } from '../placeFilter';
+import { loadPlaceRegions, peekPlaceRegions, regionPath } from '../placeRegions';
+import { COST_SLIDER, EMPTY_PLACE_FILTER, cyclePlaceFilterTag, isPlaceFilterActive, normalizePlaceFilter, placeFilterTagState, setPlaceFilterRegion, placeFilterRegionText } from '../placeFilter';
 import { getThemeColor, DEFAULT_PRIMARY } from '../../theme/theme';
 import { t } from '../../i18n/index.js';
 
@@ -17,6 +19,7 @@ const costText = (value, bound) => {
 export function describePlaceFilter(raw) {
     const filter = normalizePlaceFilter(raw);
     const parts = [];
+    if (filter.province) parts.push(t('places:filter.regionSummary', { region: placeFilterRegionText(filter) }));
     if (filter.tags.length) parts.push(filter.tags.join(t('places:filter.tagJoiner')));
     if (filter.excludeTags.length) parts.push(t('places:filter.excludeSummary', { tags: filter.excludeTags.join(t('places:filter.tagJoiner')) }));
     if (filter.minCost !== null || filter.maxCost !== null) {
@@ -37,8 +40,18 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
     const [categories, setCategories] = useState([]);
     const [loadError, setLoadError] = useState('');
     const [showAll, setShowAll] = useState(false);
+    const [regions, setRegions] = useState(() => peekPlaceRegions() || []);
+    const [regionError, setRegionError] = useState('');
     const accent = getThemeColor() || DEFAULT_PRIMARY;
     const filter = normalizePlaceFilter(value);
+
+    useEffect(() => {
+        let cancelled = false;
+        loadPlaceRegions(backendUrl)
+            .then((list) => { if (!cancelled) setRegions(list); })
+            .catch((error) => { if (!cancelled) setRegionError(error.message || t('places:filter.regionLoadFailed')); });
+        return () => { cancelled = true; };
+    }, [backendUrl]);
 
     useEffect(() => {
         let cancelled = false;
@@ -58,8 +71,43 @@ export default function PlaceFilterPanel({ backendUrl, value = EMPTY_PLACE_FILTE
     const sliderValue = [filter.minCost ?? COST_SLIDER.min, filter.maxCost ?? COST_SLIDER.max];
     const setCost = ([low, high]) => onChange(normalizePlaceFilter({ ...filter, minCost: low, maxCost: high }));
 
+    // 省 → 市 → 区三个下拉栏：上一层选了才能选下一层（窄屏三栏并排，选项只写名称，按地点数从多到少排）
+    const [provinceNode, cityNode] = regionPath(regions, filter);
+    const cities = provinceNode ? provinceNode.children || [] : [];
+    const districts = cityNode ? cityNode.children || [] : [];
+    const regionSelect = (level, label, options, selected, disabled) => (
+        <label style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+            {label}
+            <SelectInput
+                value={selected || ''}
+                disabled={disabled}
+                onChange={(event) => onChange(setPlaceFilterRegion(filter, level, event.target.value))}
+                style={{ width: '100%', minWidth: 0 }}
+            >
+                <option value="">{t('places:filter.regionAny')}</option>
+                {/* 已选但不在列表里的（地区数据还没加载 / 已没有地点）也要显示出来 */}
+                {selected && !options.some((item) => item.name === selected) && <option value={selected}>{selected}</option>}
+                {options.map((item) => (
+                    <option key={item.name} value={item.name}>{item.name}</option>
+                ))}
+            </SelectInput>
+        </label>
+    );
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, color: 'var(--color-text-primary)' }}>
+            <section>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, margin: '0 0 8px' }}>
+                    <h3 style={{ margin: 0, fontSize: 15 }}>{t('places:filter.regionTitle')}</h3>
+                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('places:filter.regionHint')}</span>
+                </div>
+                {regionError && <div style={{ fontSize: 12, color: 'var(--color-danger)' }}>{regionError}</div>}
+                <div role="group" aria-label={t('places:filter.regionTitle')} style={{ display: 'flex', gap: 8 }}>
+                    {regionSelect('province', t('places:filter.regionProvince'), regions, filter.province, false)}
+                    {regionSelect('city', t('places:filter.regionCity'), cities, filter.city, !filter.province)}
+                    {regionSelect('district', t('places:filter.regionDistrict'), districts, filter.district, !filter.city)}
+                </div>
+            </section>
             <section>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, margin: '0 0 8px' }}>
                     <h3 style={{ margin: 0, fontSize: 15 }}>{t('places:filter.tagsTitle')}</h3>

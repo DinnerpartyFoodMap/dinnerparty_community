@@ -120,7 +120,12 @@ export default function useNativeSettings({ user, backendUrl, token, onUpdateUse
     useEffect(() => {
         if (!supported || !present) return undefined;
         let cancelled = false, session;
-        const avatarURLOf = (u, bust) => (u?.has_avatar ? `${backendUrl}/users/${u.id}/avatar${bust ? `?t=${Date.now()}` : ''}` : undefined);
+        // 没有上传头像时用服务器的默认头像（与网页 img/default.png 相同；原生页只加载 https 图片）
+        const avatarURLOf = (u, bust) => {
+            if (!u?.id) return undefined;
+            if (!u.has_avatar) return `${backendUrl}/users/${encodeURIComponent(u.id)}/avatar?fallback=default`;
+            return `${backendUrl}/users/${encodeURIComponent(u.id)}/avatar${bust ? `?t=${Date.now()}` : ''}`;
+        };
 
         // 原生子页面的请求：账号请求留在网页层，成功后更新应用状态并回传原生需要刷新的字段
         const handleEvent = async (event) => {

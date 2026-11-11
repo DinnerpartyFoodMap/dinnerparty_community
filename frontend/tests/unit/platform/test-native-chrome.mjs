@@ -321,7 +321,13 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 15);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 16);
+    // v16 地区下拉菜单（menu 分组）与地点卡片展开后的几行副标题（最多 3 行，空行丢弃）
+    const menuSheet = sanitizeSheet({ id: 'filter', size: 'list', sections: [{ id: 'region-province', style: 'menu', rows: [{ id: 'region:province:', title: '不限', tone: 'accent' }] }] });
+    assert.equal(menuSheet.sections[0].style, 'menu');
+    const twoLines = sanitizeSheet({ id: 'place', size: 'card', subtitle: '4.0 | 人均 ¥30', subtitleExpanded: ['4.0（1人） | 人均 ¥30', '', '粤菜, 火锅店', 'x', 'y', 3] });
+    assert.deepEqual(twoLines.subtitleExpanded, ['4.0（1人） | 人均 ¥30', '粤菜, 火锅店', 'x']);
+    assert.equal(sanitizeSheet({ id: 'place', subtitleExpanded: 'nope' }).subtitleExpanded, undefined);
     // v15 双头拉杆：数值夹在范围内、低高不交叉；非 range 样式不带 range；link 语气保留
     const ranged = sanitizeSheet({ id: 'filter', size: 'list', sections: [
         { id: 'cost', style: 'range', rows: [], range: { id: 'cost', min: 0, max: 200, step: 5, low: 250, high: -3, labels: ['低', '高'], valueFormat: '¥%d', evil: 1 } },

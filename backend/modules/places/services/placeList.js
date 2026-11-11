@@ -6,6 +6,8 @@ const migration=require('../../ratings/services/ratingEstimateAdapter');
 const { publicPlaceSql } = require('./placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { parseCategoryNames } = require('./placeService');
+const { canonicalCategoryNames } = require('./categoryMerges');
+const { parseRegionFilter, matchesRegion } = require('./placeRegions');
 
 // 地点列表（GET /places/list，见 ../doc/README.md）：店名、简介、第一张图、评价，可按标签、人均与距离筛选，
 // 模型可用时按本人预测分加首选前五名加成排序；否则使用保留的旧策略。只给公开地点，
@@ -90,17 +92,19 @@ function distanceKm(a, b) {
  * lat / lng / radiusKm 为距离范围
  */
 function normalizeListFilter(query = {}) {
-    const excludeTags = parseCategoryNames(typeof query.excludeTags === 'string' ? query.excludeTags : '').slice(0, 20);
-    const tags = parseCategoryNames(typeof query.tags === 'string' ? query.tags : '').filter((tag) => !excludeTags.includes(tag)).slice(0, 20);
+    // 旧链接 / 保存的筛选里可能还是合并前的标签
+    const excludeTags = canonicalCategoryNames(parseCategoryNames(typeof query.excludeTags === 'string' ? query.excludeTags : '')).slice(0, 20);
+    const tags = canonicalCategoryNames(parseCategoryNames(typeof query.tags === 'string' ? query.tags : '')).filter((tag) => !excludeTags.includes(tag)).slice(0, 20);
     let minCost = parseCost(query.minCost);
     let maxCost = parseCost(query.maxCost);
     if (minCost !== null && maxCost !== null && minCost > maxCost) [minCost, maxCost] = [maxCost, minCost];
     const offset = Math.max(0, Number.parseInt(query.offset, 10) || 0);
     const limit = Math.max(1, Math.min(LIST_PAGE_LIMIT, Number.parseInt(query.limit, 10) || 20));
-    return { tags, excludeTags, minCost, maxCost, distance: parseDistance(query), offset, limit };
+    return { tags, excludeTags, minCost, maxCost, distance: parseDistance(query), region: parseRegionFilter(query), offset, limit };
 }
 
-function matchesFilter(place, { tags = [], excludeTags = [], minCost = null, maxCost = null, distance = null }) {
+function matchesFilter(place, { tags = [], excludeTags = [], minCost = null, maxCost = null, distance = null, region = null }) {
+    if (!matchesRegion(place, region)) return false;
     if (distance) {
         const lat = Number(place.latitude);
         const lng = Number(place.longitude);
@@ -162,8 +166,9 @@ async function listPlaces(query = {}, viewerId = null, database = db._raw) {
     if(personalResult.input_revision!==null&&personalResult.input_revision!==current.input_revision)continue;
     // 经纬度只用于距离筛选，不放进返回的条目
     const rows = database.prepare(`SELECT p.id, p.name, p.description, p.category, p.per_person_cost,
-            p.exterior_images, p.menu_images, p.created_time, p.latitude, p.longitude,${RATING_COLUMNS_SQL}
+            p.exterior_images, p.menu_images, p.created_time, p.latitude, p.longitude, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
         FROM Place p
+        LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
         WHERE ${publicPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}`).all(viewerId);
     const filtered=rows.filter(row=>matchesFilter(row,filter)),byId=new Map(filtered.map(row=>[row.id,row]));
     const mine=snapshot.viewerRatings(viewerId,database),rejected=new Set([...mine].filter(([,rating])=>rating.score<=2).map(([id])=>id));

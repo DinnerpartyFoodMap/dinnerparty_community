@@ -77,6 +77,8 @@
     "submit": "提交",
     "ratingLabel": "你的评价",
     "ratingRequired": "请选择你的评价",
+    "explore": "待探索：还没去过，先标记",
+    "exploreHint": "带“待探索”标签的地点不需要评价，有人评价前地图上显示问号图标",
     "draft": {
       "saved": "已自动保存草稿",
       "restored": "已恢复上次没提交的内容",
@@ -301,6 +303,8 @@
     "perPersonAbout": "人均约 {{per_person_cost}} 元",
     "card": {
       "seeMoreTitle": "在详情中查看更多",
+      "subtitleSeparator": " | ",
+      "ratingWithCount": "{{average}}（{{count}}人）",
       "seeMore": "查看全文",
       "unpick": "取消选择此地点",
       "pick": "选择此地点",
@@ -389,6 +393,8 @@
   "marker": {
     "clusterLabel": "{{count}} 家店的聚合，点击展开",
     "avoidSuffix": "（避雷）",
+    "unexploredSuffix": "（待探索）",
+    "unmarkedSuffix": "（未收录，可创建）",
     "defaultLabel": "地点"
   },
   "placeDetail": {
@@ -519,7 +525,6 @@
     "summary": {
       "none": "暂无评价",
       "text": "{{tier}} {{average}} · {{count}} 人评价",
-      "compact": "{{tier}} {{average}}（{{count}} 人）",
       "few": "评价人数较少"
     },
     "card": {

@@ -42,8 +42,9 @@ export default function useNativeProfile({
         let session = null;
         let profile = null;
         const latest = { token, currentUser, dark };
-        const avatarURL = (value) => (value?.user?.has_avatar
-            ? `${backendUrl}/users/${encodeURIComponent(value.user.id)}/avatar`
+        // 没有上传头像时用服务器的默认头像（与网页 img/default.png 相同）
+        const avatarURL = (value) => (value?.user?.id
+            ? `${backendUrl}/users/${encodeURIComponent(value.user.id)}/avatar${value.user.has_avatar ? '' : '?fallback=default'}`
             : '');
         const view = (value) => buildProfileViewModel(value, {
             currentUser: latest.currentUser,

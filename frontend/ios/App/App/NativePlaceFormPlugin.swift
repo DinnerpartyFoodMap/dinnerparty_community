@@ -211,6 +211,8 @@ final class NativePlaceFormModel: ObservableObject {
     @Published var cost: String
     @Published var rating: Int?
     @Published var noExperience: Bool
+    /// “待探索”标签（网页下发）：新增地点带上它时不需要评价
+    let exploreTag: String
     /// 提交时还没选评价：评价选项标红
     @Published var ratingMissing = false
     @Published var exterior: [FormImage]
@@ -253,6 +255,7 @@ final class NativePlaceFormModel: ObservableObject {
         self.send = send
         isCreate = call.getString("mode") != "edit"
         needsEditRating = call.getBool("ratingRequired", false)
+        exploreTag = String((call.getString("exploreTag") ?? "待探索").prefix(16))
         original = call.getObject("original") ?? [:]
         originalPosition = call.getString("originalPosition") ?? ""
         expanded = call.getString("mode") == "edit"
@@ -334,6 +337,19 @@ final class NativePlaceFormModel: ObservableObject {
         }
     }
 
+    /// 新增的地点是否标为“待探索”（还没去过，不评价）
+    var exploring: Bool { isCreate && !exploreTag.isEmpty && categories.contains(exploreTag) }
+
+    func setExploring(_ value: Bool) {
+        if value {
+            if !categories.contains(exploreTag) { categories.append(exploreTag) }
+            rating = nil
+            ratingMissing = false
+        } else {
+            categories.removeAll { $0 == exploreTag }
+        }
+    }
+
     /// 交给网页的填写内容（提交、取消存草稿、去地图选点）
     var values: [String: Any] {
         var result: [String: Any] = [
@@ -344,7 +360,7 @@ final class NativePlaceFormModel: ObservableObject {
             "exteriorImages": exterior.compactMap { $0.state == .done ? $0.url : nil },
             "menuImages": menu.compactMap { $0.state == .done ? $0.url : nil }
         ]
-        if let rating, !noExperience { result["rating"] = rating } else { result["rating"] = NSNull() }
+        if let rating, !noExperience, !exploring { result["rating"] = rating } else { result["rating"] = NSNull() }
         result["noExperience"] = noExperience
         return result
     }
@@ -495,14 +511,14 @@ final class NativePlaceFormModel: ObservableObject {
             if trimmedName.isEmpty { alertMessage = text("nameRequired", "请填写店名") }
             return
         }
-        // 新增地点必须自己选评价，不预选
-        if (isCreate || (needsEditRating && !noExperience)) && rating == nil {
+        // 新增地点必须自己选评价，不预选；标为“待探索”的不评价
+        if ((isCreate && !exploring) || (needsEditRating && !noExperience)) && rating == nil {
             ratingMissing = true
             alertMessage = text("ratingRequired", "请选择你的评价")
             return
         }
         var values = self.values
-        if isCreate {
+        if isCreate && !exploring {
             values["rating_input_kind"] = "explicit"
         }
         startRequest(kind: "submit", payload: ["values": values])
@@ -607,7 +623,13 @@ private struct NativePlaceFormView: View {
                         Toggle(model.text("noExperience", "仅纠错，没有实际体验"), isOn: $model.noExperience)
                             .onChange(of: model.noExperience) { _, value in if value { model.rating = nil } }
                     }
-                    if (model.isCreate || (model.needsEditRating && !model.noExperience)) && !model.tiers.isEmpty {
+                    if model.isCreate && !model.exploreTag.isEmpty {
+                        Toggle(model.text("explore", "待探索：还没去过，先标记"), isOn: Binding(
+                            get: { model.exploring },
+                            set: { model.setExploring($0) }
+                        ))
+                    }
+                    if ((model.isCreate && !model.exploring) || (model.needsEditRating && !model.noExperience)) && !model.tiers.isEmpty {
                         ratingSection
                     }
                     if !model.isCreate {

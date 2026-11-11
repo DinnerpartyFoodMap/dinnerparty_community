@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import * as MapUtils from "./utils";
 import * as Api from "../api/client";
 import { EMPTY_PLACE_FILTER, matchesPlaceFilter, placeFilterFromAi } from "../places/placeFilter";
+import { loadPlaceRegions, regionBounds } from "../places/placeRegions";
 import { MarkerLayerController } from "./MarkerLayerController";
 import { installPinchGuard } from "./pinchGuard";
 import { OverseasTileLayer } from "./overseasTileLayer";
@@ -1231,6 +1232,25 @@ export default function MapView({
             }
         }
     };
+
+    // 地区筛选（省 / 市 / 区）：选了地区后地图移到这个地区的地点范围，附近地点随之加载、只显示这个地区的
+    const regionFilterKey = placeFilter.province ? [placeFilter.province, placeFilter.city || '', placeFilter.district || ''].join('|') : '';
+    useEffect(() => {
+        if (!regionFilterKey || !mapReady) return undefined;
+        let cancelled = false;
+        const [province, city, district] = regionFilterKey.split('|');
+        loadPlaceRegions(backendUrl)
+            .then((regions) => {
+                const bounds = !cancelled && regionBounds(regions, { province, city: city || null, district: district || null });
+                if (!bounds) return;
+                const [minLng, minLat, maxLng, maxLat] = bounds;
+                fitMapToPlaces(minLng === maxLng && minLat === maxLat
+                    ? [{ longitude: minLng, latitude: minLat }]
+                    : [{ longitude: minLng, latitude: minLat }, { longitude: maxLng, latitude: maxLat }]);
+            })
+            .catch(() => { /* 地区列表读不到时只按地区过滤，不移动地图 */ });
+        return () => { cancelled = true; };
+    }, [regionFilterKey, mapReady, backendUrl]);
 
     // 提交搜索时同时启动快速字面匹配与 AI 语义推荐；快速结果不会等待 AI。
     const searchServer = async ({ q = "", center = undefined, bounds = undefined, limit = undefined, autoFit = true } = {}) => {

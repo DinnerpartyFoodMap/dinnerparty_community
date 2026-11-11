@@ -2,13 +2,14 @@
 import assert from 'node:assert/strict';
 import {
     COST_SLIDER, EMPTY_PLACE_FILTER, RADIUS_OPTIONS_KM, cyclePlaceFilterTag, isPlaceFilterActive, matchesPlaceFilter, normalizePlaceFilter,
-    placeFilterFromAi, placeFilterKey, placeFilterQuery, placeFilterTagState, placeListQuery
+    placeFilterFromAi, placeFilterKey, placeFilterQuery, placeFilterTagState, placeListQuery, setPlaceFilterRegion, placeFilterRegionText
 } from '../../../src/places/placeFilter.js';
+import { regionBounds, regionPath } from '../../../src/places/placeRegions.js';
 import { needsUpdate } from '../../../src/platform/appUpdate.js';
 import { applyFilterSheetRow, filterChromeSheet } from '../../../src/places/filterChromeSheet.js';
 
 // 规整：去重、min > max 互换、拉杆两端等于不设
-assert.deepEqual(normalizePlaceFilter({ tags: ['火锅店', ' 火锅店 ', '', 3], minCost: 80, maxCost: 30 }), { tags: ['火锅店'], excludeTags: [], minCost: 30, maxCost: 80 });
+assert.deepEqual(normalizePlaceFilter({ tags: ['火锅店', ' 火锅店 ', '', 3], minCost: 80, maxCost: 30 }), { tags: ['火锅店'], excludeTags: [], minCost: 30, maxCost: 80, province: null, city: null, district: null });
 assert.deepEqual(normalizePlaceFilter({ tags: ['a', 'b'], excludeTags: ['b'] }).tags, ['a'], 'a tag in both lists counts as excluded');
 assert.deepEqual(normalizePlaceFilter({ minCost: COST_SLIDER.min, maxCost: COST_SLIDER.max }), EMPTY_PLACE_FILTER);
 assert.equal(isPlaceFilterActive(EMPTY_PLACE_FILTER), false);
@@ -48,7 +49,7 @@ assert.equal(matchesPlaceFilter({ category: '' }, redOnly), true);
 assert.equal(matchesPlaceFilter({ category: '粤菜, 避雷' }, redOnly), false);
 
 // AI 搜索返回的筛选（后端 searchFilter.js 的字段名）
-assert.deepEqual(placeFilterFromAi({ tags: ['烧烤'], min_cost: null, max_cost: 50 }), { tags: ['烧烤'], excludeTags: [], minCost: null, maxCost: 50 });
+assert.deepEqual(placeFilterFromAi({ tags: ['烧烤'], min_cost: null, max_cost: 50 }), { tags: ['烧烤'], excludeTags: [], minCost: null, maxCost: 50, province: null, city: null, district: null });
 assert.deepEqual(placeFilterFromAi({ tags: [], exclude_tags: ['连锁店'], min_cost: null, max_cost: null }).excludeTags, ['连锁店']);
 assert.equal(placeFilterFromAi({ tags: [], min_cost: null, max_cost: null }), null);
 assert.equal(placeFilterFromAi(null), null);
@@ -89,6 +90,44 @@ assert.equal(applyFilterSheetRow(EMPTY_PLACE_FILTER, 'nope'), null);
 sheet = filterChromeSheet({ filter: EMPTY_PLACE_FILTER, categories: directory, showAll: true });
 assert.equal(sheet.sections.find((section) => section.id === 'tags').rows.length, 4);
 assert.equal(sheet.leading.disabled, true, 'nothing to clear');
+
+// 地区（省 / 市 / 区）：一层一层选，上层变了下层清空；没带地区字段的来源（搜索结果）不按地区排除
+const regions = [
+    { name: '广东省', count: 3, bounds: [113, 23, 114, 24], children: [
+        { name: '广州市', count: 2, bounds: [113.2, 23.1, 113.4, 23.2], children: [{ name: '天河区', count: 2, bounds: [113.3, 23.1, 113.4, 23.2] }] },
+        { name: '深圳市', count: 1, bounds: [114, 22.5, 114, 22.5], children: [] }
+    ] },
+    { name: '北京市', count: 1, bounds: [116.4, 39.9, 116.4, 39.9], children: [{ name: '北京市', count: 1, bounds: [116.4, 39.9, 116.4, 39.9], children: [] }] }
+];
+assert.deepEqual(normalizePlaceFilter({ city: '广州市' }).city, null, 'no city without a province');
+let regionFilter = setPlaceFilterRegion(EMPTY_PLACE_FILTER, 'province', '广东省');
+regionFilter = setPlaceFilterRegion(regionFilter, 'city', '广州市');
+regionFilter = setPlaceFilterRegion(regionFilter, 'district', '天河区');
+assert.deepEqual([regionFilter.province, regionFilter.city, regionFilter.district], ['广东省', '广州市', '天河区']);
+assert.equal(isPlaceFilterActive(regionFilter), true);
+assert.equal(placeFilterRegionText(regionFilter), '广东省 · 广州市 · 天河区');
+assert.equal(placeFilterRegionText(setPlaceFilterRegion(setPlaceFilterRegion(EMPTY_PLACE_FILTER, 'province', '北京市'), 'city', '北京市')), '北京市', 'municipality city is not repeated');
+assert.deepEqual([setPlaceFilterRegion(regionFilter, 'province', '北京市').city, setPlaceFilterRegion(regionFilter, 'city', '').district], [null, null], 'changing a level clears the levels below');
+assert.notEqual(placeFilterKey(regionFilter), placeFilterKey(setPlaceFilterRegion(regionFilter, 'district', '')));
+assert.equal(matchesPlaceFilter({ category: '', province: '广东省', city: '广州市', district: '天河区' }, regionFilter), true);
+assert.equal(matchesPlaceFilter({ category: '', province: '广东省', city: '广州市', district: '越秀区' }, regionFilter), false);
+assert.equal(matchesPlaceFilter({ category: '', province: null, city: null, district: null }, regionFilter), false, 'unresolved places are outside every region');
+assert.equal(matchesPlaceFilter({ category: '' }, regionFilter), true, 'sources without region fields are not filtered by region');
+assert.equal(placeFilterQuery(regionFilter).toString(), 'province=%E5%B9%BF%E4%B8%9C%E7%9C%81&city=%E5%B9%BF%E5%B7%9E%E5%B8%82&district=%E5%A4%A9%E6%B2%B3%E5%8C%BA');
+assert.deepEqual(regionPath(regions, regionFilter).map((node) => node.name), ['广东省', '广州市', '天河区']);
+assert.deepEqual(regionBounds(regions, { province: '广东省', city: '深圳市' }), [114, 22.5, 114, 22.5]);
+assert.equal(regionBounds(regions, { province: '浙江省' }), null);
+// 原生面板：省 / 市 / 区为 menu 分组，选中项 tone accent，点选回传 region:<层>:<名称>
+sheet = filterChromeSheet({ filter: setPlaceFilterRegion(EMPTY_PLACE_FILTER, 'province', '广东省'), categories: directory, regions });
+const regionSections = sheet.sections.filter((section) => section.style === 'menu');
+assert.deepEqual(regionSections.map((section) => section.id), ['region-province', 'region-city'], 'city menu appears once a province is picked');
+assert.deepEqual(regionSections[0].rows.find((row) => row.tone === 'accent').id, 'region:province:广东省');
+assert.equal(regionSections[1].rows[0].tone, 'accent', '不限 is selected while no city is picked');
+change = applyFilterSheetRow(setPlaceFilterRegion(EMPTY_PLACE_FILTER, 'province', '广东省'), 'region:city:广州市');
+assert.deepEqual([change.filter.province, change.filter.city], ['广东省', '广州市']);
+assert.equal(applyFilterSheetRow(change.filter, 'region:province:').filter.province, null);
+assert.equal(applyFilterSheetRow(change.filter, 'region:planet:地球'), null);
+assert.equal(filterChromeSheet({ filter: EMPTY_PLACE_FILTER, categories: directory }).sections.some((section) => section.style === 'menu'), false, 'no region menus without region data');
 
 // App 更新：服务器构建号更大时才提示；读不出本机构建号时不提示
 assert.equal(needsUpdate('23', { build: 24 }), true);

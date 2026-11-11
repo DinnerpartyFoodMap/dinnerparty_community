@@ -10,12 +10,14 @@
 import yesIcon from '../img/yes.png';
 import noIcon from '../img/no.png';
 import unionIcon from '../img/union.png';
+import unverifiedIcon from '../img/unverified.png';
+import addIcon from '../img/add.png';
 import './marker-motion.css';
 
 export { PLACE_GLYPH, CLUSTER_GLYPH, MIN_HIT_SIZE, LABEL_MAX_WIDTH, LABEL_HEIGHT, LABEL_GAP, clusterScale, glyphSize, hitSize, formatCount, countFontSize } from './cluster/glyph.js';
 import { glyphSize, hitSize, formatCount, countFontSize } from './cluster/glyph.js';
 import { t } from '../i18n/index.js';
-import { isAvoidedPlace } from "../places/rating.js";
+import { isAvoidedPlace, isUnexploredPlace } from "../places/rating.js";
 import { skinSlot, skinRevision } from '../skins/skinStore.js';
 
 /** 标记图：皮肤提供时用皮肤的图，否则用默认图（图片加载失败时也回到默认图，见 createMarkerParts） */
@@ -33,6 +35,25 @@ function setMarkerImage(img, src, fallback) {
 /** 避雷图标：综合评价落在“均线之下 / 强烈拒绝”；没人评价时看“避雷”标签（见 rating.js） */
 export function isThunderPlace(place) {
     return isAvoidedPlace(place);
+}
+
+/**
+ * 单个地点的图标种类：高德搜到、还没收录的地点（可创建）→ add；避雷 → avoid；待探索且还没人评价 → unexplored；其余 → place。
+ * 展会地点也是未收录的临时地点，但不能创建，仍用普通图标。
+ */
+export function placeGlyphKind(place) {
+    if (!place) return 'place';
+    if (place.isMarked === false) return place.exhibitionVenue ? 'place' : 'add';
+    if (isAvoidedPlace(place)) return 'avoid';
+    if (isUnexploredPlace(place)) return 'unexplored';
+    return 'place';
+}
+
+function placeGlyphImage(kind) {
+    if (kind === 'add') return { src: addIcon, fallback: addIcon };
+    if (kind === 'avoid') return { src: markerIcon('markers.avoid', noIcon), fallback: noIcon };
+    if (kind === 'unexplored') return { src: unverifiedIcon, fallback: unverifiedIcon };
+    return { src: markerIcon('markers.place', yesIcon), fallback: yesIcon };
 }
 
 export function createMarkerParts() {
@@ -69,9 +90,10 @@ export function createMarkerParts() {
 export function applyNodeAppearance(parts, node, { selected = false } = {}) {
     const size = glyphSize(node);
     const place = node.kind === 'place' ? node.place || {} : null;
-    const thunder = place ? isThunderPlace(place) : false;
+    const glyphKind = place ? placeGlyphKind(place) : '';
+    const thunder = glyphKind === 'avoid';
     const name = place ? String(place.name || '') : '';
-    const signature = `${node.kind}|${node.count}|${thunder}|${name}|${selected}|${skinRevision()}`;
+    const signature = `${node.kind}|${node.count}|${glyphKind}|${name}|${selected}|${skinRevision()}`;
     if (parts.appearance === signature) return size;
     parts.appearance = signature;
 
@@ -104,7 +126,8 @@ export function applyNodeAppearance(parts, node, { selected = false } = {}) {
         label.dataset.hidden = '';
         hit.setAttribute('aria-label', t('map:marker.clusterLabel', { count: node.count }));
     } else {
-        setMarkerImage(img, thunder ? markerIcon('markers.avoid', noIcon) : markerIcon('markers.place', yesIcon), thunder ? noIcon : yesIcon);
+        const glyphImage = placeGlyphImage(glyphKind);
+        setMarkerImage(img, glyphImage.src, glyphImage.fallback);
         if (parts.count) {
             parts.count.remove();
             parts.count = null;
@@ -112,7 +135,8 @@ export function applyNodeAppearance(parts, node, { selected = false } = {}) {
         label.textContent = name;
         label.title = name;
         label.toggleAttribute('data-thunder', thunder);
-        hit.setAttribute('aria-label', name ? `${name}${thunder ? t('map:marker.avoidSuffix') : ''}` : t('map:marker.defaultLabel'));
+        const suffix = thunder ? t('map:marker.avoidSuffix') : glyphKind === 'unexplored' ? t('map:marker.unexploredSuffix') : glyphKind === 'add' ? t('map:marker.unmarkedSuffix') : '';
+        hit.setAttribute('aria-label', name ? `${name}${suffix}` : t('map:marker.defaultLabel'));
     }
     return size;
 }

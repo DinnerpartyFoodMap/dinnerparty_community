@@ -3,7 +3,7 @@ import { useOverlayEntry } from '../../components/overlay/MotionSurface';
 import { getPlatform, isPluginAvailable } from '../../platform/env';
 import { createNativePlaceFormSession } from '../../platform/nativePlaceForm';
 import { loadCategoryDirectory } from '../categoryDirectory';
-import { RATING_TIERS } from '../rating';
+import { RATING_TIERS, EXPLORE_TAG } from '../rating';
 import { PLACE_IMAGE_PICK_LIMIT, uploadPlaceImage } from '../components/PlaceImageInputs';
 import { imageThumbnailUrl } from '../../platform/runtimeConfig';
 import { nativeThemeColors } from '../../theme/theme';
@@ -62,6 +62,7 @@ function formLabels(mode, canDirect) {
         costUnit: t('map:placeForm.costUnit'),
         rating: t('map:addForm.ratingLabel'),
         ratingRequired: t('map:addForm.ratingRequired'),
+        explore: t('map:addForm.explore'),
         noExperience:t('map:editEvidence.noExperience'),
         editPreview:t('map:editEvidence.preview'),
         editNotice:t('map:editEvidence.notice'),
@@ -128,6 +129,7 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
             const snapshot = {
                 mode: current.mode,
                 ratingRequired:current.ratingRequired===true,
+                exploreTag: EXPLORE_TAG,
                 original:current.original||{},
                 originalPosition:current.originalPosition||'',
                 dark: latest.current.dark,

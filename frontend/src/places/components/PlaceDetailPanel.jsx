@@ -47,6 +47,50 @@ export default function PlaceDetailPanel({ open = true, place, onClose, onNaviga
     );
 }
 
+/**
+ * 窄屏地点小卡上拉后的详情：完整简介、地址、相关日记、外观与菜单图片（与详情面板同一套内容）。
+ * 按钮不在这里：小卡的按钮布局保持不变。
+ */
+export function PlaceCardDetails({ place, backendUrl }) {
+    const [preview, setPreview] = useState(null);
+    const exteriorImages = parseImages(place.exterior_images);
+    const menuImages = parseImages(place.menu_images);
+    return (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+            {place.address && <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--color-text-secondary)' }}>{place.address}</div>}
+            <PlaceDiaryList place={place} base={backendUrl} />
+            <ImageGroup title={t('map:placeDetail.exteriorImages')} images={exteriorImages} onPreview={setPreview} />
+            <ImageGroup title={t('common:label.menu')} images={menuImages} onPreview={setPreview} />
+            {exteriorImages.length === 0 && menuImages.length === 0 && (
+                <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 13, margin: '8px 0', textAlign: 'center' }}>{t('map:placeDetail.noImages')}</div>
+            )}
+            <ImagePreview preview={preview} onClose={() => setPreview(null)} />
+        </div>
+    );
+}
+
+function ImageGroup({ title, images, onPreview }) {
+    if (!images.length) return null;
+    return (
+        <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--color-text-secondary)' }}>{title}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {images.map((url, index) => (
+                    <button
+                        key={`${url}-${index}`}
+                        type="button"
+                        onClick={(event) => onPreview({ url, rect: event.currentTarget.getBoundingClientRect() })}
+                        aria-label={t('map:placeDetail.zoomImage', { title, index: index + 1 })}
+                        style={{ padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in', display: 'block', width: '100%' }}
+                    >
+                        <img src={imageThumbnailUrl(url, 800)} alt={`${title} ${index + 1}`} style={{ width: '100%', borderRadius: 'var(--radius-md)', display: 'block' }} loading="lazy" />
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, rating, onOpenRating }) {
     const [preview, setPreview] = useState(null);
     const diariesRef = useRef(null);
@@ -59,24 +103,7 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
     const exteriorImages = parseImages(place.exterior_images);
     const menuImages = parseImages(place.menu_images);
 
-    const renderImageGroup = (title, images) => images.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--color-text-secondary)' }}>{title}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {images.map((url, index) => (
-                    <button
-                        key={`${url}-${index}`}
-                        type="button"
-                        onClick={(event) => setPreview({ url, rect: event.currentTarget.getBoundingClientRect() })}
-                        aria-label={t('map:placeDetail.zoomImage', { title, index: index + 1 })}
-                        style={{ padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in', display: 'block', width: '100%' }}
-                    >
-                        <img src={imageThumbnailUrl(url, 800)} alt={`${title} ${index + 1}`} style={{ width: '100%', borderRadius: 'var(--radius-md)', display: 'block' }} loading="lazy" />
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
+    const renderImageGroup = (title, images) => <ImageGroup title={title} images={images} onPreview={setPreview} />;
 
     return (
         <>

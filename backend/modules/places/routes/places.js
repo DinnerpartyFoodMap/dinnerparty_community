@@ -41,17 +41,18 @@ function visibleProjectedRows(rows,viewer,detail=false){
     const {isBlocked}=require('../../accounts/services/userRelations');
     return rows.filter(row=>{const current=read.get(row.id);return current&&!isBlocked(viewer?.id,current.creator_id)&&(detail?canViewPlace(current,viewer):current.moderation_status==='visible'||String(current.creator_id)===String(viewer?.id));});
 }
-router.use((req,res,next)=>req.method==='GET'&&!req.path.endsWith('/diaries')&&!req.path.endsWith('/edit-context')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
+router.use((req,res,next)=>req.method==='GET'&&req.path!=='/regions'&&!req.path.endsWith('/diaries')&&!req.path.endsWith('/edit-context')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
 
 // 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
 // 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者；
 // 观看者屏蔽了的住民创建的地点也不返回（accounts/services/userRelations.js）
 router.get("/", attachViewer, (req, res) => {
     res.set('Cache-Control','no-store');
-    const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
+    const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
+                 LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
                  WHERE ${viewerPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}
                  ORDER BY p.created_time DESC`;
     db.all(sql, [req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
@@ -72,16 +73,28 @@ router.get("/nearby", attachViewer, (req, res) => {
         bounds=Object.fromEntries(names.map((name,k)=>[name,Number(req.query[viewKeys[k]])]));
         if(bounds.minLng<Number(minLng)||bounds.maxLng>Number(maxLng)||bounds.minLat<Number(minLat)||bounds.maxLat>Number(maxLat)||bounds.minLng>=bounds.maxLng||bounds.minLat>=bounds.maxLat)return res.status(400).json({error:'地图视野范围无效'});
     }
-    const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
+    const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
+                 LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
                  WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND ${viewerPlaceSql('p')}
                    AND ${notBlockedSql('p.creator_id')}`;
     db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true,bounds}),req.viewer));
     });
+});
+
+// 有公开地点的省 / 市 / 区（地区筛选的下拉栏；services/placeRegions.js），五分钟缓存
+router.get("/regions", (req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+    try {
+        res.json({ regions: require('../services/placeRegions').regionTree() });
+    } catch (error) {
+        res.locals.unhandledError = error;
+        res.status(500).json({ error: '地区列表加载失败，请稍后重试' });
+    }
 });
 
 // 地点列表页（services/placeList.js）：可按标签、人均筛选，按综合评价与口味加权评价排序；不返回经纬度和地址
@@ -165,10 +178,11 @@ router.get('/:id/edit-context',requireAuth,(req,res)=>{
 });
 // 获取单个地点（隐藏中的地点只给创建者和管理员）
 router.get("/:id", attachViewer, (req, res) => {
-    const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name,${RATING_COLUMNS_SQL}
+    const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
+                 LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
                  WHERE p.id = ?`;
     db.get(sql, [req.params.id], async (err, row) => {
         if (err) return res.status(500).json({ error: err.message });

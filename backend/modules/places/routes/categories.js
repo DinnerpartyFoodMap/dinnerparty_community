@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../../../infrastructure/database');
 const { requireAuth } = require('../../accounts/middleware/auth');
+const { canonicalCategoryName } = require('../services/categoryMerges');
 
 const router = express.Router();
 const HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
@@ -62,7 +63,8 @@ function normalizeCategoryName(value) {
     if (getCategoryLength(name) > 16) {
         return { error: '分类名称不能超过8个汉字或16个英文字符' };
     }
-    return { name };
+    // 已合并的标签（categoryMerges.json）直接用保留的标签
+    return { name: canonicalCategoryName(name) };
 }
 
 router.get('/', (req, res) => {

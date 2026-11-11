@@ -21,11 +21,16 @@ const DISMISS_VELOCITY = 0.55; // px/ms
  * @param {{ enabled: boolean, sheetRef: { current: HTMLElement }, onDismiss: () => void,
  *           snapOffsets?: number[] | null, initialSnap?: number, reduced?: boolean }} options
  * snapOffsets：可选停靠位置（相对完全展开的向下偏移，px，升序，第一个通常为 0）。
+ * expand：可选的“收起 / 展开”两档（内容随之变化，例如窄屏地点卡上拉显示详情）：{ expanded, onExpand, onCollapse }。
+ *   收起时上拉（把手任何时候；内容区要已滚到底）→ onExpand；展开时下拉（把手，或内容在顶部）→ onCollapse，不关闭。
  */
-export function useSheetDrag({ enabled, sheetRef, onDismiss, snapOffsets = null, initialSnap = 0, reduced = false }) {
+const EXPAND_DISTANCE = 36;
+const EXPAND_VELOCITY = 0.35; // px/ms
+
+export function useSheetDrag({ enabled, sheetRef, onDismiss, snapOffsets = null, initialSnap = 0, reduced = false, expand = null }) {
     const y = useMotionValue(snapOffsets ? snapOffsets[initialSnap] || 0 : 0);
-    const optionsRef = useRef({ onDismiss, snapOffsets, reduced });
-    optionsRef.current = { onDismiss, snapOffsets, reduced };
+    const optionsRef = useRef({ onDismiss, snapOffsets, reduced, expand });
+    optionsRef.current = { onDismiss, snapOffsets, reduced, expand };
 
     useEffect(() => {
         const sheet = sheetRef.current;
@@ -56,7 +61,9 @@ export function useSheetDrag({ enabled, sheetRef, onDismiss, snapOffsets = null,
             if (!state.locked) {
                 if (Math.hypot(dx, dy) < LOCK_DISTANCE) return;
                 const snaps = optionsRef.current.snapOffsets;
-                const canExpand = !!snaps && state.offset0 > snaps[0];
+                const expand = optionsRef.current.expand;
+                const atBottom = !state.scroller || state.scroller.scrollTop + state.scroller.clientHeight >= state.scroller.scrollHeight - 1;
+                const canExpand = (!!snaps && state.offset0 > snaps[0]) || (!!expand && !expand.expanded && atBottom);
                 if (Math.abs(dy) <= Math.abs(dx) || (dy < 0 && !state.fromHandle && !canExpand)) {
                     state = null; // 横向或向上滚动内容：交还给浏览器
                     return;
@@ -66,6 +73,10 @@ export function useSheetDrag({ enabled, sheetRef, onDismiss, snapOffsets = null,
                     return;
                 }
                 state.locked = true;
+                // 鼠标：确定是拖动后才捕获指针；按下时就捕获会把 click 改派给面板，把手的点按切换收不到
+                if (typeof state.id === 'number') {
+                    try { sheet.setPointerCapture && sheet.setPointerCapture(state.id); } catch (e) { /* 指针已抬起 */ }
+                }
             }
             if (event && event.cancelable) event.preventDefault();
             const snaps = optionsRef.current.snapOffsets;
@@ -81,6 +92,8 @@ export function useSheetDrag({ enabled, sheetRef, onDismiss, snapOffsets = null,
             const s = state;
             state = null;
             if (!s || !s.locked) return;
+            // 拖动松手后浏览器可能补发一次 click：把手的点按切换据此忽略
+            sheet.dataset.sheetDragEnd = String(Date.now());
             const snaps = optionsRef.current.snapOffsets;
             const current = y.get();
             if (cancelled) {
@@ -91,6 +104,21 @@ export function useSheetDrag({ enabled, sheetRef, onDismiss, snapOffsets = null,
             const last = s.samples[s.samples.length - 1];
             const dt = Math.max(1, last.t - first.t);
             const velocity = (last.y - first.y) / dt;
+            const expand = optionsRef.current.expand;
+            if (expand && !snaps) {
+                const moved = current - s.offset0;
+                if (!expand.expanded && (moved < -EXPAND_DISTANCE || velocity < -EXPAND_VELOCITY)) {
+                    expand.onExpand && expand.onExpand();
+                    settleTo(0);
+                    return;
+                }
+                if (expand.expanded) {
+                    // 展开时下拉只收回到小卡，不直接关闭
+                    if (moved > EXPAND_DISTANCE || velocity > EXPAND_VELOCITY) expand.onCollapse && expand.onCollapse();
+                    settleTo(0);
+                    return;
+                }
+            }
             const height = sheet.getBoundingClientRect().height || 1;
             const lastSnap = snaps ? snaps[snaps.length - 1] : 0;
             const travelled = current - lastSnap;
@@ -129,7 +157,6 @@ export function useSheetDrag({ enabled, sheetRef, onDismiss, snapOffsets = null,
             if (event.pointerType !== 'mouse' || event.button !== 0) return;
             if (!event.target.closest('[data-sheet-grabber], [data-sheet-header]')) return;
             begin(event.target, event.clientX, event.clientY, event.pointerId);
-            if (state) sheet.setPointerCapture && sheet.setPointerCapture(event.pointerId);
         };
         const onPointerMove = (event) => {
             if (!state || state.id !== event.pointerId) return;

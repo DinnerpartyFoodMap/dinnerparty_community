@@ -96,7 +96,7 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, avat
     const name = user.username || t('profile:anonymous');
     return {
         name: String(name),
-        avatarURL: user.has_avatar && avatarURL ? String(avatarURL) : '',
+        avatarURL: avatarURL ? String(avatarURL) : '',
         city: profile?.city ? t('profile:city', { city: profile.city }) : t('profile:cityUnknown'),
         self,
         canEditTaste: self && !!tokenPresent,

@@ -31,10 +31,12 @@ import { t } from '../i18n/index.js';
 // 行 tone 为 "include"（绿，包含）/ "exclude"（红，排除）/ "accent"（选中的人均档位）。
 // v15 筛选面板细节：标签分组里可有 tone "link" 的行（无边框文字，“展开全部标签”）；分组 style "range" 带 range
 // （双头拉杆：min / max / step / low / high 与文案），松手回传行 id "<range.id>:range:<低>:<高>"；面板 leading（清除筛选）在标题左侧。
+// v16 筛选面板的地区：分组 style "menu" 画成一个下拉菜单（行是选项，tone "accent" 为当前选中，点选回传行 id）；
+// 地点卡片展开后的副标题 subtitleExpanded（几行：评分（人数） | 人均，下一行标签），收起时仍是一行 subtitle。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
-export const NATIVE_CHROME_PROTOCOL = 15;
+export const NATIVE_CHROME_PROTOCOL = 16;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
@@ -212,6 +214,8 @@ export function sanitizeSheet(sheet) {
         // 展会名最多 80 字（地点名更短）
         title: clipText(sheet.title, 80) || '',
         subtitle: clipText(sheet.subtitle, 80),
+        // 展开（全屏详情）时代替 subtitle 的几行副标题（地点卡片：评分（人数） | 人均，下一行标签）；旧版原生忽略，仍显示 subtitle
+        subtitleExpanded: sanitizeSubtitleLines(sheet.subtitleExpanded),
         message: clipText(sheet.message, 120),
         messageTone: sheet.messageTone === 'loading' || sheet.messageTone === 'danger' ? sheet.messageTone : undefined,
         // card：地点卡片两段停靠（摘要时地图可操作）；list：半屏 / 全屏列表；fit：按内容高度的菜单
@@ -236,6 +240,12 @@ export function sanitizeSheet(sheet) {
         // 列表打开时滚到这一行（从店卡回到收藏时停在原来的位置）；只是行 id，旧版原生忽略
         focusRow: clipText(sheet.focusRow, 80)
     };
+}
+
+function sanitizeSubtitleLines(lines) {
+    if (!Array.isArray(lines)) return undefined;
+    const clean = lines.map((line) => clipText(line, 120)).filter(Boolean).slice(0, 3);
+    return clean.length ? clean : undefined;
 }
 
 const SKIN_IMAGE_LIMIT = 300_000;
@@ -370,7 +380,7 @@ function sanitizeSections(list, budget) {
             id: clipText(section && section.id, 32) || `section-${index}`,
             title: clipText(section && section.title, 40),
             footer: clipText(section && section.footer, 120),
-            style: range ? 'range' : (section && ['footnote', 'chips'].includes(section.style) ? section.style : 'list'),
+            style: range ? 'range' : (section && ['footnote', 'chips', 'menu'].includes(section.style) ? section.style : 'list'),
             rows: sanitizeSheetRows(section && section.rows, budget),
             ...(range ? { range } : null)
         };

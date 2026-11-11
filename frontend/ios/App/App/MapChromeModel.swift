@@ -69,6 +69,8 @@ struct MapChromeSheetSection: Identifiable, Equatable {
     var footnote: Bool
     /// v14 标签样式：行画成可换行的标签（地图筛选），tone 为 include / exclude / accent 时着色，link 为无边框文字
     var chips: Bool = false
+    /// v16 下拉菜单（地图筛选的省 / 市 / 区）：行是选项，tone "accent" 为当前选中；点选回传行 id，面板不收起
+    var menu: Bool = false
     var rows: [MapChromeSheetRow]
     /// v15 双头拉杆（地图筛选的人均）
     var range: MapChromeSheetRange? = nil
@@ -126,6 +128,8 @@ struct MapChromeSheet: Identifiable, Equatable {
     let token: Int
     var title: String
     var subtitle: String?
+    /// 卡片展开（全屏详情）时代替 subtitle 的几行副标题（地点卡片：“评分（人数） | 人均”与标签）；为空时仍显示 subtitle
+    var subtitleExpanded: [String] = []
     /// 加载中 / 出错 / 空列表时的提示
     var message: String?
     /// "loading" / "danger" / nil

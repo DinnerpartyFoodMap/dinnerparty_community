@@ -32,7 +32,7 @@ const DATA_STRINGS = {
     'src/journey/maps.jsx': ['全国'],
     'src/map/utils.js': ['中餐厅', '外国餐厅'],
     // 分类名（“避雷”标签：没人评价的地点按它显示避雷图标，添加地点时据此预选评价）
-    "src/places/rating.js": ['避雷']
+    "src/places/rating.js": ['避雷', '待探索']
 };
 
 function flatten(object, prefix, out) {

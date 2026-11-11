@@ -9,6 +9,7 @@
     { "name": "漂亮饭", "is_common": true, "sort_order": 7 },
     { "name": "宵夜", "is_common": true, "sort_order": 8 },
     { "name": "避雷", "is_common": true, "sort_order": 9 },
+    { "name": "待探索", "is_common": true, "sort_order": 10 },
     { "name": "甜品店", "is_common": false, "sort_order": 1000 },
     { "name": "奶茶店", "is_common": false, "sort_order": 1000 },
     { "name": "烧烤", "is_common": false, "sort_order": 1000 },

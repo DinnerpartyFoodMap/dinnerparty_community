@@ -4,12 +4,13 @@ import Tooltip from "../components/primitives/Tooltip";
 import Button from "../components/primitives/Button";
 import ManagePanel from "../places/components/ManagePanel";
 import AddForm from "../places/components/AddPlaceForm";
-import PlaceDetailPanel, { parseImages as parsePlaceImages } from "../places/components/PlaceDetailPanel";
+import PlaceDetailPanel, { PlaceCardDetails, parseImages as parsePlaceImages } from "../places/components/PlaceDetailPanel";
+import Markdown from "../components/markdown/Markdown";
 import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
 import usePlaceRating from "../places/hooks/usePlaceRating";
 import useVisitEvidence from '../places/useVisitEvidence';
 import useDetailInterest from '../places/useDetailInterest';
-import { isAvoidedPlace, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace, ratingDisplay, ratingPlaceForViewer } from "../places/rating";
+import { isAvoidedPlace, hasExploreTag, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace, ratingDisplay, ratingPlaceForViewer } from "../places/rating";
 import useDarkMode from "../theme/useDarkMode";
 import { useSearchPanel } from "../discovery/hooks/useSearchPanel";
 import { useExternalSearch } from '../discovery/hooks/useExternalSearch';
@@ -74,6 +75,7 @@ import MapListMode from './MapListMode';
 import useNativePlaceForm from '../places/hooks/useNativePlaceForm';
 import { emptyPlaceContent, placeDraftSource, openPlaceDraft, persistPlaceDraft, discardPlaceDraft } from '../places/addPlaceDraft';
 import { EMPTY_PLACE_FILTER, isPlaceFilterActive } from '../places/placeFilter';
+import { loadPlaceRegions, peekPlaceRegions } from '../places/placeRegions';
 import { describePlaceFilter } from '../places/components/PlaceFilterPanel';
 import { applyFilterSheetRow, filterChromeSheet } from '../places/filterChromeSheet';
 import { loadCategoryDirectory } from '../places/categoryDirectory';
@@ -531,6 +533,14 @@ export default function MapUI(props) {
     // iOS 原生筛选面板（协议 v14）的标签目录与“展开全部”；网页面板自己读目录
     const [filterDirectory, setFilterDirectory] = useState({ list: [], loading: false, error: '' });
     const [filterShowAll, setFilterShowAll] = useState(false);
+    // 原生筛选面板的地区下拉菜单（网页面板自己读）
+    const [filterRegions, setFilterRegions] = useState(() => peekPlaceRegions() || []);
+    useEffect(() => {
+        if (!filterOpen || filterRegions.length) return undefined;
+        let cancelled = false;
+        loadPlaceRegions(backendUrl).then((list) => { if (!cancelled) setFilterRegions(list); }).catch(() => { /* 没有地区菜单，其余筛选照常 */ });
+        return () => { cancelled = true; };
+    }, [filterOpen, backendUrl]);
     useEffect(() => {
         if (!filterOpen || filterDirectory.list.length) return undefined;
         let cancelled = false;
@@ -1006,15 +1016,16 @@ export default function MapUI(props) {
         onSubmit: (values) => {
             if (nativeFormSpec?.mode === 'create') {
                 // 评价必须自己选（上一版原生表单没选时会带上按分类预选的一档，标为 default，这里一并拒绝）
-                if (values.rating == null || values.ratingInputKind === 'default') return { ok: false, message: t('map:addForm.ratingRequired') };
+                // “待探索”的地点还没去过，不评价
+                const exploring = hasExploreTag(values.category);
+                if (!exploring && (values.rating == null || values.ratingInputKind === 'default')) return { ok: false, message: t('map:addForm.ratingRequired') };
                 const payload = {
                     name: values.name,
                     category: values.category,
                     description: values.description,
                     ...(addingPrefill?.address ? { address: addingPrefill.address } : {}),
                     per_person_cost: values.perPersonCost ? parseInt(values.perPersonCost, 10) : null,
-                    rating: values.rating,
-                    rating_input_kind: values.ratingInputKind,
+                    ...(exploring ? {} : { rating: values.rating, rating_input_kind: values.ratingInputKind }),
                     exterior_images: values.exteriorImages,
                     menu_images: values.menuImages,
                     longitude: addingPos[0],
@@ -1200,7 +1211,7 @@ export default function MapUI(props) {
     } else if (openSheetId === 'random') {
         chromeSheet = randomFoodChromeSheet(randomFood, { centerOptions: randomCenterOptions });
     } else if (openSheetId === 'filter') {
-        chromeSheet = filterChromeSheet({ filter: placeFilter, categories: filterDirectory.list, showAll: filterShowAll, loading: filterDirectory.loading, error: filterDirectory.error });
+        chromeSheet = filterChromeSheet({ filter: placeFilter, categories: filterDirectory.list, regions: filterRegions, showAll: filterShowAll, loading: filterDirectory.loading, error: filterDirectory.error });
     } else if (openSheetId === 'exhibition') {
         chromeSheet = exhibitionChromeSheet(exhibition, { iconUrl: exhibitionIconSource(exhibition.icon_url, backendUrl) });
     } else if (openSheetId === 'place') {
@@ -1213,9 +1224,17 @@ export default function MapUI(props) {
         const favorited = !!(favoriteIds && favoriteIds.has(selectedPlace.id));
         // 评价：摘要高度只显示标题行与按钮，所以评价汇总放在副标题最前面；全屏详情里另有一行可点开评价面板
         const ratingTier = tierForAverage(ratingSummary.average);
-        const ratingCompact = !unmarked && ratingSummary.count > 0
-            ? t('map:rating.summary.compact', { tier: tierLabel(ratingTier), average: formatAverage(ratingSummary.average), count: ratingSummary.count })
-            : null;
+        // 副标题：摘要高度只一行“评分 | 人均”（标签多时也不会把人均挤掉）；上滑展开后两行：“评分（人数） | 人均”与标签
+        const rated = !unmarked && ratingSummary.count > 0;
+        const costText = selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null;
+        const tagsText = selectedPlace.category || t('common:label.uncategorized');
+        const subtitleSeparator = t('map:ui.card.subtitleSeparator');
+        const compactLine = [rated ? formatAverage(ratingSummary.average) : null, costText].filter(Boolean).join(subtitleSeparator);
+        const expandedLine = [
+            rated ? t('map:ui.card.ratingWithCount', { average: formatAverage(ratingSummary.average), count: ratingSummary.count }) : null,
+            costText
+        ].filter(Boolean).join(subtitleSeparator);
+        const subtitlePrefix = [moderationShort, ratingRisk ? t('map:rating.riskLabel') : null].filter(Boolean);
         const ratingRow = !unmarked && {
             id: 'rating',
             title: summaryText(ratingSummary),
@@ -1231,7 +1250,9 @@ export default function MapUI(props) {
         chromeSheet = {
             id: 'place',
             title: selectedPlace.name || t('common:label.unnamedPlace'),
-            subtitle: [moderationShort, ratingCompact, ratingRisk ? t('map:rating.riskLabel') : null, selectedPlace.category || t('common:label.uncategorized'), selectedPlace.per_person_cost != null ? t('map:ui.perPersonCost', { per_person_cost: selectedPlace.per_person_cost }) : null].filter(Boolean).join(' · '),
+            // 没有评分也没有人均时摘要只显示标签
+            subtitle: [...subtitlePrefix, compactLine || tagsText].filter(Boolean).join(' · '),
+            subtitleExpanded: [[...subtitlePrefix, expandedLine].filter(Boolean).join(' · '), tagsText].filter(Boolean),
             size: 'card',
             leading: unmarked ? undefined : { id: 'share', title: t('map:ui.share.title'), symbol: sfSymbol('share'), ...nativeIcon('cardActions.share'), keepsOpen: true },
             // 简介支持基础 Markdown：detail 是去掉标记的纯文本（旧版 App 只认它），detailMarkdown 是原生可显示的行内格式
@@ -1952,6 +1973,11 @@ export default function MapUI(props) {
     const [cardMoreOpen, setCardMoreOpen] = useState(false);
     const cardMoreRef = useRef(null);
     useEffect(() => { setCardMoreOpen(false); }, [selectedPlaceKey]);
+    // 窄屏底部小卡：上拉（或点把手）展开，显示完整简介、地址、相关日记与图片；按钮布局不变。换地点时收回
+    const [cardExpanded, setCardExpanded] = useState(false);
+    useEffect(() => { setCardExpanded(false); }, [selectedPlaceKey]);
+    const cardExpandable = !!selectedPlace && selectedPlace.isMarked !== false && !selectedPlace.exhibitionVenue && !pickerMode;
+    const showCardDetails = cardExpandable && cardExpanded;
     const favorited = !!(selectedPlace && favoriteIds && favoriteIds.has(selectedPlace.id));
     const cardMoreEntries = [
         { id: 'details', title: t('map:ui.card.details'), icon: 'info', slot: 'cardActions.details', run: () => { setDetailFocus(null); setDetailOpen(true); } },
@@ -1998,7 +2024,9 @@ export default function MapUI(props) {
                 </div>
             )}
             <div style={{ marginTop: 6, fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.5, wordBreak: 'break-word' }}>
-                {(() => {
+                {inSheet && showCardDetails ? (
+                    <Markdown text={selectedPlace.description} style={{ lineHeight: 1.55 }} />
+                ) : (() => {
                     const { text, hasMore } = getPopupDescriptionPreview(selectedPlace);
                     return (
                         <>
@@ -2006,7 +2034,7 @@ export default function MapUI(props) {
                             {hasMore && !pickerMode && (
                                 <button
                                     type="button"
-                                    onClick={openDetailPanel}
+                                    onClick={inSheet && cardExpandable ? () => setCardExpanded(true) : openDetailPanel}
                                     style={{ marginLeft: 4, padding: 0, border: 0, background: 'transparent', font: 'inherit', color: 'var(--theme-primary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
                                     title={t('map:ui.card.seeMoreTitle')}
                                 >
@@ -2179,6 +2207,7 @@ export default function MapUI(props) {
                     }) : t('map:ui.lastModified', { modifier: lastModifierText(lastModifier) })}
                 </div>
             )}
+            {inSheet && showCardDetails && <PlaceCardDetails place={selectedPlace} backendUrl={backendUrl} />}
         </div>
     );
 
@@ -3176,7 +3205,9 @@ export default function MapUI(props) {
                     showClose={false}
                     kind="place-card"
                     label={selectedPlace ? t('map:ui.placeIntroNamed', { name: selectedPlace.name }) : t('map:ui.placeIntro')}
-                    maxHeight="min(62%, 520px)"
+                    maxHeight={showCardDetails ? 'calc(100% - 24px)' : 'min(62%, 520px)'}
+                    expanded={showCardDetails}
+                    onExpandedChange={cardExpandable ? setCardExpanded : undefined}
                     surfaceClassName="fm-skin-card"
                 >
                     {selectedPlace && renderPlaceCard(true)}

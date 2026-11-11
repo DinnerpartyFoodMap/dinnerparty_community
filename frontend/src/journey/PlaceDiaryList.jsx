@@ -4,6 +4,7 @@ import {peekToken,getTokenUserId} from '../platform/credentialStore';
 import {PublicPhoto,MarkdownText,formatRange} from './shared';
 import './journey.css';
 import { t, tx } from '../i18n/index.js';
+import defaultAvatar from '../img/default.png';
 
 // 地点详情中的「相关日记」：只读取仍公开的日记片段；计数按不同日记计算。
 // 打开整篇日记、记录这家店都交给日记模块（通过窗口事件，不经地图组件层层传递）。
@@ -70,7 +71,7 @@ export default function PlaceDiaryList({place,sectionRef,base=getApiBaseUrl()}) 
         {view.error&&<p className="jw-muted" role="alert">{view.error}</p>}
         {view.items.map(item=><article key={item.public_id} className="jw-diary-card">
             <div className="jw-author">
-                {item.author.has_avatar?<img src={`${base}/users/${encodeURIComponent(item.author.id)}/avatar`} alt="" className="jw-avatar"/>:<span className="jw-avatar jw-avatar--empty" aria-hidden="true">{item.author.username.slice(0,1)}</span>}
+                <img src={item.author.has_avatar?`${base}/users/${encodeURIComponent(item.author.id)}/avatar`:defaultAvatar} alt="" className="jw-avatar" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src=defaultAvatar;}}/>
                 <span>{item.author.username}</span><small className="jw-muted">{item.record_date?formatRange(item.record_date):formatRange(item.start_date,item.end_date)}</small>
             </div>
             <strong>{item.title}</strong>

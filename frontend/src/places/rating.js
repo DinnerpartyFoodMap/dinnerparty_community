@@ -17,6 +17,8 @@ export const FEW_RATINGS = 3;
 // 综合评价落在“均线之下 / 强烈拒绝”时按避雷显示；没人评价时沿用“避雷”标签
 export const AVOID_BELOW_AVERAGE = 2.5;
 export const AVOID_TAG = '避雷';
+// “待探索”：还没去过、先标记的地点。创建时不需要评价；没人评价前地图上显示问号图标（与后端 ratingBusiness.js 一致）
+export const EXPLORE_TAG = '待探索';
 
 export function ratingTierFor(score) {
     return RATING_TIERS.find((tier) => tier.score === score) || null;
@@ -45,6 +47,27 @@ export function formatAverage(average) {
 
 export function hasAvoidTag(category) {
     return (Array.isArray(category)?category:[category]).some(value=>String(value||'').split(/[,，/、|]/).some(tag=>tag.trim()===AVOID_TAG));
+}
+
+function categoryTags(category) {
+    return (Array.isArray(category) ? category : [category]).flatMap((value) => String(value || '').split(/[,，/、|]/)).map((tag) => tag.trim()).filter(Boolean);
+}
+
+export function hasExploreTag(category) {
+    return categoryTags(category).includes(EXPLORE_TAG);
+}
+
+/** 待探索：带“待探索”标签且还没有人评价（有人评价后按普通地点显示） */
+export function isUnexploredPlace(place) {
+    if (!place || place.isMarked === false) return false;
+    return hasExploreTag(place.category) && !(Number(place.rating_count) > 0);
+}
+
+/** 在逗号分隔的标签串里加上 / 去掉一个标签（保持其他标签的顺序） */
+export function toggleCategoryTag(category, tag, on) {
+    const tags = categoryTags(category).filter((item) => item !== tag);
+    if (on) tags.push(tag);
+    return tags.join(', ');
 }
 
 /** 社区“避雷”标签始终保留警示；其他地点按已有评价判断。 */

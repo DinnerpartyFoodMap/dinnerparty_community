@@ -8,7 +8,7 @@ import { useConfirm } from "../../components/feedback/Confirm";
 import ScrollableView from "../../components/layout/ScrollableView";
 import CategorySelector from "./CategorySelector";
 import { t } from "../../i18n/index.js";
-import { RATING_TIERS, tierLabel, tierHint } from "../rating";
+import { RATING_TIERS, tierLabel, tierHint, EXPLORE_TAG, hasExploreTag, toggleCategoryTag } from "../rating";
 import { emptyPlaceContent, placeDraftSource, openPlaceDraft, placeContentKey, persistPlaceDraft, discardPlaceDraft } from "../addPlaceDraft";
 
 export default function AddForm({ backendUrl, token, userId, defaultPos, defaultName = "", defaultCategory = "", defaultDescription = "", defaultAddress = "", onCancel, onSubmit, submitting = false, actionRef = null }) {
@@ -27,6 +27,12 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
     // 创建者的评价：必须自己选一档，不预选
     const [chosenRating, setChosenRating] = useState(opening.content.chosenRating);
     const [ratingMissing, setRatingMissing] = useState(false);
+    // 带“待探索”标签（还没去过）时不需要评价；勾选框与标签选择器改的是同一个分类串
+    const exploring = hasExploreTag(category);
+    const setExploring = (on) => {
+        setCategory((current) => toggleCategoryTag(current, EXPLORE_TAG, on));
+        if (on) { setChosenRating(null); setRatingMissing(false); }
+    };
     const [draftNotice, setDraftNotice] = useState(opening.restored ? 'restored' : opening.pending ? 'pending' : null);
     const [draftSaved, setDraftSaved] = useState(opening.restored);
     const showTip = useTips();
@@ -69,7 +75,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
     const handle = () => {
         if (submitting) return;
         if (!name) { showTip(t('map:addForm.nameRequired')); return; }
-        if (chosenRating == null) { setRatingMissing(true); showTip(t('map:addForm.ratingRequired')); return; }
+        if (!exploring && chosenRating == null) { setRatingMissing(true); showTip(t('map:addForm.ratingRequired')); return; }
         const payload = {
             name,
             category,
@@ -77,8 +83,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
             // 从高德地点收录时带上地址（单独的字段，不再塞进描述）
             ...(defaultAddress ? { address: defaultAddress } : {}),
             per_person_cost: perPersonCost ? parseInt(perPersonCost, 10) : null,
-            rating: chosenRating,
-            rating_input_kind: 'explicit',
+            ...(exploring ? {} : { rating: chosenRating, rating_input_kind: 'explicit' }),
             exterior_images: exteriorImages.filter(Boolean),
             menu_images: menuImages.filter(Boolean),
             longitude: defaultPos[0],
@@ -130,7 +135,14 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                     inputMode="numeric"
                 />
             </div>
-            <div style={{ marginTop: 10 }}>
+            <label style={{ marginTop: 10, display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--color-text-primary)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={exploring} onChange={(event) => setExploring(event.target.checked)} style={{ marginTop: 2 }} />
+                <span>
+                    <span style={{ fontWeight: 700 }}>{t('map:addForm.explore')}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-muted)' }}>{t('map:addForm.exploreHint')}</span>
+                </span>
+            </label>
+            {!exploring && <div style={{ marginTop: 10 }}>
                 <div id="add-place-rating-label" style={{ fontSize: 13, fontWeight: 700, color: ratingMissing ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>{t('map:addForm.ratingLabel')}</div>
                 <div role="radiogroup" aria-labelledby="add-place-rating-label" aria-required="true" aria-invalid={ratingMissing || undefined} aria-describedby={ratingMissing ? 'add-place-rating-error' : undefined}
                     style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
@@ -160,7 +172,7 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                     })}
                 </div>
                 {ratingMissing && <div id="add-place-rating-error" role="alert" style={{ marginTop: 4, fontSize: 12, color: 'var(--color-danger)' }}>{t('map:addForm.ratingRequired')}</div>}
-            </div>
+            </div>}
             <ScrollableView style={{ marginTop: 8, maxHeight: "200px", overflowY: "auto" }}>
                 <PlaceImageInputs backendUrl={backendUrl} token={token} images={exteriorImages} setImages={setExteriorImages} label={t('map:addForm.exteriorImages')} />
                 <PlaceImageInputs backendUrl={backendUrl} token={token} images={menuImages} setImages={setMenuImages} label={t('map:addForm.menuImages')} />

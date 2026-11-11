@@ -9,7 +9,7 @@ import Capacitor
 /// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer, skin, tour }) -> { appliedRevision }
 ///   items: [{ id, title, symbol, image?, imageTemplate?, selected, disabled, busy, badge?, avatarURL?, placement, tone?, opensOverlay }]
 ///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
-///   sheet: null | { id, token, title, subtitle?, message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
+///   sheet: null | { id, token, title, subtitle?, subtitleExpanded?: [string], message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
 ///                   image?: https, paragraphs?: [{ id, title?, text, markdown? }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
 ///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row, focusRow? }
@@ -46,6 +46,8 @@ import Capacitor
 ///   drawer 为真时展开更多功能，target 是其中一行。
 /// - v11：住民的地点列表（userPlaces，list 样式的玻璃面板）：地点卡片点“最近修改”的住民后打开；
 ///   与收藏一样只展示网页下发的行，下滑、点地图或关闭只收起列表（网页保留筛选）。
+/// - v16：地图筛选的地区：分组 style "menu" 画成下拉菜单（Menu，行是选项，tone "accent" 为选中项），点选回传行 id；
+///   地点卡片展开后显示 subtitleExpanded（几行：评分（人数） | 人均，下一行标签），收起时仍是一行 subtitle。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -65,7 +67,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 15
+    static let protocolVersion = 16
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "random", "add", "search", "alongRoute", "account", "locate", "filter", "listView"]
@@ -373,6 +375,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             token: token,
             title: clip(raw["title"], 80) ?? "",
             subtitle: clip(raw["subtitle"], 80),
+            subtitleExpanded: ((raw["subtitleExpanded"] as? JSArray) ?? []).prefix(3).compactMap { clip($0, 120) },
             message: clip(raw["message"], 120),
             messageTone: raw["messageTone"] as? String,
             style: style,
@@ -428,6 +431,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 footer: clip(rawSection["footer"], 120),
                 footnote: (rawSection["style"] as? String) == "footnote",
                 chips: (rawSection["style"] as? String) == "chips",
+                menu: (rawSection["style"] as? String) == "menu",
                 rows: parseRows(rawSection["rows"], budget: &budget),
                 range: (rawSection["style"] as? String) == "range" ? parseRange(rawSection["range"]) : nil
             ))

@@ -83,7 +83,7 @@ function createPlace(userId,stop,link) {
     // The same name at the same position exists only once: link it instead of adding a second marker.
     const samePosition=require('../../places/services/placeService').findSamePositionPlace(name,stop.lat,stop.lng);
     if(samePosition)return {place_id:samePosition.id,created:false};
-    const category=string(stop.category,16).replace(/[<>,，]/g,'');
+    const category=require('../../places/services/categoryMerges').canonicalCategoryName(string(stop.category,16).replace(/[<>,，]/g,''));
     const id=Number(sql.prepare(`INSERT INTO Place(name,description,latitude,longitude,category,creator_id,updated_time,updated_by,address)
         VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP,?,?)`).run(name,'',stop.lat,stop.lng,category,userId,userId,string(stop.address,250)||null).lastInsertRowid);
     // The diary holds the description, so the moderation check skips the brief-description rule for these markers.
