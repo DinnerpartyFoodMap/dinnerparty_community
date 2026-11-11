@@ -55,7 +55,10 @@ async function reverseGeocodeRegions(points, { fetchImpl = fetch } = {}) {
         const response = await fetchImpl(`${AMAP_REST_BASE}/v3/geocode/regeo?${query}`, { signal: controller.signal, redirect: 'error' });
         const data = await response.json().catch(() => null);
         if (!response.ok || !data || String(data.status) !== '1') {
-            throw new Error(`高德逆地理编码失败：${data && (data.info || data.infocode) || response.status}`);
+            const error = new Error(`高德逆地理编码失败：${data && (data.info || data.infocode) || response.status}`);
+            error.info = data && data.info ? String(data.info) : null;
+            error.location = location.slice(0, 200);
+            throw error;
         }
         const list = Array.isArray(data.regeocodes) ? data.regeocodes : (data.regeocode ? [data.regeocode] : []);
         return points.map((_, index) => regionFromComponent(list[index] && list[index].addressComponent));
@@ -97,13 +100,50 @@ function saveRegions(places, regions, sql = db._raw) {
     treeCache = null;
 }
 
-/** 补一批：返回 { checked, remaining }（remaining 只是“这批取满了，可能还有”） */
+const PER_POINT_DELAY_MS = 150;
+const isParamError = (error) => !!error && error.info === 'INVALID_PARAMS';
+
+/**
+ * 高德整批拒绝（INVALID_PARAMS：其中某个坐标它不接受）时逐个重查：被拒绝的点记为没有省市区（不再反复重查），
+ * 并在 rejected 里返回，方便核对这些地点的坐标。每个点单独查也全被拒绝时不是数据问题（key / 参数格式），照常抛错、不记录。
+ */
+async function regionsOneByOne(places, options) {
+    const regions = [];
+    const rejected = [];
+    for (const [index, place] of places.entries()) {
+        if (index) await new Promise((resolve) => setTimeout(resolve, PER_POINT_DELAY_MS));
+        try {
+            regions.push((await reverseGeocodeRegions([place], options))[0]);
+        } catch (error) {
+            if (!isParamError(error)) throw error;
+            regions.push(null);
+            rejected.push({ id: place.id, lat: place.lat, lng: place.lng });
+        }
+    }
+    if (rejected.length === places.length) {
+        const error = new Error(`高德逆地理编码失败：INVALID_PARAMS（这一批 ${places.length} 个地点单独查询也全部被拒绝，请检查 AMAP_WEB_SERVICE_KEY 是否为 Web 服务 key；示例坐标 ${places[0].lng},${places[0].lat}）`);
+        error.info = 'INVALID_PARAMS';
+        throw error;
+    }
+    return { regions, rejected };
+}
+
+/** 补一批：返回 { checked, more, rejected }（more 只是“这批取满了，可能还有”；rejected 为高德不接受坐标的地点） */
 async function refreshPendingBatch({ limit = BATCH_SIZE, sql = db._raw, fetchImpl } = {}) {
     const places = pendingPlaces(limit, sql);
-    if (!places.length) return { checked: 0, more: false };
-    const regions = await reverseGeocodeRegions(places, fetchImpl ? { fetchImpl } : undefined);
+    if (!places.length) return { checked: 0, more: false, rejected: [] };
+    const options = fetchImpl ? { fetchImpl } : undefined;
+    let regions;
+    let rejected = [];
+    try {
+        regions = await reverseGeocodeRegions(places, options);
+    } catch (error) {
+        if (!isParamError(error)) throw error;
+        ({ regions, rejected } = await regionsOneByOne(places, options));
+    }
     saveRegions(places, regions, sql);
-    return { checked: places.length, more: places.length >= limit };
+    if (rejected.length) console.warn(`Place region lookup: AMap rejected ${rejected.length} place(s): ${rejected.map((p) => `#${p.id} (${p.lng},${p.lat})`).join(', ')}`);
+    return { checked: places.length, more: places.length >= limit, rejected };
 }
 
 let worker = null;
