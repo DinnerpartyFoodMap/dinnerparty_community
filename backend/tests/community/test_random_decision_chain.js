@@ -44,14 +44,39 @@ async function main(){
  const savedContexts=sql.prepare('SELECT context FROM MapInteractionContext WHERE event_id=?');
  assert.deepEqual(JSON.parse(savedContexts.get(mapClick.id)?.context??'null'),{viewport});
  for(const e of [...mapEvents.slice(1),selectedEvent])assert.equal(savedContexts.get(e.id),undefined);
+ // Marker mode and filter travel with the viewport; an invalid mode or filter keeps only the viewport.
+ const mapFilter={tags:['火锅'],excludeTags:['避雷'],minCost:null,maxCost:80,province:'广东省',city:'广州市',district:null};
+ const modeEvents=[
+     {...mapClick,id:'mode_filter_click_event',viewport,map_mode:'nearby',map_filter:{...mapFilter,extra:'discard'}},
+     {...mapClick,id:'mode_search_click_event',viewport,map_mode:'search',map_filter:null},
+     {...mapClick,id:'mode_inactive_filter_click_event',viewport,map_mode:'nearby',map_filter:{tags:[],excludeTags:[],minCost:null,maxCost:null,province:null,city:null,district:null}},
+     {...mapClick,id:'mode_unknown_click_event',viewport,map_mode:'satellite',map_filter:null},
+     {...mapClick,id:'mode_bad_filter_click_event',viewport,map_mode:'nearby',map_filter:{...mapFilter,maxCost:-1}},
+     {...mapClick,id:'mode_orphan_city_click_event',viewport,map_mode:'nearby',map_filter:{...mapFilter,province:null}},
+     {...mapClick,id:'mode_without_viewport_click_event',map_mode:'nearby',map_filter:null}
+ ];
+ assert.equal((await call('/feedback',{consent_version:0,events:modeEvents})).data.accepted,modeEvents.length);
+ const savedContext=id=>JSON.parse(savedContexts.get(id)?.context??'null');
+ assert.deepEqual(savedContext('mode_filter_click_event'),{viewport,map_mode:'nearby',map_filter:mapFilter});
+ assert.deepEqual(savedContext('mode_search_click_event'),{viewport,map_mode:'search',map_filter:null});
+ assert.deepEqual(savedContext('mode_inactive_filter_click_event'),{viewport,map_mode:'nearby',map_filter:null});
+ for(const id of ['mode_unknown_click_event','mode_bad_filter_click_event','mode_orphan_city_click_event'])assert.deepEqual(savedContext(id),{viewport});
+ assert.equal(savedContext('mode_without_viewport_click_event'),null);
  const rows=require('../../modules/community/services/feedbackDataset').buildDataset(sql,{secret:'s'.repeat(32),localDataAllowed:true});
  const exported=rows.find(row=>row.event_id===selectedEvent.id);assert.ok(exported);assert.equal(exported.draw_index,0);assert.equal(exported.decision_surface,'random');assert.equal(exported.parent_decision_id,null);assert.deepEqual(exported.model_version,snapshot.model_version??null);assert.deepEqual(exported.feature_snapshot,snapshot.feature_snapshot??null);assert.ok(exported.recommendation_session_id);
  assert.deepEqual(rows.find(row=>row.event_id===mapClick.id)?.viewport,viewport);
+ const datasetModeRow=rows.find(row=>row.event_id==='mode_filter_click_event');
+ assert.equal(datasetModeRow?.map_mode,'nearby');assert.deepEqual(datasetModeRow?.map_filter,mapFilter);
  process.env.RATING_EVIDENCE_ROOT=path.join(temp,'datasets');
  process.env.RATING_EVIDENCE_EXPORT_ENABLED='true';
  const bundle=require('../../modules/ratings/services/ratingResearchBundles').exportBundle({apply:true,secret:'s'.repeat(32)});
  const payload=JSON.parse(fs.readFileSync(path.join(process.env.RATING_EVIDENCE_ROOT,`${bundle.id}.json`),'utf8'));
- assert.deepEqual(payload.events.find(e=>e.event_id===mapClick.id)?.viewport,viewport);
- console.log('Random chain attribution and map click viewport storage and exports passed');
+ const bundleClick=payload.events.find(e=>e.event_id===mapClick.id);
+ assert.deepEqual(bundleClick?.viewport,viewport);
+ assert.equal('map_mode' in bundleClick,false,'clicks stored before the mode was recorded have no mode');
+ const bundleModeClick=payload.events.find(e=>e.event_id==='mode_filter_click_event');
+ assert.equal(bundleModeClick?.map_mode,'nearby');assert.deepEqual(bundleModeClick?.map_filter,mapFilter);
+ assert.deepEqual(payload.events.find(e=>e.event_id==='mode_search_click_event')?.map_filter,null);
+ console.log('Random chain attribution and map click viewport, mode and filter storage and exports passed');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{if(server){server.closeAllConnections();await new Promise(r=>server.close(r));}db._raw.close();fs.rmSync(temp,{recursive:true,force:true});});

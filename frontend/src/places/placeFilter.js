@@ -84,6 +84,12 @@ export function cyclePlaceFilterTag(filter, tag) {
     return normalizePlaceFilter({ ...value, tags, excludeTags });
 }
 
+/** 交互记录用的筛选快照：规整后的筛选，没有生效的条件时为 null（后端 community.js mapClickFilter 按同样规则校验） */
+export function placeFilterSnapshot(filter) {
+    const value = normalizePlaceFilter(filter);
+    return isPlaceFilterActive(value) ? value : null;
+}
+
 export function placeFilterKey(filter) {
     const value = normalizePlaceFilter(filter);
     return JSON.stringify([[...value.tags].sort(), [...value.excludeTags].sort(), value.minCost, value.maxCost, value.province, value.city, value.district]);

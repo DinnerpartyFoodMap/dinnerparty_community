@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import * as MapUtils from "./utils";
 import * as Api from "../api/client";
-import { EMPTY_PLACE_FILTER, matchesPlaceFilter, placeFilterFromAi } from "../places/placeFilter";
+import { EMPTY_PLACE_FILTER, matchesPlaceFilter, placeFilterFromAi, placeFilterSnapshot } from "../places/placeFilter";
 import { loadPlaceRegions, regionBounds } from "../places/placeRegions";
 import { MarkerLayerController } from "./MarkerLayerController";
 import { installPinchGuard } from "./pinchGuard";
@@ -1062,7 +1062,10 @@ export default function MapView({
         const currentFeedback = feedbackRef.current;
         if (currentFeedback.consent?.feedback) {
             const viewport = readMapViewport(mapRef.current);
-            currentFeedback.record('click', 'map', place.id, viewport ? { viewport } : undefined);
+            // 标记模式和筛选决定地图上实际有哪些店；只凭视口还原候选时要靠它们排除搜索、沿途、住民筛选和筛选中的点击
+            currentFeedback.record('click', 'map', place.id, viewport
+                ? { viewport, map_mode: markerQueryMode, map_filter: placeFilterSnapshot(placeFilter) }
+                : undefined);
         }
         showPopup(place);
     };

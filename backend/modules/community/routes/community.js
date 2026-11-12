@@ -68,6 +68,37 @@ function mapClickViewport(viewport){
     if(zoom < 0||zoom > 30) return null;
     return {minLng,minLat,maxLng,maxLat,zoom};
 }
+// Which marker set was on the map when the place was clicked (frontend MapView markerQueryMode).
+const mapClickModes=new Set(['nearby','search','along','user']);
+const filterText=value=>typeof value==='string'&&value.trim()&&value.trim().length<=80?value.trim():null;
+const filterTags=value=>{
+    if(!Array.isArray(value)||value.length>20)return undefined;
+    const tags=value.map(filterText);
+    return tags.every(Boolean)?[...new Set(tags)]:undefined;
+};
+const filterCost=value=>value==null?null:Number.isSafeInteger(value)&&value>=0&&value<=100000?value:undefined;
+const filterRegion=value=>value==null?null:filterText(value)??undefined;
+// Mirrors frontend places/placeFilter.js normalizePlaceFilter; null = no filter. undefined = invalid.
+function mapClickFilter(raw){
+    if(raw==null)return null;
+    if(typeof raw!=='object'||Array.isArray(raw))return undefined;
+    const value={tags:filterTags(raw.tags??[]),excludeTags:filterTags(raw.excludeTags??[]),
+        minCost:filterCost(raw.minCost),maxCost:filterCost(raw.maxCost),
+        province:filterRegion(raw.province),city:filterRegion(raw.city),district:filterRegion(raw.district)};
+    if(Object.values(value).includes(undefined))return undefined;
+    if(!value.province&&value.city||!value.city&&value.district)return undefined;
+    const active=value.tags.length||value.excludeTags.length||value.minCost!=null||value.maxCost!=null||value.province;
+    return active?value:null;
+}
+function mapClickContext(e){
+    const viewport=mapClickViewport(e.viewport);
+    if(!viewport)return null;
+    const context={viewport};
+    const filter=mapClickFilter(e.map_filter);
+    // Mode and filter are kept only together, so a stored mode always means a known filter state.
+    if(mapClickModes.has(e.map_mode)&&filter!==undefined){context.map_mode=e.map_mode;context.map_filter=filter;}
+    return context;
+}
 router.post('/observations',run((req,res)=>{
     const c=consent(req.user.id);
     if(!c.feedback||req.body.consent_version!==c.version) {res.json({id:null});return;}
@@ -162,8 +193,7 @@ router.post('/feedback',run((req,res)=>{
                     impression_id:string(e.impression_id,80),
                     impression_status:['threshold_met','clicked_before_threshold'].includes(e.impression_status)?e.impression_status:null};
             }else if(e.kind==='click'&&e.surface==='map'&&placeId){
-                const viewport=mapClickViewport(e.viewport);
-                if(viewport)context={viewport};
+                context=mapClickContext(e);
             }
             if(context)sql.prepare('INSERT INTO MapInteractionContext(event_id,context) VALUES(?,?)').run(e.id,JSON.stringify(context));
         }

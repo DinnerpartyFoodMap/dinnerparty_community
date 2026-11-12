@@ -41,11 +41,15 @@ function exportBundle({apply=false,secret=process.env.FEEDBACK_EXPORT_SECRET,out
     const key=id=>createHmac('sha256',secret).update(id).digest('hex').slice(0,32);
     const raw=db._raw.transaction(()=>{
         const data=evidence.buildRatingEvidence({purpose:'research',asOfMs:now}),cutoff=data.manifest.from_ms;
-        const clickViewport=db._raw.prepare("SELECT json_extract(context,'$.viewport') AS viewport FROM MapInteractionContext WHERE event_id=?");
+        const clickContext=db._raw.prepare('SELECT context FROM MapInteractionContext WHERE event_id=?');
         for(const event of data.events){
             if(event.source_table!=='MapInteraction'||event.surface!=='map'||event.event_type!=='click')continue;
-            const viewport=clickViewport.get(event.event_id)?.viewport;
-            if(viewport)event.viewport=JSON.parse(viewport);
+            const raw=clickContext.get(event.event_id)?.context;
+            const context=raw?JSON.parse(raw):null;
+            if(!context?.viewport)continue;
+            event.viewport=context.viewport;
+            // Clicks stored before the mode was recorded have no map_mode: their marker set is unknown.
+            if(context.map_mode){event.map_mode=context.map_mode;event.map_filter=context.map_filter??null;}
         }
         const eligible=(user,ref,at)=>evidence.hasResearchBasis(user,ref,now)&&at<=now&&expiry(at,ref)>now;
         const ratings=db._raw.prepare('SELECT * FROM RatingRevision WHERE available_at_ms>=? AND available_at_ms<=? ORDER BY available_at_ms,rowid').all(cutoff,now).filter(r=>eligible(r.user_id,r.research_consent_id,r.available_at_ms));

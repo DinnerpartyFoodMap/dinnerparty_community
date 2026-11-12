@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {
     COST_SLIDER, EMPTY_PLACE_FILTER, RADIUS_OPTIONS_KM, cyclePlaceFilterTag, isPlaceFilterActive, matchesPlaceFilter, normalizePlaceFilter,
-    placeFilterFromAi, placeFilterKey, placeFilterQuery, placeFilterTagState, placeListQuery, setPlaceFilterRegion, placeFilterRegionText
+    placeFilterFromAi, placeFilterKey, placeFilterQuery, placeFilterSnapshot, placeFilterTagState, placeListQuery, setPlaceFilterRegion, placeFilterRegionText
 } from '../../../src/places/placeFilter.js';
 import { regionBounds, regionPath } from '../../../src/places/placeRegions.js';
 import { needsUpdate } from '../../../src/platform/appUpdate.js';
@@ -17,6 +17,12 @@ assert.equal(isPlaceFilterActive({ tags: [], minCost: null, maxCost: 40 }), true
 assert.equal(placeFilterKey({ tags: ['b', 'a'] }), placeFilterKey({ tags: ['a', 'b'] }), 'tag order does not matter');
 assert.notEqual(placeFilterKey({ tags: ['a'] }), placeFilterKey({ excludeTags: ['a'] }));
 assert.equal(isPlaceFilterActive(normalizePlaceFilter({ excludeTags: ['避雷'] })), true);
+
+// 交互记录的筛选快照：没生效时为 null，生效时为规整后的完整筛选（后端 mapClickFilter 按同样字段校验）
+assert.equal(placeFilterSnapshot(EMPTY_PLACE_FILTER), null);
+assert.equal(placeFilterSnapshot({ minCost: COST_SLIDER.min, maxCost: COST_SLIDER.max, city: '广州市' }), null, 'a city without a province is no filter');
+assert.deepEqual(placeFilterSnapshot({ tags: ['火锅'], maxCost: 80, province: '广东省', city: '广州市' }),
+    { tags: ['火锅'], excludeTags: [], minCost: null, maxCost: 80, province: '广东省', city: '广州市', district: null });
 
 // 点标签：未选 → 包含（绿）→ 排除（红）→ 未选
 let cycled = cyclePlaceFilterTag(EMPTY_PLACE_FILTER, '快餐');
