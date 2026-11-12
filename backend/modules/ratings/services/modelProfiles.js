@@ -9,6 +9,55 @@ const {markdownToPlainText}=require('../../places/services/markdownText');
 const SCHEMA_VERSION=1;
 const EXTRACTION_FORMAT_VERSION=3;
 const initializedDatabases=new WeakSet();
+// The two 1024-dim embeddings live in their own BLOB columns as little-endian
+// float32 (4 KB a vector), not as JSON numbers inside assets (~21 KB a vector).
+// Encoder output is already float32, so the stored values are exact. Readers get
+// Float32Array; the rest of assets stays JSON.
+const VECTOR_COLUMNS=['description_embedding','review_embedding'];
+const littleEndian=require('node:os').endianness()==='LE';
+function encodeVector(value){
+ if(value==null)return null;
+ const vector=Float32Array.from(value);
+ if(!vector.length||!vector.every(Number.isFinite))throw Error('Malformed model embedding');
+ if(littleEndian)return Buffer.from(vector.buffer);
+ const blob=Buffer.alloc(vector.length*4);vector.forEach((x,k)=>blob.writeFloatLE(x,k*4));return blob;
+}
+function decodeVector(blob){
+ if(!Buffer.isBuffer(blob)||!blob.length||blob.length%4)return null;
+ const vector=new Float32Array(blob.length/4);
+ if(littleEndian)new Uint8Array(vector.buffer).set(blob);else for(let k=0;k<vector.length;k++)vector[k]=blob.readFloatLE(k*4);
+ return vector;
+}
+function packAssets(assets){const {description_embedding,review_embedding,...rest}=assets;return [JSON.stringify(rest),encodeVector(description_embedding),encodeVector(review_embedding)];}
+function unpackAssets(row){const assets=JSON.parse(row.assets);for(const column of VECTOR_COLUMNS)assets[column]=decodeVector(row[column]);return assets;}
+// Rows written before the BLOB columns kept both vectors inside assets. Move them
+// once at startup; a JSON key present in assets is newer than the columns (an
+// older build wrote it), so it always wins. Invalid vectors become missing and
+// the worker re-encodes them.
+function migrateJsonVectors(database){
+ const ids=database.prepare(`SELECT rowid FROM PlaceModelProfile WHERE instr(assets,'_embedding":')>0`).pluck().all();
+ if(!ids.length)return 0;
+ const read=database.prepare('SELECT assets FROM PlaceModelProfile WHERE rowid=?').pluck(),write=database.prepare('UPDATE PlaceModelProfile SET assets=?,description_embedding=?,review_embedding=? WHERE rowid=?');
+ let moved=0;
+ database.transaction(()=>{for(const id of ids){
+  let assets;try{assets=JSON.parse(read.get(id));}catch{continue;}
+  if(!assets||typeof assets!=='object'||Array.isArray(assets))continue;
+  const blobs=VECTOR_COLUMNS.map(column=>{const value=assets[column];delete assets[column];try{return Array.isArray(value)?encodeVector(value):null;}catch{return null;}});
+  write.run(JSON.stringify(assets),...blobs,id);moved++;
+ }})();
+ return moved;
+}
+// Freed pages stay inside the file until VACUUM. Run it once after the move
+// when at least a quarter of the file is free; failure only leaves the space for
+// SQLite to reuse.
+function reclaimFreePages(database,moved){
+ const pages=database.pragma('page_count',{simple:true}),free=database.pragma('freelist_count',{simple:true});
+ const fields={event:'ratings.profile.vectors_migrated',rows:moved,free_mb:Math.round(free*database.pragma('page_size',{simple:true})/1048576)};
+ if(database.inTransaction||database.memory||free<pages/4){logger.info('Moved model profile embeddings to float32 columns',fields);return;}
+ const started=Date.now();
+ try{database.exec('VACUUM');database.pragma('wal_checkpoint(TRUNCATE)');logger.info('Moved model profile embeddings to float32 columns and vacuumed the database',{...fields,vacuum_ms:Date.now()-started});}
+ catch(error){logger.warn('Database VACUUM after the embedding move failed; free pages will be reused',{...fields,error});}
+}
 function profileTimeoutMs(){const n=Number(process.env.MODEL_PROFILE_TIMEOUT_MS);return Number.isSafeInteger(n)&&n>0&&n<=180000?n:60000;}
 const failureCodes=new Map([
  ['Invalid restaurant profile contract','profile_contract_invalid'],['Malformed restaurant profile','profile_values_invalid'],
@@ -51,7 +100,9 @@ function initModelProfileSchema(database=db._raw){
  status TEXT NOT NULL, assets TEXT, attempts INTEGER NOT NULL DEFAULT 0,
  retry_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL,
  PRIMARY KEY(place_id,model_hash));`);
- if(!database.prepare('PRAGMA table_info(PlaceModelProfile)').all().some(c=>c.name==='extraction_version'))database.exec('ALTER TABLE PlaceModelProfile ADD COLUMN extraction_version INTEGER NOT NULL DEFAULT 0');
+ const columns=new Set(database.prepare('PRAGMA table_info(PlaceModelProfile)').all().map(c=>c.name));
+ if(!columns.has('extraction_version'))database.exec('ALTER TABLE PlaceModelProfile ADD COLUMN extraction_version INTEGER NOT NULL DEFAULT 0');
+ for(const column of VECTOR_COLUMNS)if(!columns.has(column))database.exec(`ALTER TABLE PlaceModelProfile ADD COLUMN ${column} BLOB`);
  for(const action of ['INSERT','UPDATE','DELETE'])database.exec(`CREATE TRIGGER IF NOT EXISTS model_profile_clock_Comment_${action} AFTER ${action} ON Comment BEGIN UPDATE AlgorithmClock SET revision=revision+1 WHERE id=1; END;`);
  // Retry bookkeeping cannot change any score. Invalidate only when readable
  // model inputs change, not every failed HTTP request or retry_at update.
@@ -59,17 +110,30 @@ function initModelProfileSchema(database=db._raw){
  database.exec(`CREATE TRIGGER model_profile_clock_PlaceModelProfile_INSERT AFTER INSERT ON PlaceModelProfile WHEN NEW.status='ready' BEGIN UPDATE AlgorithmClock SET revision=revision+1 WHERE id=1; END;
  CREATE TRIGGER model_profile_clock_PlaceModelProfile_DELETE AFTER DELETE ON PlaceModelProfile WHEN OLD.status='ready' BEGIN UPDATE AlgorithmClock SET revision=revision+1 WHERE id=1; END;
  CREATE TRIGGER model_profile_clock_PlaceModelProfile_UPDATE AFTER UPDATE ON PlaceModelProfile
- WHEN (OLD.status='ready' OR NEW.status='ready') AND (OLD.status IS NOT NEW.status OR OLD.assets IS NOT NEW.assets OR OLD.input_hash IS NOT NEW.input_hash OR OLD.schema_version IS NOT NEW.schema_version OR OLD.model_hash IS NOT NEW.model_hash OR OLD.place_id IS NOT NEW.place_id)
+ WHEN (OLD.status='ready' OR NEW.status='ready') AND (OLD.status IS NOT NEW.status OR OLD.assets IS NOT NEW.assets OR OLD.description_embedding IS NOT NEW.description_embedding OR OLD.review_embedding IS NOT NEW.review_embedding OR OLD.input_hash IS NOT NEW.input_hash OR OLD.schema_version IS NOT NEW.schema_version OR OLD.model_hash IS NOT NEW.model_hash OR OLD.place_id IS NOT NEW.place_id)
  BEGIN UPDATE AlgorithmClock SET revision=revision+1 WHERE id=1; END;`);
- })();initializedDatabases.add(database);
+ })();
+ const moved=migrateJsonVectors(database);if(moved)reclaimFreePages(database,moved);
+ initializedDatabases.add(database);
 }
-function inputFor(placeId,database=db._raw){
- const place=database.prepare("SELECT id,name,category,description,per_person_cost FROM Place WHERE id=? AND moderation_status='visible'").get(placeId);
- if(!place)return null;
- const now=Date.now(),comments=database.prepare(`SELECT c.id,CASE WHEN c.place_revision_id IS NULL THEN c.content ELSE e.evidence_text END AS content,c.time FROM Comment c JOIN User u ON u.id=c.user_id LEFT JOIN RatingTextEvidence e ON e.comment_id=c.id
+// inputFor runs once per place on every feature-graph rebuild and worker pass;
+// prepare its statements once per connection.
+const inputStatements=new WeakMap();
+function inputQueries(database){
+ let queries=inputStatements.get(database);
+ if(!queries){queries={
+  place:database.prepare("SELECT id,name,category,description,per_person_cost FROM Place WHERE id=? AND moderation_status='visible'"),
+  comments:database.prepare(`SELECT c.id,CASE WHEN c.place_revision_id IS NULL THEN c.content ELSE e.evidence_text END AS content,c.time FROM Comment c JOIN User u ON u.id=c.user_id LEFT JOIN RatingTextEvidence e ON e.comment_id=c.id
  WHERE c.place_id=? AND COALESCE(u.is_banned,0)=0 AND julianday(c.time)<=julianday('now') AND
  ((c.place_revision_id IS NULL AND length(trim(c.content))>=20) OR (c.place_revision_id IS NOT NULL AND e.expires_at_ms>? AND e.available_at_ms<=? AND length(trim(e.evidence_text))>0 AND EXISTS(SELECT 1 FROM PlaceRating r JOIN RatingStream s ON s.user_id=r.user_id AND s.place_id=r.place_id WHERE r.user_id=e.user_id AND r.place_id=e.place_id AND s.revision=e.rating_revision)))
- ORDER BY length(content) DESC,c.id ASC LIMIT 30`).all(placeId,now,now)
+ ORDER BY length(content) DESC,c.id ASC LIMIT 30`)
+ };inputStatements.set(database,queries);}
+ return queries;
+}
+function inputFor(placeId,database=db._raw){
+ const queries=inputQueries(database),place=queries.place.get(placeId);
+ if(!place)return null;
+ const now=Date.now(),comments=queries.comments.all(placeId,now,now)
  .map(c=>({...c,content:clip(markdownToPlainText(c.content).trim(),300)})).filter(c=>c.content.length>0)
  .sort((a,b)=>String(a.time).localeCompare(String(b.time))||a.id-b.id);
  return {place:{...place,description:clip(markdownToPlainText(place.description||''),400)},reviews:comments};
@@ -118,7 +182,7 @@ async function syncProfile(placeId,model,contract,{database=db._raw,complete=ai.
  const input=inputFor(placeId,database);if(!input){database.prepare('DELETE FROM PlaceModelProfile WHERE place_id=?').run(placeId);return {status:'deleted'};}
  const hash=inputHash(input),schema=profileSchema(contract);
  const prior=database.prepare('SELECT * FROM PlaceModelProfile WHERE place_id=? AND model_hash=?').get(placeId,model.model_hash);
- let saved=null;try{if(prior?.input_hash===hash&&prior.status==='ready')saved=JSON.parse(prior.assets);}catch{}
+ let saved=null;try{if(prior?.input_hash===hash&&prior.status==='ready')saved=unpackAssets(prior);}catch{}
  if(saved&&(!needsEmbedding(saved,contract)||!require('./modelEmbeddings').configuration()))return {status:'unchanged'};
  const args=prompt(input,schema);
  let stage='profile_request',assets=saved;
@@ -146,7 +210,9 @@ async function syncProfile(placeId,model,contract,{database=db._raw,complete=ai.
     if(!contract.encoders?.[kind]||kind==='review'&&!input.reviews.length||assets[kind+'_embedding'])continue;
     stage=kind+'_embedding';const value=await encode(kind,input,contract.encoders[kind],assets);
     if(value!==null&&(!Array.isArray(value)||value.length!==contract.encoders[kind].dimensions||value.some(x=>!Number.isFinite(x))))throw Error('Malformed model embedding');
-    assets[kind+'_embedding']=value;
+    // Project exactly the float32 values that are stored (a review mean is not
+    // float32 until rounded), so a later re-projection gives the same features.
+    assets[kind+'_embedding']=value===null?null:Float32Array.from(value);
    }
   }
   stage='projection';
@@ -156,8 +222,8 @@ async function syncProfile(placeId,model,contract,{database=db._raw,complete=ai.
   assets.risk_description_projected=project(assets.description_embedding,contract.transforms?.risk_description);
   const current=inputFor(placeId,database);if(!current||inputHash(current)!==hash)return {status:'stale'};
   stage='persist';
-  database.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,assets,attempts,retry_at,updated_at,extraction_version)
-   VALUES(?,?,?,?,'ready',?,0,0,?,?) ON CONFLICT(place_id,model_hash) DO UPDATE SET input_hash=excluded.input_hash,schema_version=excluded.schema_version,status='ready',assets=excluded.assets,attempts=0,retry_at=0,updated_at=excluded.updated_at,extraction_version=excluded.extraction_version`).run(placeId,model.model_hash,hash,SCHEMA_VERSION,JSON.stringify(assets),now,EXTRACTION_FORMAT_VERSION);
+  database.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,assets,description_embedding,review_embedding,attempts,retry_at,updated_at,extraction_version)
+   VALUES(?,?,?,?,'ready',?,?,?,0,0,?,?) ON CONFLICT(place_id,model_hash) DO UPDATE SET input_hash=excluded.input_hash,schema_version=excluded.schema_version,status='ready',assets=excluded.assets,description_embedding=excluded.description_embedding,review_embedding=excluded.review_embedding,attempts=0,retry_at=0,updated_at=excluded.updated_at,extraction_version=excluded.extraction_version`).run(placeId,model.model_hash,hash,SCHEMA_VERSION,...packAssets(assets),now,EXTRACTION_FORMAT_VERSION);
   return {status:'ready'};
  }catch(error){
   if(!(error instanceof Error))error=new Error('Profile operation failed');
@@ -167,30 +233,32 @@ async function syncProfile(placeId,model,contract,{database=db._raw,complete=ai.
   // Preserve validated LLM output and any completed embedding on a transient
   // encoder failure. The next attempt only fetches still-missing embeddings.
   if(assets&&stage.endsWith('_embedding')&&current&&inputHash(current)===hash){
-   database.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,assets,attempts,retry_at,updated_at,extraction_version)
-    VALUES(?,?,?,?,'ready',?,?,?,?,?) ON CONFLICT(place_id,model_hash) DO UPDATE SET input_hash=excluded.input_hash,schema_version=excluded.schema_version,status='ready',assets=excluded.assets,attempts=excluded.attempts,retry_at=excluded.retry_at,updated_at=excluded.updated_at,extraction_version=excluded.extraction_version`).run(placeId,model.model_hash,hash,SCHEMA_VERSION,JSON.stringify(assets),attempts,retryAt,now,EXTRACTION_FORMAT_VERSION);
+   database.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,assets,description_embedding,review_embedding,attempts,retry_at,updated_at,extraction_version)
+    VALUES(?,?,?,?,'ready',?,?,?,?,?,?,?) ON CONFLICT(place_id,model_hash) DO UPDATE SET input_hash=excluded.input_hash,schema_version=excluded.schema_version,status='ready',assets=excluded.assets,description_embedding=excluded.description_embedding,review_embedding=excluded.review_embedding,attempts=excluded.attempts,retry_at=excluded.retry_at,updated_at=excluded.updated_at,extraction_version=excluded.extraction_version`).run(placeId,model.model_hash,hash,SCHEMA_VERSION,...packAssets(assets),attempts,retryAt,now,EXTRACTION_FORMAT_VERSION);
    throw error;
   }
   if(saved&&current&&inputHash(current)===hash){database.prepare('UPDATE PlaceModelProfile SET attempts=?,retry_at=? WHERE place_id=? AND model_hash=?').run(attempts,retryAt,placeId,model.model_hash);throw error;}
   if(current&&inputHash(current)===hash)database.prepare(`INSERT INTO PlaceModelProfile(place_id,model_hash,input_hash,schema_version,status,assets,attempts,retry_at,updated_at,extraction_version)
-   VALUES(?,?,?,?,'failed',NULL,?,?,?,?) ON CONFLICT(place_id,model_hash) DO UPDATE SET input_hash=excluded.input_hash,status='failed',assets=NULL,attempts=excluded.attempts,retry_at=excluded.retry_at,updated_at=excluded.updated_at,extraction_version=excluded.extraction_version`).run(placeId,model.model_hash,hash,SCHEMA_VERSION,attempts,retryAt,now,EXTRACTION_FORMAT_VERSION);
+   VALUES(?,?,?,?,'failed',NULL,?,?,?,?) ON CONFLICT(place_id,model_hash) DO UPDATE SET input_hash=excluded.input_hash,status='failed',assets=NULL,description_embedding=NULL,review_embedding=NULL,attempts=excluded.attempts,retry_at=excluded.retry_at,updated_at=excluded.updated_at,extraction_version=excluded.extraction_version`).run(placeId,model.model_hash,hash,SCHEMA_VERSION,attempts,retryAt,now,EXTRACTION_FORMAT_VERSION);
   throw error;
  }
 }
 function readProfiles(places,model,database=db._raw){
- initModelProfileSchema(database);const result=new Map(),select=database.prepare("SELECT * FROM PlaceModelProfile WHERE place_id=? AND model_hash=? AND status='ready'");
- for(const place of places){const row=select.get(place.id,model.model_hash);if(!row)continue;const input=inputFor(place.id,database);if(!input||row.input_hash!==inputHash(input)||row.schema_version!==SCHEMA_VERSION)continue;try{result.set(place.id,JSON.parse(row.assets));}catch{}}
+ initModelProfileSchema(database);const result=new Map(),select=database.prepare("SELECT input_hash,schema_version,assets,description_embedding,review_embedding FROM PlaceModelProfile WHERE place_id=? AND model_hash=? AND status='ready'");
+ for(const place of places){const row=select.get(place.id,model.model_hash);if(!row)continue;const input=inputFor(place.id,database);if(!input||row.input_hash!==inputHash(input)||row.schema_version!==SCHEMA_VERSION)continue;try{result.set(place.id,unpackAssets(row));}catch{}}
  return result;
 }
 let cursor=0;
 async function processProfiles(model,contract,{database=db._raw,limit=10,now=Date.now(),enabled=null,...adapters}={}){
  initModelProfileSchema(database);const places=database.prepare("SELECT id FROM Place WHERE moderation_status='visible' ORDER BY (id>?) DESC,id ASC").all(cursor);let attempted=0;
+ // Only presence of each vector matters here; never load the BLOBs.
+ const select=database.prepare('SELECT input_hash,status,retry_at,extraction_version,assets,description_embedding IS NOT NULL AS has_description,review_embedding IS NOT NULL AS has_review FROM PlaceModelProfile WHERE place_id=? AND model_hash=?');
  for(const p of places){
   if(enabled&&!enabled())break;
   cursor=p.id;
-  const input=inputFor(p.id,database),row=database.prepare('SELECT * FROM PlaceModelProfile WHERE place_id=? AND model_hash=?').get(p.id,model.model_hash);
+  const input=inputFor(p.id,database),row=select.get(p.id,model.model_hash);
   let embeddingPending=false;
-  try{embeddingPending=!!require('./modelEmbeddings').configuration()&&needsEmbedding(JSON.parse(row?.assets||'null')||{},contract);}catch{}
+  try{embeddingPending=!!require('./modelEmbeddings').configuration()&&needsEmbedding({...JSON.parse(row?.assets||'null'),description_embedding:!!row?.has_description,review_embedding:!!row?.has_review},contract);}catch{}
   const oldFailedFormat=row?.status==='failed'&&row.extraction_version<EXTRACTION_FORMAT_VERSION;
   if(row?.input_hash===inputHash(input)&&!oldFailedFormat&&(row.retry_at>now||row.status==='ready'&&!embeddingPending))continue;
   try{await syncProfile(p.id,model,contract,{database,now,...adapters});}catch(error){warnFailure('Restaurant model profile extraction unavailable',error,p.id);}

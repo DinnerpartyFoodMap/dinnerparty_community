@@ -30,7 +30,8 @@ async function main(){
  assert.equal(await profiles.processProfiles(model,contract,{now:1000,limit:1}),1);
  const initialGenerationCount=generated;assert.ok(generated>=1,'profile response survives 80ms despite the independent 25ms search deadline');
  const first=sql.prepare('SELECT * FROM PlaceModelProfile').get();assert.equal(first.status,'ready');assert.equal(first.attempts,1);assert.equal(first.retry_at,121000);
- const assets=JSON.parse(first.assets);assert.equal(assets.ds[0],7);assert.equal(assets.description_embedding[0],1);assert.equal(assets.review_embedding,null);
+ const assets=JSON.parse(first.assets);assert.equal(assets.ds[0],7);assert.ok(!('description_embedding' in assets)&&!('review_embedding' in assets),'vectors are stored outside the JSON');
+ assert.equal(first.description_embedding.length,4096);assert.equal(first.description_embedding.readFloatLE(0),1);assert.equal(first.review_embedding,null);
  assert.equal(warnings.length,1);assert.equal(warnings[0].fields.stage,'review_embedding');assert.equal(warnings[0].fields.code,'upstream_http_error');assert.equal(warnings[0].fields.http_status,429);
  assert.match(warnings[0].message,/stage=review_embedding.*http_status=429/);
  assert.ok(!JSON.stringify(warnings).includes('SECRET')&&!JSON.stringify(warnings).includes('This synthetic review'),'never log provider text, credentials or review content');

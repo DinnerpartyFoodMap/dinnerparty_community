@@ -8,7 +8,9 @@ const norm=x=>Math.sqrt(dot(x,x));
 const unit=x=>{const n=norm(x);return x.map(v=>v/Math.max(n,1e-9));};
 const cosine=(a,b)=>a&&b&&a.length===b.length?dot(a,b)/Math.max(norm(a)*norm(b),1e-9):null;
 const dist=(a,b)=>a&&b?Math.sqrt(a.reduce((s,v,i)=>s+(v-b[i])**2,0)):null;
-const sub=(a,b)=>a.map((x,i)=>x-b[i]);
+// Stored embeddings are Float32Array; always return a plain (float64) array so
+// differences are not rounded back to float32.
+const sub=(a,b)=>Array.from(a,(x,i)=>x-b[i]);
 const vmean=(vectors,n)=>vectors.length?Array.from({length:n},(_,i)=>vectors.reduce((s,v)=>s+v[i],0)/vectors.length):null;
 function standard(values,spec){if(!values||!spec||values.length!==spec.mean?.length)return null;const excluded=new Set(spec.excluded_indices||[]);return values.map((v,i)=>excluded.has(i)?0:Number.isFinite(v)?(v-spec.mean[i])/(spec.sd?.[i]>0?spec.sd[i]:1):0);}
 function project(vector,spec){

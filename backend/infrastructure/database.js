@@ -621,6 +621,8 @@ function init() {
             rating INTEGER,
             time DATETIME DEFAULT CURRENT_TIMESTAMP
         );`);
+        // The comment list and the rating model's per-place input both filter by place.
+        rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_comment_place_id ON Comment(place_id);`);
 
         rawDb.exec(`CREATE TABLE IF NOT EXISTS "AdminAudit" (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
