@@ -653,12 +653,8 @@
     "noExperience": "仅纠错，没有实际体验",
     "ratingRequired": "请先选择你的评价",
     "preview": "修改记录预览",
-    "notice": "修改生效后，将以你的名义保存修改记录，仅管理员可查看。",
-    "noChanges": "暂无修改",
-    "empty": "（空）",
-    "imagesUpdated": "已更新",
-    "change": "{{field}}：{{before}} → {{after}}",
-    "field": {"name":"店名","description":"描述","category":"分类","per_person_cost":"人均","latitude":"纬度","longitude":"经度","exterior_images":"门面图片","menu_images":"菜单图片"}
+    "notice": "修改生效后，描述里新增的文字会以你的名义保存为修改记录，仅管理员可查看。",
+    "noChanges": "描述没有新增文字，这次修改不会留下修改记录"
   },
   "placeForm": {
     "titleCreate": "添加地点",

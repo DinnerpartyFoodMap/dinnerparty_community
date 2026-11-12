@@ -365,25 +365,92 @@ final class NativePlaceFormModel: ObservableObject {
         return result
     }
 
+    /// 修改记录只保存描述里新增的文字（改前 123、改后 123456 记 456），规则同后端
+    /// placeEditDiff.addedText / 网页 editEvidence.js；Markdown 这里只粗略去掉符号。
     var editPreview: String {
-        func old(_ key: String) -> String {
-            guard let value = original[key], !(value is NSNull) else { return "" }
-            return String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+        let old: String = {
+            guard let value = original["description"], !(value is NSNull) else { return "" }
+            return String(describing: value)
+        }()
+        let added = Self.addedText(Self.roughPlainText(old), Self.roughPlainText(description))
+        return added.isEmpty ? text("noChanges", "描述没有新增文字，这次修改不会留下修改记录") : added
+    }
+
+    static func roughPlainText(_ value: String) -> String {
+        value.replacingOccurrences(of: "<[^>]*>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "[*_~`#>]+", with: "", options: .regularExpression)
+    }
+
+    static func cleanEvidenceText(_ value: String) -> String {
+        let text = value.replacingOccurrences(of: "<[^>]*>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(text.prefix(1000))
+    }
+
+    /// 最长公共子序列对齐：旧字符原位保留，新文本里没对上的就是新增。少于 4 个字的
+    /// 公共片段若夹在两段新增之间、或旁边的旧文字被删掉，算作巧合（如「早茶」→「茶楼」的茶），并入新增。
+    static func addedText(_ before: String, _ after: String) -> String {
+        let a = Array(cleanEvidenceText(before).unicodeScalars), b = Array(cleanEvidenceText(after).unicodeScalars)
+        if a == b { return "" }
+        let width = b.count + 1
+        var dp = [Int](repeating: 0, count: (a.count + 1) * width)
+        for i in stride(from: a.count - 1, through: 0, by: -1) {
+            for j in stride(from: b.count - 1, through: 0, by: -1) {
+                dp[i * width + j] = a[i] == b[j] ? 1 + dp[(i + 1) * width + j + 1] : max(dp[(i + 1) * width + j], dp[i * width + j + 1])
+            }
         }
-        let fields = [(text("name", "店名"), old("name"), trimmedName),
-                      (text("category", "分类"), old("category").replacingOccurrences(of: ", ", with: ","), categories.joined(separator: ",")),
-                      (text("description", "描述"), old("description"), description.trimmingCharacters(in: .whitespacesAndNewlines)),
-                      (text("cost", "人均"), old("per_person_cost"), cost)]
-        var lines = fields.filter { $0.1 != $0.2 }.map { "\($0.0)：\($0.1.isEmpty ? "（空）" : $0.1) → \($0.2.isEmpty ? "（空）" : $0.2)" }
-        if !originalPosition.isEmpty && originalPosition != positionText { lines.append("\(text("position", "位置"))：\(originalPosition) → \(positionText)") }
-        func oldImages(_ key: String) -> [String] {
-            if let list = original[key] as? [String] { return list }
-            if let value = original[key] as? String, let data = value.data(using: .utf8), let list = try? JSONSerialization.jsonObject(with: data) as? [String] { return list }
-            return []
+        var ops: [(op: Character, text: String)] = []
+        func push(_ op: Character, _ scalar: Unicode.Scalar) {
+            if let last = ops.last, last.op == op {
+                ops[ops.count - 1].text.unicodeScalars.append(scalar)
+            } else {
+                var text = ""
+                text.unicodeScalars.append(scalar)
+                ops.append((op: op, text: text))
+            }
         }
-        if oldImages("exterior_images") != exterior.compactMap({ $0.url }) { lines.append("\(text("exteriorImages", "门面图片"))：已更新") }
-        if oldImages("menu_images") != menu.compactMap({ $0.url }) { lines.append("\(text("menuImages", "菜单图片"))：已更新") }
-        return lines.isEmpty ? text("noChanges", "暂无修改") : lines.joined(separator: "\n")
+        var i = 0, j = 0
+        while i < a.count || j < b.count {
+            if i < a.count && j < b.count && a[i] == b[j] {
+                push("=", b[j]); i += 1; j += 1
+            } else if i < a.count && (j >= b.count || dp[(i + 1) * width + j] >= dp[i * width + j + 1]) {
+                push("-", a[i]); i += 1
+            } else {
+                push("+", b[j]); j += 1
+            }
+        }
+        func gap(_ from: Int, _ step: Int) -> (added: Bool, removed: Bool) {
+            var added = false, removed = false, k = from
+            while k >= 0 && k < ops.count && ops[k].op != "=" {
+                if ops[k].op == "+" { added = true } else { removed = true }
+                k += step
+            }
+            return (added, removed)
+        }
+        var parts: [String] = []
+        var part = ""
+        for (k, o) in ops.enumerated() {
+            if o.op == "-" { continue }
+            if o.op == "=" {
+                let left = gap(k - 1, -1), right = gap(k + 1, 1)
+                let coincidental = o.text.unicodeScalars.count < 4
+                    && ((left.added && right.added) || ((left.added || right.added) && (left.removed || right.removed)))
+                if !coincidental {
+                    if !part.isEmpty { parts.append(part) }
+                    part = ""
+                    continue
+                }
+            }
+            part += o.text
+        }
+        if !part.isEmpty { parts.append(part) }
+        let pieces = parts
+            .map { $0.replacingOccurrences(of: "^[\\s，,、；;：:。．.！!？?…]+|[\\s，,、；;：:]+$", with: "", options: .regularExpression) }
+            .filter { $0.range(of: "[\\p{L}\\p{N}]", options: .regularExpression) != nil }
+        return String(pieces.joined(separator: " … ").prefix(1000))
     }
 
     // MARK: 分类
@@ -634,7 +701,7 @@ private struct NativePlaceFormView: View {
                     }
                     if !model.isCreate {
                         formSection(model.text("editPreview", "修改记录预览")) {
-                            Text(model.text("editNotice", "修改生效后，将以你的名义保存修改记录，仅管理员可查看。")).font(.caption).foregroundStyle(.secondary)
+                            Text(model.text("editNotice", "修改生效后，描述里新增的文字会以你的名义保存为修改记录，仅管理员可查看。")).font(.caption).foregroundStyle(.secondary)
                             Text(model.editPreview).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }

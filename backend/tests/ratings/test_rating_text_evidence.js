@@ -42,7 +42,11 @@ async function main(){
  const attributed=sql.prepare("SELECT c.user_id,r.author_id,r.executor_id FROM Comment c JOIN PlaceRevision r ON r.id=c.place_revision_id WHERE c.user_id='guest'").get();assert.deepEqual(attributed,{user_id:'guest',author_id:'guest',executor_id:'admin'});
  assert.equal((await request('POST',`/place-requests/${pendingId}/review`,{action:'approve'},'admin')).status,409);
  // A correction with no first-hand experience can be submitted without a vote.
- r=await request('PUT','/places/1',{name:'Corrected',no_experience:true},'admin');assert.equal(r.status,200);assert.equal(sql.prepare("SELECT COUNT(*) n FROM PlaceRating WHERE user_id='admin'").get().n,0);
+ r=await request('PUT','/places/1',{name:'Corrected',description:'烧鸭好吃，等了40分钟，米饭是冷的。营业到22点',no_experience:true},'admin');assert.equal(r.status,200);assert.equal(sql.prepare("SELECT COUNT(*) n FROM PlaceRating WHERE user_id='admin'").get().n,0);
+ assert.equal(sql.prepare("SELECT content FROM Comment WHERE user_id='admin'").get().content,'营业到22点','the record is only the added description text');
+ const beforeNameOnly=sql.prepare('SELECT COUNT(*) n FROM Comment').get().n;
+ r=await request('PUT','/places/1',{name:'Corrected again',no_experience:true},'admin');assert.equal(r.status,200);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment').get().n,beforeNameOnly,'an edit that adds no description text leaves no record');
  for(const suffix of ['', '?kind=edit', '?kind=other']){
   assert.equal((await fetch(base+'/comments/place/1'+suffix)).status,401,'anonymous readers cannot access modification records');
   for(const user of ['owner','guest'])assert.equal((await request('GET','/comments/place/1'+suffix,null,user)).status,403,'creators and ordinary users cannot bypass admin-only history');
@@ -53,7 +57,7 @@ async function main(){
  }
  sql.prepare("UPDATE User SET admin_level=NULL WHERE id='admin'").run();assert.equal((await request('GET','/comments/place/1?kind=edit',null,'admin')).status,403,'revoked administrator access is checked in the database');
  sql.prepare("UPDATE User SET admin_level='YOUMU' WHERE id='admin'").run();
- const revisions=require('../../modules/places/services/placeRevisions');assert.equal(revisions.backfillEditComments().candidates,0);sql.prepare('DELETE FROM Comment WHERE place_revision_id=?').run(sql.prepare("SELECT id FROM PlaceRevision WHERE path='admin_edit'").get().id);
+ const revisions=require('../../modules/places/services/placeRevisions');assert.equal(revisions.backfillEditComments().candidates,0);sql.prepare('DELETE FROM Comment WHERE place_revision_id=?').run(sql.prepare("SELECT id FROM PlaceRevision WHERE path='admin_edit' ORDER BY rowid").get().id);
  assert.equal(revisions.backfillEditComments({apply:true}).inserted,0,'backfill must not resurrect a removed comment');
  sql.prepare("DELETE FROM DeletedEditComment WHERE place_revision_id IN(SELECT id FROM PlaceRevision WHERE path='admin_edit')").run(); // Simulate a pre-feature revision that never had a comment.
  assert.equal(revisions.backfillEditComments({apply:true}).inserted,1);assert.equal(revisions.backfillEditComments({apply:true}).inserted,0,'backfill is idempotent and does not synthesize a vote');
@@ -71,7 +75,7 @@ async function main(){
  sql.prepare('UPDATE RatingTextEvidence SET expires_at_ms=?').run(started-1);evidence.cleanup(started);assert.equal(sql.prepare('SELECT COUNT(*) n FROM RatingTextEvidence').get().n,0,'derived text evidence expires without deleting public comments');
  // A withdrawal after request submission must never be resurrected at approval.
  const editRating=require('../../modules/places/services/placeEditRating');const intent=editRating.prepareEditRating('admin',1,{rating:4});editRating.commitEditRating('admin',1,{rating:3});sql.prepare("DELETE FROM PlaceRating WHERE user_id='admin'").run();sql.prepare("UPDATE RatingStream SET revision=revision+1 WHERE user_id='admin'").run();editRating.commitEditRating('admin',1,intent);assert.equal(sql.prepare("SELECT 1 FROM PlaceRating WHERE user_id='admin'").get(),undefined);
- const {addedText}=require('../../modules/places/services/placeEditDiff');assert.equal(addedText('old','old'),'');assert.equal(addedText('旧评价','旧评价，烧鸭没熟'),'，烧鸭没熟');assert.equal(addedText('删除这个','删除'),'');
+ const {addedText}=require('../../modules/places/services/placeEditDiff');assert.equal(addedText('old','old'),'');assert.equal(addedText('旧评价','旧评价，烧鸭没熟'),'烧鸭没熟');assert.equal(addedText('删除这个','删除'),'');
  console.log('Text evidence: atomic edits, own contributions, rating prompts, moderated attribution, versioning, numeric shadow/active contracts, missing text and deletion passed.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{server?.closeAllConnections();if(server)await new Promise(resolve=>server.close(resolve));db._raw.close();assert.equal(path.dirname(path.resolve(temp)),path.resolve(os.tmpdir()));fs.rmSync(temp,{recursive:true,force:true});});

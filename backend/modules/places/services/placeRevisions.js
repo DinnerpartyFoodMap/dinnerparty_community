@@ -2,15 +2,19 @@ const {db}=require('../../../infrastructure/database');
 const {randomUUID}=require('node:crypto');
 const FIELDS=['name','description','category','per_person_cost','address','latitude','longitude','exterior_images','menu_images'];
 function state(row){return Object.fromEntries(FIELDS.map(key=>[key,row?.[key]??null]));}
+const EDIT_PATHS=['owner_edit','admin_edit','request_approved'];
+// The comment is only the text added to the description (see placeEditDiff);
+// an edit that adds none leaves no comment.
+function revisionCommentText(row){return require('./placeEditDiff').editCommentText(JSON.parse(row.before_state),JSON.parse(row.after_state));}
 function publishRevisionComment(row,{noExperience=false,backfill=false}={}){
     if(db._raw.prepare('SELECT 1 FROM DeletedEditComment WHERE place_revision_id=?').get(row.id))return false;
-    if(!row.before_state||!row.author_id||!['owner_edit','admin_edit','request_approved'].includes(row.path)||!db._raw.prepare('SELECT 1 FROM User WHERE id=?').get(row.author_id))return false;
-    const diff=require('./placeEditDiff').editDiff(JSON.parse(row.before_state),JSON.parse(row.after_state));if(!diff.comment)return false;
+    if(!row.before_state||!row.author_id||!EDIT_PATHS.includes(row.path)||!db._raw.prepare('SELECT 1 FROM User WHERE id=?').get(row.author_id))return false;
+    const text=revisionCommentText(row);if(!text)return false;
     const historical=db._raw.prepare('SELECT revision,after_state FROM RatingRevision WHERE user_id=? AND place_id=? AND available_at_ms<=? ORDER BY revision DESC LIMIT 1').get(row.author_id,row.place_id,row.available_at_ms);
     const rating=historical?.after_state?JSON.parse(historical.after_state):null,revision=historical?.revision??null;
-    const inserted=db._raw.prepare('INSERT OR IGNORE INTO Comment(place_id,user_id,content,rating,place_revision_id,rating_revision,time) VALUES(?,?,?,?,?,?,?)').run(row.place_id,row.author_id,diff.comment,rating?.score??null,row.id,revision,new Date(row.available_at_ms).toISOString());
+    const inserted=db._raw.prepare('INSERT OR IGNORE INTO Comment(place_id,user_id,content,rating,place_revision_id,rating_revision,time) VALUES(?,?,?,?,?,?,?)').run(row.place_id,row.author_id,text,rating?.score??null,row.id,revision,new Date(row.available_at_ms).toISOString());
     // Historical edits establish authorship, not a fresh dining experience or renewed retention.
-    if(inserted.changes&&!noExperience&&!backfill)require('../../ratings/services/ratingTextEvidence').queueComment({commentId:Number(inserted.lastInsertRowid),userId:row.author_id,placeId:row.place_id,placeRevisionId:row.id,text:diff.text,now:row.available_at_ms,ratingRevision:revision});
+    if(inserted.changes&&!noExperience&&!backfill)require('../../ratings/services/ratingTextEvidence').queueComment({commentId:Number(inserted.lastInsertRowid),userId:row.author_id,placeId:row.place_id,placeRevisionId:row.id,text,now:row.available_at_ms,ratingRevision:revision});
     return !!inserted.changes;
 }
 function recordPlaceRevision({placeId,authorId,executorId=authorId,path,before=null,after=null,requestId=null,now=Date.now(),recordedAt=now,researchConsentId,noExperience=false}){
@@ -28,7 +32,9 @@ function recordPlaceRevision({placeId,authorId,executorId=authorId,path,before=n
 }
 function backfillEditComments({apply=false,limit=500}={}){
     if(!Number.isSafeInteger(limit)||limit<1||limit>10000)throw new Error('回填数量无效');
-    const rows=db._raw.prepare(`SELECT r.* FROM PlaceRevision r JOIN User u ON u.id=r.author_id JOIN Place p ON p.id=r.place_id WHERE r.before_state IS NOT NULL AND r.path IN('owner_edit','admin_edit','request_approved') AND NOT EXISTS(SELECT 1 FROM DeletedEditComment d WHERE d.place_revision_id=r.id) AND NOT EXISTS(SELECT 1 FROM Comment c WHERE c.place_revision_id=r.id) ORDER BY r.available_at_ms LIMIT ?`).all(limit);
+    // Edits that added no description text never get a comment; skip them before
+    // the limit so they cannot fill every batch.
+    const rows=db._raw.prepare(`SELECT r.* FROM PlaceRevision r JOIN User u ON u.id=r.author_id JOIN Place p ON p.id=r.place_id WHERE r.before_state IS NOT NULL AND r.path IN('owner_edit','admin_edit','request_approved') AND NOT EXISTS(SELECT 1 FROM DeletedEditComment d WHERE d.place_revision_id=r.id) AND NOT EXISTS(SELECT 1 FROM Comment c WHERE c.place_revision_id=r.id) ORDER BY r.available_at_ms`).all().filter(revisionCommentText).slice(0,limit);
     if(!apply)return {apply:false,candidates:rows.length};
     const inserted=db._raw.transaction(()=>rows.filter(row=>publishRevisionComment(row,{backfill:true})).length).immediate();return {apply:true,candidates:rows.length,inserted};
 }
