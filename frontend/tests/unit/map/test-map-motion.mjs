@@ -5,7 +5,7 @@ import {
     MAX_MERCATOR_LAT, isMappableCoordinate
 } from "../../../src/map/cluster/engine.js";
 import {
-    buildSnapshot, computeLogicalZoom, expandBounds, boundsContains
+    buildSnapshot, computeLogicalZoom, expandBounds, boundsContains, normalizeViewBounds
 } from "../../../src/map/cluster/snapshot.js";
 import { planTransition, verifySnapshotMembers } from "../../../src/map/cluster/transitions.js";
 import { PlaceRangeCache, RequestGate } from "../../../src/map/cluster/placeCache.js";
@@ -220,6 +220,16 @@ assert.equal(computeLogicalZoom(NaN, 9), 9);
 const v = { minLng: 0, maxLng: 1, minLat: 0, maxLat: 1 };
 assert.deepEqual(expandBounds(v, 1), { minLng: -1, maxLng: 2, minLat: -1, maxLat: 2 });
 assert.ok(boundsContains(expandBounds(v, 0.5), v));
+// 缩得很小时 AMap 视野经度超出 ±180：换算后必须落在请求范围内（否则后端 400、缓存永远不覆盖）
+{
+    const world = normalizeViewBounds({ minLng: -26.13, maxLng: 256.7, minLat: -38.27, maxLat: 71.55 });
+    assert.deepEqual(world, { minLng: -180, maxLng: 180, minLat: -38.27, maxLat: 71.55 });
+    assert.ok(boundsContains(expandBounds(world, 1), world));
+    assert.deepEqual(normalizeViewBounds({ minLng: 470, maxLng: 480, minLat: 20, maxLat: 30 }), { minLng: 110, maxLng: 120, minLat: 20, maxLat: 30 });
+    assert.deepEqual(normalizeViewBounds({ minLng: 170, maxLng: 190, minLat: -89, maxLat: 89 }), { minLng: -180, maxLng: 180, minLat: -85.0511, maxLat: 85.0511 });
+    assert.deepEqual(normalizeViewBounds(v), v);
+    assert.equal(normalizeViewBounds({ minLng: NaN, maxLng: 1, minLat: 0, maxLat: 1 }), null);
+}
 
 // ---- 范围缓存：覆盖判断、范围内删除、过期、淘汰 ----
 {

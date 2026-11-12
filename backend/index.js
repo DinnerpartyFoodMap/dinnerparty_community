@@ -200,6 +200,9 @@ function amapProxy(req, res) {
 
 app.use('/_AMapService', require('./modules/maps/services/amapSearchBudget').createLegacySearchGuard(), amapProxy);
 
+// 压缩之后所有路由的 JSON 响应（地图缩小时 /places/nearby 约 3 MB → 0.4 MB），地图代理是流式转发，不经过这里
+app.use(require('./http/middleware/jsonCompression').jsonCompression());
+
 app.use('/api/journeys', express.json({ limit: '256kb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

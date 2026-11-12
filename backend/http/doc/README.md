@@ -2,6 +2,8 @@
 
 middleware/requestLogger.js 导出 requestLogger、notFoundHandler、errorHandler。index.js 在 CORS 与解析请求体之前挂请求日志，路由之后挂 404 与错误处理；因此预检拒绝、JSON 错误及中断请求也有 requestId。身份和管理权限中间件分别归 accounts 与 admin。
 
+middleware/jsonCompression.js 在地图代理之后、所有路由之前挂上：1 KB 以上的 JSON 响应按 Accept-Encoding 用 br（优先）或 gzip 压缩，并加 `Vary: Accept-Encoding`；流式响应、非 JSON、已带 Content-Encoding 或 `no-transform` 的响应原样发送。线上反向代理不压缩 JSON，地图缩小时 /places/nearby 约 3 MB，压缩后约 0.4 MB。压缩是异步的：`res.json()` 返回时响应头还没发出。执行 `npm run test:compression` 验证。
+
 ```mermaid
 flowchart LR
     Request[进入请求] --> ID[请求 ID 与日志上下文]

@@ -13,6 +13,12 @@ function isBlocked(viewerId, userId, database = db._raw) {
     return !!database.prepare('SELECT 1 FROM UserBlock WHERE user_id = ? AND blocked_id = ?').get(String(viewerId), String(userId));
 }
 
+/** 观看者屏蔽的全部住民 id（字符串）；一次请求要判断很多地点时用它代替逐个 isBlocked */
+function blockedUserIds(viewerId, database = db._raw) {
+    if (!viewerId) return new Set();
+    return new Set(database.prepare('SELECT blocked_id FROM UserBlock WHERE user_id = ?').all(String(viewerId)).map(row => String(row.blocked_id)));
+}
+
 /**
  * 观看者与另一位住民的关系，随住民的地点列表（GET /users/:id/places）和屏蔽接口返回。
  * self：就是自己；blocked：观看者屏蔽了 Ta；can_block：已登录且不是自己，可以屏蔽 / 解除屏蔽。
@@ -27,4 +33,4 @@ function setBlocked(userId, blockedId, blocked, database = db._raw) {
     else database.prepare('DELETE FROM UserBlock WHERE user_id = ? AND blocked_id = ?').run(String(userId), String(blockedId));
 }
 
-module.exports = { notBlockedSql, isBlocked, viewerRelation, setBlocked };
+module.exports = { notBlockedSql, isBlocked, blockedUserIds, viewerRelation, setBlocked };

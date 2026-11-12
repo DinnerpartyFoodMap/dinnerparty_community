@@ -8,7 +8,7 @@ import { MarkerLayerController } from "./MarkerLayerController";
 import { installPinchGuard } from "./pinchGuard";
 import { OverseasTileLayer } from "./overseasTileLayer";
 import { PlaceRangeCache, RequestGate } from "./cluster/placeCache";
-import { expandBounds } from "./cluster/snapshot";
+import { expandBounds, normalizeViewBounds } from "./cluster/snapshot";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
 import { readViewBounds, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
@@ -844,7 +844,8 @@ export default function MapView({
     const loadPlaces = async (force = false) => {
         if (!mapRef.current) return;
         if (!force && (searchResultsRef.current !== null || alongRouteResultsRef.current !== null || userFilterRef.current !== null)) return;
-        const view = readViewBounds(mapRef.current);
+        // 缩得很小时 AMap 的视野经度会超出 ±180，换算成真实经纬度后再判断缓存覆盖和请求
+        const view = normalizeViewBounds(readViewBounds(mapRef.current));
         if (!view || !(view.maxLng > view.minLng) || !(view.maxLat > view.minLat)) return;
         const cache = placeCacheRef.current;
         const status = cache.coverage(view);

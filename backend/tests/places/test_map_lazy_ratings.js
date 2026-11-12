@@ -28,7 +28,21 @@ async function main(){
  assert.equal(scoped.find(p=>p.id===3).rating_deferred,true);
  assert.equal(scoped.find(p=>p.id===1).rating_deferred,false);
  assert.equal(scoped.find(p=>p.id===1).rating_estimate.average,3.5);
- for(const query of ['viewMinLng=113','viewMinLng=113&viewMaxLng=115&viewMinLat=22&viewMaxLat=24'])assert.equal((await fetch(base+'/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24&'+query)).status,400);
+ for(const query of ['viewMinLng=113','viewMinLng=114&viewMaxLng=113&viewMinLat=22&viewMaxLat=24','viewMinLng=120&viewMaxLng=121&viewMinLat=22&viewMaxLat=24','viewMinLng=x&viewMaxLng=114&viewMinLat=22&viewMaxLat=24'])assert.equal((await fetch(base+'/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24&'+query)).status,400);
+ // 旧版前端缩得很小时视野经度超出 ±180、请求范围已截到 ±180：视野截到请求范围内，不再 400
+ const wrapped=await get('/places/nearby?minLng=-180&maxLng=180&minLat=-85.0511&maxLat=85.0511&viewMinLng=-26.13&viewMaxLng=256.69&viewMinLat=-38.27&viewMaxLat=71.55');
+ assert.equal(wrapped.length,3);assert.ok(wrapped.every(p=>p.rating_deferred===true),'wrapped world view counts all three markers as visible');
+ const clipped=await get('/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24&viewMinLng=113.015&viewMaxLng=115&viewMinLat=22&viewMaxLat=24');
+ assert.deepEqual(clipped.filter(p=>p.rating_deferred===false).map(p=>p.id).sort(),[2,3],'view clipped to the query box still scopes eager ratings');
+ // 屏蔽创建者后，批量复核把 Ta 的地点全部滤掉
+ db._raw.prepare("INSERT INTO User(id,username,password) VALUES('viewer','viewer','unused')").run();
+ const viewerToken=require('jsonwebtoken').sign({id:'viewer'},process.env.JWT_SECRET||'yuyuko_secret_key');
+ const before=await (await fetch(base+'/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24',{headers:{Authorization:'Bearer '+viewerToken}})).json();
+ assert.equal(before.length,3);
+ require('../../modules/accounts/services/userRelations').setBlocked('viewer','owner',true);
+ const after=await (await fetch(base+'/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24',{headers:{Authorization:'Bearer '+viewerToken}})).json();
+ assert.equal(after.length,0,'blocked creator places are removed');
+ require('../../modules/accounts/services/userRelations').setBlocked('viewer','owner',false);
  const token=require('jsonwebtoken').sign({id:'owner'},process.env.JWT_SECRET||'yuyuko_secret_key');
  const response=await fetch(base+'/places/nearby?minLng=113&maxLng=113.025&minLat=22&maxLat=24',{headers:{Authorization:'Bearer '+token}});
  assert.equal(response.headers.get('cache-control'),'no-store');

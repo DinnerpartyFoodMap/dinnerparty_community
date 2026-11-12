@@ -29,6 +29,28 @@ export function expandBounds(bounds, ratio) {
     };
 }
 
+/**
+ * 把地图视野换算成真实经纬度：经度 [-180, 180]、纬度不超过 ±85.0511。
+ * 地图缩得很小时世界横向重复，AMap 的 getBounds 会给出超过 ±180 的经度（如 -26 ~ 256），
+ * 而后端和范围缓存只认真实经纬度。先把整个视野平移到中心落在 [-180, 180]，仍跨越 ±180 经线时取整条经度带。
+ */
+export function normalizeViewBounds(bounds) {
+    if (!bounds || ![bounds.minLng, bounds.maxLng, bounds.minLat, bounds.maxLat].every(Number.isFinite)) return null;
+    const shift = Math.round((bounds.minLng + bounds.maxLng) / 720) * 360;
+    let minLng = bounds.minLng - shift;
+    let maxLng = bounds.maxLng - shift;
+    if (minLng < -180 || maxLng > 180) {
+        minLng = -180;
+        maxLng = 180;
+    }
+    return {
+        minLng,
+        maxLng,
+        minLat: Math.max(-85.0511, bounds.minLat),
+        maxLat: Math.min(85.0511, bounds.maxLat)
+    };
+}
+
 export function boundsContains(outer, inner) {
     return !!outer && !!inner
         && inner.minLng >= outer.minLng && inner.maxLng <= outer.maxLng

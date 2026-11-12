@@ -37,9 +37,11 @@ async function projectRatingViews(rows,viewerId,{map=false,bounds=null}={}){
 }
 function visibleProjectedRows(rows,viewer,detail=false){
     // Synchronous final authorization: projection may have awaited a newer snapshot.
-    const read=db._raw.prepare('SELECT id,creator_id,moderation_status FROM Place WHERE id=?');
-    const {isBlocked}=require('../../accounts/services/userRelations');
-    return rows.filter(row=>{const current=read.get(row.id);return current&&!isBlocked(viewer?.id,current.creator_id)&&(detail?canViewPlace(current,viewer):current.moderation_status==='visible'||String(current.creator_id)===String(viewer?.id));});
+    // 一次读出全部地点的当前状态和观看者的屏蔽名单：地图缩小时一次几千行，逐行查询要上百毫秒
+    if(!rows.length)return rows;
+    const currentById=new Map(db._raw.prepare('SELECT id,creator_id,moderation_status FROM Place WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(rows.map(row=>row.id))).map(row=>[row.id,row]));
+    const blocked=require('../../accounts/services/userRelations').blockedUserIds(viewer?.id);
+    return rows.filter(row=>{const current=currentById.get(row.id);return current&&!(current.creator_id!=null&&blocked.has(String(current.creator_id)))&&(detail?canViewPlace(current,viewer):current.moderation_status==='visible'||String(current.creator_id)===String(viewer?.id));});
 }
 router.use((req,res,next)=>req.method==='GET'&&req.path!=='/regions'&&!req.path.endsWith('/diaries')&&!req.path.endsWith('/edit-context')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
 
@@ -70,8 +72,11 @@ router.get("/nearby", attachViewer, (req, res) => {
     let bounds=null;
     if(viewKeys.some(name=>req.query[name]!==undefined)){
         if(!viewKeys.every(name=>typeof req.query[name]==='string'&&req.query[name].trim()!==''&&Number.isFinite(Number(req.query[name]))))return res.status(400).json({error:'地图视野范围无效'});
-        bounds=Object.fromEntries(names.map((name,k)=>[name,Number(req.query[viewKeys[k]])]));
-        if(bounds.minLng<Number(minLng)||bounds.maxLng>Number(maxLng)||bounds.minLat<Number(minLat)||bounds.maxLat>Number(maxLat)||bounds.minLng>=bounds.maxLng||bounds.minLat>=bounds.maxLat)return res.status(400).json({error:'地图视野范围无效'});
+        // 视野只决定哪些地点预取评价，超出请求范围的部分截掉即可：旧版前端在地图缩得很小时
+        // 会发出超过 ±180 的视野经度（世界横向重复），而请求范围已截到 ±180，不能因此让整次加载失败
+        const view=Object.fromEntries(names.map((name,k)=>[name,Number(req.query[viewKeys[k]])]));
+        bounds={minLng:Math.max(view.minLng,Number(minLng)),maxLng:Math.min(view.maxLng,Number(maxLng)),minLat:Math.max(view.minLat,Number(minLat)),maxLat:Math.min(view.maxLat,Number(maxLat))};
+        if(!(bounds.minLng<bounds.maxLng&&bounds.minLat<bounds.maxLat))return res.status(400).json({error:'地图视野范围无效'});
     }
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
                  FROM Place p

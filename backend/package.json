@@ -12,6 +12,7 @@
         "backup:database": "node scripts/backups/backup_database.js",
         "test:backup": "node tests/infrastructure/test_database_backup.js",
         "test:logging": "node tests/infrastructure/test_logging.js",
+        "test:compression": "node tests/infrastructure/test_json_compression.js",
         "test:migration": "node tests/infrastructure/test_database_migration.js",
         "test:transactions": "node tests/infrastructure/test_transactions.js",
         "test:place-location": "node tests/places/test_place_location_ui.js",
