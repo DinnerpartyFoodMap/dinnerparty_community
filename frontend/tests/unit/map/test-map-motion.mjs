@@ -10,7 +10,7 @@ import {
 import { planTransition, verifySnapshotMembers } from "../../../src/map/cluster/transitions.js";
 import { PlaceRangeCache, RequestGate } from "../../../src/map/cluster/placeCache.js";
 import { clusterScale, glyphSize, formatCount, hitSize } from "../../../src/map/cluster/glyph.js";
-import { worldPixel, unprojectWorldPixel, centerForScreenTarget } from "../../../src/map/viewport.js";
+import { worldPixel, unprojectWorldPixel, centerForScreenTarget, readMapViewport } from "../../../src/map/viewport.js";
 import { tileBounds, isOverseasTile, buildCartoTileUrl } from "../../../src/map/overseasTileLayer.js";
 
 // ---- 可复现的随机夹具 ----
@@ -229,6 +229,14 @@ assert.ok(boundsContains(expandBounds(v, 0.5), v));
     assert.deepEqual(normalizeViewBounds({ minLng: 170, maxLng: 190, minLat: -89, maxLat: 89 }), { minLng: -180, maxLng: 180, minLat: -85.0511, maxLat: 85.0511 });
     assert.deepEqual(normalizeViewBounds(v), v);
     assert.equal(normalizeViewBounds({ minLng: NaN, maxLng: 1, minLat: 0, maxLat: 1 }), null);
+
+    const map = {
+        getBounds: () => ({ southWest: [-26.13, -38.27], northEast: [256.7, 71.55] }),
+        getZoom: () => 3.5
+    };
+    assert.deepEqual(readMapViewport(map), { minLng: -180, maxLng: 180, minLat: -38.27, maxLat: 71.55, zoom: 3.5 });
+    assert.equal(readMapViewport({ getZoom: () => 16 }), null);
+    assert.equal(readMapViewport({ ...map, getZoom: () => { throw new Error('not ready'); } }), null);
 }
 
 // ---- 范围缓存：覆盖判断、范围内删除、过期、淘汰 ----

@@ -10,7 +10,7 @@ import { OverseasTileLayer } from "./overseasTileLayer";
 import { PlaceRangeCache, RequestGate } from "./cluster/placeCache";
 import { expandBounds, normalizeViewBounds } from "./cluster/snapshot";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
-import { readViewBounds, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
+import { readViewBounds, readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
 import { createLocationReporter } from "./locationReport";
 import MotionSurface from "../components/overlay/MotionSurface";
@@ -1058,11 +1058,17 @@ export default function MapView({
         }
     };
 
+    const handleMapPlaceClick = (place) => {
+        const currentFeedback = feedbackRef.current;
+        if (currentFeedback.consent?.feedback) {
+            const viewport = readMapViewport(mapRef.current);
+            currentFeedback.record('click', 'map', place.id, viewport ? { viewport } : undefined);
+        }
+        showPopup(place);
+    };
+
     markerHandlersRef.current = {
-        onPlaceClick: (place) => {
-            feedbackRef.current.record('click', 'map', place.id);
-            showPopup(place);
-        },
+        onPlaceClick: handleMapPlaceClick,
         onClusterClick: handleClusterClick
     };
 
@@ -1960,8 +1966,7 @@ export default function MapView({
                 onCloseClusterMembers={() => setClusterMembers(null)}
                 onSelectClusterMember={(place) => {
                     setClusterMembers(null);
-                    feedbackRef.current.record('click', 'map', place.id);
-                    showPopup(place);
+                    handleMapPlaceClick(place);
                 }}
                 authPending={authPending}
                 handleLocateMe={handleLocateMe}

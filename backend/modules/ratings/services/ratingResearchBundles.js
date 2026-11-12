@@ -41,6 +41,12 @@ function exportBundle({apply=false,secret=process.env.FEEDBACK_EXPORT_SECRET,out
     const key=id=>createHmac('sha256',secret).update(id).digest('hex').slice(0,32);
     const raw=db._raw.transaction(()=>{
         const data=evidence.buildRatingEvidence({purpose:'research',asOfMs:now}),cutoff=data.manifest.from_ms;
+        const clickViewport=db._raw.prepare("SELECT json_extract(context,'$.viewport') AS viewport FROM MapInteractionContext WHERE event_id=?");
+        for(const event of data.events){
+            if(event.source_table!=='MapInteraction'||event.surface!=='map'||event.event_type!=='click')continue;
+            const viewport=clickViewport.get(event.event_id)?.viewport;
+            if(viewport)event.viewport=JSON.parse(viewport);
+        }
         const eligible=(user,ref,at)=>evidence.hasResearchBasis(user,ref,now)&&at<=now&&expiry(at,ref)>now;
         const ratings=db._raw.prepare('SELECT * FROM RatingRevision WHERE available_at_ms>=? AND available_at_ms<=? ORDER BY available_at_ms,rowid').all(cutoff,now).filter(r=>eligible(r.user_id,r.research_consent_id,r.available_at_ms));
         const descriptions=db._raw.prepare('SELECT * FROM PlaceRevision WHERE available_at_ms>=? AND available_at_ms<=? ORDER BY available_at_ms,rowid').all(cutoff,now).filter(r=>r.author_id&&JSON.parse(r.changed_fields).includes('description')&&String(JSON.parse(r.after_state).description||'').trim()&&eligible(r.author_id,r.research_consent_id,r.available_at_ms));

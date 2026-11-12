@@ -7,12 +7,13 @@ try{
     const id=Number(db._raw.prepare("INSERT INTO Place(name) VALUES('test')").run().lastInsertRowid);
     const prefs=require('../../modules/preferences/services/userPreferenceService');
     prefs.changeFavorite('u',id,true);
-    assert.equal(evidence.buildRatingEvidence({userIds:['u'],purpose:'research'}).events.length,0,'default research switch is not consent evidence');
-    evidence.recordResearchChoice('u',true);
+    const initial=evidence.buildRatingEvidence({userIds:['u'],purpose:'research'}).events;
+    assert.equal(initial.length,1,'the first favorite has research consent without changing any settings');
+    assert.equal(initial[0].consent_ref,evidence.researchConsent('u').id);
     prefs.changeFavorite('u',id,false);prefs.changeFavorite('u',id,true);
     const data=evidence.buildRatingEvidence({userIds:['u'],purpose:'research'});
-    assert.equal(data.events.length,2,'favorite mirrors must not become extra events');
-    assert.deepEqual(data.events.map(x=>x.event_type),['favorite_remove','favorite_add']);
+    assert.equal(data.events.length,3,'favorite mirrors must not become extra events');
+    assert.deepEqual(data.events.map(x=>x.event_type),['favorite_add','favorite_remove','favorite_add']);
     assert.ok(data.events.every(x=>x.consent_ref));
     evidence.recordResearchChoice('u',false);
     assert.equal(evidence.buildRatingEvidence({userIds:['u'],purpose:'research'}).events.length,0);
@@ -34,5 +35,33 @@ try{
     const cross=evidence.buildRatingEvidence().events.filter(e=>e.event_id===sharedId);
     assert.equal(cross.length,2,'event IDs are unique per user, not globally');
     for(const event of cross)assert.equal(event.surface,event.user_key,'context cannot cross account boundaries');
+
+    // Simulate existing residents whose settings were created before the grant trigger.
+    db._raw.exec('DROP TRIGGER IF EXISTS research_default_consent');
+    const addUser=db._raw.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)');
+    for(const user of ['legacy','missing-settings','research-off','feedback-off','revoked']){
+        addUser.run(user,user,'unused');
+    }
+    db._raw.exec(`UPDATE MapConsent SET version=2 WHERE user_id='legacy';
+        DELETE FROM MapConsent WHERE user_id='missing-settings';
+        UPDATE MapConsent SET research=0 WHERE user_id='research-off';
+        UPDATE MapConsent SET feedback=0 WHERE user_id='feedback-off';`);
+    const revocation=evidence.recordResearchChoice('revoked',false);
+    prefs.changeFavorite('legacy',id,true);
+    const upgradeStarted=Date.now();
+    require('../../modules/journeys/services/journeySchema').initJourneySchema(db._raw);
+    schema.initAlgorithmSchema(db._raw);
+    schema.initAlgorithmSchema(db._raw);
+    const grants=db._raw.prepare('SELECT * FROM ResearchConsentEvent WHERE user_id=?');
+    for(const user of ['legacy','missing-settings']){
+        const events=grants.all(user);
+        assert.equal(events.length,1,'upgrade records a missing grant once');
+        assert.equal(events[0].allowed,1);
+        assert.ok(events[0].recorded_at_ms>=upgradeStarted,'a new grant is dated at upgrade time');
+    }
+    for(const user of ['research-off','feedback-off'])assert.deepEqual(grants.all(user),[]);
+    assert.deepEqual(grants.all('revoked').map(event=>event.id),[revocation]);
+    assert.equal(evidence.researchConsent('revoked'),null);
+    assert.equal(evidence.buildRatingEvidence({userIds:['legacy']}).events.length,0,'pre-upgrade activity stays ineligible');
     console.log('Evidence consent, source merging and favorite mirror dedup passed.');
 }finally{require('../../modules/preferences/services/userPreferenceService').startUserVectorWorker()();db._raw.close();fs.rmSync(temp,{recursive:true,force:true});}

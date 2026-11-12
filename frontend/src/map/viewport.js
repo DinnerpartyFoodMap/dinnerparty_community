@@ -1,6 +1,7 @@
 // 地图视口工具：读取范围、投影、Web Mercator 像素换算，以及地图被界面遮挡的安全区域。
 
 import { AMAP_TILE_SIZE } from './cluster/engine.js';
+import { normalizeViewBounds } from './cluster/snapshot.js';
 
 function readLngLat(point) {
     if (!point) return null;
@@ -18,6 +19,17 @@ export function readViewBounds(map) {
         if (!sw || !ne) return null;
         return { minLng: sw.lng, minLat: sw.lat, maxLng: ne.lng, maxLat: ne.lat };
     } catch (e) {
+        return null;
+    }
+}
+
+export function readMapViewport(map) {
+    const bounds = normalizeViewBounds(readViewBounds(map));
+    if (!bounds) return null;
+    try {
+        const zoom = map.getZoom();
+        return Number.isFinite(zoom) ? { ...bounds, zoom } : null;
+    } catch {
         return null;
     }
 }

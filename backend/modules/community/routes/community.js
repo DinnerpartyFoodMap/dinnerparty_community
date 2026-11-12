@@ -59,6 +59,15 @@ router.get('/users/:id/collections',run((req,res)=>{
 }));
 const kinds=new Set(['search','exposure','click','correction','next']);
 const surfaces=new Set(['search','map','random','favorites','journey']);
+function mapClickViewport(viewport){
+    if(!viewport)return null;
+    const {minLng,minLat,maxLng,maxLat,zoom}=viewport;
+    if(![minLng,minLat,maxLng,maxLat,zoom].every(Number.isFinite))return null;
+    if(minLng < -180||maxLng > 180||minLng >= maxLng) return null;
+    if(minLat < -90||maxLat > 90||minLat >= maxLat) return null;
+    if(zoom < 0||zoom > 30) return null;
+    return {minLng,minLat,maxLng,maxLat,zoom};
+}
 router.post('/observations',run((req,res)=>{
     const c=consent(req.user.id);
     if(!c.feedback||req.body.consent_version!==c.version) {res.json({id:null});return;}
@@ -147,7 +156,16 @@ router.post('/feedback',run((req,res)=>{
             // Null place events only measure funnel activity. They are never training labels.
             sql.prepare('INSERT INTO MapInteraction(id,user_id,session_id,kind,surface,decision_id,place_id,rank,reason,research_allowed,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(e.id,req.user.id,e.session_id,e.kind,e.surface,e.decision_id||null,placeId,rank,reason,+(c.research&&!!placeId),now());accepted++;
             require('../../ratings/services/ratingEvidence').captureEvent('MapInteraction',req.user.id,e.id,{trigger:e.trigger,surface:e.surface,decisionId:e.decision_id||null,impressionId:e.impression_id||null});
-            if(snapshot?.surface==='search')sql.prepare('INSERT INTO MapInteractionContext VALUES(?,?)').run(e.id,JSON.stringify({search_session_id:snapshot.search_session_id,render_revision:snapshot.render_revision,impression_id:string(e.impression_id,80),impression_status:['threshold_met','clicked_before_threshold'].includes(e.impression_status)?e.impression_status:null}));
+            let context=null;
+            if(snapshot?.surface==='search'){
+                context={search_session_id:snapshot.search_session_id,render_revision:snapshot.render_revision,
+                    impression_id:string(e.impression_id,80),
+                    impression_status:['threshold_met','clicked_before_threshold'].includes(e.impression_status)?e.impression_status:null};
+            }else if(e.kind==='click'&&e.surface==='map'&&placeId){
+                const viewport=mapClickViewport(e.viewport);
+                if(viewport)context={viewport};
+            }
+            if(context)sql.prepare('INSERT INTO MapInteractionContext(event_id,context) VALUES(?,?)').run(e.id,JSON.stringify(context));
         }
     })();
     res.json({accepted});

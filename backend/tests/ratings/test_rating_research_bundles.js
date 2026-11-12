@@ -20,6 +20,7 @@ try{
     try{assert.equal(bundles.purgeBundles().failed,1);assert.equal(bundles.bundleStatus(created.id).valid,false);}finally{fs.rmSync=remove;}
     assert.ok(bundles.purgeBundles().deleted>=1);assert.equal(fs.existsSync(file),false);
     db._raw.prepare("INSERT INTO User(id,username,password) VALUES('unconsented','original-author','unused')").run();
+    evidence.recordResearchChoice('unconsented',false);
     const revisions=require('../../modules/places/services/placeRevisions');
     db._raw.prepare('UPDATE Place SET description=? WHERE id=?').run('unconsented original text',id);
     revisions.recordPlaceRevision({placeId:id,authorId:'unconsented',path:'create'});

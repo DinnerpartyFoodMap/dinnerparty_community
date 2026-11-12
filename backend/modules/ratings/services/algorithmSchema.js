@@ -1,5 +1,6 @@
 function initAlgorithmSchema(db){
-    require('../../community/services/feedbackRetention').initRetention(db);
+    const {initRetention,RESEARCH_PURPOSE_VERSION}=require('../../community/services/feedbackRetention');
+    initRetention(db);
     const eventColumns=`source_table TEXT NOT NULL,event_id TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,behavior_id INTEGER REFERENCES UserBehaviorEvent(id) ON DELETE CASCADE,interaction_id TEXT REFERENCES MapInteraction(id) ON DELETE CASCADE,consent_ref TEXT REFERENCES ResearchConsentEvent(id) ON DELETE SET NULL,research_allowed INTEGER NOT NULL DEFAULT 0,trigger_kind TEXT NOT NULL DEFAULT 'unknown',surface TEXT,decision_id TEXT,impression_id TEXT,contract_version INTEGER NOT NULL DEFAULT 1,recorded_at_ms INTEGER NOT NULL,PRIMARY KEY(source_table,user_id,event_id),CHECK((behavior_id IS NOT NULL)+(interaction_id IS NOT NULL)=1)`;
     const wasVersioned=db.prepare('PRAGMA table_info(UserPreference)').all().some(x=>x.name==='computed_input_revision');
     const add=(table,column)=>{if(!db.prepare(`PRAGMA table_info(${table})`).all().some(x=>x.name===column.split(' ')[0]))db.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`);};
@@ -40,6 +41,23 @@ function initAlgorithmSchema(db){
     add('RatingRevision','research_consent_id TEXT REFERENCES ResearchConsentEvent(id) ON DELETE SET NULL');
     add('PlaceRevision','research_consent_id TEXT REFERENCES ResearchConsentEvent(id) ON DELETE SET NULL');
     add('ResearchConsentEvent','revoked_at_ms INTEGER');
+    db.transaction(()=>{
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_research_consent_user_time ON ResearchConsentEvent(user_id,recorded_at_ms);
+            DROP TRIGGER IF EXISTS research_default_consent;
+            CREATE TRIGGER research_default_consent AFTER INSERT ON MapConsent
+            WHEN NEW.feedback=1 AND NEW.research=1
+              AND NOT EXISTS(SELECT 1 FROM ResearchConsentEvent WHERE user_id=NEW.user_id)
+            BEGIN
+                INSERT INTO ResearchConsentEvent(id,user_id,allowed,purpose_version,recorded_at_ms)
+                VALUES(lower(hex(randomblob(16))),NEW.user_id,1,'${RESEARCH_PURPOSE_VERSION}',CAST(round(unixepoch('subsec')*1000) AS INTEGER));
+            END;`);
+        // Grant from upgrade time onward, without replacing a prior decision.
+        db.prepare(`INSERT INTO ResearchConsentEvent(id,user_id,allowed,purpose_version,recorded_at_ms)
+            SELECT lower(hex(randomblob(16))),c.user_id,1,?,?
+            FROM MapConsent c WHERE c.feedback=1 AND c.research=1
+              AND NOT EXISTS(SELECT 1 FROM ResearchConsentEvent e WHERE e.user_id=c.user_id)`)
+            .run(RESEARCH_PURPOSE_VERSION,Date.now());
+    }).immediate();
     add('PlaceRequest','submitted_at_ms INTEGER');
     add('PlaceRequest','research_consent_id TEXT REFERENCES ResearchConsentEvent(id) ON DELETE SET NULL');
     add('PlaceRequest','edit_rating TEXT');
