@@ -24,6 +24,24 @@
 - 前端（`frontend/src/map/markerSnapshot.js`）启动时与高德 SDK 并行读取快照，上一份存在 IndexedDB 先用；平移缩放不再发请求，快照超过 5 分钟才在地图移动时后台刷新。打开卡片时读 `GET /places/:id` 补全描述、图片、创建者。新增、修改、删除、评价在本地立即生效，直到快照追上（最多 10 分钟）。
 - `GET /places/nearby` 保持原样，给旧版 App 用；新版前端不再调用。
 
+## 源站 Caddy
+
+Caddy 不能覆盖后端的 `Cache-Control`。`/backend` 那段原来写的是 `header_down Cache-Control "no-store"`，会把所有响应都改成 `no-store`，ESA 看到后一律 BYPASS。改成只在后端没设时补 `no-store`（`header` 的 `?` 前缀，会自动等反向代理写完响应头再判断）：
+
+```
+@backend path /backend /backend/*
+handle @backend {
+	uri strip_prefix /backend
+	# 后端自己设了 Cache-Control 的照用（公共缓存接口、头像、上传图片等），没设的仍是 no-store
+	header ?Cache-Control "no-store"
+	reverse_proxy localhost:7000 {
+		header_up X-Forwarded-Prefix /backend
+	}
+}
+```
+
+后端自己设了公共缓存的还有头像、上传的图片（`/uploads`，一年 immutable）、静态地图、逆地理结果、饭局分享图，都是公开内容；其他接口不设 `Cache-Control`，仍由这一行补成 `no-store`。
+
 ## ESA 规则
 
 先部署后端，再加规则（顺序反过来时，CDN 会把按 Origin 回头的旧响应缓存下来，App 读不到公告）。
