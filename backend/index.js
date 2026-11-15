@@ -87,7 +87,12 @@ function isAllowedOrigin(origin) {
     return false;
 }
 
-app.use(cors({
+// 公共可缓存接口（公告、展会、高德 key、地区、地图标记快照）固定回 Access-Control-Allow-Origin: *，
+// 不经过下面按 Origin 回头的 cors()，CDN 缓存的同一份响应网页和 App 都能用（http/middleware/publicCache.js）
+const { publicCache, skipForPublic } = require('./http/middleware/publicCache');
+app.use(publicCache());
+
+app.use(skipForPublic(cors({
     origin: (origin, callback) => {
         // origin 为空时（例如某些本地请求或 curl），允许通过
         if (!origin) {
@@ -112,7 +117,7 @@ app.use(cors({
     exposedHeaders: ['X-Request-ID'],
     credentials: true,
     maxAge: 3600
-}));
+})));
 
 const AMAP_JS_CODE = String(process.env.AMAP_JS_CODE || '').trim();
 

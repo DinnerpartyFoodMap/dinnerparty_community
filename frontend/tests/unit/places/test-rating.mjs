@@ -105,15 +105,23 @@ assert.equal(ratingDisplay(null,{rating_estimate:raw.estimate,rating_risk:{...fl
 assert.equal(ratingDisplay({...raw,estimate:{...raw.estimate,risk:flaggedRisk}}).personal.average,3.6);
 assert.equal(isAvoidedPlace({rating_count:3,rating_average:3.2,rating_risk:{...flaggedRisk,active:true}}),false);
 
-// Nearby requests distinguish visible viewport from marker prefetch coverage.
+// 地图标记：公共快照不带任何请求头（CDN 缓存、App 里不发预检），个人叠加带 token 且不缓存
 try {
-    let sent;
-    globalThis.fetch=async(url,options)=>{sent={url:new URL(url),options};return {ok:true,json:async()=>[]};};
-    const {fetchPlacesNearby}=await import('../../../src/api/client.js');
-    await fetchPlacesNearby('https://example.test',{minLng:110,maxLng:116,minLat:20,maxLat:26},{token:'tk',viewBounds:{minLng:112,maxLng:114,minLat:22,maxLat:24}});
-    assert.equal(sent.url.searchParams.get('minLng'),'110');
-    assert.equal(sent.url.searchParams.get('viewMinLng'),'112');
-    assert.equal(sent.url.searchParams.get('viewMaxLat'),'24');
-    assert.equal(sent.options.headers.Authorization,'Bearer tk');
-    assert.equal(sent.options.cache,'no-store');
+    const sent=[];
+    globalThis.fetch=async(url,options={})=>{sent.push({url:new URL(url),options});return {ok:true,status:200,json:async()=>({own:[],hidden_ids:[]})};};
+    const {fetchPlaceOverlay,fetchPlace}=await import('../../../src/api/client.js');
+    const {fetchMarkerSnapshot}=await import('../../../src/map/markerSnapshot.js');
+    await fetchMarkerSnapshot('https://example.test');
+    assert.equal(sent[0].url.href,'https://example.test/places/markers');
+    assert.equal(sent[0].options.headers,undefined);
+    assert.equal(sent[0].options.cache,undefined,'snapshot uses the normal HTTP cache');
+    await fetchPlaceOverlay('https://example.test','tk');
+    assert.equal(sent[1].url.pathname,'/places/overlay');
+    assert.equal(sent[1].options.headers.Authorization,'Bearer tk');
+    assert.equal(sent[1].options.cache,'no-store');
+    await fetchPlace('https://example.test',7,{token:'tk',cache:'no-cache'});
+    assert.equal(sent[2].url.pathname,'/places/7');
+    assert.equal(sent[2].options.cache,'no-cache');
+    await fetchPlace('https://example.test',7,{token:'tk'});
+    assert.equal('cache' in sent[3].options,false);
 } finally {globalThis.fetch=originalFetch;}

@@ -23,7 +23,7 @@ backend/
 └── doc/                        # 跨模块架构、历史、待办、测试规范
 ```
 
-先读 [架构与选型](doc/ARCHITECTURE.md)，再进入下表对应模块；定位旧文件用 [路径对照](doc/MIGRATION_MAP.md)。AI 修改代码前请读 [测试案例执行协议](doc/TESTING.md)，完成后更新相应模块案例及 [待办](doc/HISTORY_AND_TODO.md)。
+先读 [架构与选型](doc/ARCHITECTURE.md)，再进入下表对应模块；定位旧文件用 [路径对照](doc/MIGRATION_MAP.md)；CDN（阿里云 ESA）缓存哪些接口、规则怎么配见 [CDN 缓存](doc/CDN_CACHE.md)。AI 修改代码前请读 [测试案例执行协议](doc/TESTING.md)，完成后更新相应模块案例及 [待办](doc/HISTORY_AND_TODO.md)。
 
 | 模块 | 职责与文档 |
 | --- | --- |

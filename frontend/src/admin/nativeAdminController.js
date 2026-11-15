@@ -6,6 +6,7 @@ import { feedbackTypeLabel } from '../feedback/feedbackTypes.js';
 import { TASTE_AXES, axisLabel } from '../profile/tasteAxes.js';
 import { nativePageLabels } from '../platform/nativePageLabels.js';
 import { sfSymbol } from '../platform/iconRegistry.js';
+import { announcePublicUpdate } from '../platform/polling.js';
 
 const PAGE_SIZE = 10;
 const QQ_PATTERN = /^\d{5,15}$/;
@@ -644,6 +645,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
         const content = String(values.content || '').trim();
         if (!title || !content) return { error: t('admin:notices.fillRequired') };
         await api('/admin/notices', { method: 'POST', body: JSON.stringify({ title, content, color_key: values.color }) });
+        announcePublicUpdate('notice');
         return { page: await loadNotices(), message: t('admin:notices.published') };
       }
     });
@@ -660,6 +662,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
     if (current) {
       buttons.push(action(t('admin:notices.unpublish'), async () => {
         await api('/admin/notices/current', { method: 'DELETE' });
+        announcePublicUpdate('notice');
         return { page: await loadNotices(), message: t('admin:notices.unpublished') };
       }, { tone: 'danger', confirm: { title: t('admin:notices.unpublish'), message: t('admin:notices.confirmUnpublish'), button: t('admin:notices.unpublish') } }));
     }
@@ -705,6 +708,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
       // 修改页底部：下架这个展会
       actions: item ? [action(t('admin:exhibitions.unpublish'), async () => {
         await api(`/admin/exhibitions/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+        announcePublicUpdate('exhibition');
         return { page: await loadExhibitions(), message: t('admin:exhibitions.unpublished') };
       }, { tone: 'danger', confirm: { title: t('admin:exhibitions.unpublish'), message: t('admin:exhibitions.confirmUnpublish'), button: t('admin:exhibitions.unpublish') } })] : [],
       fields: [
@@ -743,6 +747,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
           method: item ? 'PUT' : 'POST',
           body: JSON.stringify(fields)
         });
+        announcePublicUpdate('exhibition');
         return { page: await loadExhibitions(), message: item ? t('admin:exhibitions.published') : t('admin:exhibitions.published') };
       }
     });

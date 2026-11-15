@@ -31,7 +31,7 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
         if (url.pathname === '/__web-layout' || url.pathname === '/p/99') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); return; }
         const responses = {
             '/users/me': { user: { id: 'web-layout-user', username: '布局测试住民', is_banned: false } },
-            '/places/nearby': [], '/api/favorites': [], '/categories': ['面食'],
+            '/places/markers': { version: 'empty', generated_at: 1, fields: ['id', 'name', 'longitude', 'latitude'], rows: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': ['面食'],
             '/places/random': { place: focusPlace, distanceKm: 0.3, candidateCount: 8 },
             '/api/community/consent': { feedback: false, version: 1 },
             '/api/places/search/fast': searchResults,

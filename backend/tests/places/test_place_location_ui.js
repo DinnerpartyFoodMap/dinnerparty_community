@@ -104,7 +104,7 @@ async function main() {
     await page.keyboard.press('Escape');
     await checkForm(120.012345, 30.023456, '选点前填写的描述');
     await form.getByText('修改记录预览', {exact:true}).waitFor();
-    await form.getByText('修改生效后，将以你的名义保存修改记录，仅管理员可查看。', {exact:true}).waitFor();
+    await form.getByText('修改生效后，描述里新增的文字会以你的名义保存为修改记录，仅管理员可查看。', {exact:true}).waitFor();
     await form.getByRole('button', { name: '保存', exact: true }).click();
     await form.getByRole('alert').waitFor();
     assert.deepEqual(coords(),saved,'missing required vote does not save partial changes');

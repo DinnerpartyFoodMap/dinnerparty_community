@@ -23,16 +23,11 @@ export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { s
 // 带 token 时结果包含自己新增、还在审核中的地点（其他人看不到）；token 无效时后端按游客返回
 const authHeaders = (token) => (token ? { headers: { Authorization: `Bearer ${token}` } } : {});
 
-export async function fetchPlacesNearby(backendUrl, { minLng, minLat, maxLng, maxLat }, { signal, token, viewBounds } = {}) {
-    const params = new URLSearchParams({
-        minLng: String(minLng),
-        minLat: String(minLat),
-        maxLng: String(maxLng),
-        maxLat: String(maxLat)
-    });
-    if(viewBounds)for(const name of ['minLng','minLat','maxLng','maxLat'])params.set('view'+name[0].toUpperCase()+name.slice(1),String(viewBounds[name]));
-    const res = await fetch(`${backendUrl}/places/nearby?${params.toString()}`, { signal, cache:'no-store', ...authHeaders(token) });
-    if (!res.ok) throw new Error(`Failed to fetch nearby places: ${res.status}`);
+// 地图标记的个人部分（与公共快照 GET /places/markers 合用，见 map/markerSnapshot.js）：
+// 自己审核中 / 未通过的地点与屏蔽的住民的地点 id；游客不调用
+export async function fetchPlaceOverlay(backendUrl, token, { signal } = {}) {
+    const res = await fetch(`${backendUrl}/places/overlay`, { signal, cache: 'no-store', ...authHeaders(token) });
+    if (!res.ok) throw new Error(`Failed to fetch place overlay: ${res.status}`);
     return res.json();
 }
 
@@ -138,8 +133,9 @@ export async function searchPlacesAi(backendUrl, opts = {}) {
 }
 
 // 单个地点：自己审核中的地点要带 token 才能读到（管理员同样）
-export async function fetchPlace(backendUrl, id, { token, signal } = {}) {
-    return fetch(`${backendUrl}/places/${encodeURIComponent(id)}`, { signal, ...authHeaders(token) });
+// cache: 'no-cache' 在刚修改后读取，确保拿到最新的
+export async function fetchPlace(backendUrl, id, { token, signal, cache } = {}) {
+    return fetch(`${backendUrl}/places/${encodeURIComponent(id)}`, { signal, ...(cache ? { cache } : {}), ...authHeaders(token) });
 }
 
 // 某位住民创建的地点（最近创建在前，最多 limit 个；带 token 时包含自己审核中的地点）。

@@ -8,6 +8,7 @@ import { useConfirm } from '../components/feedback/Confirm';
 import { useAuth } from '../auth/AuthContext';
 import { FullScreenMapPicker } from '../map/MapView';
 import { exhibitionCenter } from '../map/exhibition';
+import { announcePublicUpdate } from '../platform/polling';
 import { t } from '../i18n/index.js';
 
 const TEXT_FIELDS = ['name', 'description', 'information', 'icon_url', 'location_name', 'event_time'];
@@ -129,7 +130,7 @@ export default function AdminExhibitions({ backendUrl }) {
             setForm(saved);
             setExhibitions(previous => [...previous.filter(item => item.id !== saved.id), saved]
                 .sort((a, b) => (a.event_time || '9999').localeCompare(b.event_time || '9999') || a.id - b.id));
-            window.dispatchEvent(new Event('exhibition-updated'));
+            announcePublicUpdate('exhibition');
             showTip(t('admin:exhibitions.published'));
         } catch (e) { setError(e.message); }
         finally { setBusy(false); }
@@ -144,7 +145,7 @@ export default function AdminExhibitions({ backendUrl }) {
             setExhibitions(previous => previous.filter(item => item.id !== current.id));
             setCurrent(null);
             setForm(EMPTY);
-            window.dispatchEvent(new Event('exhibition-updated'));
+            announcePublicUpdate('exhibition');
             showTip(t('admin:exhibitions.unpublished'));
         } catch (e) { setError(e.message); }
         finally { setBusy(false); }

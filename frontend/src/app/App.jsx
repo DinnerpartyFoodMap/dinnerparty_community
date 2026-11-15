@@ -45,6 +45,7 @@ import { getApiBaseUrl } from "../platform/runtimeConfig";
 import { getCurrentPath, navigate, canGoBack } from "../platform/navigation";
 import { useBackHandler, refreshBackTarget, BACK_PRIORITY } from "../platform/backButton";
 import { onAppStateChange } from "../platform/lifecycle";
+import { startPublicPolling, freshUrl, PUBLIC_UPDATE_EVENTS } from "../platform/polling";
 import { needsRestore, peekToken, restoreToken, saveToken, clearToken, subscribeExternalTokenChanges, decodeTokenPayload } from "../platform/credentialStore";
 import { MotionProvider } from "../motion/MotionProvider";
 import PageTransition, { navigationDirection } from "../motion/PageTransition";
@@ -251,15 +252,19 @@ export default function App() {
         return () => window.removeEventListener("popstate", onPopstate);
     }, []);
 
+    // 公告：公共缓存接口，低频轮询（platform/polling.js）；管理员改了公告后立即读最新的
     useEffect(() => {
         let cancelled = false;
+        let sequence = 0;
 
-        const loadNotice = async () => {
+        const loadNotice = async ({ fresh }) => {
+            const request = ++sequence;
             try {
-                const res = await fetch(`${BACKEND_URL}/notices/current`);
+                const url = `${BACKEND_URL}/notices/current`;
+                const res = await fetch(fresh ? freshUrl(url) : url, fresh ? { cache: 'no-store' } : undefined);
                 if (!res.ok) return;
                 const data = await res.json().catch(() => ({}));
-                if (cancelled) return;
+                if (cancelled || request !== sequence) return;
                 setSiteNotice(data && data.notice ? data.notice : null);
             } catch (e) {
                 if (!cancelled) {
@@ -268,16 +273,10 @@ export default function App() {
             }
         };
 
-        loadNotice();
-        const timer = window.setInterval(loadNotice, 30000);
-        window.addEventListener('focus', loadNotice);
-        const stopLifecycle = onAppStateChange(({ active }) => { if (active) loadNotice(); });
-
+        const stop = startPublicPolling(loadNotice, { updateEvent: PUBLIC_UPDATE_EVENTS.notice });
         return () => {
             cancelled = true;
-            window.clearInterval(timer);
-            window.removeEventListener('focus', loadNotice);
-            stopLifecycle();
+            stop();
         };
     }, []);
 

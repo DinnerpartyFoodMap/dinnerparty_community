@@ -91,14 +91,58 @@ router.get("/nearby", attachViewer, (req, res) => {
     });
 });
 
-// 有公开地点的省 / 市 / 区（地区筛选的下拉栏；services/placeRegions.js），五分钟缓存
+// 有公开地点的省 / 市 / 区（地区筛选的下拉栏；services/placeRegions.js），公共缓存五分钟（http/middleware/publicCache.js）
 router.get("/regions", (req, res) => {
-    res.set('Cache-Control', 'public, max-age=300');
     try {
         res.json({ regions: require('../services/placeRegions').regionTree() });
     } catch (error) {
         res.locals.unhandledError = error;
         res.status(500).json({ error: '地区列表加载失败，请稍后重试' });
+    }
+});
+
+// 地图标记快照（services/placeMarkers.js）：全部公开地点的精简字段，与观看者无关，公共缓存（http/middleware/publicCache.js）。
+// 新版前端只用它画标记；/nearby 留给旧版 App
+router.get("/markers", async (req, res) => {
+    try {
+        const snapshot = await require('../services/placeMarkers').markerSnapshot();
+        const encoding = req.acceptsEncodings('br') ? 'br' : (req.acceptsEncodings('gzip') ? 'gzip' : null);
+        res.set('Content-Type', 'application/json; charset=utf-8');
+        res.set('ETag', snapshot.etag);
+        res.vary('Accept-Encoding');
+        if (encoding) res.set('Content-Encoding', encoding);
+        // ETag 已设：If-None-Match 对得上时 res.send 回 304
+        res.send(encoding === 'br' ? snapshot.br : encoding === 'gzip' ? snapshot.gzip : snapshot.identity);
+    } catch (error) {
+        res.locals.unhandledError = error;
+        res.removeHeader('Content-Encoding');
+        res.status(500).json({ error: '地点加载失败，请稍后重试' });
+    }
+});
+
+// 地图标记的个人部分（与 /markers 合用）：自己创建、还在审核中或未通过的地点（完整行，只有自己看得到），
+// 以及观看者屏蔽的住民创建的公开地点 id（地图上要去掉）。游客两项都为空
+router.get("/overlay", attachViewer, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const viewer = req.viewer;
+    if (!viewer) return res.json({ own: [], hidden_ids: [] });
+    try {
+        const own = db._raw.prepare(`SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
+                 FROM Place p
+                 LEFT JOIN User u ON p.creator_id = u.id
+                 LEFT JOIN User uu ON p.updated_by = uu.id
+                 LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
+                 WHERE p.creator_id = ? AND p.moderation_status <> 'visible'
+                   AND p.longitude IS NOT NULL AND p.latitude IS NOT NULL
+                 ORDER BY p.id`).all(viewer.id);
+        const hiddenIds = db._raw.prepare(`SELECT p.id FROM Place p
+                 JOIN UserBlock ub ON ub.blocked_id = p.creator_id
+                 WHERE ub.user_id = ? AND p.moderation_status = 'visible'
+                 ORDER BY p.id`).all(String(viewer.id)).map((row) => row.id);
+        res.json({ own: visibleProjectedRows(await projectRatingViews(own, viewer.id, { map: true }), viewer), hidden_ids: hiddenIds });
+    } catch (error) {
+        res.locals.unhandledError = error;
+        res.status(500).json({ error: '地点加载失败，请稍后重试' });
     }
 });
 

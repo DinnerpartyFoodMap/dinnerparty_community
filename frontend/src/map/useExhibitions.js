@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
-import { onAppStateChange } from '../platform/lifecycle';
+import { startPublicPolling, freshUrl, PUBLIC_UPDATE_EVENTS } from '../platform/polling';
 
-/** Poll publications independently of rotation. Preserve the active ID across refreshes and edits. */
+/**
+ * Poll publications independently of rotation. Preserve the active ID across refreshes and edits.
+ * 展会列表是公共缓存接口：低频轮询（platform/polling.js），管理员改了展会后立即读最新的。
+ */
 export function useExhibitions(backendUrl, enabled = true) {
     const [state, setState] = useState({ exhibitions: [], activeId: null });
     useEffect(() => {
         if (!enabled) return undefined;
         let cancelled = false;
         let controller;
-        const load = async () => {
+        const load = async ({ fresh }) => {
             controller?.abort();
             const request = new AbortController();
             controller = request;
             try {
-                const res = await fetch(`${backendUrl}/exhibitions`, { signal: request.signal });
+                const url = `${backendUrl}/exhibitions`;
+                const res = await fetch(fresh ? freshUrl(url) : url, { signal: request.signal, ...(fresh ? { cache: 'no-store' } : {}) });
                 if (!res.ok) return;
                 const data = await res.json();
                 if (cancelled || request.signal.aborted || !Array.isArray(data.exhibitions)) return;
@@ -28,18 +32,11 @@ export function useExhibitions(backendUrl, enabled = true) {
                 if (!cancelled && !request.signal.aborted) console.warn('Failed to load exhibitions', error);
             }
         };
-        load();
-        const timer = window.setInterval(load, 30000);
-        window.addEventListener('focus', load);
-        window.addEventListener('exhibition-updated', load);
-        const stopLifecycle = onAppStateChange(({ active }) => { if (active) load(); });
+        const stop = startPublicPolling(load, { updateEvent: PUBLIC_UPDATE_EVENTS.exhibition });
         return () => {
             cancelled = true;
             controller?.abort();
-            window.clearInterval(timer);
-            window.removeEventListener('focus', load);
-            window.removeEventListener('exhibition-updated', load);
-            stopLifecycle();
+            stop();
         };
     }, [backendUrl, enabled]);
 

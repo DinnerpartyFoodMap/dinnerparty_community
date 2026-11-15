@@ -8,7 +8,7 @@ import {
     buildSnapshot, computeLogicalZoom, expandBounds, boundsContains, normalizeViewBounds
 } from "../../../src/map/cluster/snapshot.js";
 import { planTransition, verifySnapshotMembers } from "../../../src/map/cluster/transitions.js";
-import { PlaceRangeCache, RequestGate } from "../../../src/map/cluster/placeCache.js";
+import { MarkerSnapshotStore, MarkerSnapshotSource, expandMarkerSnapshot, SNAPSHOT_MAX_AGE_MS, SNAPSHOT_RETRY_MS } from "../../../src/map/markerSnapshot.js";
 import { clusterScale, glyphSize, formatCount, hitSize } from "../../../src/map/cluster/glyph.js";
 import { worldPixel, unprojectWorldPixel, centerForScreenTarget, readMapViewport } from "../../../src/map/viewport.js";
 import { tileBounds, isOverseasTile, buildCartoTileUrl } from "../../../src/map/overseasTileLayer.js";
@@ -239,59 +239,120 @@ assert.ok(boundsContains(expandBounds(v, 0.5), v));
     assert.equal(readMapViewport({ ...map, getZoom: () => { throw new Error('not ready'); } }), null);
 }
 
-// ---- 范围缓存：覆盖判断、范围内删除、过期、淘汰 ----
+// ---- 地图标记：快照展开、个人叠加、本地修改与快照追上 ----
 {
     let now = 1000;
-    const cache = new PlaceRangeCache({ ttlMs: 100, maxPlaces: 50, maxRegions: 3, now: () => now });
-    const view = { minLng: 113, maxLng: 113.1, minLat: 23, maxLat: 23.1 };
-    assert.equal(cache.coverage(view).covered, false);
-    const region = expandBounds(view, 1);
-    assert.ok(cache.apply(region, [{ id: 1, longitude: 113.05, latitude: 23.05 }, { id: 2, longitude: 113.06, latitude: 23.06 }]));
-    let status = cache.coverage(view);
-    assert.ok(status.covered && status.fresh && !status.nearEdge);
-    // 视野接近覆盖边缘：需要后台请求
-    assert.equal(cache.coverage({ minLng: 113.18, maxLng: 113.195, minLat: 23, maxLat: 23.1 }).nearEdge, true);
-    // 同一范围的新响应里缺少地点 2 → 已删除
-    assert.ok(cache.apply(region, [{ id: 1, longitude: 113.05, latitude: 23.05 }]));
-    assert.deepEqual(cache.all().map((p) => p.id), [1]);
-    // 相同内容的响应不算变化
-    assert.equal(cache.apply(region, [{ id: 1, longitude: 113.05, latitude: 23.05 }]), false);
-    now += 500;
-    assert.equal(cache.coverage(view).fresh, false);
-    // 点数上限：淘汰最久未使用的区域
-    for (let r = 0; r < 4; r++) {
-        const lng = 100 + r;
-        const list = Array.from({ length: 30 }, (_, i) => ({ id: 1000 + r * 100 + i, longitude: lng + 0.01, latitude: 30 + i * 0.001 }));
-        cache.apply({ minLng: lng, maxLng: lng + 0.5, minLat: 29.9, maxLat: 30.5 }, list);
-        now += 1;
-    }
-    assert.ok(cache.places.size <= 50, `缓存地点 ${cache.places.size}`);
-    assert.ok(cache.regions.length <= 3);
+    const fields = ['id', 'name', 'longitude', 'latitude', 'rating_count'];
+    const raw = (version, generated_at, rows) => ({ version, generated_at, fields, rows });
+    assert.equal(expandMarkerSnapshot(null), null);
+    assert.equal(expandMarkerSnapshot({ version: 'v', fields: [], rows: {} }), null);
+    const first = expandMarkerSnapshot(raw('a', 10, [[1, '粥', 113, 23, 1], [2, '面', 113.1, 23, 0]]));
+    assert.deepEqual(first.places[0], { marker_only: true, id: 1, name: '粥', longitude: 113, latitude: 23, rating_count: 1 });
+
+    const store = new MarkerSnapshotStore({ now: () => now, patchTtlMs: 100 });
+    assert.deepEqual(store.all(), []);
+    assert.equal(store.hasSnapshot, false);
+    assert.equal(store.setSnapshot(first), true);
+    const list = store.all();
+    assert.equal(store.all(), list, '内容不变时返回同一个数组');
+    assert.deepEqual(list.map((p) => p.id), [1, 2]);
+    assert.equal(store.setSnapshot(expandMarkerSnapshot(raw('a', 20, [[1, '粥', 113, 23, 1]]))), false, '版本相同不算变化');
+    assert.equal(store.setSnapshot(expandMarkerSnapshot(raw('old', 5, []))), false, '更早的快照（本机缓存晚到）不覆盖');
+
+    // 个人叠加：自己审核中的地点加进来，屏蔽的住民的地点去掉
+    const pending = { id: 9, name: '审核中', longitude: 113.2, latitude: 23, moderation_status: 'pending' };
+    assert.equal(store.setOverlay({ own: [pending], hidden_ids: [2] }), true);
+    assert.deepEqual(store.all().map((p) => p.id), [1, 9]);
+    assert.equal(store.setOverlay({ own: [pending], hidden_ids: [2] }), false);
+    store.upsert({ ...pending, name: '改名中' });
+    assert.equal(store.get('place:9').name, '改名中');
+    assert.equal(store.setOverlay({ own: [pending], hidden_ids: [2] }), true, '刚读到的叠加层覆盖自己地点的本地修改');
+    assert.equal(store.get('place:9').name, '审核中');
+
+    // 本地修改：立即生效；CDN 上的旧快照不覆盖；快照追上（标记字段一致）后丢弃
+    store.upsert({ id: 1, name: '粥铺', longitude: 113, latitude: 23, rating_count: 1, description: '新描述' });
+    assert.equal(store.get('place:1').name, '粥铺');
+    store.setSnapshot(expandMarkerSnapshot(raw('b', 30, [[1, '粥', 113, 23, 1], [2, '面', 113.1, 23, 0], [3, '新', 113.3, 23, 0]])));
+    assert.equal(store.get('place:1').name, '粥铺', '旧快照不覆盖刚改的名字');
+    store.setSnapshot(expandMarkerSnapshot(raw('c', 40, [[1, '粥铺', 113, 23, 1], [3, '新', 113.3, 23, 0]])));
+    assert.equal(store.patches.size, 0, '快照追上后本地修改作废');
+    assert.equal(store.get('place:1').marker_only, true);
+
+    // 删除：快照里还有就保持删除，最多 patchTtlMs
+    store.remove('place:3');
+    assert.equal(store.get('place:3'), null);
+    store.setSnapshot(expandMarkerSnapshot(raw('d', 50, [[1, '粥铺', 113, 23, 1], [3, '新', 113.3, 23, 0]])));
+    assert.equal(store.get('place:3'), null);
+    const beforeExpiry = store.all();
+    now += 150;
+    assert.notEqual(store.get('place:3'), null, '本地修改过期后回到快照');
+    assert.notEqual(store.all(), beforeExpiry);
+    store.remove('place:3');
+    store.setSnapshot(expandMarkerSnapshot(raw('e', 60, [[1, '粥铺', 113, 23, 1]])));
+    assert.equal(store.patches.size, 0, '快照里也没有了：删除完成');
+
+    // 只改评价汇总（避雷图标）
+    assert.equal(store.patchPlace('place:1', { rating_count: 1 }), false);
+    assert.equal(store.patchPlace('place:1', { rating_count: 2 }), true);
+    assert.equal(store.get('place:1').rating_count, 2);
+    assert.equal(store.patchPlace('place:404', { rating_count: 2 }), false);
+
+    // 换账号：叠加与本地修改都作废
+    assert.equal(store.resetPersonal(), true);
+    assert.deepEqual(store.all().map((p) => p.id), [1]);
+    assert.equal(store.get('place:1').rating_count, 1);
+    assert.equal(store.resetPersonal(), false);
 }
 
-// ---- 请求闸门：旧响应即使晚到也不能覆盖新状态 ----
+// ---- 快照来源：本机缓存与网络、过期刷新、失败后的等待、并发合并 ----
 {
-    const cache=new PlaceRangeCache(),wide={minLng:0,maxLng:4,minLat:0,maxLat:4},narrow={minLng:0,maxLng:1.5,minLat:0,maxLat:4};
-    const points=[1,2,3].map(id=>({id,longitude:id,latitude:1,rating_deferred:true,rating_eager_limit:2}));
-    cache.apply(wide,points);
-    assert.equal(cache.needsRatings(wide),false,'dense view remains lazy');
-    assert.equal(cache.needsRatings(narrow),true,'zooming into fresh cached markers requests visible ratings');
-    cache.upsert({...points[0],rating_deferred:false});
-    assert.equal(cache.needsRatings(narrow),false,'no repeated request once sparse scores were attempted');
-    cache.upsert({...points[0],rating_eager_limit:0});
-    assert.equal(cache.needsRatings(narrow),false,'server zero-limit configuration remains authoritative');
-}
+    let now = 0, calls = 0, fail = false;
+    const writes = [];
+    const row = (id) => ({ fields: ['id', 'longitude', 'latitude'], rows: [[id, 113, 23]] });
+    const source = new MarkerSnapshotSource({
+        now: () => now,
+        fetchSnapshot: async () => {
+            calls += 1;
+            if (fail) throw new Error('offline');
+            return { version: `n${calls}`, generated_at: 100 + calls, ...row(calls) };
+        },
+        readStored: async () => ({ version: 'stored', generated_at: 50, ...row(7) }),
+        writeStored: async (raw) => { writes.push(raw.version); }
+    });
+    const seen = [];
+    source.subscribe((snapshot) => seen.push(snapshot.version));
+    await source.start();
+    await source.storedLoaded;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(source.current.version, 'n1');
+    assert.equal(seen.at(-1), 'n1', '本机缓存晚到也不覆盖网络快照');
+    assert.deepEqual(writes, ['n1'], '只把网络快照存回本机');
+    const late = [];
+    source.subscribe((snapshot) => late.push(snapshot.version));
+    assert.deepEqual(late, ['n1'], '后打开的地图立即拿到当前快照');
 
-{
-    const gate = new RequestGate();
-    const first = gate.begin();
-    const second = gate.begin();
-    assert.equal(first.signal.aborted, true);
-    assert.equal(gate.isCurrent(first), false);
-    assert.equal(gate.isCurrent(second), true);
-    gate.invalidate(); // 进入搜索模式
-    assert.equal(gate.isCurrent(second), false);
-    assert.equal(second.signal.aborted, true);
+    await source.refresh();
+    assert.equal(calls, 1, '没过期不请求');
+    await source.start();
+    assert.equal(calls, 1, '再打开一张地图也不重复请求');
+    now += SNAPSHOT_MAX_AGE_MS + 1;
+    const [a, b] = [source.refresh(), source.refresh()];
+    assert.equal(a, b, '同时只有一个请求');
+    await a;
+    assert.equal(calls, 2);
+    assert.equal(source.current.version, 'n2');
+
+    fail = true;
+    now += SNAPSHOT_MAX_AGE_MS + 1;
+    await assert.rejects(source.refresh(), /offline/);
+    assert.equal(source.current.version, 'n2', '失败时保留上一份');
+    await assert.rejects(source.refresh(), (error) => error.code === 'RETRY_PENDING');
+    assert.equal(calls, 3, '失败后等一会儿再试');
+    fail = false;
+    await source.refresh({ force: true });
+    assert.equal(calls, 4, '强制刷新不等');
+    now += SNAPSHOT_RETRY_MS;
+    assert.equal(source.current.version, 'n4');
 }
 
 // ---- Web Mercator 像素换算与安全区居中 ----

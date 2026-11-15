@@ -11,6 +11,7 @@ import useDarkMode from "../theme/useDarkMode";
 import { NOTICE_COLOR_OPTIONS, getNoticeColorOption } from "../components/feedback/noticeColors";
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
+import { announcePublicUpdate } from '../platform/polling';
 import { t } from '../i18n/index.js';
 
 function resolveBackendUrl() {
@@ -142,6 +143,7 @@ export default function AdminNotices({ backendUrl = null }) {
                 throw new Error(data.error || t('admin:notices.publishFailedStatus', { status: res.status }));
             }
 
+            announcePublicUpdate('notice');
             showTip(t('admin:notices.published'));
             setTitle('');
             setContent('');
@@ -185,6 +187,7 @@ export default function AdminNotices({ backendUrl = null }) {
                 throw new Error(data.error || t('admin:notices.unpublishFailedStatus', { status: res.status }));
             }
 
+            announcePublicUpdate('notice');
             showTip(t('admin:notices.unpublished'));
             await fetchNotices();
         } catch (e) {

@@ -66,8 +66,7 @@ async function fetchAmap(path, params) {
 router.get('/js-config', (req, res) => {
     const key = String(process.env.AMAP_JS_KEY || '').trim();
     if (!key) return res.status(503).json({ error: '地图服务未配置（AMAP_JS_KEY）' });
-    // no-cache：浏览器每次用 ETag 重新校验，换 key 后下次打开页面即生效
-    res.set('Cache-Control', 'no-cache');
+    // 公共缓存（http/middleware/publicCache.js）：浏览器每次用 ETag 校验，CDN 缓存 5 分钟，换 key 后最多 5 分钟生效
     return res.json({ key });
 });
 

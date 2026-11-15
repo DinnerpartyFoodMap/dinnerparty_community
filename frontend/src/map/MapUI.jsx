@@ -277,6 +277,7 @@ export default function MapUI(props) {
         placeFilter = EMPTY_PLACE_FILTER,
         onPlaceFilterChange,
         openManagePanel,
+        ensurePlaceDetail,
         openCreateFromPoi,
         openCommentPanel,
         closePopup,
@@ -1903,12 +1904,16 @@ export default function MapUI(props) {
         ];
     };
 
-    const handlePickPlace = () => {
+    const handlePickPlace = async () => {
         if (!selectedPlace) return;
         if (isPosterPicker && selectedPlaceAlreadyPicked) {
             if (typeof onRemovePickedPlace === 'function') onRemovePickedPlace(selectedPlace);
         } else if (typeof onPickPlace === 'function') {
-            onPickPlace(selectedPlace);
+            // 地图快照里的地点只有标记字段：交给饭局、日记、海报前先补全地址、图片等
+            const place = ensurePlaceDetail ? await ensurePlaceDetail(selectedPlace) : selectedPlace;
+            if (!place) return;
+            if (place.marker_only === true) { showTip?.(t('map:main.markerLoadFailed')); return; }
+            onPickPlace(place);
         }
         if (typeof closePopup === 'function') closePopup();
     };

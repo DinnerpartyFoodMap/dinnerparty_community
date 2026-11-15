@@ -7,10 +7,9 @@ import { loadPlaceRegions, regionBounds } from "../places/placeRegions";
 import { MarkerLayerController } from "./MarkerLayerController";
 import { installPinchGuard } from "./pinchGuard";
 import { OverseasTileLayer } from "./overseasTileLayer";
-import { PlaceRangeCache, RequestGate } from "./cluster/placeCache";
-import { expandBounds, normalizeViewBounds } from "./cluster/snapshot";
+import { MarkerSnapshotStore, markerSnapshotSource } from "./markerSnapshot";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
-import { readViewBounds, readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
+import { readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
 import { createLocationReporter } from "./locationReport";
 import MotionSurface from "../components/overlay/MotionSurface";
@@ -42,7 +41,9 @@ const DEFAULT_ZOOM = MapUtils.DEFAULT_ZOOM;
 const { normalizeLngLat, readSavedMapView, shouldPersistMapView, MAP_VIEW_STORAGE_KEY, MAP_VIEW_SAVE_DEBOUNCE_MS, LOCATE_ME_MIN_ZOOM, canUseLocationInCurrentContext, getLocationErrorMessage } = MapUtils;
 // 启动自动定位每个进程只做一次（地图页重新挂载时不再重复）
 let autoLocateAttempted = false;
-const PREFETCH_BOUNDS_RATIO = 1; // prefetch one viewport margin around the visible area
+// 打开卡片时补全的地点详情（GET /places/:id）在这段时间内直接复用
+const PLACE_DETAIL_TTL_MS = 60 * 1000;
+const PLACE_DETAIL_CACHE_SIZE = 100;
 
 function boundsOfPlaces(list) {
     let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90, count = 0;
@@ -103,11 +104,13 @@ export default function MapView({
     const mapRef = useRef(null);
     const markerLayerRef = useRef(null);
     const overseasLayerRef = useRef(null);
-    const placeCacheRef = useRef(null);
-    if (!placeCacheRef.current) placeCacheRef.current = new PlaceRangeCache();
-    const nearbyGateRef = useRef(null);
-    if (!nearbyGateRef.current) nearbyGateRef.current = new RequestGate();
+    // 地图标记：公共快照 + 个人叠加 + 本地修改（markerSnapshot.js），与视野无关
+    const markerStoreRef = useRef(null);
+    if (!markerStoreRef.current) markerStoreRef.current = new MarkerSnapshotStore();
+    const overlayRequestRef = useRef(null);
     const nearbyFailureRef = useRef(0);
+    // 快照里的地点只有标记字段，打开卡片时再补全（ensurePlaceDetail）；换账号时清空
+    const placeDetailsRef = useRef({ cache: new Map(), pending: new Map() });
     const userLocationMarkerRef = useRef(null);
     const locateAbortRef = useRef(null);
     const addModeRef = useRef(false);
@@ -750,10 +753,7 @@ export default function MapView({
         const stopLifecycle = onAppStateChange(({ active, backgroundMs }) => {
             if (!active || !mapRef.current) return;
             if (handleResize) handleResize();
-            if (backgroundMs > 60000) {
-                placeCacheRef.current.invalidate();
-                if (loadPlacesRef.current) loadPlacesRef.current(false);
-            }
+            if (backgroundMs > 60000) refreshNearbyRef.current?.({ maxAgeMs: 60000 });
         });
 
         return () => {
@@ -785,7 +785,7 @@ export default function MapView({
                     mapRef.current.off("zoomend", handleViewChange);
                 }
             }
-            nearbyGateRef.current.invalidate();
+            overlayRequestRef.current?.abort();
             if (markerLayerRef.current) {
                 markerLayerRef.current.destroy();
                 markerLayerRef.current = null;
@@ -831,62 +831,158 @@ export default function MapView({
         overseasLayerRef.current?.setDark(dark);
     }, [dark, currentUser, mapReady]);
 
-    // 附近地点：范围缓存 + 请求闸门。缓存覆盖内平移只重新查询可见节点；接近覆盖边界或过期时后台请求，
-    // 请求期间继续显示缓存。旧请求被取消，且序号校验保证即使取消失败，旧响应也不能覆盖新视野或新模式。
-    // force：即使处于搜索/沿途模式也加载（退出这些模式时调用）；需要绕过缓存时先 invalidate（见 refreshNearby）。
-    // 请求回调只提交数据；显示哪份数据由当前模式决定，标记由统一入口渲染。
+    // 地图标记（markerSnapshot.js）：公共快照（CDN 与浏览器可缓存、本机存一份）+ 登录后的个人叠加 + 本地修改。
+    // 数据与视野无关，平移缩放不发请求；地图移动时快照超过 SNAPSHOT_MAX_AGE_MS 才后台刷新（多数由缓存回答）。
+    // 显示哪份数据由当前模式决定（沿途 > 搜索 > 住民筛选 > 附近），标记由统一入口渲染。
     const publishNearbyFromCache = () => {
-        const all = placeCacheRef.current.all();
+        const all = markerStoreRef.current.all();
+        if (placesRef.current === all) return;
         placesRef.current = all;
         setPlaces(all);
     };
 
-    const loadPlaces = async (force = false) => {
-        if (!mapRef.current) return;
-        if (!force && (searchResultsRef.current !== null || alongRouteResultsRef.current !== null || userFilterRef.current !== null)) return;
-        // 缩得很小时 AMap 的视野经度会超出 ±180，换算成真实经纬度后再判断缓存覆盖和请求
-        const view = normalizeViewBounds(readViewBounds(mapRef.current));
-        if (!view || !(view.maxLng > view.minLng) || !(view.maxLat > view.minLat)) return;
-        const cache = placeCacheRef.current;
-        const status = cache.coverage(view);
-        if (status.covered) publishNearbyFromCache();
-        if (status.covered && status.fresh && !status.nearEdge && !cache.needsRatings(view)) return;
-
-        const target = expandBounds(view, PREFETCH_BOUNDS_RATIO);
-        const gate = nearbyGateRef.current;
-        const ticket = gate.begin();
-        try {
-            const data = await Api.fetchPlacesNearby(backendUrl, target, { signal: ticket.signal, token, viewBounds:view });
-            if (!gate.isCurrent(ticket)) return;
-            nearbyFailureRef.current = 0;
-            const changed = cache.apply(target, data);
-            if (changed || !status.covered) publishNearbyFromCache();
-        } catch (e) {
-            if (e?.name === 'AbortError' || !gate.isCurrent(ticket)) return;
-            console.error("加载地点失败", e);
-            // 失败时保留最后成功的数据，并提示一次（连续失败不重复打扰）
+    // 一份标记数据都没有时才提示（本机缓存读完后再判断），连续失败只提示一次
+    const reportMarkerFailure = (error) => {
+        if (error?.code === 'RETRY_PENDING') return;
+        console.warn('加载地图标记失败', error);
+        Promise.resolve(markerSnapshotSource(backendUrl).storedLoaded).then(() => {
+            if (markerStoreRef.current.hasSnapshot) return;
             nearbyFailureRef.current += 1;
             if (nearbyFailureRef.current === 1) showTip(t('map:main.nearbyLoadFailed'));
-        }
+        });
+    };
+
+    const refreshMarkers = (options) => markerSnapshotSource(backendUrl).refresh(options)
+        .then(() => { nearbyFailureRef.current = 0; }, reportMarkerFailure);
+
+    // 快照来源所有地图实例共用：启动时（main.jsx）已经开始加载，这里订阅并确保至少读过一次
+    useEffect(() => {
+        if (!backendUrl) return undefined;
+        const source = markerSnapshotSource(backendUrl);
+        const unsubscribe = source.subscribe((snapshot) => {
+            if (markerStoreRef.current.setSnapshot(snapshot)) publishNearbyFromCache();
+        });
+        source.start().then(() => { nearbyFailureRef.current = 0; }, reportMarkerFailure);
+        return unsubscribe;
+    }, [backendUrl]);
+
+    // 地图就绪、移动结束、退出搜索 / 沿途 / 住民筛选时调用：发布当前数据，快照旧了就后台刷新
+    const loadPlaces = () => {
+        publishNearbyFromCache();
+        return refreshMarkers();
     };
     loadPlacesRef.current = loadPlaces;
 
-    const refreshNearby = () => {
-        placeCacheRef.current.invalidate();
-        return loadPlaces(true);
+    // 个人叠加：自己审核中的地点、屏蔽的住民的地点。游客清空；换账号时旧请求作废
+    const refreshOverlay = async () => {
+        overlayRequestRef.current?.abort();
+        overlayRequestRef.current = null;
+        const store = markerStoreRef.current;
+        if (!token) {
+            if (store.setOverlay(null)) publishNearbyFromCache();
+            return;
+        }
+        const controller = new AbortController();
+        overlayRequestRef.current = controller;
+        try {
+            const data = await Api.fetchPlaceOverlay(backendUrl, token, { signal: controller.signal });
+            if (controller.signal.aborted) return;
+            if (store.setOverlay(data)) publishNearbyFromCache();
+        } catch (e) {
+            if (e?.name !== 'AbortError') console.warn('加载自己的地点失败', e);
+        } finally {
+            if (overlayRequestRef.current === controller) overlayRequestRef.current = null;
+        }
     };
+
+    // 增删改、屏蔽、日记建了新标记、从后台回来：重读个人叠加，快照超过 maxAgeMs 时一并刷新
+    const refreshNearby = ({ maxAgeMs = 30000 } = {}) => Promise.all([
+        refreshOverlay(),
+        refreshMarkers({ maxAgeMs, force: true })
+    ]).then(() => publishNearbyFromCache());
     refreshNearbyRef.current = refreshNearby;
 
-    // 登录 / 退出后：附近地点里“自己新增、还在审核中的地点”随身份变化，缓存作废后重新加载
-    const nearbyTokenRef = useRef(token);
+    // 登录 / 退出 / 换账号：个人叠加、本地修改和补全过的详情都随身份变化
+    const markerTokenRef = useRef(token);
     useEffect(() => {
-        if (nearbyTokenRef.current === token) return;
-        nearbyTokenRef.current = token;
-        nearbyGateRef.current.invalidate();
-        placeCacheRef.current.clear();
-        loadPlacesRef.current?.(false);
-        refreshUserFilterRef.current?.();
-    }, [token]);
+        if (markerTokenRef.current !== token) {
+            markerTokenRef.current = token;
+            placeDetailsRef.current.cache.clear();
+            placeDetailsRef.current.pending.clear();
+            if (markerStoreRef.current.resetPersonal()) publishNearbyFromCache();
+            refreshUserFilterRef.current?.();
+        }
+        refreshOverlay();
+    }, [token, backendUrl]);
+
+    // 地点详情（GET /places/:id）：同一地点同时只请求一次，一分钟内复用。resolve 地点；已删除或看不到时为 null
+    const loadPlaceDetail = (id, { fresh = false } = {}) => {
+        const details = placeDetailsRef.current;
+        const key = String(id);
+        const cached = details.cache.get(key);
+        if (!fresh && cached && Date.now() - cached.at < PLACE_DETAIL_TTL_MS) return Promise.resolve(cached.place);
+        if (!fresh && details.pending.has(key)) return details.pending.get(key);
+        const request = Api.fetchPlace(backendUrl, id, { token, cache: fresh ? 'no-cache' : undefined })
+            .then(async (res) => {
+                if (res.status === 404) {
+                    details.cache.delete(key);
+                    return null;
+                }
+                if (!res.ok) throw new Error(`Failed to fetch place: ${res.status}`);
+                const place = await res.json();
+                details.cache.delete(key);
+                details.cache.set(key, { place, at: Date.now() });
+                if (details.cache.size > PLACE_DETAIL_CACHE_SIZE) details.cache.delete(details.cache.keys().next().value);
+                return place;
+            })
+            .finally(() => { if (details.pending.get(key) === request) details.pending.delete(key); });
+        details.pending.set(key, request);
+        return request;
+    };
+
+    /**
+     * 快照里的地点（marker_only）只有标记字段：卡片、编辑、选点要描述、图片、创建者等时先补全。
+     * 补全后若仍是选中的地点就替换卡片数据。返回完整地点；已删除或看不到时从地图去掉并返回 null；
+     * 网络失败时原样返回（调用方看 marker_only 判断）。
+     */
+    const ensurePlaceDetail = async (place) => {
+        if (!place || place.marker_only !== true || place.isMarked === false) return place;
+        let full;
+        try {
+            full = await loadPlaceDetail(place.id);
+        } catch (e) {
+            console.warn('补全地点详情失败', e);
+            return place;
+        }
+        const selected = selectedPlaceRef.current;
+        const stillSelected = !!selected && selected.isMarked !== false && String(selected.id) === String(place.id);
+        if (!full) {
+            markerStoreRef.current.remove(place);
+            publishNearbyFromCache();
+            if (stillSelected) {
+                closePopup();
+                showTip(t('map:main.markerMissing'));
+            }
+            return null;
+        }
+        if (stillSelected && selected.marker_only === true) {
+            selectedPlaceRef.current = full;
+            setSelectedPlace(full);
+        }
+        return full;
+    };
+
+    // 新增或修改后立即用最新的地点更新地图（CDN 上的快照要一两分钟才跟上，这段时间靠本地修改）
+    const refreshPlace = async (id, fallback = null) => {
+        try {
+            const full = await loadPlaceDetail(id, { fresh: true });
+            if (full) markerStoreRef.current.upsert(full);
+            else markerStoreRef.current.remove(placeKey({ id }));
+        } catch (e) {
+            if (fallback) markerStoreRef.current.upsert(fallback);
+        }
+        publishNearbyFromCache();
+    };
 
     // Toggle favorite for a place
     const handleToggleFavorite = async (place) => {
@@ -946,11 +1042,10 @@ export default function MapView({
         const patchList = (list) => (Array.isArray(list) && list.some((place) => matches(place) && differs(place))
             ? list.map((place) => (matches(place) ? { ...place, ...patch } : place))
             : list);
-        const cached = placeCacheRef.current.all().find(matches);
-        if (cached && differs(cached)) {
-            placeCacheRef.current.upsert({ ...cached, ...patch });
-            if (searchResultsRef.current === null && alongRouteResultsRef.current === null) publishNearbyFromCache();
-        }
+        // 地图上那份只同步标记要用的汇总（避雷图标），个人化的评价只放在卡片上
+        const markerFields = { rating_count: patch.rating_count, rating_average: patch.rating_average };
+        if (patch.rating_negative_count !== undefined) markerFields.rating_negative_count = patch.rating_negative_count;
+        if (markerStoreRef.current.patchPlace(placeKey({ id: placeId }), markerFields)) publishNearbyFromCache();
         setSearchResults(patchList);
         setAlongRouteResults(patchList);
         if (userFilterRef.current?.places) {
@@ -971,6 +1066,11 @@ export default function MapView({
         selectedPlaceRef.current = p;
         setSelectedPlace(p);
     };
+
+    // 选中的是快照里的地点：先用标记字段显示卡片，同时补全描述、图片等
+    useEffect(() => {
+        if (selectedPlace?.marker_only === true && selectedPlace.isMarked !== false) ensurePlaceDetail(selectedPlace);
+    }, [selectedPlace?.id, selectedPlace?.marker_only]);
 
     const ensureUserLocationMarker = (position) => {
         if (!mapRef.current || !window.AMap) return null;
@@ -1017,8 +1117,6 @@ export default function MapView({
             ? [...filtered, venuePlace]
             : filtered;
         markerLayerRef.current.update({ places: visibleMapPlaces, queryMode: markerQueryMode });
-        // 离开附近模式时，未完成的附近请求作废
-        if (markerQueryMode !== 'nearby') nearbyGateRef.current.invalidate();
     }, [mapReady, markerSource, markerQueryMode, placeFilter, venuePlace]);
 
     useEffect(() => {
@@ -1189,8 +1287,9 @@ export default function MapView({
         }
 
         try {
+            let created = null;
             try {
-                await Api.postPlace(backendUrl, token, payload);
+                created = await Api.postPlace(backendUrl, token, payload);
             } catch (e) {
                 // 这个位置已有自己添加的同名地点：上一次提交其实成功了（只是回应丢了），按成功处理
                 if (e.code !== 'duplicate_place' || !e.own) throw e;
@@ -1206,6 +1305,7 @@ export default function MapView({
             setSearching(false);
             setAiThinking(false);
             setAiRecommendations([]);
+            if (created?.id != null) await refreshPlace(created.id, { ...created, marker_only: true });
             await refreshNearby();
             setAddMode(false);
             return { ok: true };
@@ -1487,7 +1587,7 @@ export default function MapView({
             showTip(t('map:userPlaces.blockFailed', { message: e.message || e }));
             return;
         }
-        placeCacheRef.current.invalidate();
+        await refreshOverlay();
         showTip(blocked ? t('map:userPlaces.blocked', { name }) : t('map:userPlaces.unblocked', { name }));
         if (String(userFilterRef.current?.user.id) === String(id)) await refreshUserFilter();
         if (blocked) onOpenFeedback?.(userReportPrefill({ username: name, id }));
@@ -1748,17 +1848,24 @@ export default function MapView({
                 setFetchingUser(false);
             }
         }
-        let mine=null;try{mine=(await Api.fetchPlaceEditContext(backendUrl,token,selectedPlace.id)).mine;}catch{/* The server validates again on save. */}
-        if(selectedPlaceRef.current?.id!==selectedPlace.id)return;
+        // 快照里的地点没有描述和图片：补全前不能打开编辑（否则保存会把它们清空）
+        const [place, context] = await Promise.all([
+            ensurePlaceDetail(selectedPlace),
+            Api.fetchPlaceEditContext(backendUrl, token, selectedPlace.id).catch(() => null) /* The server validates again on save. */
+        ]);
+        if (!place) return;
+        if (place.marker_only === true) { showTip(t('map:main.markerLoadFailed')); return; }
+        const mine = context?.mine ?? null;
+        if(String(selectedPlaceRef.current?.id)!==String(place.id))return;
         setManageEdit({
-            name: selectedPlace.name || "",
-            category: selectedPlace.category || "",
-            description: selectedPlace.description || "",
-            per_person_cost: selectedPlace.per_person_cost != null ? selectedPlace.per_person_cost : null,
-            longitude: selectedPlace.longitude,
-            latitude: selectedPlace.latitude,
-            exterior_images: MapUtils.parseImageList(selectedPlace.exterior_images),
-            menu_images: MapUtils.parseImageList(selectedPlace.menu_images),
+            name: place.name || "",
+            category: place.category || "",
+            description: place.description || "",
+            per_person_cost: place.per_person_cost != null ? place.per_person_cost : null,
+            longitude: place.longitude,
+            latitude: place.latitude,
+            exterior_images: MapUtils.parseImageList(place.exterior_images),
+            menu_images: MapUtils.parseImageList(place.menu_images),
             has_rating:!!mine,rating:null,no_experience:false
         });
         setManageMessage("");
@@ -1807,7 +1914,9 @@ export default function MapView({
             await Api.deletePlace(backendUrl, token, selectedPlace.id);
             setManageMessage(t('common:status.deleted'));
             setManageOpen(false);
-            placeCacheRef.current.remove(selectedPlace);
+            markerStoreRef.current.remove(selectedPlace);
+            placeDetailsRef.current.cache.delete(String(selectedPlace.id));
+            publishNearbyFromCache();
             closePopup();
             await refreshNearby();
             refreshUserFilter();
@@ -1840,7 +1949,9 @@ export default function MapView({
             }
             setManageMessage(t('map:main.updated'));
             setManageOpen(false);
+            const updatedId = selectedPlace.id;
             closePopup();
+            await refreshPlace(updatedId);
             await refreshNearby();
             refreshUserFilter();
             return { ok: true };
@@ -1987,6 +2098,7 @@ export default function MapView({
                 onPlaceFilterChange={setPlaceFilter}
                 onSelectUserPlace={handleSelectAlongRoutePlace}
                 openManagePanel={openManagePanel}
+                ensurePlaceDetail={ensurePlaceDetail}
                 openCreateFromPoi={openCreateFromPoi}
                 openCommentPanel={openCommentPanel}
                 closePopup={closePopup}
