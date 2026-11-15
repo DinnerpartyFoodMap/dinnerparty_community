@@ -114,6 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_exhibitionvenue_status ON ExhibitionVenue (status
 
 - 建表放在 `infrastructure/database.js` 的初始化里，沿用 `CREATE TABLE IF NOT EXISTS` + 列级 `ALTER TABLE ... ADD COLUMN` 的兼容迁移风格。
 - 写入边界：`venue_name` / `address` 是对端表单里的原文，允许存；**任何高德搜索返回的名称、地址、坐标一律不落库**。坐标只允许两种来源：管理员在地图上手选，或对端明确确认由其自行录入且非搜索缓存（见待定）。
+- 只收已确认且已发布活动的场馆：对端 `to_be_announced` 的场馆不进这张表，避免提前曝光场地。
 - 状态机只有三态：`pending` → `linked`（管理员建档并关联）/ `ignored`（重复、或该活动不需要落点）。`linked` 之后地址变更只更新文字字段，不动 `place_id`，需要换点时由管理员重新关联。
 - 一个活动一行（`external_key` 唯一）。多场馆活动按「主场馆」一条处理，其余见待定。
 
@@ -182,16 +183,28 @@ CREATE INDEX IF NOT EXISTS idx_exhibitionvenue_status ON ExhibitionVenue (status
 
 ## Micro 与 Console 侧（对端仓库，按同一契约跟进）
 
-- Micro：`VenueNearbyEat` 的 `href` 从常量 `NEARBY_EAT_URL` 改为带 `?venue=<publicKey>`（`EventEntry` 已经是 `{ mode: "path", publicKey }`，视图里拿得到）；拿不到 key（host 模式）时退回现行为。文案与「由饭联地图维护」不动。
-- Console：活动创建／场馆信息变更后向饭联地图推送（服务端调用，失败重试、幂等）。至少需要 `key`（对外可稳定引用的活动标识）、活动名、场馆名、地址、城市、起止日期；`product-backend` 的 `cons.venue_name` / `cons.address` 已有对应字段。推送时机（草稿、提交、通过）见待定。
+对端现状（2026-11 核对）：活动创建在主办方 Dashboard 的建草稿向导与 product-backend 的 V2 创作命令里（`POST /con-v2/editions`，场馆走 `con.authoring.v2.venue_map.venue_facts.set` / `.patch`）；`console.denpawave.com` 上的 SPA 只是审核与运营工作台，没有创建表单；旧 Console 的 `/cons/create` 对应的后端路由已退役。所以推送要接在 product-backend，不接在某个页面按钮上。
+
+Micro（P2）：
+
+- `VenueNearbyEat` 的 `href` 从常量 `NEARBY_EAT_URL` 改为带 `?venue=<publicKey>`：`EventEntry` 已是 `{ mode: "path", publicKey }`，`publicKey` 也是公开读接口 `/api/public-events/:publicKey` 的主键。
+- 卡片本来就只在 `view.place.venueAnnounced` 为真时渲染，正好等于「场馆已公布」，不需要另加展示条件。
+- 拿不到 key（host 模式）时退回现行为；文案与「由饭联地图维护」不动。
+
+Console / product-backend（P1）：
+
+- 场馆数据在 `event_draft_venue_facts`：`venue_name`、`status`（`confirmed` / `to_be_announced`）、结构化地址（国家／省／市／区／街道／邮编）、可选成对 `latitude` / `longitude`；发布快照在 `event_snapshot_venue_facts`。
+- 推送条件：**只推 `status = confirmed` 且活动已发布的主场馆**。`to_be_announced` 一律不推——公开读接口即使未公布也仍带 `city`，不能拿它当已公布场馆用，更不能因此提前在饭联地图上曝光场地。
+- 触发方式：venue facts 落库或发布投影后写 `event_outbox` 一条事件，由 worker 调 `/internal/exhibition-venues`；`event_outbox` 已有 `pending / claimed / delivered / dead` 与 `attempts`、`locked_until`，重试与幂等不用另造。同类先例是 `notifyConCreated()`（飞书通知，函数已在、调用点尚未接线）。
+- 至少传：`key`（`publicKey`）、活动名、场馆名、地址、城市、起止日期；坐标可选，传之前先核坐标系（饭联地图按 GCJ-02 存点，对端若为 WGS84 需转换，否则不传）。
 - 两边都不改对方的展示：契约只有上面四个接口和一个 URL 参数。
 
 ## 分阶段
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| P0（本仓库） | 建表、`/internal` 推送、解析接口、管理员待办与建档、`?venue=` 落地行为、i18n 文案、测试 | 用 curl 模拟 console 推送即可全链路验收；无对端依赖 |
-| P1（Console） | 活动创建后推送，失败重试，token 配置 | 新活动在 1 分钟内出现在待办 |
+| P0（本仓库） | 建表、`/internal` 推送、解析接口、管理员待办与建档、`?venue=` 落地行为、i18n 文案、测试 | 用 curl 模拟 product-backend 推送即可全链路验收；无对端依赖 |
+| P1（product-backend） | venue facts 确认／发布后写 outbox 并推送到饭联地图，失败重试，token 配置 | 新活动在 1 分钟内出现在待办 |
 | P2（Micro） | 入口链接带 `publicKey` | 线上点击后定位到场馆；未建档时看到提示 |
 
 P0 完成即可上线，P1/P2 只增加入口。
@@ -226,9 +239,9 @@ P0 完成即可上线，P1/P2 只增加入口。
 1. **场馆在饭联地图上的身份**：新建 Place 打「展会场地」分类（推荐）还是干脆不进 `Place`、只用临时标记？前者能被搜索和列表看到，后者要另做一套点位存储。
 2. **管理员待办的形态**：独立面板（推荐）还是并进现有地点申请列表？要不要未读角标／邮件？iOS 原生后台是否同步这个面板？
 3. **多场馆活动**：只取主场馆，还是一个场馆一条 `ExhibitionVenue`？后者要定对端怎么给场馆序号。
-4. **对端 key 的稳定性**：Micro 的 `publicKey` 改不改？改了要不要保留旧 key 别名？
-5. **坐标**：对端要不要一起送场馆坐标（仅当对端自己录入、不是搜索缓存）？送了可以在未建档时先落到展馆位置，不送就只能提示。
-6. **推送时机**：活动草稿、提交审核、通过发布，哪一步推送？已推送活动被删／改期怎么通知。
+4. **对端 key 的稳定性**：`publicKey` 已经是公开 URL 和公开读接口的主键，预计不改；若活动重建会换 key，需要旧 key 别名，否则旧链接变成 `unknown`。
+5. **坐标**：对端 `event_draft_venue_facts` 确有可选 `latitude` / `longitude`（主办方录入，不是搜索缓存）。要不要传、按什么坐标系传（饭联地图按 GCJ-02 存点）？不传就只能在未建档时提示；传了可以先落到展馆位置。
+6. **增量通知**：建议推送时机定为「场馆 `confirmed` 且活动发布」；改期、换场馆、取消发布、删活动要不要以同一 key 再推一次覆盖文字（取消时推一个 `cancelled` 让待办自动忽略，而不是让管理员逐条判断）？
 7. **活动结束后**：映射保留（推荐，链接不烂）还是随活动归档清掉？
 
 ## 风险
