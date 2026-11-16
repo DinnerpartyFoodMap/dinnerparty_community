@@ -19,21 +19,26 @@ async function main() {
     if (dryRun || !total) return;
     let done = 0;
     const rejected = [];
+    const abroad = [];
+    let skipped = 0;
     for (;;) {
         const result = await regions.refreshPendingBatch();
         done += result.checked;
         rejected.push(...(result.rejected || []));
+        abroad.push(...(result.abroad || []));
+        skipped += result.skipped || 0;
         process.stdout.write(`\r已查询 ${done} / ${total}`);
         if (!result.more) break;
         await new Promise((resolve) => setTimeout(resolve, 400)); // 高德 Web 服务的并发限制
     }
     const unresolved = db._raw.prepare('SELECT COUNT(*) AS n FROM PlaceRegion WHERE province IS NULL').get().n;
-    console.log(`\n完成。没有省市区（境外或高德无结果）的地点：${unresolved} 个`);
+    console.log(`\n完成。没有省市区（境外或高德无结果）的地点：${unresolved} 个；其中本次不在高德境内范围、没有发请求的 ${skipped} 个`);
     if (rejected.length) {
         console.log(`其中 ${rejected.length} 个地点的坐标被高德拒绝（INVALID_PARAMS），记为没有省市区；坐标改正后会重新查询：`);
         const name = db._raw.prepare('SELECT name FROM Place WHERE id = ?');
         for (const place of rejected) console.log(`  #${place.id} ${name.get(place.id)?.name || ''}  经度 ${place.lng}  纬度 ${place.lat}`);
     }
+    if (abroad.length) console.log(`另有 ${abroad.length} 个地点被高德算作境外（海外服务日配额用完时被拒），记为没有省市区。`);
 }
 
 main().catch((error) => {

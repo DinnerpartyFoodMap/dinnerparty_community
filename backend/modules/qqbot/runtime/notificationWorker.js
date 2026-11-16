@@ -179,7 +179,8 @@ class NotificationWorker {
         try {
             await this.resolveRegions(placeIds);
         } catch (error) {
-            this.logger.warn('QQ notification region lookup failed; sending without it', { event: 'qqbot.notify.region_failed', groupId, error });
+            // The reason goes into the message: the console line shows no error details below error level.
+            this.logger.warn(`QQ notification region lookup failed (${error && error.message}); sending without it`, { event: 'qqbot.notify.region_failed', groupId, error });
         }
         const places = loadPlaces(placeIds);
         const time = iso(this.now());

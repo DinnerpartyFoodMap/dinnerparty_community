@@ -7,12 +7,14 @@
 // - 记录查询时的坐标（lat / lng）：地点挪了位置，坐标对不上，后台会重新查。
 // - 后台任务（startPlaceRegionWorker）每次取最多 20 个没查过或坐标变了的地点，用高德 Web 服务批量逆地理编码
 //   （AMAP_WEB_SERVICE_KEY，batch=true 一次 20 个）；新地点创建后 wakePlaceRegionWorker 立即补一次。
-// - 境外坐标高德不返回行政区：记为已查、省市区为空。请求失败时不记录，等下一轮。
+// - 境外坐标高德不返回行政区：记为已查、省市区为空。不在高德境内格子里的（maps/services/chinaRegion.js）不发请求，
+//   直接记为已查：这类请求只消耗高德“海外服务”日配额，配额用完后整批都会被拒。请求失败时不记录，等下一轮。
 // - 直辖市的 city 是空的，用省名（北京市 / 北京市 / 朝阳区）；省直辖县级市 city 也是空的，用区县名。
 
 const { db } = require('../../../infrastructure/database');
 const { publicPlaceSql } = require('./placeVisibility');
 const { initPlaceRegionSchema } = require('./placeRegionSchema');
+const { isInAmapChinaRegion } = require('../../maps/services/chinaRegion');
 
 const AMAP_REST_BASE = 'https://restapi.amap.com';
 const REQUEST_TIMEOUT_MS = 10000;
@@ -117,48 +119,84 @@ function saveRegions(places, regions, sql = db._raw) {
 
 const PER_POINT_DELAY_MS = 400;
 const isParamError = (error) => !!error && error.info === 'INVALID_PARAMS';
+// 高德“海外服务”日配额用完：请求里有它算作境外的坐标（境内格子边上的境外地点，如海参崴）。
+const isAbroadLimited = (error) => !!error && /ABROAD_DAILY_QUERY_OVER_LIMIT/i.test(String(error.info || ''));
 
 /**
- * 高德整批拒绝（INVALID_PARAMS：其中某个坐标它不接受）时逐个重查：被拒绝的点记为没有省市区（不再反复重查），
- * 并在 rejected 里返回，方便核对这些地点的坐标。每个点单独查也全被拒绝时不是数据问题（key / 参数格式），照常抛错、不记录。
+ * 高德整批拒绝时逐个重查。INVALID_PARAMS（某个坐标它不接受）的点记为没有省市区（不再反复重查），在 rejected 里返回，
+ * 方便核对坐标；海外配额用完而被拒的点高德把它算作境外，境外本来就查不到省市区，同样记为空，在 abroad 里返回。
+ * 每个点单独查也全被拒绝时不是数据问题（key / 参数格式 / 整个 key 超限），照常抛错、不记录。
  */
 async function regionsOneByOne(places, options) {
     const regions = [];
     const rejected = [];
+    const abroad = [];
+    let abroadError = null;
     for (const [index, place] of places.entries()) {
         if (index) await new Promise((resolve) => setTimeout(resolve, PER_POINT_DELAY_MS));
         try {
             regions.push((await reverseGeocodeRegions([place], options))[0]);
         } catch (error) {
-            if (!isParamError(error)) throw error;
+            if (isParamError(error)) {
+                rejected.push({ id: place.id, lat: place.lat, lng: place.lng });
+            } else if (isAbroadLimited(error)) {
+                abroad.push({ id: place.id, lat: place.lat, lng: place.lng });
+                abroadError = error;
+            } else {
+                throw error;
+            }
             regions.push(null);
-            rejected.push({ id: place.id, lat: place.lat, lng: place.lng });
         }
     }
-    if (rejected.length === places.length) {
+    if (rejected.length + abroad.length === places.length) {
+        if (abroadError) throw abroadError;
         const error = new Error(`高德逆地理编码失败：INVALID_PARAMS（这一批 ${places.length} 个地点单独查询也全部被拒绝，请检查 AMAP_WEB_SERVICE_KEY 是否为 Web 服务 key；示例坐标 ${places[0].lng},${places[0].lat}）`);
         error.info = 'INVALID_PARAMS';
         throw error;
     }
-    return { regions, rejected };
+    return { regions, rejected, abroad };
 }
 
-/** 补一批：返回 { checked, more, rejected }（more 只是“这批取满了，可能还有”；rejected 为高德不接受坐标的地点） */
+/**
+ * 一批地点的省市区，与 places 同序（没有省市区为 null）。不在高德境内格子里的不发请求，直接为 null（计入 skipped）；
+ * 其余整批查询，整批被拒（INVALID_PARAMS / 海外配额用完）时逐个重查。
+ */
+async function resolveRegions(places, options = {}) {
+    const regions = places.map(() => null);
+    const inside = [];
+    places.forEach((place, index) => { if (isInAmapChinaRegion(Number(place.lng), Number(place.lat))) inside.push(index); });
+    const result = { regions, rejected: [], abroad: [], skipped: places.length - inside.length };
+    if (!inside.length) return result;
+    const query = inside.map((index) => places[index]);
+    let found;
+    try {
+        found = await reverseGeocodeRegions(query, options);
+    } catch (error) {
+        if (!isParamError(error) && !isAbroadLimited(error)) throw error;
+        ({ regions: found, rejected: result.rejected, abroad: result.abroad } = await regionsOneByOne(query, options));
+    }
+    inside.forEach((placeIndex, k) => { regions[placeIndex] = found[k]; });
+    return result;
+}
+
+function warnUnresolved({ rejected, abroad }) {
+    const list = (places) => places.map((p) => `#${p.id} (${p.lng},${p.lat})`).join(', ');
+    if (rejected.length) console.warn(`Place region lookup: AMap rejected ${rejected.length} place(s): ${list(rejected)}`);
+    if (abroad.length) console.warn(`Place region lookup: AMap counted ${abroad.length} place(s) as overseas (overseas daily quota used up), saved without region: ${list(abroad)}`);
+}
+
+/**
+ * 补一批：返回 { checked, more, rejected, abroad, skipped }（more 只是“这批取满了，可能还有”；rejected 为高德不接受坐标的地点，
+ * abroad 为高德算作境外、因海外配额用完被拒的地点，skipped 为不在高德境内格子里、没发请求的地点数）
+ */
 async function refreshPendingBatch({ limit = BATCH_SIZE, sql = db._raw, fetchImpl, retryDelays } = {}) {
     const places = pendingPlaces(limit, sql);
-    if (!places.length) return { checked: 0, more: false, rejected: [] };
+    if (!places.length) return { checked: 0, more: false, rejected: [], abroad: [], skipped: 0 };
     const options = { ...(fetchImpl ? { fetchImpl } : null), ...(retryDelays ? { retryDelays } : null) };
-    let regions;
-    let rejected = [];
-    try {
-        regions = await reverseGeocodeRegions(places, options);
-    } catch (error) {
-        if (!isParamError(error)) throw error;
-        ({ regions, rejected } = await regionsOneByOne(places, options));
-    }
+    const { regions, rejected, abroad, skipped } = await resolveRegions(places, options);
     saveRegions(places, regions, sql);
-    if (rejected.length) console.warn(`Place region lookup: AMap rejected ${rejected.length} place(s): ${rejected.map((p) => `#${p.id} (${p.lng},${p.lat})`).join(', ')}`);
-    return { checked: places.length, more: places.length >= limit, rejected };
+    warnUnresolved({ rejected, abroad });
+    return { checked: places.length, more: places.length >= limit, rejected, abroad, skipped };
 }
 
 /**
@@ -175,7 +213,9 @@ async function ensurePlaceRegions(ids, { sql = db._raw, fetchImpl } = {}) {
           AND (r.place_id IS NULL OR r.lat IS NOT p.latitude OR r.lng IS NOT p.longitude)`).all(...unique);
     for (let i = 0; i < places.length; i += BATCH_SIZE) {
         const batch = places.slice(i, i + BATCH_SIZE);
-        saveRegions(batch, await reverseGeocodeRegions(batch, fetchImpl ? { fetchImpl } : {}), sql);
+        const result = await resolveRegions(batch, fetchImpl ? { fetchImpl } : {});
+        saveRegions(batch, result.regions, sql);
+        warnUnresolved(result);
     }
     return places.length;
 }

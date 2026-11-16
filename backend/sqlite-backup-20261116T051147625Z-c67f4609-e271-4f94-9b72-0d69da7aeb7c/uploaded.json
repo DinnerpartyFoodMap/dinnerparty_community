@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "jobName": "sqlite-backup-20261116T051147625Z-c67f4609-e271-4f94-9b72-0d69da7aeb7c",
+  "uploadedAt": "2026-11-16T05:12:10.254Z",
+  "objectKeys": {
+    "archive": "food-map/sqlite/2026/11/16/sqlite-backup-20261116T051147625Z-c67f4609-e271-4f94-9b72-0d69da7aeb7c.sqlite.gz",
+    "manifest": "food-map/sqlite/2026/11/16/sqlite-backup-20261116T051147625Z-c67f4609-e271-4f94-9b72-0d69da7aeb7c.manifest.json"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "formatVersion": 1,
+  "snapshotStartedAt": "2026-11-16T05:11:47.625Z",
+  "snapshotCompletedAt": "2026-11-16T05:11:47.994Z",
+  "databaseFile": "data.sqlite",
+  "sqliteBytes": 148938752,
+  "sqliteSha256": "4ec9f0e93a3beed94afcada2d97873f3740a37f5fc1e93e25243f0414e83c5bc",
+  "archiveFile": "snapshot.sqlite.gz",
+  "archiveBytes": 66701967,
+  "archiveSha256": "05f6b9ac17c6e9b1a29352707c0d614c3f9c30bf25587a6bc67130512318d2a0"
+}

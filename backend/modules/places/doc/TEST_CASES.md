@@ -30,9 +30,9 @@
 
 前置：临时库，公开、审核中、未通过的地点各若干，一位住民屏蔽了另一位。操作：带不同 `Accept-Encoding` 和 `If-None-Match` 读 `/places/markers`，期间新增地点并作废内存缓存；读公告与出错的公共接口；带 Origin 读 `/places/nearby` 和预检；游客、创建者、屏蔽者、无效 token 读 `/places/overlay`。预期：快照只含公开地点与约定字段、不含描述，br / gzip / 不压缩内容一致，ETag 对得上回 304，内容不变时版本不变；公共接口回 `Access-Control-Allow-Origin: *`、公共缓存头、没有 `Vary: Origin`，出错时 `no-store`；其他接口和预检仍按 Origin 回 CORS；叠加层只给自己的审核中地点和屏蔽的住民的公开地点 id，游客与无效 token 为空。
 
-### PLC-C09 地区补齐与筛选（待自动化；前端筛选逻辑在 test:place-filter）
+### PLC-C09 地区补齐与筛选（逆地理部分已有自动化：test:place-regions；地区树与列表筛选待自动化；前端筛选逻辑在 test:place-filter）
 
-前置：临时库，境内（含直辖市、省直辖县级市）、境外、坐标非法的地点，高德逆地理编码替身。操作：跑一轮 `refreshPendingBatch`，再挪动一个地点的坐标后重跑；让替身返回 QPS 超限、整批 `INVALID_PARAMS`、网络错误；读 `/places/regions`，用 `/places/list?province=&city=&district=` 筛选。预期：直辖市的市为省名、县级市的市为区县名；境外记为已查、省市区为空；挪动后只重查该地点；限流重试后成功，整批被拒时逐个重查且只把被拒的点记为空；网络错误不写表；不更新 `Place` 行（评分时钟不变）；地区树只含公开地点、按数量降序、`bounds` 覆盖其地点；只给 `city` 不给 `province` 时不筛选。
+前置：临时库，境内（含直辖市、省直辖县级市）、境外、坐标非法的地点，高德逆地理编码替身。操作：跑一轮 `refreshPendingBatch`，再挪动一个地点的坐标后重跑；让替身返回 QPS 超限、整批 `INVALID_PARAMS`、网络错误；读 `/places/regions`，用 `/places/list?province=&city=&district=` 筛选。预期：直辖市的市为省名、县级市的市为区县名；境外记为已查、省市区为空，不在高德境内格子里的不发请求；海外配额用完整批被拒时逐个重查，只把被拒的点记为空，全部被拒时不写表；挪动后只重查该地点；限流重试后成功，整批被拒时逐个重查且只把被拒的点记为空；网络错误不写表；不更新 `Place` 行（评分时钟不变）；地区树只含公开地点、按数量降序、`bounds` 覆盖其地点；只给 `city` 不给 `province` 时不筛选。
 
 ### PLC-C10 标签合并与待探索（待自动化）
 
