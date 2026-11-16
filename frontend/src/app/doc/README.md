@@ -1,6 +1,6 @@
 # 应用装配与导航
 
-App.jsx 管理凭证恢复、当前用户、路由、主题同步、原生设置入口与全局弹层；components/AuthPanel.jsx 是应用菜单，虽然保留旧名称，但不是登录表单。业务认证在 auth，平台 History/深链/返回能力在 platform。main.jsx 仍在 src 根以保持 HTML 入口。
+App.jsx 管理凭证恢复、当前用户、路由、主题同步、原生设置入口与全局弹层；站点公告与展会（`map/useExhibitions.js`）都通过 `platform/polling.js` 低频轮询公共缓存接口（每 5 分钟，后台跳过，管理员修改后 `announcePublicUpdate` 立即重读），新请求开始后旧响应不再生效（公告按请求序号，展会中止上一请求）。`main.jsx` 在同意隐私政策后与高德 SDK 并行预取地图标记快照（见 [地图文档](../../map/doc/README.md)）。components/AuthPanel.jsx 是应用菜单，虽然保留旧名称，但不是登录表单。业务认证在 auth，平台 History/深链/返回能力在 platform。main.jsx 仍在 src 根以保持 HTML 入口。
 
 ```mermaid
 flowchart TD

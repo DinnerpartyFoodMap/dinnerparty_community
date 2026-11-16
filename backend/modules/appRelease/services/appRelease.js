@@ -76,4 +76,4 @@ function androidApk() {
     return full ? { path: full, name: path.basename(full) } : null;
 }
 
-module.exports = { PLATFORMS, DEFAULT_IOS_URL, releaseDir, getReleases, androidApk, platformRelease };
+module.exports = { PLATFORMS, DEFAULT_IOS_URL, releaseDir, getReleases, androidApk, apkPath, platformRelease };

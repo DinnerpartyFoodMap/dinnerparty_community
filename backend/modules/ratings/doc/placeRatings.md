@@ -8,6 +8,8 @@
 
 综合分小于 2.5 仍按避雷处理；无评分仍回退避雷标签。本次迁移不调整原有计算规则。
 
+“待探索”标签（`services/ratingWarning.js` 的 `EXPLORE_TAG` / `hasExploreTag`，与前端 `places/rating.js` 保持一致，2026-11-11）：带它的新地点创建时不写创建者评分、不消耗配额，`rating_input_kind` 记为 `none`；有人评价之前前端用问号图标显示，有人评价后按普通地点处理。
+
 ## API
 
 所有响应 Cache-Control: no-store；当前身份只取认证结果。

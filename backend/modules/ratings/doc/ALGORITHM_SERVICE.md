@@ -72,7 +72,7 @@ node scripts/ratings/export_rating_evidence.js
 
 只允许受控 datasets 目录。输出使用 HMAC 假名键，记录来源、可用时间、窗口、版本和 hash；这是假名化，不能称完全匿名。行为研究窗口最长 30 天；业务画像的读取窗口不改变。
 
-包包含 events、favorite states、rating_revisions、description_revisions、reason_links 与 decisions。评分带入口/量表版本和体验时间依据；介绍仅导出有授权的新文本或可明确区分的前/后追加片段，旧 before 文本不输出，价格等修改不冒充介绍作者。任意混合修改只导出修订元信息并标记 mixed_or_replaced_unresolved，不推断逐段作者或将整段当作本人的评价理由。决策仅导出算法/策略/特征快照/展示版本、候选地点及原有概率或顺序，不复制自由文本、坐标或整个 result。缺失信息保持未知，搜索不补造 propensity。清空交互同步撤销原行为镜像的研究资格，保留原画像业务输入。
+包包含 events、favorite states、rating_revisions、description_revisions、reason_links 与 decisions。评分带入口/量表版本和体验时间依据；介绍仅导出有授权的新文本或可明确区分的前/后追加片段，旧 before 文本不输出，价格等修改不冒充介绍作者。任意混合修改只导出修订元信息并标记 mixed_or_replaced_unresolved，不推断逐段作者或将整段当作本人的评价理由。决策仅导出算法/策略/特征快照/展示版本、候选地点及原有概率或顺序，不复制自由文本、坐标或整个 result。地图上的地点点击（surface `map`、event_type `click`）从 2026-11-12 起附带 `MapInteractionContext` 里的 `viewport`（可见范围与缩放级别）；之后记录的点击还带 `map_mode`（`nearby` / `search` / `along` / `user`，即点击时地图上是哪一组标记）与 `map_filter`（规整后的标签 / 人均 / 地区筛选，没有生效的条件为 null）。两者只成对保存，更早的点击没有 `map_mode`，标记集合按未知处理。缺失信息保持未知，搜索不补造 propensity。清空交互同步撤销原行为镜像的研究资格，保留原画像业务输入。
 
 ResearchBundle 注册表保存成员/地点和最早到期时间。撤回、清除反馈、账户/关联地点删除使整包先失效，再由清理 worker 删除文件；失败可重试。私有离线加载器每次使用前调用受限 `/internal/rating-evidence/bundles/:id/status`，状态服务离线、hash 不符或过期时拒绝读取。
 

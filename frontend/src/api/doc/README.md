@@ -1,6 +1,6 @@
 # HTTP 客户端契约
 
-client.js 是旧 map/api.js，导出地点、nearby、关键词/AI、随机、顺路、当前用户/定位、聚餐、收藏、分类和评分请求。调用签名、响应和错误处理保持原样；该文件还不是全站统一网络层，认证、日记和设置仍有各自请求。
+client.js 是旧 map/api.js，导出地点、个人标记叠加、关键词/AI、随机、顺路、当前用户/定位、聚餐、收藏、分类和评分请求。2026-11-15 起地图不再按视野请求 `/places/nearby`（`fetchPlacesNearby` 已删除）：公共快照 `/places/markers` 由 `map/markerSnapshot.js` 自己读取（不带 token），这里的 `fetchPlaceOverlay` 只读登录后的个人叠加 `/places/overlay`；`fetchPlace` 可传 `cache: 'no-cache'`，刚修改后读到最新内容。公共缓存接口（公告、展会、地图标记、地区）请求时不带 `Authorization` 或自定义头，避免预检并让 CDN 缓存同一份。调用签名、响应和错误处理保持原样；该文件还不是全站统一网络层，认证、日记和设置仍有各自请求。
 
 ```mermaid
 flowchart LR

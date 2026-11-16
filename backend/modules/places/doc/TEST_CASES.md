@@ -30,6 +30,14 @@
 
 前置：临时库，公开、审核中、未通过的地点各若干，一位住民屏蔽了另一位。操作：带不同 `Accept-Encoding` 和 `If-None-Match` 读 `/places/markers`，期间新增地点并作废内存缓存；读公告与出错的公共接口；带 Origin 读 `/places/nearby` 和预检；游客、创建者、屏蔽者、无效 token 读 `/places/overlay`。预期：快照只含公开地点与约定字段、不含描述，br / gzip / 不压缩内容一致，ETag 对得上回 304，内容不变时版本不变；公共接口回 `Access-Control-Allow-Origin: *`、公共缓存头、没有 `Vary: Origin`，出错时 `no-store`；其他接口和预检仍按 Origin 回 CORS；叠加层只给自己的审核中地点和屏蔽的住民的公开地点 id，游客与无效 token 为空。
 
+### PLC-C09 地区补齐与筛选（待自动化；前端筛选逻辑在 test:place-filter）
+
+前置：临时库，境内（含直辖市、省直辖县级市）、境外、坐标非法的地点，高德逆地理编码替身。操作：跑一轮 `refreshPendingBatch`，再挪动一个地点的坐标后重跑；让替身返回 QPS 超限、整批 `INVALID_PARAMS`、网络错误；读 `/places/regions`，用 `/places/list?province=&city=&district=` 筛选。预期：直辖市的市为省名、县级市的市为区县名；境外记为已查、省市区为空；挪动后只重查该地点；限流重试后成功，整批被拒时逐个重查且只把被拒的点记为空；网络错误不写表；不更新 `Place` 行（评分时钟不变）；地区树只含公开地点、按数量降序、`bounds` 覆盖其地点；只给 `city` 不给 `province` 时不筛选。
+
+### PLC-C10 标签合并与待探索（待自动化）
+
+前置：`categoryMerges.json` 里一组源 → 保留标签，临时库含带源标签的地点与待处理申请。操作：网页 / Bot / 日记各新建一个带源标签的地点，`POST /categories` 新建源标签；对库运行 `categories:merge` 预览后 `--apply`；新建一个带“待探索”的地点。预期：新写入一律是保留的标签且去重、顺序不变；预览不改库，应用前有备份，只改 `Place.category` 与 pending 申请，不改 `updated_time` / `updated_by`；“待探索”地点没有创建者评分、不占配额，`rating_input_kind` 为 `none`。
+
 ### PLC-C07 坐标范围（已有自动化：test_place_coordinates / test:place-location）
 
 前置：临时库、创建者、访客、管理员和一个地点。操作：新增、编辑、提交修改申请时使用纬度超出 ±85.0511°、经度超出 ±180° 或非数字的坐标；审核一条修复前已入库的越界申请；对库中直接写入的越界地点运行 `places:check-coordinates`；添加模式下点击地图边界外。预期：写入全部 400 且不改库，越界申请不能批准但可驳回；检查脚本列出越界地点与申请、退出码 2，干净库退出码 0；界外点击只提示，不打开添加表单。

@@ -14,6 +14,8 @@ flowchart TD
     Close --> Exit[退出动画结束后释放注册和焦点]
 ```
 
+底部面板的拖动在 `overlay/useSheetDrag.js`：`snapOffsets` 给出多个停靠位置（`ResponsivePanel` 的 `snap="half"` / `"third"`）；`expand`（`ResponsivePanel` 的 `expanded` / `onExpandedChange`，2026-11-11）是内容随之变化的收起 / 展开两档，例如窄屏地点卡上拉显示详情：收起时从把手上拉（内容区要已滚到底）展开，展开时从把手或顶部的内容下拉只收回、不关闭，把手可点按或用 Enter / 空格切换。鼠标在确认是拖动后才捕获指针，拖动松手后 350ms 内的补发 click 不切换。
+
 | 当前方案 | 对照与约束 |
 | --- | --- |
 | 统一 overlay 栈 | 每组件分别监听 Escape/返回会引发多层同时关闭 |

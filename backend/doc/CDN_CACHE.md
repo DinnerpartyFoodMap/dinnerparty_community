@@ -17,6 +17,10 @@
 - 这些路径固定回 `Access-Control-Allow-Origin: *`，不经过按 Origin 回头的 `cors()`，也没有 `Vary: Origin`。CDN 缓存的同一份响应网页（`https://www.dinnerparty.cc`）和 App（`https://localhost`、`capacitor://localhost`）都能用。前端请求这些路径不带 `Authorization`、不带自定义请求头、不带凭据，浏览器不发预检。
 - 管理员改了公告或展会后，前端带一次性参数 `?fresh=<时间>` 读一次（`frontend/src/platform/polling.js`），依赖 CDN 缓存键包含查询字符串（ESA 默认如此）。
 
+## 安卓安装包
+
+`/api/app/android/latest.apk` 302 跳到带版本号的 `/api/app/android/dinnerparty-<版本>-<构建号>.apk`：跳转 `no-cache`（规则命中也不会被缓存，发版后立即生效），安装包本身 `public, max-age=31536000, immutable`，ESA 缓存后不再回源（约 16 MB 一次）。每次发版文件名必须不同，见 [App 发版](../modules/appRelease/doc/README.md)。
+
 ## 地图标记
 
 - `GET /places/markers`（`modules/places/services/placeMarkers.js`）：全部公开地点的精简字段，按列存（`fields` + `rows`），约 3700 个地点时原始约 290 KB、br 约 120 KB。进程内缓存 15 秒（`MARKER_SNAPSHOT_TTL_MS`），预先压缩好 br / gzip，带弱 ETag，内容不变时回 304。
@@ -49,7 +53,10 @@ handle @backend {
 规则 > 缓存规则，新增一条：
 
 ```
-(http.host in {"www.dinnerparty.cc" "dinnerparty.cc" "dinner.cdn.mccolor.cc"} and http.request.uri.path in {"/backend/notices/current" "/backend/exhibitions" "/backend/exhibitions/current" "/backend/api/amap/js-config" "/backend/places/regions" "/backend/places/markers"})
+(http.host in {"www.dinnerparty.cc" "dinnerparty.cc" "dinner.cdn.mccolor.cc"} and (
+  http.request.uri.path in {"/backend/notices/current" "/backend/exhibitions" "/backend/exhibitions/current" "/backend/api/amap/js-config" "/backend/places/regions" "/backend/places/markers"}
+  or starts_with(http.request.uri.path, "/backend/api/app/android/")
+))
 ```
 
 - 缓存资格：符合缓存条件。

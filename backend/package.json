@@ -45,6 +45,7 @@
         "test:place-duplicates": "node tests/places/test_place_duplicates.js",
         "test:creator-places": "node tests/places/test_creator_places.js",
         "test:place-markers": "node tests/places/test_place_markers.js",
+        "test:app-release": "node tests/appRelease/test_app_release_download.js",
         "test:skins": "node tests/skins/test_skins.js",
         "test:feedback": "node tests/feedback/test_feedback.js",
         "images:repair": "node scripts/images/repair_place_images.js",

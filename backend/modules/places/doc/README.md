@@ -4,6 +4,10 @@
 
 地图标记 `GET /places/markers`（`services/placeMarkers.js`）：全部公开地点的精简字段（按列存 `fields` + `rows`），与观看者无关，CDN 和浏览器可缓存（[CDN 缓存](../../../doc/CDN_CACHE.md)），进程内缓存 15 秒并预压缩；`GET /places/overlay`（`no-store`，可选登录）给出自己审核中 / 未通过的地点与屏蔽的住民创建的公开地点 id。新版前端只用这两个接口画标记，描述、图片等在打开卡片时读 `GET /places/:id`；`GET /places/nearby` 留给旧版 App，行为不变。
 
+地区（`services/placeRegions.js`，表在 `placeRegionSchema.js`）：省 / 市 / 区存在单独的 `PlaceRegion` 表，不写 `Place`，因为 Place 的任何 UPDATE 都会推进评分算法时钟，补齐几千个地点不能让评分缓存全部失效。表里记下查询时的坐标，地点挪了位置后对不上就重新查。后端启动时开后台任务（`startPlaceRegionWorker`，需要 `AMAP_WEB_SERVICE_KEY`，`PLACE_REGION_WORKER=false` 关闭），每轮取最多 20 个没查过或坐标变了的地点，用高德 Web 服务批量逆地理编码；新地点创建后 `wakePlaceRegionWorker` 立即补一次。直辖市的市用省名，省直辖县级市的市用区县名；境外坐标记为已查、省市区为空；请求失败不记录、等下一轮（QPS 超限会退避重试）；高德整批 `INVALID_PARAMS` 时逐个重查，被拒绝的坐标记为没有省市区并打日志。`npm run places:regions` 一次补完（`-- --dry-run` 只统计）。`GET /places/regions` 返回有公开地点的地区树（省 → 市 → 区，每层按地点数降序，带 `bounds` 供地图移动到该范围，进程内缓存 5 分钟，走公共 CDN 缓存）；`/places`、`/places/nearby`、`/places/:id`、`/places/list` 带出 `province` / `city` / `district`，`/places/list` 可按这三个参数筛选（下层要有上层）。
+
+标签合并与“待探索”：相同或相近的标签由 `categoryMerges.json`（源标签 → 保留的标签）合并，`services/categoryMerges.js` 在 `placeService.normalizeCategoryList`（所有写入路径）、列表筛选和 `POST /categories` 里换成保留的标签；既有数据用 `npm run categories:merge` 一次性合并（默认预览，`--db <file>` 指定库，`--apply` 先备份；只改 `Place.category` 与待处理申请的 `proposed.category`，不改修改时间和修改人）。“待探索”标签（`ratings/services/ratingWarning.js` 的 `EXPLORE_TAG`，与前端 `places/rating.js` 保持一致；`seeds/categories.json` 里是常用标签）表示还没去过、先标记的地点：创建时不写创建者评分（`rating_input_kind = 'none'`），没人评价前地图上显示问号图标。
+
 入口：routes 下 places、placeRequests、categories、placeShare。新增地点和创建者修改自己的地点都先经 DeepSeek 初筛（文字和图片），明显不合规的新地点只给创建者看、修改先不生效，交管理员在地点申请页复核，流程、提示词与可见性规则见 [placeModeration.md](placeModeration.md)。公共业务入口 `services/placeService.js` 同时服务 Web/App 和 Bot；日记发布通过既有底层地图关联流程复用地点规则。`placeRequestService.js` 处理申请审核，`placeNotifications.js` 写持久通知并唤醒 Bot。`placeCard.js` 负责分享文本与图片规则，实际图像存储由 media 提供。地点描述支持 Markdown（规则见前端 [components 文档](../../../../frontend/src/components/doc/README.md)），后端只在不能显示格式的地方用 `markdownText.js`（marked，与前端锁定同一版本；marked 18 只有 ES 模块，需要 Node 22.12+ 才能 require，更旧的 Node 退回只去标签）转纯文本：分享页 `/p/:id` 的卡片与正文、QQ 机器人的搜索 / 随机 / 新地点推送与图文卡片。描述在所有写入路径上统一由 `normalizePlaceDescription()` 校验（去首尾空白、最多 1000 字、接受 HTML）：新增、编辑 `PUT /places/:id`、提交修改申请、批准修改申请（校验前提交的超长申请不能批准，可驳回）与 QQ 机器人草稿；店名、分类、地址、标签仍只接受纯文本。
 
 ```mermaid
@@ -34,4 +38,6 @@ flowchart TD
 | 非创建者编辑 | 修改申请，审核后写入 | 直接放开写权限会绕过现有治理；本次不变更权限 |
 | 分享 | 服务端 HTML 元信息 + 本站缩略图 + 页面跳转 | 仅 SPA 动态标签不能保证抓取器读到；本机测试不代替 QQ/微信真实抓取 |
 
-数据：Place（含 moderation_status）、Category、PlaceRequest（request_type 区分修改申请与新增复核）、PlaceModeration；跨模块写入涉及 PlaceRating、QQBotNotification。测试：[案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+`routes/placeVisits.js`（`/api/visits`：状态、查看、到访推断与“是否去过”回答）挂在本模块，规则见 [到访与兴趣信号](../../preferences/doc/INTEREST_V3.md) 与 [评分迁移](../../ratings/doc/RATING_MIGRATION.md)。修改记录只保存描述里新增的文字，见 [编辑文本证据](../../ratings/doc/EDIT_TEXT_EVIDENCE.md)。
+
+数据：Place（含 moderation_status）、PlaceRegion、Category、PlaceRequest（request_type 区分修改申请与新增复核）、PlaceModeration；跨模块写入涉及 PlaceRating、QQBotNotification。测试：[案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。

@@ -8,6 +8,8 @@ frontend/ios 是 Xcode/Swift 工程，含原生地图 chrome、设置、键盘�
 
 已有 [iOS 玻璃验收清单](ios-glass-checklist.md) 保留。另需真实设备验证账号恢复、相册/定位权限、系统返回、分享取消、App 前后台、原生设置关闭及协议降级；Node bridge 检查不能替代这些环节。本次范围与限制见 [验证记录](../../doc/VERIFICATION.md)。
 
+地图原生控件的协议版本逐轮记录在 [原生面板记录](../../doc/NATIVE_PANELS_2026-10-30.md)，当前为 v16（2026-11-11：筛选面板的地区下拉 `menu` 分组、地点卡片展开后的 `subtitleExpanded`、原生添加表单的“待探索”开关）。
+
 Android 定位使用高德定位 SDK（应用内插件 AMapLocationPlugin）；模拟器复现、修复与真机覆盖边界见 [定位回归记录](android-location-checklist.md)。
 
 ## 多活动展示（2026-10-26）

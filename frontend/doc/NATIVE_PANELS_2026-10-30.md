@@ -88,6 +88,13 @@
 - “清除筛选”放到标题左侧（面板 `leading`，列表面板标题行左侧的文字按钮；没有筛选时置灰），去掉底部的清除行。
 - 协议 14 → 15（网页与 Swift 同时升级，版本不一致时回退网页控件）。未验证：Swift 未编译，拉杆手感与标题行布局需真机检查。
 
+## 地区筛选、展开副标题与待探索（2026-11-11，协议 v16）
+
+- **地区下拉**：筛选面板加省 / 市 / 区三个下拉，分组 style `menu` 由 `MapChromeSheets.swift` 画成 SwiftUI `Menu`：行是选项，tone `accent` 为当前选中，点选回传行 id；网页 `places/filterChromeSheet.js` 生成分组，数据来自 `GET /places/regions`（`places/placeRegions.js`）。
+- **地点卡片展开副标题**：`sheet.subtitleExpanded`（最多 3 行，每行 ≤ 120 字，空行丢弃；第一行“评分（人数） | 人均”，下一行标签）只在卡片展开为全屏详情时代替一行的 `subtitle`；旧版原生忽略它，仍显示 `subtitle`。
+- **待探索**：原生添加地点表单收到 `exploreTag`（默认“待探索”，网页 `useNativePlaceForm.js` 传 `EXPLORE_TAG`），新建时显示“待探索”开关：打开后给分类加上该标签、清掉已选评价、提交不要求评价（`rating` 回传 null）；编辑既有地点不显示。
+- 协议 15 → 16（网页 `NATIVE_CHROME_PROTOCOL` 与 Swift 同时升级，版本不一致时回退网页控件），`test:native-chrome` 覆盖 `menu` 分组与 `subtitleExpanded` 的清洗。未验证：Swift 未编译，下拉菜单与开关需真机检查。
+
 ## 日记 · 同好细节（2026-11-02 第七轮）
 
 - **日历滑动抖动、拉不动**：两处原因一起处理。① 子页只保留全屏一档（`onDepthChange` 换掉 detents，并关闭 `prefersScrollingExpandsWhenScrolledToEdge`），列表滚到顶继续下拉时不再和系统面板抢手势；② 月历与素材照片不再用列表行里的 `LazyVGrid`（懒加载网格在滚动中反复改行高），改为固定的周行 / 四列行。
