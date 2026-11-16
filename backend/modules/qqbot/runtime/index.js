@@ -8,6 +8,7 @@ const conversation = require('./placeConversation');
 const { normalizeQQ } = require('./qqIdentity');
 const { MemberSync, syncStates } = require('./memberSync');
 const { NotificationWorker, notificationSummary } = require('./notificationWorker');
+const { MealReminder, pruneMealReminders, mealReminderSummary } = require('./mealReminder');
 const { sendPlaceCard } = require('./placeCard');
 
 // QQ Bot inside the backend process. NapCat runs separately; a missing or
@@ -27,7 +28,8 @@ function publicConfig(config) {
         publicWebUrlError: config.publicWebUrlError,
         commands: config.commands,
         whitelist: { mode: config.whitelist.mode, groupIds: config.whitelist.groupIds, intervalMs: config.whitelist.intervalMs },
-        notify: config.notify
+        notify: config.notify,
+        mealReminder: config.mealReminder
     };
 }
 
@@ -39,7 +41,8 @@ function getQQBotStatus() {
         connection: instance ? instance.client.status() : null,
         config: publicConfig(config),
         sync: syncStates(),
-        notifications: notificationSummary()
+        notifications: notificationSummary(),
+        mealReminders: mealReminderSummary()
     };
 }
 
@@ -80,6 +83,7 @@ function startQQBot() {
     });
     const memberSync = new MemberSync({ client, getConfig: botConfig.get, logger });
     const worker = new NotificationWorker({ client, getConfig: botConfig.get, logger });
+    const mealReminder = new MealReminder({ client, getConfig: botConfig.get, logger });
     const queues = new Map();
 
     // Messages of one conversation are handled strictly in order.
@@ -187,6 +191,7 @@ function startQQBot() {
         try {
             const expired = conversation.expireDrafts();
             sql.prepare('DELETE FROM QQBotInboundMessage WHERE received_at < ?').run(new Date(Date.now() - INBOUND_RETENTION_MS).toISOString());
+            pruneMealReminders();
             if (expired) logger.info('QQ bot drafts expired', { event: 'qqbot.drafts.expired', count: expired });
         } catch (error) {
             logger.warn('QQ bot housekeeping failed', { event: 'qqbot.housekeeping.failed', error });
@@ -197,16 +202,19 @@ function startQQBot() {
     client.start();
     memberSync.start();
     worker.start();
+    mealReminder.start();
     logger.notice('QQ bot started', { event: 'qqbot.started', ...publicConfig(config) });
 
     instance = {
         client,
         memberSync,
         worker,
+        mealReminder,
         stop() {
             clearInterval(housekeeping);
             memberSync.stop();
             worker.stop();
+            mealReminder.stop();
             client.stop();
             instance = null;
         }

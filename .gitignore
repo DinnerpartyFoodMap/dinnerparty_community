@@ -16,8 +16,7 @@
 /frontend/.env
 /frontend/.env.*.local
 /backend/.env
-/backend/data.sqlite*
-/backend/snapshot.sqlite*
+*.sqlite*
 yUYUko_food_MAP.code-workspace
 /backend/uploads
 /backend/logs

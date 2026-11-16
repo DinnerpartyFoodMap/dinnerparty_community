@@ -10,6 +10,8 @@ const DEFAULT_RANDOM_CENTER_NAME = 'B记鱼粥';
 // share link on its own (QQ desktop unfurls it from the share page's tags), off = none.
 const CARD_MODES = new Set(['tuwen', 'miniapp', 'link', 'off']);
 const MINIAPP_TEMPLATES = new Set(['bili', 'weibo']);
+// Meal reminders: breakfast, lunch and dinner at these Beijing times.
+const DEFAULT_MEAL_TIMES = ['08:00', '11:30', '17:30'];
 
 let override = null;
 let cached = null;
@@ -39,6 +41,19 @@ function parseCenter(value) {
     const [lat, lng] = parts.map(Number);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return null;
     return { lat, lng };
+}
+
+// Three "HH:MM" Beijing times in order (breakfast, lunch, dinner); anything else falls back to the defaults.
+function parseMealTimes(value) {
+    const parts = String(value || '').split(/[\s,，]+/).filter(Boolean);
+    if (parts.length !== 3) return DEFAULT_MEAL_TIMES.slice();
+    const minutes = parts.map((part) => {
+        const match = /^(\d{1,2})[:：](\d{2})$/.exec(part);
+        if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return NaN;
+        return Number(match[1]) * 60 + Number(match[2]);
+    });
+    if (minutes.some((m, i) => !Number.isFinite(m) || (i > 0 && m <= minutes[i - 1]))) return DEFAULT_MEAL_TIMES.slice();
+    return minutes.map((m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
 }
 
 // Group links must point at the public site; a Windows-local or app-local
@@ -88,6 +103,12 @@ function load(env = process.env) {
             enabled: parseBoolean(env.QQ_BOT_NOTIFY_ENABLED, false),
             groupIds: notifyGroupIds
         },
+        // Daily breakfast / lunch / dinner reminders; groups default to the push groups.
+        mealReminder: {
+            enabled: parseBoolean(env.QQ_BOT_MEAL_REMINDER_ENABLED, true),
+            groupIds: env.QQ_BOT_MEAL_REMINDER_GROUP_IDS == null ? notifyGroupIds : parseIdList(env.QQ_BOT_MEAL_REMINDER_GROUP_IDS),
+            times: parseMealTimes(env.QQ_BOT_MEAL_REMINDER_TIMES)
+        },
         // Fuzzy "!" commands and add-place extraction through DeepSeek (needs DEEPSEEK_API_KEY).
         ai: { enabled: parseBoolean(env.QQ_BOT_AI_ENABLED, true) },
         random: {
@@ -128,4 +149,4 @@ function siteUrl() {
     return get().publicWebUrl ? `${get().publicWebUrl}/` : '';
 }
 
-module.exports = { QQ_PATTERN, DEFAULT_RANDOM_CENTER, load, get, setForTesting, placeUrl, placeShareUrl, siteUrl, parseIdList, parseCenter, normalizePublicWebUrl };
+module.exports = { QQ_PATTERN, DEFAULT_RANDOM_CENTER, DEFAULT_MEAL_TIMES, load, get, setForTesting, placeUrl, placeShareUrl, siteUrl, parseIdList, parseCenter, parseMealTimes, normalizePublicWebUrl };

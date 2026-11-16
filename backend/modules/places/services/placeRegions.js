@@ -161,6 +161,25 @@ async function refreshPendingBatch({ limit = BATCH_SIZE, sql = db._raw, fetchImp
     return { checked: places.length, more: places.length >= limit, rejected };
 }
 
+/**
+ * 马上要用到省市区时（QQ 新地点推送）：给这几个地点里还没查过、或坐标变了的补查一次并保存。
+ * 没有配置 key 时什么也不做；查询失败照常抛错，调用方不带省市区继续。
+ */
+async function ensurePlaceRegions(ids, { sql = db._raw, fetchImpl } = {}) {
+    const unique = [...new Set(ids)].filter((id) => id != null);
+    if (!unique.length || !webServiceKey()) return 0;
+    const places = sql.prepare(`SELECT p.id, p.latitude AS lat, p.longitude AS lng
+        FROM Place p LEFT JOIN PlaceRegion r ON r.place_id = p.id
+        WHERE p.id IN (${unique.map(() => '?').join(',')})
+          AND p.latitude BETWEEN -90 AND 90 AND p.longitude BETWEEN -180 AND 180
+          AND (r.place_id IS NULL OR r.lat IS NOT p.latitude OR r.lng IS NOT p.longitude)`).all(...unique);
+    for (let i = 0; i < places.length; i += BATCH_SIZE) {
+        const batch = places.slice(i, i + BATCH_SIZE);
+        saveRegions(batch, await reverseGeocodeRegions(batch, fetchImpl ? { fetchImpl } : {}), sql);
+    }
+    return places.length;
+}
+
 let worker = null;
 
 /** 后台补齐地点的省市区；没有配置 AMAP_WEB_SERVICE_KEY 或 PLACE_REGION_WORKER=false 时不启动 */
@@ -280,6 +299,7 @@ module.exports = {
     countPendingPlaces,
     saveRegions,
     refreshPendingBatch,
+    ensurePlaceRegions,
     startPlaceRegionWorker,
     wakePlaceRegionWorker,
     regionTree,

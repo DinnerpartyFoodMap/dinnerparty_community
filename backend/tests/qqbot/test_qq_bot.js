@@ -24,7 +24,9 @@ const { parseMessage, parseLocationCard, parseCommand } = require('../../modules
 const commands = require('../../modules/qqbot/runtime/commands');
 const conversation = require('../../modules/qqbot/runtime/placeConversation');
 const { MemberSync } = require('../../modules/qqbot/runtime/memberSync');
-const { NotificationWorker, buildMessage, retryNotification } = require('../../modules/qqbot/runtime/notificationWorker');
+const { NotificationWorker, buildForward, regionText, retryNotification, BATCH_INTERVAL_MS } = require('../../modules/qqbot/runtime/notificationWorker');
+const { MealReminder, dueMeals, pruneMealReminders } = require('../../modules/qqbot/runtime/mealReminder');
+const { MEAL_COPY, RANDOM_HINT } = require('../../modules/qqbot/runtime/mealReminderCopy');
 const { OneBotClient } = require('../../modules/qqbot/runtime/onebotClient');
 const placeService = require('../../modules/places/services/placeService');
 const { fastSearch } = require('../../modules/discovery/services/placeSearch');
@@ -374,34 +376,61 @@ async function testNotificationWorker() {
     let nextMessageId = 1;
     const sent = [];
     let failMode = null;
-    client.on('send_group_msg', (params) => {
+    client.on('send_group_forward_msg', (params) => {
         if (failMode === 'failed')
             throw Object.assign(new Error('风控'), { code: 'failed' });
         if (failMode === 'timeout')
             throw Object.assign(new Error('timed out'), { code: 'timeout', outcomeUnknown: true });
         sent.push(params);
-        return { message_id: nextMessageId++ };
+        return { message_id: nextMessageId++, res_id: `res-${nextMessageId}` };
     });
     let history = [];
     client.on('get_group_msg_history', () => ({ messages: history }));
-    const worker = new NotificationWorker({ client, logger: silentLogger, getConfig: botConfig.get });
+    // The worker's clock: "now" is still inside the half hour the places were queued in; "later" is past its end.
+    let offsetMs = 0;
+    const regionLookups = [];
+    const worker = new NotificationWorker({
+        client, logger: silentLogger, getConfig: botConfig.get,
+        now: () => new Date(Date.now() + offsetMs),
+        resolveRegions: async (ids) => { regionLookups.push(ids); }
+    });
     worker.start();
     worker.stop();
+    const later = () => { offsetMs = BATCH_INTERVAL_MS; };
     const a = await placeService.createPlace({ name: '通知一号', latitude: 30, longitude: 120, address: '一号路', category: '快餐, 避雷', per_person_cost: 15, description: '描述'.repeat(50) }, null, { source: 'web' });
     const b = await placeService.createPlace({ name: '通知二号', latitude: 30.1, longitude: 120.1 }, null, { source: 'web' });
+    sql.prepare('INSERT OR REPLACE INTO PlaceRegion (place_id, province, city, district, lat, lng, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(a.id, '浙江省', '杭州市', '西湖区', 30, 120, Date.now());
     await worker.runOnce();
-    assert.equal(sent.length, 2, 'two new places in a burst go out as one message per group');
-    const text = sent[0].message[0].data.text;
-    assert.match(text, /【新地点 ×2】[\s\S]*店名：通知一号[\s\S]*地址：一号路[\s\S]*标签：快餐、避雷[\s\S]*人均：15 元[\s\S]*描述：描述[\s\S]*…[\s\S]*在地图中查看：https:\/\/dinnerparty\.cc\/\?place=/);
-    assert.ok(!/@全体成员|"type":"at"/.test(JSON.stringify(sent[0])), 'no @all');
+    assert.equal(sent.length, 0, 'places wait for the end of the half hour they were added in');
+    later();
+    await worker.runOnce();
+    assert.equal(sent.length, 2, 'the half hour goes out as one forward per group');
+    assert.deepEqual(regionLookups[0], [a.id, b.id], 'missing regions are looked up before sending');
+    const forward = sent[0];
+    assert.equal(forward.group_id, Number(GROUP_A));
+    assert.equal(forward.messages.length, 2, 'one node per place');
+    assert.ok(forward.messages.every((node) => node.type === 'node' && node.data.user_id === BOT && node.data.nickname));
+    const first = forward.messages[0].data.content[0].data.text;
+    assert.match(first, /^店名：通知一号\n作者：[^\n]+\n地区：浙江省杭州市\n地址：一号路\n标签：快餐、避雷\n人均：15 元\n描述：描述[\s\S]*…\n在地图中查看：https:\/\/dinnerparty\.cc\/\?place=/);
+    assert.ok(!/地区：/.test(forward.messages[1].data.content[0].data.text), 'no region line without a province (abroad or not looked up)');
+    assert.deepEqual(forward.news, [{ text: '通知一号（杭州市）' }, { text: '通知二号' }]);
+    assert.match(forward.summary, /2 个新地点/);
+    assert.ok(!/@全体成员|"type":"at"/.test(JSON.stringify(forward)), 'no @all');
     assert.equal(count('QQBotNotification', "status = 'sent' AND message_id IS NOT NULL"), 4);
-    assert.match(buildMessage([{ id: 1, name: '单个', creator_name: '作者' }]), /^【新地点】\n店名：单个\n作者：作者/);
-    // Explicit failure: retried later with backoff.
+    // Region text: municipalities name the city once; a stale region (place moved) is ignored.
+    assert.equal(regionText({ province: '北京市', city: '北京市' }), '北京市');
+    assert.equal(regionText({ province: null, city: null }), '');
+    assert.equal(buildForward(GROUP_A, [{ id: 1, name: '单个', creator_name: '作者', province: '广东省', city: '广州市' }], BOT).messages[0].data.content[0].data.text.split('\n').slice(0, 3).join('|'), '店名：单个|作者：作者|地区：广东省广州市');
+    // Explicit failure: retried later with backoff, at a half-hour boundary.
     failMode = 'failed';
+    offsetMs = 0;
     const c = await placeService.createPlace({ name: '通知三号', latitude: 30.2, longitude: 120.2 }, null, { source: 'web' });
+    later();
     await worker.runOnce();
     const retry = sql.prepare('SELECT * FROM QQBotNotification WHERE place_id = ?').all(c.id);
-    assert.ok(retry.every((r) => r.status === 'pending' && r.attempts === 1 && r.next_attempt_at > new Date().toISOString()));
+    assert.ok(retry.every((r) => r.status === 'pending' && r.attempts === 1 && r.attempted_at && r.next_attempt_at > new Date(Date.now() + BATCH_INTERVAL_MS).toISOString()));
+    assert.ok(retry.every((r) => Date.parse(r.next_attempt_at) % BATCH_INTERVAL_MS === 0), 'retries wait for a later half hour');
     sql.prepare("UPDATE QQBotNotification SET next_attempt_at = '2000-01-01T00:00:00.000Z' WHERE place_id = ?").run(c.id);
     // Unknown outcome: never resent blindly; found in history → sent, otherwise left for an admin.
     failMode = 'timeout';
@@ -422,9 +451,27 @@ async function testNotificationWorker() {
     assert.equal(retryNotification(unresolved.id), true);
     await worker.runOnce();
     assert.equal(sent.length, sentBefore + 1, 'an admin retry sends it');
+    // An unconfirmed forward: the bot's own forward posted around the attempt counts as sent, an old one does not.
+    offsetMs = 0;
+    const f = await placeService.createPlace({ name: '转发待核对', latitude: 30.5, longitude: 120.5 }, null, { source: 'web' });
+    later();
+    failMode = 'timeout';
+    await worker.runOnce();
+    failMode = null;
+    const attempted = sql.prepare('SELECT attempted_at FROM QQBotNotification WHERE place_id = ? AND group_id = ?').get(f.id, GROUP_A).attempted_at;
+    sql.prepare("UPDATE QQBotNotification SET updated_at = '2000-01-01T00:00:00.000Z' WHERE place_id = ?").run(f.id);
+    const forwardAt = (ms) => ({ message_id: 501, user_id: Number(BOT), time: Math.floor(ms / 1000), message: [{ type: 'forward', data: { id: 'res-x' } }] });
+    client.on('get_group_msg_history', ({ group_id }) => ({
+        messages: String(group_id) === GROUP_A ? [forwardAt(Date.parse(attempted) + 2000)] : [forwardAt(Date.parse(attempted) - 24 * 3600 * 1000)]
+    }));
+    await worker.runOnce();
+    assert.equal(sql.prepare('SELECT status FROM QQBotNotification WHERE place_id = ? AND group_id = ?').get(f.id, GROUP_A).status, 'sent');
+    assert.equal(sql.prepare('SELECT status FROM QQBotNotification WHERE place_id = ? AND group_id = ?').get(f.id, GROUP_B).status, 'unknown', 'an old forward does not confirm it');
     // Deleted places are skipped; crash leftovers become unknown.
+    offsetMs = 0;
     const d = await placeService.createPlace({ name: '已删除的店', latitude: 30.3, longitude: 120.3 }, null, { source: 'web' });
     sql.prepare('DELETE FROM Place WHERE id = ?').run(d.id);
+    later();
     await worker.runOnce();
     assert.equal(count('QQBotNotification', "place_id = ? AND status = 'skipped'", d.id), 2);
     sql.prepare("UPDATE QQBotNotification SET status = 'sending' WHERE place_id = ?").run(a.id);
@@ -439,6 +486,116 @@ async function testNotificationWorker() {
     await worker.runOnce();
     assert.equal(count('QQBotNotification', "place_id = ? AND status = 'sent'", e.id), 2, 'delivered after reconnecting');
     assert.ok(b.id);
+    // The worker's default lookup: only places never looked up (or moved since) are queried, and the answer is stored.
+    const { ensurePlaceRegions } = require('../../modules/places/services/placeRegions');
+    const previousKey = process.env.AMAP_WEB_SERVICE_KEY;
+    process.env.AMAP_WEB_SERVICE_KEY = 'test-key';
+    const queried = [];
+    const fetchImpl = async (url) => {
+        queried.push(new URL(url).searchParams.get('location'));
+        return { ok: true, json: async () => ({ status: '1', regeocodes: [{ addressComponent: { province: '浙江省', city: '杭州市', district: '西湖区', adcode: '330106' } }] }) };
+    };
+    try {
+        assert.equal(await ensurePlaceRegions([a.id, e.id], { fetchImpl }), 1, 'a already has a region at its position');
+        assert.deepEqual(queried, ['120.400000,30.400000']);
+        assert.equal(sql.prepare('SELECT city FROM PlaceRegion WHERE place_id = ?').get(e.id).city, '杭州市');
+        assert.equal(await ensurePlaceRegions([a.id, e.id], { fetchImpl }), 0);
+    }
+    finally {
+        if (previousKey == null) delete process.env.AMAP_WEB_SERVICE_KEY;
+        else process.env.AMAP_WEB_SERVICE_KEY = previousKey;
+    }
+}
+async function testMealReminder() {
+    // Config: three ascending HH:MM times or the defaults; groups default to the push groups.
+    assert.deepEqual(botConfig.parseMealTimes('7:30, 12:00，18:00'), ['07:30', '12:00', '18:00']);
+    for (const bad of ['12:00,11:00,18:00', '08:00,12:00', '08:00,25:00,18:00', ''])
+        assert.deepEqual(botConfig.parseMealTimes(bad), botConfig.DEFAULT_MEAL_TIMES, bad);
+    assert.deepEqual(botConfig.load({ QQ_BOT_NOTIFY_GROUP_IDS: GROUP_A }).mealReminder.groupIds, [GROUP_A]);
+    assert.deepEqual(botConfig.load({ QQ_BOT_NOTIFY_GROUP_IDS: GROUP_A, QQ_BOT_MEAL_REMINDER_GROUP_IDS: '' }).mealReminder.groupIds, []);
+    assert.equal(botConfig.load({ QQ_BOT_MEAL_REMINDER_ENABLED: 'false' }).mealReminder.enabled, false);
+    // Due windows in Beijing time (UTC+8).
+    const times = ['08:00', '11:30', '17:30'];
+    const at = (utc) => new Date(utc);
+    assert.deepEqual(dueMeals(at('2026-11-16T00:05:00Z'), times).map((d) => [d.meal, d.day]), [['breakfast', '2026-11-16']]);
+    assert.deepEqual(dueMeals(at('2026-11-15T23:59:00Z'), times), [], '07:59 is too early');
+    assert.deepEqual(dueMeals(at('2026-11-16T00:20:00Z'), times), [], 'a meal missed by 20 minutes is skipped');
+    assert.deepEqual(dueMeals(at('2026-11-16T03:30:00Z'), times).map((d) => d.meal), ['lunch']);
+    assert.deepEqual(dueMeals(at('2026-11-16T09:31:00Z'), times).map((d) => d.meal), ['dinner']);
+    sql.exec('DELETE FROM QQBotMealReminder');
+    configure({
+        commands: { enabled: true, privateEnabled: true, groupIds: [GROUP_A] },
+        mealReminder: { enabled: true, groupIds: [GROUP_A, GROUP_B], times }
+    });
+    const client = new FakeBotClient();
+    const sent = [];
+    let failMode = null;
+    client.on('send_group_msg', (params) => {
+        if (failMode === 'failed')
+            throw Object.assign(new Error('风控'), { code: 'failed' });
+        if (failMode === 'timeout')
+            throw Object.assign(new Error('timed out'), { code: 'timeout', outcomeUnknown: true });
+        if (failMode === 'offline')
+            throw Object.assign(new Error('not connected'), { code: 'not_connected' });
+        sent.push(params);
+        return { message_id: 800 + sent.length };
+    });
+    let now = at('2026-11-16T00:01:00Z');
+    const make = () => new MealReminder({ client, logger: silentLogger, getConfig: botConfig.get, now: () => now, sendGapMs: 0 });
+    const reminder = make();
+    reminder.start();
+    reminder.stop();
+    await reminder.runOnce();
+    assert.equal(sent.length, 2, 'one breakfast reminder per group');
+    const textA = sent.find((m) => m.group_id === Number(GROUP_A)).message[0].data.text;
+    const textB = sent.find((m) => m.group_id === Number(GROUP_B)).message[0].data.text;
+    assert.ok(MEAL_COPY.breakfast.some((line) => textA.startsWith(line)));
+    assert.ok(textA.endsWith(RANDOM_HINT), 'the !随机 hint only where the bot takes commands');
+    assert.ok(!textB.includes(RANDOM_HINT));
+    now = at('2026-11-16T00:03:00Z');
+    await reminder.runOnce();
+    await make().runOnce();
+    assert.equal(sent.length, 2, 'never twice, also after a restart');
+    // Another day gives another line.
+    now = at('2026-11-17T00:01:00Z');
+    await reminder.runOnce();
+    assert.equal(sent.length, 4);
+    assert.notEqual(sent[2].message[0].data.text, sent[0].message[0].data.text);
+    // Lunch: an explicit failure is retried a minute later; no reply is never resent; offline is retried at once.
+    now = at('2026-11-17T03:30:10Z');
+    failMode = 'failed';
+    await reminder.runOnce();
+    assert.equal(count('QQBotMealReminder', "day = '2026-11-17' AND meal = 'lunch' AND status = 'retry'"), 2);
+    failMode = null;
+    now = at('2026-11-17T03:30:40Z');
+    await reminder.runOnce();
+    assert.equal(sent.length, 4, 'waits a minute after a rejection');
+    now = at('2026-11-17T03:31:20Z');
+    await reminder.runOnce();
+    assert.equal(sent.length, 6);
+    assert.equal(count('QQBotMealReminder', "day = '2026-11-17' AND meal = 'lunch' AND status = 'sent' AND attempts = 2"), 2);
+    now = at('2026-11-17T09:30:10Z');
+    failMode = 'timeout';
+    await reminder.runOnce();
+    failMode = null;
+    now = at('2026-11-17T09:35:00Z');
+    await reminder.runOnce();
+    assert.equal(sent.length, 6, 'an unknown outcome is not resent');
+    assert.equal(count('QQBotMealReminder', "meal = 'dinner' AND status = 'unknown'"), 2);
+    now = at('2026-11-18T00:00:30Z');
+    failMode = 'offline';
+    await reminder.runOnce();
+    failMode = null;
+    await reminder.runOnce();
+    assert.equal(sent.length, 8, 'a send that never reached QQ is tried again');
+    // Switched off or disconnected: nothing; old rows are pruned.
+    configure({ mealReminder: { enabled: false, groupIds: [GROUP_A], times } });
+    now = at('2026-11-18T03:30:30Z');
+    await reminder.runOnce();
+    assert.equal(sent.length, 8);
+    assert.ok(pruneMealReminders(at('2026-12-18T00:00:00Z')) >= 8);
+    assert.equal(count('QQBotMealReminder', "day < '2026-11-18'"), 0);
+    configure();
 }
 // Minimal stand-in for NapCat's WebSocket server.
 function fakeNapCat({ selfId = BOT } = {}) {
@@ -511,6 +668,7 @@ async function testOneBotClientAndBot() {
     try {
         await flush();
         assert.equal(getQQBotStatus().connection.connected, true);
+        assert.ok(Array.isArray(getQQBotStatus().mealReminders));
         const event = { post_type: 'message', message_type: 'group', sub_type: 'normal', group_id: Number(GROUP_A), user_id: 100009, message_id: 4242,
             message: [{ type: 'text', data: { text: '!添加地点' } }] };
         bot.sockets[0].push(event);
@@ -899,12 +1057,13 @@ async function main() {
     await testPlaceCards();
     await testMemberSync();
     await testNotificationWorker();
+    await testMealReminder();
     await testOneBotClientAndBot();
     configure();
     await testWebRoute();
     await testLocationRoute();
     await testRandomCenterRoute();
-    console.log('QQ bot tests passed: parser, private/group drafts, isolation, versions, pause/expiry, identity, duplicates, rollback, search, random picks, recorded positions, group random centres, DeepSeek commands, place cards, whitelist sync, notifications, OneBot client and dedupe.');
+    console.log('QQ bot tests passed: parser, private/group drafts, isolation, versions, pause/expiry, identity, duplicates, rollback, search, random picks, recorded positions, group random centres, DeepSeek commands, place cards, whitelist sync, half-hourly forwarded notifications, meal reminders, OneBot client and dedupe.');
 }
 async function testRandomCenterRoute() {
     const express = require('express');

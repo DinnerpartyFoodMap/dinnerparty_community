@@ -97,7 +97,24 @@ function initQQBotSchema(db) {
         set_by TEXT,
         updated_at TEXT NOT NULL
       );
+
+      -- Daily meal reminders: one row per group, Beijing date and meal, so a restart never sends twice.
+      -- status: sending -> sent | retry (explicit failure) | failed | unknown (no reply, never resent).
+      CREATE TABLE IF NOT EXISTS QQBotMealReminder (
+        group_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        meal TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        message_id TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY (group_id, day, meal)
+      );
     `);
+    // When a push batch was handed to NapCat; an unconfirmed send is matched against the group history by this time.
+    const notificationColumns = db.prepare('PRAGMA table_info(QQBotNotification)').all().map((column) => column.name);
+    if (!notificationColumns.includes('attempted_at')) db.exec('ALTER TABLE QQBotNotification ADD COLUMN attempted_at TEXT');
 }
 
 module.exports = { initQQBotSchema };
