@@ -318,7 +318,7 @@ function patchIos() {
     });
 }
 
-// iOS 原生地图控件（SwiftUI Liquid Glass）：源码直接维护在 ios/App/App/，这里只校验存在并补齐工程引用，
+// iOS 原生地图控件与原生底图（SwiftUI / MapKit）：源码直接维护在 ios/App/App/，这里只校验存在并补齐工程引用，
 // 从不覆盖手写的 Swift 逻辑；重复执行不会产生改动。
 // 新增本地插件后还必须在该文件的列表之外，到 FoodMapBridgeViewController.capacitorDidLoad()
 // 里 registerPluginInstance(...)；否则网页 isPluginAvailable 为 false，会静默回退网页界面。
@@ -339,7 +339,11 @@ const IOS_NATIVE_SOURCES = [
     ['MapChromeView.swift', 'A7F1C0DE0000000000000011', 'A7F1C0DE0000000000000021'],
     ['PassThroughHostView.swift', 'A7F1C0DE0000000000000012', 'A7F1C0DE0000000000000022'],
     ['NativeMapChromePlugin.swift', 'A7F1C0DE0000000000000013', 'A7F1C0DE0000000000000023'],
-    ['FoodMapBridgeViewController.swift', 'A7F1C0DE0000000000000014', 'A7F1C0DE0000000000000024']
+    ['FoodMapBridgeViewController.swift', 'A7F1C0DE0000000000000014', 'A7F1C0DE0000000000000024'],
+    // 原生底图（MapKit）：透明 WebView 的触摸分配、地图控制器与桥接插件
+    ['FoodMapWebView.swift', 'A7F1C0DE0000000000000035', 'A7F1C0DE0000000000000036'],
+    ['NativeMapController.swift', 'A7F1C0DE0000000000000037', 'A7F1C0DE0000000000000038'],
+    ['NativeMapPlugin.swift', 'A7F1C0DE0000000000000039', 'A7F1C0DE000000000000003A']
 ];
 
 function patchIosNativeChrome() {

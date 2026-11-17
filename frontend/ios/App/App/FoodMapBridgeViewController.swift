@@ -3,20 +3,26 @@ import SwiftUI
 import WebKit
 import Capacitor
 
-/// 应用根控制器：在 Capacitor 的 WKWebView 之上承载 SwiftUI 原生地图控件（iOS 26 Liquid Glass）。
+/// 应用根控制器：在 Capacitor 的 WKWebView 之上承载 SwiftUI 原生地图控件（iOS 26 Liquid Glass，更早的系统为 regularMaterial）。
 /// - 本地插件 NativeMapChromePlugin 在桥接初始化后注册。
 /// - 透明宿主只命中可见控件区域，其余触摸交给 WebView（地图拖拽、缩放不受影响）。
-/// - iOS 26 以下不创建原生控件，网页继续使用统一后的 Web 控件。
+/// - iOS 18 起都创建原生控件；网页在握手失败时才回到 Web 控件。
+/// - 原生底图（MapKit）在 WebView 下面：网页接管后 WebView 变透明，地图画布上的触摸穿过 WebView 交给底图（FoodMapWebView）。
 class FoodMapBridgeViewController: CAPBridgeViewController {
     private let chromeModel = MapChromeModel()
     private var chromePlugin: NativeMapChromePlugin?
+    private let mapController = NativeMapController()
+    private var mapPlugin: NativeMapPlugin?
+    /// 底图已放进容器（WebView 的兄弟视图，在它下面）
+    private var mapInstalled = false
+    private var savedWebViewBackground: UIColor?
     private var chromeHost: PassThroughHostView?
     private var clusterBridge: NativeClusterMarkerBridge?
     private var loadingObservation: NSKeyValueObservation?
     private var frameObservation: NSKeyValueObservation?
     private var keyboardObservers: [NSObjectProtocol] = []
-    /// 原生面板的呈现器（iOS 26，MapChromeSheetPresenter）；存储属性不能声明可用版本，这里只持有引用
-    private var sheetPresenter: AnyObject?
+    /// 地点卡片等原生面板的呈现器
+    private var sheetPresenter: MapChromeSheetPresenter?
     /// 左边缘侧滑返回：只在网页报告“有东西可返回”时启用
     private var edgeBackGesture: UIPanGestureRecognizer?
     private let edgeBackDelegate = EdgeBackGestureDelegate()
@@ -49,6 +55,37 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NativeAdminPlugin())
         bridge?.registerPluginInstance(NativeJourneyPlugin())
         chromePlugin = plugin
+
+        let map = NativeMapPlugin()
+        map.controllerProvider = { [weak self] in
+            guard let self, self.mapInstalled else { return nil }
+            return self.mapController
+        }
+        map.touchRouter = (webView as? FoodMapWebView)?.touchRouter
+        map.onAttachedChange = { [weak self] attached in self?.setWebViewTransparent(attached) }
+        bridge?.registerPluginInstance(map)
+        mapPlugin = map
+    }
+
+    /// 地图画布上的触摸要能穿过网页交给原生底图：用带触摸分配的 WKWebView 子类
+    override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {
+        FoodMapWebView(frame: frame, configuration: configuration)
+    }
+
+    /// 原生底图显示时 WebView 透明（网页在 :root[data-native-map] 下把页面底色去掉），收起时恢复不透明
+    private func setWebViewTransparent(_ transparent: Bool) {
+        guard let webView else { return }
+        if transparent {
+            if savedWebViewBackground == nil { savedWebViewBackground = webView.backgroundColor }
+            webView.isOpaque = false
+            webView.backgroundColor = .clear
+            webView.scrollView.backgroundColor = .clear
+        } else {
+            let color = savedWebViewBackground ?? FM.UI.bgBase
+            webView.isOpaque = true
+            webView.backgroundColor = color
+            webView.scrollView.backgroundColor = color
+        }
     }
 
     override func viewDidLoad() {
@@ -58,6 +95,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         loadingObservation = webView?.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
             if webView.isLoading {
                 self?.chromePlugin?.handleWebViewReload()
+                self?.mapPlugin?.handleWebViewReload()
                 self?.clusterBridge?.reset()
                 // 新页面会重新上报可返回状态，此前先关闭侧滑
                 self?.cancelEdgeBackProgress()
@@ -100,7 +138,8 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         gesture.maximumNumberOfTouches = 1
         gesture.isEnabled = false
         gesture.delegate = edgeBackDelegate
-        webView.addGestureRecognizer(gesture)
+        // 挂在容器上：地图画布上的触摸穿过 WebView 交给原生底图时，左边缘侧滑仍能识别（容器与 WebView 坐标相同）
+        view.addGestureRecognizer(gesture)
         edgeBackGesture = gesture
         edgeBackFrameTarget.onFrame = { [weak self] in self?.flushEdgeBackProgress() }
 
@@ -248,7 +287,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
     }
 
     private func installChromeHost() {
-        guard #available(iOS 26.0, *), let webView = webView else { return }
+        guard let webView = webView else { return }
 
         // Capacitor 8 的根 view 就是 WKWebView，必须先创建容器才能成为兄弟视图。
         let container = UIView(frame: webView.frame)
@@ -259,6 +298,11 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         webView.frame = container.bounds
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(webView)
+
+        // 原生底图在 WebView 下面、铺满容器（不随键盘缩小）；网页握手前隐藏
+        mapController.mapView.frame = container.bounds
+        container.insertSubview(mapController.mapView, at: 0)
+        mapInstalled = true
 
         // 位于网页地图之上、原生工具栏之下；触摸与读屏仍由网页标记处理。
         clusterBridge = NativeClusterMarkerBridge(parent: self, webView: webView)

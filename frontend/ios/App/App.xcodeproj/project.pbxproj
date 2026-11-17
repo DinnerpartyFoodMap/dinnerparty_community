@@ -17,6 +17,9 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		A7F1C0DE0000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000002 /* PrivacyInfo.xcprivacy */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		A7F1C0DE000000000000003A /* NativeMapPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000039 /* NativeMapPlugin.swift */; };
+		A7F1C0DE0000000000000038 /* NativeMapController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000037 /* NativeMapController.swift */; };
+		A7F1C0DE0000000000000036 /* FoodMapWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000035 /* FoodMapWebView.swift */; };
 		A7F1C0DE0000000000000034 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000033 /* DesignTokens.swift */; };
 		A7F1C0DE0000000000000032 /* NativeScreenPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000031 /* NativeScreenPresentation.swift */; };
 		A7F1C0DE000000000000002F /* NativeJourneyPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */; };
@@ -50,6 +53,9 @@
 		A7F1C0DE0000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		A7F1C0DE0000000000000039 /* NativeMapPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapPlugin.swift; sourceTree = "<group>"; };
+		A7F1C0DE0000000000000037 /* NativeMapController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapController.swift; sourceTree = "<group>"; };
+		A7F1C0DE0000000000000035 /* FoodMapWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodMapWebView.swift; sourceTree = "<group>"; };
 		A7F1C0DE0000000000000033 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		A7F1C0DE0000000000000031 /* NativeScreenPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScreenPresentation.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeJourneyPlugin.swift; sourceTree = "<group>"; };
@@ -104,6 +110,9 @@
 			isa = PBXGroup;
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
+				A7F1C0DE0000000000000039 /* NativeMapPlugin.swift */,
+				A7F1C0DE0000000000000037 /* NativeMapController.swift */,
+				A7F1C0DE0000000000000035 /* FoodMapWebView.swift */,
 				A7F1C0DE0000000000000033 /* DesignTokens.swift */,
 				A7F1C0DE0000000000000031 /* NativeScreenPresentation.swift */,
 				A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */,
@@ -220,6 +229,9 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				A7F1C0DE000000000000003A /* NativeMapPlugin.swift in Sources */,
+				A7F1C0DE0000000000000038 /* NativeMapController.swift in Sources */,
+				A7F1C0DE0000000000000036 /* FoodMapWebView.swift in Sources */,
 				A7F1C0DE0000000000000034 /* DesignTokens.swift in Sources */,
 				A7F1C0DE0000000000000032 /* NativeScreenPresentation.swift in Sources */,
 				A7F1C0DE000000000000002F /* NativeJourneyPlugin.swift in Sources */,

@@ -63,12 +63,13 @@ class FakePlugin {
         this.acks = [];
         this.state = { session: null, visible: false, suspended: false, revision: 0 };
     }
-    async capabilities() { return { protocolVersion: this.options.protocol ?? NATIVE_CHROME_PROTOCOL, supportsGlass: this.options.glass !== false }; }
+    async capabilities() { return { protocolVersion: this.options.protocol ?? NATIVE_CHROME_PROTOCOL }; }
     async attach({ sessionId, ownerId }) { this.calls.push('attach'); this.state = { ...this.state, session: sessionId, owner: ownerId, visible: false }; return { ready: true }; }
-    async setState({ sessionId, revision, items, search, sheet, drawer, tour, labels }) {
+    async setState({ sessionId, revision, items, glass, search, sheet, drawer, tour, labels }) {
         this.calls.push(`setState:${revision}`);
         if (sessionId !== this.state.session) throw new Error('STALE_SESSION');
         this.state.labels = labels;
+        this.state.glass = glass;
         this.state.items = items;
         this.state.tour = tour;
         this.state.search = search;
@@ -321,7 +322,7 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 16);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 17);
     // v16 地区下拉菜单（menu 分组）与地点卡片展开后的几行副标题（最多 3 行，空行丢弃）
     const menuSheet = sanitizeSheet({ id: 'filter', size: 'list', sections: [{ id: 'region-province', style: 'menu', rows: [{ id: 'region:province:', title: '不限', tone: 'accent' }] }] });
     assert.equal(menuSheet.sections[0].style, 'menu');
@@ -513,13 +514,27 @@ function makeSession(plugin, extra = {}) {
 }
 
 // ---- 能力不足 / 协议不符 / 没有布局：保持 Web，不留下原生会话 ----
-for (const options of [{ glass: false }, { protocol: 1 }, { protocol: 2 }, { protocol: 3 }, { protocol: 4 }, { protocol: 5 }, { protocol: 999 }, { noLayout: true }]) {
+for (const options of [{ protocol: 16 }, { protocol: 1 }, { protocol: 2 }, { protocol: 3 }, { protocol: 4 }, { protocol: 5 }, { protocol: 999 }, { noLayout: true }]) {
     const plugin = new FakePlugin(options);
     const { session, modes } = makeSession(plugin);
     assert.equal(await session.start({ items }), false, JSON.stringify(options));
     assert.deepEqual(modes, []);
     assert.equal(session.mode, 'web');
     assert.equal(plugin.state.session, null, '握手失败后原生会话被销毁');
+    await session.stop();
+}
+
+// ---- v17：住民关掉玻璃时仍由原生接管，只把偏好随状态下发（iOS 18–25 不画玻璃由原生自己决定） ----
+{
+    const plugin = new FakePlugin();
+    const { session, modes } = makeSession(plugin);
+    assert.equal(await session.start({ items }), true);
+    assert.deepEqual(modes, ['native']);
+    assert.equal(plugin.state.glass, true, '默认使用玻璃偏好');
+    session.update({ items, glass: false });
+    await tick(5);
+    assert.equal(plugin.state.glass, false, '关掉玻璃只随状态下发，不退回网页');
+    assert.equal(session.mode, 'native');
     await session.stop();
 }
 
@@ -587,7 +602,7 @@ for (const options of [{ glass: false }, { protocol: 1 }, { protocol: 2 }, { pro
     await session.stop();
 
     // 不支持的设备：记录原因，不重试
-    const old = new FakePlugin({ glass: false });
+    const old = new FakePlugin({ protocol: 16 });
     const s2 = new NativeMapChromeSession({ ownerId: 'map-old', plugin: old, available: true, timing: { retryMs: 5 }, onAction: () => true, onModeChange: () => { } });
     assert.equal(await s2.start({ items }), false);
     assert.equal(getNativeChromeStatus().state, 'unsupported');
@@ -640,7 +655,7 @@ for (const options of [{ glass: false }, { protocol: 1 }, { protocol: 2 }, { pro
     const store = new Map();
     globalThis.window = { localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) } };
     const { expectNativeMapChrome } = await import("../../../src/platform/nativeMapChrome.js");
-    const old = makeSession(new FakePlugin({ glass: false }));
+    const old = makeSession(new FakePlugin({ protocol: 16 }));
     assert.equal(await old.session.start({ items }), false);
     assert.equal(expectNativeMapChrome(), false, '不支持的设备不等待握手');
     await old.session.stop();

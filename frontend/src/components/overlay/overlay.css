@@ -25,6 +25,13 @@
     height: var(--app-stable-height, calc(100% + var(--safe-top, 0px))) !important;
 }
 
+/* iOS 原生底图（MapKit，map/nativeMapView.js）：WebView 透明，页面底色去掉，底图从下面透出来。
+   其他页面与面板有自己的底色，照常盖住地图 */
+:root[data-native-map],
+:root[data-native-map] body {
+    background: transparent;
+}
+
 /* 安卓 App 同理（键盘插件同样缩小 WebView）；底图从安全区下方开始，减去状态栏高度 */
 :root[data-platform='android'] .fm-map-canvas {
     height: calc(var(--app-stable-height, calc(100% + var(--safe-top, 0px))) - var(--safe-top, 0px)) !important;

@@ -55,6 +55,23 @@ extension View {
         }
     }
 
+    /// 地图控件（工具栏、浮动按钮、菜单外壳、圆钮）的材质：iOS 26 且住民打开了「原生玻璃按钮」时用系统 Liquid Glass；
+    /// 其余（iOS 18–25、关闭玻璃）用 regularMaterial、细描边与 e1 阴影（设计参考第 5 节）。是否用玻璃由环境值 chromeGlass 决定。
+    /// elevated：不用玻璃时是否加 e1 阴影（浮在地图上的控件加；面板标题栏里的关闭钮不加）
+    func chromeGlass<S: InsettableShape>(_ shape: S, interactive: Bool = false, elevated: Bool = true) -> some View {
+        modifier(ChromeGlassSurface(shape: shape, interactive: interactive, elevated: elevated))
+    }
+
+    /// 玻璃之间的形变 ID（GlassEffectContainer 内的融合、分离）。不用玻璃时不做形变：过渡交给各自的 transition。
+    func chromeGlassID(_ id: String, in namespace: Namespace.ID) -> some View {
+        modifier(ChromeGlassID(id: id, namespace: namespace))
+    }
+
+    /// 玻璃出现、消失时不做系统的玻璃过渡（只在用玻璃时有效）
+    func chromeGlassTransitionIdentity() -> some View {
+        modifier(ChromeGlassTransitionIdentity())
+    }
+
     /// 输入框在玻璃卡片上的浅色底，保证深浅主题下都有足够对比度。
     func nativeFieldBackground() -> some View {
         self
@@ -73,6 +90,109 @@ extension View {
             .overlay(Capsule().strokeBorder(selected ? tint : Color.clear, lineWidth: 1))
             .foregroundStyle(selected ? tint : Color.primary)
             .contentShape(Capsule())
+    }
+}
+
+// MARK: - 地图控件的材质（iOS 26 玻璃 / 更早系统的不透明材质）
+
+private struct ChromeGlassKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// 地图控件是否使用 Liquid Glass（网页下发的住民偏好）。只在 iOS 26 起作用；默认 true，地图以外的原生页不受影响。
+    var chromeGlass: Bool {
+        get { self[ChromeGlassKey.self] }
+        set { self[ChromeGlassKey.self] = newValue }
+    }
+}
+
+enum ChromeMaterial {
+    /// 系统能画 Liquid Glass（iOS 26+）
+    static var glassAvailable: Bool {
+        if #available(iOS 26.0, *) { return true }
+        return false
+    }
+}
+
+private struct ChromeGlassSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let interactive: Bool
+    let elevated: Bool
+    @Environment(\.chromeGlass) private var glass
+
+    // 可用性判断单独成一层（与 nativeGlassSurface 相同的写法），不和住民偏好写在同一个 if 里
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if glass {
+                content.glassEffect(interactive ? Glass.regular.interactive() : Glass.regular, in: shape)
+            } else {
+                material(content)
+            }
+        } else {
+            material(content)
+        }
+    }
+
+    /// 设计参考第 5 节：地图上的浮动控件为 e1（0 2px 8px，10%）；描边与玻璃版的边缘亮线位置相同
+    private func material(_ content: Content) -> some View {
+        content
+            .background(.regularMaterial, in: shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(elevated ? 0.10 : 0), radius: 4, y: 2)
+    }
+}
+
+private struct ChromeGlassID: ViewModifier {
+    let id: String
+    let namespace: Namespace.ID
+    @Environment(\.chromeGlass) private var glass
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if glass {
+                content.glassEffectID(id, in: namespace)
+            } else {
+                content
+            }
+        } else {
+            content
+        }
+    }
+}
+
+private struct ChromeGlassTransitionIdentity: ViewModifier {
+    @Environment(\.chromeGlass) private var glass
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if glass {
+                content.glassEffectTransition(.identity)
+            } else {
+                content
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// GlassEffectContainer 的统一入口：用玻璃时让容器内的玻璃融合、形变；否则只是普通分组。
+struct ChromeGlassContainer<Content: View>: View {
+    var spacing: CGFloat? = nil
+    @ViewBuilder var content: () -> Content
+    @Environment(\.chromeGlass) private var glass
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            if glass {
+                GlassEffectContainer(spacing: spacing) { content() }
+            } else {
+                content()
+            }
+        } else {
+            content()
+        }
     }
 }
 
@@ -380,18 +500,14 @@ struct NativeSheetRow<Content: View>: View {
     }
 }
 
-/// 所有关闭入口共用搜索关闭钮的系统图案、尺寸和玻璃样式。
+/// 所有关闭入口共用搜索关闭钮的系统图案、尺寸和玻璃样式（地图控件里跟随 chromeGlass，旧系统为 regular material）。
 struct NativeCloseButton: View {
     static let diameter: CGFloat = 52
     let label: String
     let action: () -> Void
 
     var body: some View {
-        if #available(iOS 26.0, *) {
-            button.glassEffect(Glass.regular.interactive(), in: .circle)
-        } else {
-            button.background(.regularMaterial, in: Circle())
-        }
+        button.chromeGlass(Circle(), interactive: true, elevated: false)
     }
 
     private var button: some View {

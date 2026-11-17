@@ -9,7 +9,7 @@ import useDarkMode from "../theme/useDarkMode";
 import { readMapSettingsForm, buildMapSettings, saveMapSettings } from './mapSettings';
 import { saveUsername, savePassword, uploadAvatar, patchMapSettings } from './accountSettings';
 import { readThemeForm, styleOptionsFor, notifyMapStyleChange } from './themeOptions';
-import { MOTION_ITEMS, describeNativeChrome } from './MotionSettings';
+import { MOTION_ITEMS, describeNativeChrome, visibleMotionItems } from './MotionSettings';
 import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
 import { t } from '../i18n/index.js';
 
@@ -19,7 +19,7 @@ function buildMapPage(user) {
     return {
         values: readMapSettingsForm(user),
         motion: Object.fromEntries(MOTION_ITEMS.map((item) => [item.key, !!policy.preferences[item.key]])),
-        motionItems: MOTION_ITEMS.map(({ key, label, hint }) => ({ key, label, hint })),
+        motionItems: visibleMotionItems('ios').map(({ key, label, hint }) => ({ key, label, hint })),
         labels: {
             title: t('common:nav.personalizeMap'),
             mapStyle: t('settings:personalizeMap.mapStyleLabel'),

@@ -3198,8 +3198,9 @@ export default function MapUI(props) {
                 </div>
             )}
 
-            {/* 地点卡片：宽屏由地图覆盖物承载、与图标同帧定位；窄屏固定为底部紧凑面板，不再假装跟随地理点 */}
-            {layout.sheet ? (
+            {/* 地点卡片：宽屏由地图覆盖物承载、与图标同帧定位；窄屏固定为底部紧凑面板，不再假装跟随地理点。
+                iOS 原生底图上没有网页覆盖物可挂，同样用底部面板（通常由原生卡片接管） */}
+            {layout.sheet || mapRef?.current?.isNativeMap ? (
                 <ResponsivePanel
                     open={!!selectedPlace && !nativeChrome}
                     onClose={closePopup}

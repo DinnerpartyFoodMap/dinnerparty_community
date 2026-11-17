@@ -230,6 +230,8 @@ final class MapChromeModel: ObservableObject {
     @Published private(set) var theme = MapChromeTheme() {
         didSet { onPresentationChange?() }
     }
+    /// 住民的「原生玻璃按钮」偏好（v17）：只在 iOS 26 起作用，关掉或更早的系统用 regularMaterial（环境值 chromeGlass）
+    @Published var glass = true
     /// 主题皮肤的装饰（头像框、两端装饰、选中底座、选中色）；图标在各按钮 / 行自己的 image 里
     @Published private(set) var skin = MapChromeSkin()
     /// 网页请求显示（attach 后默认隐藏，resume 后显示）

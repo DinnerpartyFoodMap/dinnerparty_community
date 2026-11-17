@@ -21,7 +21,7 @@
 | npm test | 原有平台、地图、overlay、评分、原生地图/设置、日记文本、i18n，加结构检查 |
 | npm run test:structure | 解析全部受检 JS/JSX/MJS；相对导入含图片/CSS，模块文档与链接，前后端 harness 入口 |
 | npm run test:platform | 配置、坐标、返回、凭证辅助与平台纯逻辑；不是所有原生能力的端到端覆盖 |
-| npm run test:map | 聚合、快照、转场、范围缓存、请求闸门、底图等纯逻辑 |
+| npm run test:map | 聚合、快照、转场、范围缓存、请求闸门、底图等纯逻辑；iOS 原生底图的协议清洗、AMap.Map 替身、触摸采样、原生标记层与 Swift 白名单对照（不编译 Swift） |
 | npm run test:native-clusters-browser | 真实标记控制器与 Web Animations，替换高德/原生边界；聚合玻璃帧采样、遮挡、回退与中断；不执行 SwiftUI |
 | npm run test:add-pick-browser | 真实 MapView 与表单，替换高德/HTTP：首次点击固定坐标、相机不移、重复点击与取消重选 |
 | npm run test:random-browser | 真实 React 随机会话与 API：固定中心、短历史、取消/换账号、迟到响应与重试 ID |
@@ -29,7 +29,7 @@
 | npm run test:ios-back-browser | 真实页面与浮层返回：进度、取消、确认框二次侧滑、内部页与外壳、预览事件；不替代 UIKit 真机 |
 | npm run test:overlay | backdropPress 点击/触摸守卫；不代表每个弹层均有浏览器覆盖 |
 | npm run test:rating | 评分展示规则与请求封装；组件生命周期另需交互测试 |
-| npm run test:native-chrome | JS 地图与设置桥接会话、清洗和请求响应；实际顺序包含两个测试文件 |
+| npm run test:native-chrome | JS 地图控件（协议 v17）与设置桥接会话、清洗和请求响应；实际顺序包含两个测试文件 |
 | npm run test:journey-text | 原文片段分配与重叠逻辑；完整日记在浏览器/后端测试 |
 | npm run test:i18n | 默认语言键、插值、源码硬编码与登记的数据值 |
 | npm run build / build:mobile | Web/移动产物构建；移动配置检查不等于原生签名或真机验收 |

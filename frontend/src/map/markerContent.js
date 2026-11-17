@@ -49,6 +49,21 @@ export function placeGlyphKind(place) {
     return 'place';
 }
 
+/** src/img/union.png 的可见图形在画布里的位置（比例），与 marker-motion.css 的裁剪相同：原画布 2481×3508，图形在 (790, 1116)，912×1309 */
+export const DEFAULT_CLUSTER_CROP = Object.freeze({ x: 790 / 2481, y: 1116 / 3508, width: 912 / 2481, height: 1309 / 3508 });
+
+/** 当前（皮肤或默认）的各种标记图片，iOS 原生底图用（nativeMarkerLayer.js）；fallback 是皮肤图不可用时的默认图 */
+export function markerImageSources() {
+    const cluster = markerIcon('markers.cluster', unionIcon);
+    return {
+        place: { src: markerIcon('markers.place', yesIcon), fallback: yesIcon },
+        avoid: { src: markerIcon('markers.avoid', noIcon), fallback: noIcon },
+        unexplored: { src: unverifiedIcon, fallback: unverifiedIcon },
+        add: { src: addIcon, fallback: addIcon },
+        cluster: { src: cluster, fallback: unionIcon, isDefault: cluster === unionIcon }
+    };
+}
+
 function placeGlyphImage(kind) {
     if (kind === 'add') return { src: addIcon, fallback: addIcon };
     if (kind === 'avoid') return { src: markerIcon('markers.avoid', noIcon), fallback: noIcon };

@@ -38,8 +38,6 @@
   "nativeMapChrome": {
     "noCapabilities": "原生未返回能力",
     "protocolMismatch": "协议版本不一致（App {{protocolVersion}}，网页 {{NATIVE_CHROME_PROTOCOL}}）",
-    "glassUnsupported": "系统不支持 Liquid Glass{{systemVersion}}",
-    "systemVersion": "（iOS {{systemVersion}}）",
     "layoutTimeout": "等待原生布局超时"
   },
   "share": {

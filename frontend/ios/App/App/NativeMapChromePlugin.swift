@@ -2,11 +2,11 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 15）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 17）。
 ///
-/// capabilities() -> { protocolVersion, supportsGlass, accessibility }
+/// capabilities() -> { protocolVersion, systemVersion, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
-/// setState({ sessionId, ownerId, revision, items, theme, floatingGap, search, sheet, drawer, skin, tour }) -> { appliedRevision }
+/// setState({ sessionId, ownerId, revision, items, theme, glass, floatingGap, search, sheet, drawer, skin, tour }) -> { appliedRevision }
 ///   items: [{ id, title, symbol, image?, imageTemplate?, selected, disabled, busy, badge?, avatarURL?, placement, tone?, opensOverlay }]
 ///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
 ///   sheet: null | { id, token, title, subtitle?, subtitleExpanded?: [string], message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
@@ -48,6 +48,8 @@ import Capacitor
 ///   与收藏一样只展示网页下发的行，下滑、点地图或关闭只收起列表（网页保留筛选）。
 /// - v16：地图筛选的地区：分组 style "menu" 画成下拉菜单（Menu，行是选项，tone "accent" 为选中项），点选回传行 id；
 ///   地点卡片展开后显示 subtitleExpanded（几行：评分（人数） | 人均，下一行标签），收起时仍是一行 subtitle。
+/// - v17：iOS 18 起都使用原生控件，不再上报 supportsGlass（版本号相同即可接管，宿主未就绪时 attach 报 UNAVAILABLE、网页重试）。
+///   setState 的 glass 是住民的「原生玻璃按钮」偏好：iOS 26 且为真时画 Liquid Glass，否则用不透明的 regularMaterial。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -67,7 +69,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 16
+    static let protocolVersion = 17
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "random", "add", "search", "alongRoute", "account", "locate", "filter", "listView"]
@@ -129,13 +131,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func capabilities(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            var supportsGlass = false
-            if #available(iOS 26.0, *) {
-                supportsGlass = self.model?.hostReady == true
-            }
             call.resolve([
                 "protocolVersion": NativeMapChromePlugin.protocolVersion,
-                "supportsGlass": supportsGlass,
                 "systemVersion": UIDevice.current.systemVersion,
                 "accessibility": self.accessibilitySnapshot()
             ])
@@ -175,6 +172,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let rawItems = call.getArray("items", JSObject.self) ?? []
         let rawTheme = call.getObject("theme") ?? [:]
         let floatingGap = call.getDouble("floatingGap")
+        let glass = call.getBool("glass") ?? true
         let search = NativeMapChromePlugin.parseSearch(call.getObject("search"))
         let sheet = NativeMapChromePlugin.parseSheet(call.getObject("sheet"))
         let drawer = NativeMapChromePlugin.parseDrawer(call.getObject("drawer"))
@@ -202,6 +200,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             model.revision = revision
             if let labels, model.labels != labels { model.labels = labels }
+            if model.glass != glass { model.glass = glass }
             model.apply(items: items, theme: theme, floatingGap: floatingGap.map { CGFloat($0) }, search: search, sheet: sheet, drawer: drawer, skin: skin, tour: tour)
             self.lastHeartbeat = Date()
             call.resolve(["appliedRevision": revision])

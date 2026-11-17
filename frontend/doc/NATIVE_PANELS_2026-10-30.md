@@ -95,6 +95,13 @@
 - **待探索**：原生添加地点表单收到 `exploreTag`（默认“待探索”，网页 `useNativePlaceForm.js` 传 `EXPLORE_TAG`），新建时显示“待探索”开关：打开后给分类加上该标签、清掉已选评价、提交不要求评价（`rating` 回传 null）；编辑既有地点不显示。
 - 协议 15 → 16（网页 `NATIVE_CHROME_PROTOCOL` 与 Swift 同时升级，版本不一致时回退网页控件），`test:native-chrome` 覆盖 `menu` 分组与 `subtitleExpanded` 的清洗。未验证：Swift 未编译，下拉菜单与开关需真机检查。
 
+## iOS 18 起原生控件与原生底图（2026-11-17，控件协议 v17、底图协议 v1）
+
+- **iOS 18–25 也用原生地图控件**：`MapChromeView`、`MapChromeSheets` 等去掉 `@available(iOS 26.0, *)`，根控制器在 iOS 18 起都创建容器与控件宿主。材质统一走 `NativeGlassComponents.swift` 的 `chromeGlass` / `chromeGlassID` / `ChromeGlassContainer`：iOS 26 且住民打开「原生玻璃按钮」时是 Liquid Glass，否则是 `regularMaterial` + 1pt 细描边 + e1 阴影（设计参考第 5 节）；不用玻璃时没有玻璃融合形变，过渡靠各自的 transition。地点卡片的系统面板在 iOS 26 以前铺 `FM.UI.bgBase`。
+- **协议 16 → 17**：capabilities 不再上报 `supportsGlass`，版本号一致即可接管（宿主还没就绪时 `attach` 报 UNAVAILABLE，网页按普通故障重试）；setState 增加 `glass`（住民偏好）。「原生玻璃按钮」关掉只换材质，不再退回网页工具栏。
+- **原生底图（`NativeMapPlugin.swift` v1）**：MapKit 视图放在透明 WebView 下面，地点、聚合点与名称都是 MapKit 标注视图；网页侧 `platform/nativeMap.js`、`map/nativeMapView.js`、`map/nativeMarkerLayer.js`，见 [地图文档](../src/map/doc/README.md)。WebView 换成 `FoodMapWebView`（触摸分配），左边缘侧滑手势改挂在容器上。
+- 网页与 Swift 同时升级；`test:native-chrome` 覆盖 v17 握手与 `glass` 下发，`test:map` 的 `test-native-map.mjs` 覆盖底图协议清洗、替身与 Swift 白名单对照。未验证：Swift 未编译，iOS 18 与 iOS 26 的控件外观、底图触摸与标记需真机检查（[原生案例](../native/doc/README.md)）。
+
 ## 日记 · 同好细节（2026-11-02 第七轮）
 
 - **日历滑动抖动、拉不动**：两处原因一起处理。① 子页只保留全屏一档（`onDepthChange` 换掉 detents，并关闭 `prefersScrollingExpandsWhenScrolledToEdge`），列表滚到顶继续下拉时不再和系统面板抢手势；② 月历与素材照片不再用列表行里的 `LazyVGrid`（懒加载网格在滚动中反复改行高），改为固定的周行 / 四列行。

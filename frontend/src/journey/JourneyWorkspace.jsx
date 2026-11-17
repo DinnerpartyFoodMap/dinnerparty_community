@@ -20,6 +20,7 @@ import {invalidatePlaceDiaries} from './PlaceDiaryList';
 import {loadUnfinished} from './JourneyUnfinished';
 import './journey.css';
 import { t, tx } from '../i18n/index.js';
+import { isNativeMap, NativeMarkerOverlay, NativePolylineOverlay } from '../map/nativeMapView.js';
 
 const PAGES={composer:JourneyComposer,generation:JourneyGeneration,review:JourneyReview,calendar:JourneyCalendar,detail:JourneyDetail,
     unfinished:JourneyUnfinished,media:JourneyMedia,share:JourneyShare,community:JourneyCommunity,public:PublicJourneyView};
@@ -165,9 +166,24 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
 
     // 「在地图中查看」：在主地图上叠加编号与顺序虚线，与餐馆标记层相互独立
     useEffect(()=>{
-        const map=mapRef?.current,AMap=window.AMap;
-        if(!mapView||!mapReady||!map||!AMap)return undefined;
+        const map=mapRef?.current,AMap=window.AMap,native=isNativeMap(map);
+        if(!mapView||!mapReady||!map||(!native&&!AMap))return undefined;
         const overlays=[],stops=mapView.document.stops;
+        if(native){
+            // iOS 原生底图：编号圆标与虚线由原生画（与 .jw-map-dot 同样的 30 圆、主色底、卡片底色描边）
+            const surface=getComputedStyle(window.document.documentElement).getPropertyValue('--color-bg-surface').trim();
+            const markers=[];
+            stops.forEach((s,index)=>{
+                if(!Number.isFinite(s.lng)||!Number.isFinite(s.lat))return;
+                markers.push(new NativeMarkerOverlay({position:[s.lng,s.lat],kind:'badge',text:String(index+1),label:s.name,size:30,zIndex:300,fill:palette.primary,textColor:palette.onPrimary,border:surface}));
+                const previous=stops.slice(0,index).reverse().find(p=>Number.isFinite(p.lng)&&Number.isFinite(p.lat));
+                if(previous)overlays.push(new NativePolylineOverlay({path:[[previous.lng,previous.lat],[s.lng,s.lat]],strokeColor:palette.primary,strokeWeight:4,strokeStyle:'dashed',zIndex:150}));
+            });
+            overlays.push(...markers);
+            map.add(overlays);
+            map.setFitView(markers,false,[80,80,120,80],16);
+            return()=>map.remove(overlays);
+        }
         stops.forEach((s,index)=>{
             if(!Number.isFinite(s.lng)||!Number.isFinite(s.lat))return;
             const content=window.document.createElement('div');content.textContent=String(index+1);content.title=s.name;content.className='jw-map-dot';

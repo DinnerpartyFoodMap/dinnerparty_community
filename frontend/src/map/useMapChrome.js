@@ -1,4 +1,4 @@
-// 地图控件所有权：决定当前由网页工具栏还是 iOS 原生玻璃控件负责地图浮动按钮与底部工具栏。
+// 地图控件所有权：决定当前由网页工具栏还是 iOS 原生控件负责地图浮动按钮与底部工具栏。
 // 只有主地图（App 中常驻的 MapView、窄屏布局、非选点器）可以持有原生会话，防止原生工具栏同时订阅多张地图；
 // 地图页被其他页面盖住时（visible 为假）会话保留、原生控件收起，回到地图页不必重新握手。
 
@@ -27,7 +27,8 @@ const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: t
  */
 export function useMapChrome({ enabled, visible = true, items, theme, floatingGap = 14, search, sheet = null, drawer = null, skin, tour = null, onAction, onSearch, onSheet, onDrawer }) {
     const policy = useMotionPolicy();
-    const active = !!enabled && policy.nativeGlass && canUseNativeMapChrome();
+    // 「原生玻璃按钮」偏好只换材质（随快照下发），不决定是否接管
+    const active = !!enabled && canUseNativeMapChrome();
     const [state, setState] = useState(INITIAL_STATE);
     const ownerRef = useRef(null);
     if (!ownerRef.current) ownerRef.current = `map-${++ownerSeq}`;
@@ -45,7 +46,7 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
     const resolvedItems = items.map(({ sheetWhenNative, ...item }) => (
         sheetWhenNative && nativeMode ? { ...item, opensOverlay: false } : item
     ));
-    const snapshot = { items: resolvedItems, theme, floatingGap, search, sheet: nativeMode ? sheet : null, drawer: nativeMode ? drawer : null, skin, tour: nativeMode ? tour : null };
+    const snapshot = { items: resolvedItems, theme, glass: policy.nativeGlass !== false, floatingGap, search, sheet: nativeMode ? sheet : null, drawer: nativeMode ? drawer : null, skin, tour: nativeMode ? tour : null };
     const snapshotRef = useRef(snapshot);
     snapshotRef.current = snapshot;
 

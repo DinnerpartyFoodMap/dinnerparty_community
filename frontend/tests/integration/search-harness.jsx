@@ -7,7 +7,7 @@ if (new URLSearchParams(location.search).has('native')) {
     const listeners = {};
     const plugin = {
         state: {},
-        async capabilities() { return { protocolVersion: NATIVE_CHROME_PROTOCOL, supportsGlass: true }; },
+        async capabilities() { return { protocolVersion: NATIVE_CHROME_PROTOCOL }; },
         async attach(args) { this.state = { ...args }; return { ready: true }; },
         async addListener(name, callback) { (listeners[name] ||= new Set()).add(callback); return { remove: () => listeners[name].delete(callback) }; },
         emit(name, data) { listeners[name]?.forEach(fn => fn({ sessionId: this.state.sessionId, ownerId: this.state.ownerId, ...data })); },

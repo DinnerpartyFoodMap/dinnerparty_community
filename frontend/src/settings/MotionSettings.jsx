@@ -3,6 +3,7 @@ import { setMotionPreferences } from '../motion/policy';
 import { useMotionPolicy } from '../motion/MotionProvider';
 import { getPlatform } from '../platform/env';
 import { canUseNativeMapChrome, getNativeChromeStatus, subscribeNativeChromeStatus } from '../platform/nativeMapChrome';
+import { canUseNativeMap } from '../platform/nativeMap';
 import { t, tx } from '../i18n/index.js';
 
 // 动效开关：本机偏好，立即生效（不随账号同步）。关闭动效只影响过渡表现，地图同步与数据正确性不受影响。
@@ -12,6 +13,11 @@ export const MOTION_ITEMS = [
     { key: 'nativeGlass', label: t('settings:motion.nativeGlass.label'), hint: t('settings:motion.nativeGlass.hint'), iosOnly: true },
     { key: 'clusterGlass', label: t('settings:motion.clusterGlass.label'), hint: t('settings:motion.clusterGlass.hint'), iosOnly: true }
 ];
+
+/** 当前平台显示的开关：iOS 专属的只在 iOS 显示；原生底图（MapKit）画聚合点时，网页聚合点的玻璃开关没有作用，不显示 */
+export function visibleMotionItems(platform = getPlatform()) {
+    return MOTION_ITEMS.filter((item) => (!item.iosOnly || platform === 'ios') && !(item.key === 'clusterGlass' && canUseNativeMap()));
+}
 
 // 原生控件最近一次握手的结果，便于真机上直接看到没有启用的原因（iOS 原生设置页也用它）
 export function describeNativeChrome(status) {
@@ -35,12 +41,12 @@ export default function MotionSettings() {
             <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
                 {tx('settings:motion.localOnly', { reducedMotion: policy.reducedMotion ? t('settings:motion.reducedMotion') : '' })}
             </p>
-            {MOTION_ITEMS.filter((item) => !item.iosOnly || platform === 'ios').map((item) => (
+            {visibleMotionItems(platform).map((item) => (
                 <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', cursor: 'pointer' }}>
                     <span style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ display: 'block', fontSize: 15 }}>{item.label}</span>
                         <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>{item.hint}</span>
-                        {item.key === 'nativeGlass' && policy.preferences.nativeGlass && (
+                        {item.key === 'nativeGlass' && (
                             <span role="status" style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4, overflowWrap: 'anywhere' }}>
                                 {describeNativeChrome(chromeStatus)}
                             </span>

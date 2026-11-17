@@ -7,6 +7,9 @@ import { loadPlaceRegions, regionBounds } from "../places/placeRegions";
 import { MarkerLayerController } from "./MarkerLayerController";
 import { installPinchGuard } from "./pinchGuard";
 import { OverseasTileLayer } from "./overseasTileLayer";
+import { NativeMapView, NativeMarkerOverlay, isNativeMap, nativeMapAppearance } from "./nativeMapView";
+import { NativeMarkerLayer } from "./nativeMarkerLayer";
+import { canUseNativeMap } from "../platform/nativeMap";
 import { MarkerSnapshotStore, markerSnapshotSource } from "./markerSnapshot";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
 import { readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
@@ -44,6 +47,14 @@ let autoLocateAttempted = false;
 // 打开卡片时补全的地点详情（GET /places/:id）在这段时间内直接复用
 const PLACE_DETAIL_TTL_MS = 60 * 1000;
 const PLACE_DETAIL_CACHE_SIZE = 100;
+
+function readCssVar(name) {
+    try {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    } catch (e) {
+        return '';
+    }
+}
 
 function boundsOfPlaces(list) {
     let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90, count = 0;
@@ -120,8 +131,12 @@ export default function MapView({
     const [addingPrefill, setAddingPrefill] = useState(null);
     const [places, setPlaces] = useState([]);
     const [mapReady, setMapReady] = useState(false);
+    // iOS 原生底图：地图页被其他页面盖住时，触摸全部留给网页（地图画布之外的命中判断见 nativeMapView.js）
+    const nativeVisibleRef = useRef(mapPageActive || mapPreviewActive);
     useEffect(() => {
         markerLayerRef.current?.setNativeGlassVisible(mapPageActive || mapPreviewActive || pickerMode);
+        nativeVisibleRef.current = mapPageActive || mapPreviewActive;
+        if (isNativeMap(mapRef.current)) mapRef.current.setVisible(nativeVisibleRef.current);
     }, [mapPageActive, mapPreviewActive, pickerMode, mapReady]);
     const [amapState, setAmapState] = useState(() => getAmapState());
     useEffect(() => subscribeAmap(setAmapState), []);
@@ -459,7 +474,13 @@ export default function MapView({
     // 添加地点：标记固定在点选位置，打开表单不改变地图相机。
     useEffect(() => {
         const map = mapRef.current;
-        if (!mapReady || !map || !window.AMap || !addingPos || pickerMode) return undefined;
+        if (!mapReady || !map || !addingPos || pickerMode) return undefined;
+        if (isNativeMap(map)) {
+            const nativePin = new NativeMarkerOverlay({ position: addingPos, kind: 'pin', fill: customThemeColor, zIndex: 3100 });
+            nativePin.setMap(map);
+            return () => nativePin.setMap(null);
+        }
+        if (!window.AMap) return undefined;
         const pin = document.createElement('div');
         pin.className = 'fm-adding-pin';
         pin.setAttribute('aria-hidden', 'true');
@@ -470,7 +491,7 @@ export default function MapView({
         const marker = new window.AMap.Marker({ position: addingPos, content: pin, anchor: 'bottom-center', bubble: true, zIndex: 3100 });
         marker.setMap(map);
         return () => marker.setMap(null);
-    }, [mapReady, addingPos, pickerMode]);
+    }, [mapReady, addingPos, pickerMode, customThemeColor]);
 
     // 同步 ref，以便地图上的 click handler 总能读取到最新的 addMode
     useEffect(() => {
@@ -596,8 +617,9 @@ export default function MapView({
             }, MapUtils.MAP_VIEW_SAVE_DEBOUNCE_MS);
         };
 
-        // 在地图初始化时绑定事件
-        const init = () => {
+        // 在地图初始化时绑定事件。iOS App 的主地图（非选点器）用原生底图（MapKit，nativeMapView.js），
+        // 握手失败时回到高德网页地图（releaseMap 后再按高德初始化一次）
+        const init = (useNative) => {
             if (!containerRef.current) return;
             const start = initialCenterRef.current;
             const savedView = start ? { lng: start.lng, lat: start.lat, zoom: 16 } : MapUtils.readSavedMapView();
@@ -622,26 +644,50 @@ export default function MapView({
 
             const preferredStyles = getPreferredCandidates(pageDark);
 
-            mapRef.current = new AMap.Map(containerRef.current, {
-                resizeEnable: true,
-                center: savedView ? [savedView.lng, savedView.lat] : DEFAULT_CENTER,
-                zoom: savedView ? savedView.zoom : DEFAULT_ZOOM,
-                mapStyle: preferredStyles.length > 0 ? preferredStyles[0] : undefined
-            });
-            lastSavedViewRef.current = savedView;
-            styleSyncRef.current = { want: preferredStyles[0] || null, sent: preferredStyles.length > 0 ? 1 : 0, timer: null };
-            mapRef.current.on('styleChanged', handleStyleSettled);
+            if (useNative) {
+                // 原生底图：标记、聚合点与名称由 MapKit 画，拖动缩放时与底图同帧移动；不需要高德 SDK、海外叠图与双指补丁
+                const nativeMap = new NativeMapView(containerRef.current, {
+                    center: savedView ? [savedView.lng, savedView.lat] : DEFAULT_CENTER,
+                    zoom: savedView ? savedView.zoom : DEFAULT_ZOOM,
+                    ...nativeMapAppearance(preferredStyles[0], pageDark)
+                });
+                mapRef.current = nativeMap;
+                styleSyncRef.current = { want: preferredStyles[0] || null, sent: 0, timer: null };
+                markerLayerRef.current = new NativeMarkerLayer(nativeMap, {
+                    onPlaceClick: (place) => markerHandlersRef.current.onPlaceClick?.(place),
+                    onClusterMembers: (members) => markerHandlersRef.current.onClusterMembers?.(members)
+                });
+                nativeMap.setVisible(nativeVisibleRef.current);
+                nativeMap.ready.catch((error) => {
+                    if (disposed || mapRef.current !== nativeMap) return;
+                    console.warn('原生底图不可用，改用高德网页地图', error);
+                    nativeFailed = true;
+                    releaseMap();
+                    setMapReady(false);
+                    startAmap();
+                });
+            } else {
+                mapRef.current = new AMap.Map(containerRef.current, {
+                    resizeEnable: true,
+                    center: savedView ? [savedView.lng, savedView.lat] : DEFAULT_CENTER,
+                    zoom: savedView ? savedView.zoom : DEFAULT_ZOOM,
+                    mapStyle: preferredStyles.length > 0 ? preferredStyles[0] : undefined
+                });
+                styleSyncRef.current = { want: preferredStyles[0] || null, sent: preferredStyles.length > 0 ? 1 : 0, timer: null };
+                mapRef.current.on('styleChanged', handleStyleSettled);
 
-            // 标记层：图标、名称、数量同根渲染；点击回调经 ref 读取最新闭包
-            markerLayerRef.current = new MarkerLayerController(mapRef.current, {
-                nativeGlassVisible: mapPageActive || mapPreviewActive || pickerMode,
-                onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
-                onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
-            });
-            // 双指缩放有一指先抬起时，剩下那根手指的移动不交给高德（否则地图会突然漂走，见 pinchGuard.js）
-            releasePinchGuard = installPinchGuard(mapRef.current.getContainer?.() || containerRef.current);
-            // 境外放大后高德没有数据，叠加 CARTO 海外底图；连不上时保持纯高德
-            overseasLayerRef.current = new OverseasTileLayer(mapRef.current, { apiKey: getRuntimeConfig().cartoApiKey, dark: pageDark });
+                // 标记层：图标、名称、数量同根渲染；点击回调经 ref 读取最新闭包
+                markerLayerRef.current = new MarkerLayerController(mapRef.current, {
+                    nativeGlassVisible: mapPageActive || mapPreviewActive || pickerMode,
+                    onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
+                    onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
+                });
+                // 双指缩放有一指先抬起时，剩下那根手指的移动不交给高德（否则地图会突然漂走，见 pinchGuard.js）
+                releasePinchGuard = installPinchGuard(mapRef.current.getContainer?.() || containerRef.current);
+                // 境外放大后高德没有数据，叠加 CARTO 海外底图；连不上时保持纯高德
+                overseasLayerRef.current = new OverseasTileLayer(mapRef.current, { apiKey: getRuntimeConfig().cartoApiKey, dark: pageDark });
+            }
+            lastSavedViewRef.current = savedView;
 
             mapRef.current.on('complete', () => {
                 // 地图加载完全后再次确保由于bounds已准备好，加载附近数据
@@ -735,19 +781,26 @@ export default function MapView({
         };
 
         // SDK 由 platform/amapLoader 统一加载；失败时页面显示重试入口，重试成功后在此继续初始化。
+        // iOS App 的主地图先试原生底图（不等高德 SDK）；原生握手失败时 startAmap 回到高德网页地图。
         let disposed = false;
         let stopAmapWatch = null;
-        const initWhenReady = () => {
-            if (disposed || mapRef.current) return;
-            init();
+        let nativeFailed = false;
+        const wantNative = !pickerMode && canUseNativeMap();
+        const initAmapWhenReady = () => {
+            if (disposed || mapRef.current || !window.AMap) return;
+            init(false);
         };
-        if (window.AMap) initWhenReady();
-        else {
-            loadAmap().then(initWhenReady).catch(() => { /* 状态由 subscribeAmap 呈现 */ });
-            stopAmapWatch = subscribeAmap((next) => {
-                if (next.status === 'ready') initWhenReady();
-            });
-        }
+        const startAmap = () => {
+            if (window.AMap) { initAmapWhenReady(); return; }
+            loadAmap().then(initAmapWhenReady).catch(() => { /* 状态由 subscribeAmap 呈现 */ });
+            if (!stopAmapWatch) {
+                stopAmapWatch = subscribeAmap((next) => {
+                    if (next.status === 'ready') initAmapWhenReady();
+                });
+            }
+        };
+        if (wantNative && !nativeFailed) init(true);
+        else startAmap();
 
         // 从后台恢复：容器尺寸可能已变化（横竖屏、键盘），重新计算并刷新附近数据
         const stopLifecycle = onAppStateChange(({ active, backgroundMs }) => {
@@ -755,6 +808,49 @@ export default function MapView({
             if (handleResize) handleResize();
             if (backgroundMs > 60000) refreshNearbyRef.current?.({ maxAgeMs: 60000 });
         });
+
+        // 销毁当前地图与它的监听、标记层、覆盖物（卸载时；原生底图握手失败、改用高德前也用它）
+        function releaseMap() {
+            if (mapRef.current) {
+                mapRef.current.off('styleChanged', handleStyleSettled);
+                if (handleMapClick) mapRef.current.off("click", handleMapClick);
+                if (handleViewChange) {
+                    mapRef.current.off("moveend", handleViewChange);
+                    mapRef.current.off("zoomend", handleViewChange);
+                }
+            }
+            if (markerLayerRef.current) {
+                markerLayerRef.current.destroy();
+                markerLayerRef.current = null;
+            }
+            if (overseasLayerRef.current) {
+                overseasLayerRef.current.destroy();
+                overseasLayerRef.current = null;
+            }
+            if (handlePageHide) window.removeEventListener("pagehide", handlePageHide);
+            if (handleVisibilityChange) {
+                document.removeEventListener("visibilitychange", handleVisibilityChange);
+            }
+            if (handleResize) window.removeEventListener("resize", handleResize);
+            if (resizeObserver) resizeObserver.disconnect();
+            resizeObserver = null;
+            if (releasePinchGuard) releasePinchGuard();
+            releasePinchGuard = null;
+            try { document.removeEventListener('mapstylechange', handleMapStyleChange); } catch (e) { }
+            if (userLocationMarkerRef.current) {
+                userLocationMarkerRef.current.setMap(null);
+                userLocationMarkerRef.current = null;
+            }
+            releaseLocationControl(mapRef.current);
+            if (mapRef.current && typeof mapRef.current.destroy === 'function') {
+                try {
+                    mapRef.current.destroy();
+                } catch (e) {
+                    console.warn('销毁地图实例失败', e);
+                }
+            }
+            mapRef.current = null;
+        }
 
         return () => {
             disposed = true;
@@ -777,45 +873,9 @@ export default function MapView({
                 window.clearTimeout(styleSyncRef.current.timer);
                 styleSyncRef.current.timer = null;
             }
-            if (mapRef.current) {
-                mapRef.current.off('styleChanged', handleStyleSettled);
-                if (handleMapClick) mapRef.current.off("click", handleMapClick);
-                if (handleViewChange) {
-                    mapRef.current.off("moveend", handleViewChange);
-                    mapRef.current.off("zoomend", handleViewChange);
-                }
-            }
             overlayRequestRef.current?.abort();
-            if (markerLayerRef.current) {
-                markerLayerRef.current.destroy();
-                markerLayerRef.current = null;
-            }
-            if (overseasLayerRef.current) {
-                overseasLayerRef.current.destroy();
-                overseasLayerRef.current = null;
-            }
-            if (handlePageHide) window.removeEventListener("pagehide", handlePageHide);
-            if (handleVisibilityChange) {
-                document.removeEventListener("visibilitychange", handleVisibilityChange);
-            }
-            if (handleResize) window.removeEventListener("resize", handleResize);
-            if (resizeObserver) resizeObserver.disconnect();
-            if (releasePinchGuard) releasePinchGuard();
-            try { document.removeEventListener('mapstylechange', handleMapStyleChange); } catch (e) { }
-            if (userLocationMarkerRef.current) {
-                userLocationMarkerRef.current.setMap(null);
-                userLocationMarkerRef.current = null;
-            }
             locateAbortRef.current?.abort();
-            releaseLocationControl(mapRef.current);
-            if (mapRef.current && typeof mapRef.current.destroy === 'function') {
-                try {
-                    mapRef.current.destroy();
-                } catch (e) {
-                    console.warn('销毁地图实例失败', e);
-                }
-            }
-            mapRef.current = null;
+            releaseMap();
         };
     }, []);
 
@@ -1073,6 +1133,20 @@ export default function MapView({
     }, [selectedPlace?.id, selectedPlace?.marker_only]);
 
     const ensureUserLocationMarker = (position) => {
+        const map = mapRef.current;
+        if (map && isNativeMap(map)) {
+            // 原生底图：蓝点也是原生标注（与地点标记同帧移动），颜色取定位蓝与图上文字白
+            if (!userLocationMarkerRef.current) {
+                userLocationMarkerRef.current = new NativeMarkerOverlay({
+                    position, kind: 'location', fill: readCssVar('--color-location'), border: readCssVar('--color-on-scrim'),
+                    zIndex: 3000, label: t('map:main.myLocation')
+                });
+            } else {
+                userLocationMarkerRef.current.setPosition(position);
+            }
+            if (userLocationMarkerRef.current.getMap() !== map) userLocationMarkerRef.current.setMap(map);
+            return userLocationMarkerRef.current;
+        }
         if (!mapRef.current || !window.AMap) return null;
         if (!userLocationMarkerRef.current) {
             // 自绘蓝点：高德默认标记图是协议相对地址（//webapi.amap.com/...），
@@ -1170,7 +1244,9 @@ export default function MapView({
 
     markerHandlersRef.current = {
         onPlaceClick: handleMapPlaceClick,
-        onClusterClick: handleClusterClick
+        onClusterClick: handleClusterClick,
+        // 原生底图：能放大拆开的聚合由原生放大，拆不开（同一位置、已到最大缩放）时回传成员
+        onClusterMembers: (members) => setClusterMembers(members)
     };
 
     const handleAlongRouteResults = (results) => {
@@ -1327,6 +1403,8 @@ export default function MapView({
             const pad = 48;
             if (fitBounds.count === 1) {
                 mapRef.current.setZoomAndCenter(16, [fitBounds.minLng, fitBounds.minLat]);
+            } else if (isNativeMap(mapRef.current)) {
+                mapRef.current.setBounds(fitBounds, false, [insets.top + pad, pad, insets.bottom + pad, pad]);
             } else {
                 mapRef.current.setBounds(
                     new window.AMap.Bounds([fitBounds.minLng, fitBounds.minLat], [fitBounds.maxLng, fitBounds.maxLat]),

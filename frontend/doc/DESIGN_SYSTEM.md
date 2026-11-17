@@ -172,7 +172,8 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 | e3 | `--shadow-surface` | 弹窗、底部面板 | `--glass-shadow` |
 
 - 三档阴影都有深色值（tokens.json）。整页卡片不再用主色光晕阴影。底部面板向上的阴影（顺路吃面板、窄屏工具栏）暂时保留各自的写法。
-- 玻璃（`overlay.css` 的 `--glass-*`，iOS 26 的 `glassEffect`）只用在第 0 节第 3 条说的地图浮层上；iOS 26 以前用 `.regularMaterial`。
+- 玻璃（`overlay.css` 的 `--glass-*`，iOS 26 的 `glassEffect`）只用在第 0 节第 3 条说的地图浮层上；iOS 26 以前与住民关掉「原生玻璃按钮」时用 `.regularMaterial` + 1pt `primary 8%` 细描边，浮在地图上的控件再加 e1 阴影（`NativeGlassComponents.swift` 的 `chromeGlass`，面板标题栏里的关闭钮不加阴影）。iOS 18 起地图控件都是原生的，只换材质。
+- iOS 原生底图（MapKit）的标记与网页同一套取值：图标 36 × 43、聚合图 36 × 52 起按数量放大到 1.3 倍、店名 12pt（选中 600）、内边距 2/8/2/6、圆角 8、1pt 主色描边、`bg-surface` 底、`0 1px 4px` 15% 阴影；避雷用 danger 描边与文字、`bg-overlay` 底；我的位置用 `--color-location`。颜色由网页按当前主题与皮肤算好下发（`nativeMarkerLayer.js`），Swift 不写死。
 - 层级 `z-index` 继续用 `tokens.css` 的 `--z-*`。
 
 ## 6. 图标

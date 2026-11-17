@@ -1,5 +1,5 @@
-// iOS 原生地图控件（SwiftUI Liquid Glass）的网页端会话。只在 iOS App 内、插件可用且系统为 iOS 26+ 时启用；
-// 其余情况网页始终使用自己的工具栏。协议见 ios/App/App/NativeMapChromePlugin.swift。
+// iOS 原生地图控件（SwiftUI；iOS 26 且住民打开「原生玻璃按钮」时为 Liquid Glass，否则为不透明材质）的网页端会话。
+// 只在 iOS App 内、插件可用时启用（iOS 18 起）；其余情况与握手失败时网页使用自己的工具栏。协议见 ios/App/App/NativeMapChromePlugin.swift。
 //
 // 控件所有权握手：capabilities / attach / 首个状态 / 首个布局全部成功 → 网页隐藏自己的工具栏 → resume 显示原生控件。
 // 任何时刻只有一组可交互、在读屏树中可见。上次握手接管过的设备（expectNativeMapChrome）在握手期间先不显示 Web 工具栏，
@@ -9,7 +9,6 @@
 
 import { getPlatform, isPluginAvailable } from './env.js';
 import { onAppStateChange } from './lifecycle.js';
-import { getMotionPolicy } from '../motion/policy.js';
 import { subscribeOverlays, getOverlayEntries, hasNativeSuspendingOverlay } from '../components/overlay/overlayStack.js';
 import { setNativeOccupiedRects } from '../map/viewport.js';
 import { t } from '../i18n/index.js';
@@ -33,10 +32,12 @@ import { t } from '../i18n/index.js';
 // （双头拉杆：min / max / step / low / high 与文案），松手回传行 id "<range.id>:range:<低>:<高>"；面板 leading（清除筛选）在标题左侧。
 // v16 筛选面板的地区：分组 style "menu" 画成一个下拉菜单（行是选项，tone "accent" 为当前选中，点选回传行 id）；
 // 地点卡片展开后的副标题 subtitleExpanded（几行：评分（人数） | 人均，下一行标签），收起时仍是一行 subtitle。
+// v17 iOS 18 起都用原生控件：capabilities 不再带 supportsGlass，版本号一致即可接管；
+// setState 的 glass 是住民的「原生玻璃按钮」偏好（iOS 26 才画玻璃），关掉时只换成不透明材质，不再退回网页工具栏。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
-export const NATIVE_CHROME_PROTOCOL = 16;
+export const NATIVE_CHROME_PROTOCOL = 17;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
@@ -540,7 +541,7 @@ export class NativeMapChromeSession {
     async start(snapshot) {
         this.snapshot = snapshot;
         const available = this.available === null ? canUseNativeMapChrome() : this.available;
-        if (this.stopped || !available || !getMotionPolicy().nativeGlass) return false;
+        if (this.stopped || !available) return false;
         let step = 'load';
         setStatus({ state: 'connecting', reason: '', retrying: false });
         try {
@@ -548,11 +549,10 @@ export class NativeMapChromeSession {
             this.plugin = plugin;
             step = 'capabilities';
             const caps = await withTimeout(plugin.capabilities(), CALL_TIMEOUT_MS);
-            if (!caps || caps.protocolVersion !== NATIVE_CHROME_PROTOCOL || !caps.supportsGlass) {
-                // 设备或 App 版本不支持：不重试
-                const reason = !caps ? t('platform:nativeMapChrome.noCapabilities') : caps.protocolVersion !== NATIVE_CHROME_PROTOCOL
-                    ? t('platform:nativeMapChrome.protocolMismatch', { protocolVersion: caps.protocolVersion, NATIVE_CHROME_PROTOCOL })
-                    : t('platform:nativeMapChrome.glassUnsupported', { systemVersion: caps.systemVersion ? t('platform:nativeMapChrome.systemVersion', { systemVersion: caps.systemVersion }) : '' });
+            if (!caps || caps.protocolVersion !== NATIVE_CHROME_PROTOCOL) {
+                // App 版本不一致：不重试（宿主还没就绪时由 attach 报错，按普通故障重试）
+                const reason = !caps ? t('platform:nativeMapChrome.noCapabilities')
+                    : t('platform:nativeMapChrome.protocolMismatch', { protocolVersion: caps.protocolVersion, NATIVE_CHROME_PROTOCOL });
                 setStatus({ state: 'unsupported', reason });
                 rememberOutcome('unsupported');
                 return false;
@@ -662,6 +662,8 @@ export class NativeMapChromeSession {
                 revision: this.revision,
                 items: sanitizeItems(snapshot.items),
                 theme: snapshot.theme || {},
+                // 住民的「原生玻璃按钮」偏好：只决定 iOS 26 是否画玻璃，关掉仍是原生控件
+                glass: snapshot.glass !== false,
                 floatingGap: Number.isFinite(Number(snapshot.floatingGap)) ? Number(snapshot.floatingGap) : 14,
                 search: sanitizeSearch(snapshot.search),
                 sheet: sanitizeSheet(snapshot.sheet),

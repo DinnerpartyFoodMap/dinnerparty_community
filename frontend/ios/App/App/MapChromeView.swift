@@ -57,7 +57,7 @@ final class MapChromeHostingController<Content: View>: UIHostingController<Conte
     }
 }
 
-/// iOS 26 地图浮动按钮组与底部工具栏（系统 Liquid Glass）。
+/// 地图浮动按钮组与底部工具栏：iOS 26 且打开玻璃时是系统 Liquid Glass，否则是 regularMaterial（chromeGlass）。
 /// - 工具栏是一块整体玻璃（按钮与头像都在里面，内部不再叠加玻璃）；顶部拖动条上滑展开“更多功能”，下滑或点地图收起。
 /// - 右侧浮动按钮与菜单共用一块常驻玻璃，打开时放大成面板，关闭时缩回按钮组。
 /// - 点“搜索”后工具栏形变为输入框：搜索按钮的高亮拉长成输入框底色。
@@ -66,7 +66,6 @@ final class MapChromeHostingController<Content: View>: UIHostingController<Conte
 /// - 控件位置由始终参与布局的透明占位决定：即使控件尚未显示，网页也能先拿到占用区域完成握手。
 /// - 住民菜单、我的收藏、随机美食只替换共享玻璃内的内容，不创建第二块转场玻璃；
 ///   地点卡片仍由 MapChromeSheetPresenter 以 UIKit 系统面板呈现，见 MapChromeSheets.swift。
-@available(iOS 26.0, *)
 struct MapChromeView: View {
     @ObservedObject var model: MapChromeModel
     @Namespace private var glassNamespace
@@ -153,7 +152,7 @@ struct MapChromeView: View {
                         .overlay(alignment: .bottomTrailing) {
                             // 搜索展开时让位给网页搜索结果
                             if showing && !searching {
-                                GlassEffectContainer(spacing: 0) {
+                                ChromeGlassContainer(spacing: 0) {
                                     MapChromeMorphingPanel(model: model, panel: panel, width: toolbarWidth, maxHeight: panelMaxHeight) {
                                         VStack(spacing: 0) {
                                             ForEach(model.floatingItems) { item in
@@ -199,7 +198,7 @@ struct MapChromeView: View {
                         .overlay(alignment: .bottom) {
                             if showing && !model.toolbarItems.isEmpty {
                                 // 搜索与工具栏仍在自己的容器内融合、分离。
-                                GlassEffectContainer(spacing: 8) {
+                                ChromeGlassContainer(spacing: 8) {
                                     if searching {
                                         searchBar(showBack: !editing, editing: editing)
                                     } else {
@@ -224,6 +223,7 @@ struct MapChromeView: View {
         .accessibilityHidden(!showing || model.tour != nil)
         .coordinateSpace(.named(Self.coordinateSpaceName))
         .environment(\.colorScheme, model.theme.dark ? .dark : .light)
+        .environment(\.chromeGlass, model.glass)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .animation(animation, value: showing)
         .animation(animation, value: model.items)
@@ -298,8 +298,8 @@ struct MapChromeView: View {
         }
         .padding(.horizontal, 6)
         .frame(maxWidth: .infinity)
-        .glassEffect(revealed > 0 ? Glass.regular : Glass.regular.interactive(), in: shape)
-        .glassEffectID("toolbar", in: glassNamespace)
+        .chromeGlass(shape, interactive: revealed == 0)
+        .chromeGlassID("toolbar", in: glassNamespace)
         // 操作指引“更多功能”一步：整条工具栏就是要往上拖的东西，高亮圈随露出的一截一起移动
         .overlay {
             if swipeHinting {
@@ -619,7 +619,7 @@ struct MapChromeView: View {
                     focusPending = false
                     model.tap(cancelAdd)
                 }
-                .glassEffectID("searchBack", in: glassNamespace)
+                .chromeGlassID("searchBack", in: glassNamespace)
             } else if showBack {
                 circleButton(symbol: "chevron.backward", label: model.text("exitSearch", "退出搜索"), glassID: "searchBack") {
                     searchFocused = false
@@ -648,7 +648,7 @@ struct MapChromeView: View {
                 model.closeSearch()
             }
         }
-        .glassEffectID(slotID, in: glassNamespace)
+        .chromeGlassID(slotID, in: glassNamespace)
     }
 
     private func circleButton(symbol: String, label: String, glassID: String, action: @escaping () -> Void) -> some View {
@@ -660,8 +660,8 @@ struct MapChromeView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
-        .glassEffect(Glass.regular.interactive(), in: .circle)
-        .glassEffectID(glassID, in: glassNamespace)
+        .chromeGlass(Circle(), interactive: true)
+        .chromeGlassID(glassID, in: glassNamespace)
         .accessibilityLabel(Text(label))
     }
 
@@ -721,8 +721,8 @@ struct MapChromeView: View {
                 .fill(accent.opacity(searchFocused ? 0.12 : 0.06))
                 .matchedGeometryEffect(id: "searchHighlight", in: morphNamespace)
         }
-        .glassEffect(Glass.regular.interactive(), in: .capsule)
-        .glassEffectID("toolbar", in: glassNamespace)
+        .chromeGlass(Capsule(), interactive: true)
+        .chromeGlassID("toolbar", in: glassNamespace)
         .animation(.easeOut(duration: 0.15), value: model.searchText.isEmpty)
         .animation(.easeOut(duration: 0.15), value: model.search.busy)
         .onAppear { applyFocusRequest() }
@@ -768,8 +768,8 @@ struct MapChromeView: View {
         }
         .buttonStyle(.plain)
         .disabled(item.disabled)
-        .glassEffect(Glass.regular.interactive(), in: .circle)
-        .glassEffectID(item.id, in: glassNamespace)
+        .chromeGlass(Circle(), interactive: true)
+        .chromeGlassID(item.id, in: glassNamespace)
         .accessibilityLabel(Text(item.title))
         .accessibilityAddTraits(item.selected ? .isSelected : [])
     }
@@ -831,7 +831,6 @@ struct MapChromeView: View {
 
 /// 菜单与右侧按钮共用同一块玻璃外壳。只改变它的尺寸与圆角，避免系统玻璃匹配留下小胶囊残影。
 /// 内容始终按面板最终宽度排版，再由外壳裁剪；加载中与列表更新不会重建外壳。
-@available(iOS 26.0, *)
 private struct MapChromeMorphingPanel<Buttons: View>: View {
     @ObservedObject var model: MapChromeModel
     let panel: MapChromeSheet?
@@ -893,8 +892,8 @@ private struct MapChromeMorphingPanel<Buttons: View>: View {
                 }
             }
             .clipShape(shape)
-            .glassEffect(expanded ? Glass.regular : Glass.regular.interactive(), in: shape)
-            .glassEffectTransition(.identity)
+            .chromeGlass(shape, interactive: !expanded)
+            .chromeGlassTransitionIdentity()
             .offset(y: dragOffset)
             .onGeometryChange(for: CGRect.self, of: { proxy in
                 proxy.frame(in: .named(MapChromeView.coordinateSpaceName))
@@ -935,7 +934,6 @@ private struct MapChromeMorphingPanel<Buttons: View>: View {
 
 // MARK: - 操作指引（v10）
 
-@available(iOS 26.0, *)
 private extension View {
     /// 操作指引当前要指出的控件：画高亮圈，并把它在根坐标系中的位置记为 frames["tour"]（随布局回传，网页据此挖空遮罩、摆放说明卡片）。
     /// 背景与叠层始终存在、只切换内容，控件本身的视图身份不变（玻璃形变、按压状态不受影响）。
@@ -960,7 +958,6 @@ private extension View {
 
 /// 操作指引的高亮圈：主题色描边加外晕，缓慢呼吸（减弱动态效果时静止），与网页指引的高亮框同一种样式。
 /// 画在原生控件上：网页的遮罩在 WebView 里，盖不到原生控件，只能挖空它们下方的地图。
-@available(iOS 26.0, *)
 struct MapChromeTourRing<S: InsettableShape>: View {
     let shape: S
     let color: Color
@@ -992,7 +989,6 @@ struct MapChromeTourRing<S: InsettableShape>: View {
 
 /// 操作指引“更多功能”一步：手指从拖动条往上划的示意。cycle 每变一次播放一轮（与工具栏露出一截同一节拍）；
 /// 每轮从透明开始、以透明结束，两轮之间不会看到手指往回移。不播放动画时静止停在拖动条上。
-@available(iOS 26.0, *)
 struct MapChromeSwipeHint: View {
     let color: Color
     let cycle: Int

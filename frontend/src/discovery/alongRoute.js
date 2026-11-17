@@ -1,4 +1,5 @@
 import { t } from '../i18n/index.js';
+import { isNativeMap, NativeMarkerOverlay, NativePolylineOverlay } from '../map/nativeMapView.js';
 function normalizePoint(value) {
     if (!value) return null;
     const lng = Number(value.lng ?? value.longitude ?? value.getLng?.() ?? value[0]);
@@ -233,7 +234,10 @@ export function drawAmapRoutes(
     selectedRouteIndex = null,
     onRouteSelect
 ) {
-    if (!map || !window.AMap || !Array.isArray(routes) || routes.length === 0) return [];
+    if (!map || !Array.isArray(routes) || routes.length === 0) return [];
+    // iOS 原生底图：路线与起终点由原生画（与底图同帧移动），参数相同；规划路线仍用高德 SDK
+    const native = isNativeMap(map);
+    if (!native && !window.AMap) return [];
     const overlays = [];
     // 多条路线依次用主色、辅色与语义色（来自设计令牌，深浅模式自动）
     const tokenColor = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -245,16 +249,20 @@ export function drawAmapRoutes(
     routes.slice().reverse().forEach((route) => {
         const routeIndex = Number(route.index) || 0;
         const isHighlighted = routeIndex === highlightedRouteIndex;
-        const polyline = new window.AMap.Polyline({
+        const lineOptions = {
             path: route.path.map((point) => [point.lng, point.lat]),
             strokeColor: isHighlighted ? primaryColor : palette[routeIndex % palette.length],
             strokeWeight: isHighlighted ? 7 : 5,
             strokeOpacity: isHighlighted ? 0.9 : 0.64,
             strokeStyle: isHighlighted ? 'solid' : 'dashed',
+            zIndex: isHighlighted ? 100 : 90 - routeIndex
+        };
+        // 原生折线不能点选（选路线用面板里的列表）
+        const polyline = native ? new NativePolylineOverlay(lineOptions) : new window.AMap.Polyline({
+            ...lineOptions,
             lineJoin: 'round',
             lineCap: 'round',
             showDir: isHighlighted,
-            zIndex: isHighlighted ? 100 : 90 - routeIndex,
             cursor: !isHighlighted && typeof onRouteSelect === 'function' ? 'pointer' : 'default'
         });
         polyline.__alongRouteIndex = routeIndex;
@@ -266,6 +274,19 @@ export function drawAmapRoutes(
     });
 
     const primaryPath = routes[0].path;
+    const last = primaryPath[primaryPath.length - 1];
+    if (native) {
+        // 与网页的起终点圆标相同：28 的主色圆、主色上的文字色、2pt 卡片底色描边
+        const endpoint = (point, label) => new NativeMarkerOverlay({
+            position: [point.lng, point.lat], kind: 'badge', text: label, size: 28, zIndex: 120,
+            fill: primaryColor, textColor: tokenColor('--theme-on-primary'), border: tokenColor('--color-bg-surface')
+        });
+        const endpoints = [endpoint(primaryPath[0], t('map:alongRoute.startMarker')), endpoint(last, t('map:alongRoute.endMarker'))];
+        map.add(endpoints);
+        overlays.push(...endpoints);
+        if (fitPadding !== false) map.setFitView(overlays, false, fitPadding);
+        return overlays;
+    }
     const endpointContent = (label) => `<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${primaryColor};color:var(--theme-on-primary);border:2px solid var(--color-bg-surface);box-shadow:var(--shadow-sm);font-size:12px;font-weight:700">${label}</div>`;
     const startMarker = new window.AMap.Marker({
         position: [primaryPath[0].lng, primaryPath[0].lat],
@@ -273,7 +294,6 @@ export function drawAmapRoutes(
         offset: [-14, -14],
         zIndex: 120
     });
-    const last = primaryPath[primaryPath.length - 1];
     const endMarker = new window.AMap.Marker({
         position: [last.lng, last.lat],
         content: endpointContent(t('map:alongRoute.endMarker')),

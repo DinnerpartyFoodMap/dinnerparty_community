@@ -35,6 +35,12 @@ flowchart TD
 
 已有 test:platform / test:native-chrome（含设置）/ test:native-panels，真机另看 [原生文档](../../../native/doc/README.md)。案例见 [TEST_CASES.md](TEST_CASES.md)，待办 PLT-01 / PLT-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
 
+## iOS 原生底图与 iOS 18 起原生控件（2026-11-17）
+
+- `nativeMap.js` 是原生底图（MapKit，`NativeMapPlugin.swift` 协议 v1）的会话：`canUseNativeMap()`（iOS App 且插件可用）、`NativeMapSession`（握手、按发出顺序串行调用、按会话过滤事件、结束时 dispose）与清洗函数（地点按列编码、覆盖物与折线、触摸矩形、CSS 颜色转 `#RRGGBB(AA)`），上限与 Swift 相同。地图侧的替身与标记层见 [地图文档](../../map/doc/README.md)。
+- 原生侧：`FoodMapBridgeViewController` 用 `FoodMapWebView`（WKWebView 子类）创建 WebView，把 MKMapView 放在它下面；网页接管后 WebView 变透明，`hitTest` 按网页上报的触摸区域把地图画布上的触摸交给底图。WebView 重载时插件收起底图、恢复不透明。左边缘侧滑手势挂在容器上，地图区域的触摸也能识别。
+- `nativeMapChrome.js` 协议 v17：iOS 18 起都由原生控件接管，capabilities 不再上报 `supportsGlass`；`useMapChrome` 把住民的「原生玻璃按钮」偏好作为 `glass` 随状态下发，原生在 iOS 26 且为真时画 Liquid Glass，否则用不透明材质。偏好不再决定是否接管。
+
 ## iOS 返回手势热区（2026-11-05）
 
 `nativeShell.js` 通过 `foodMapEdgeBack` 上报 `{ enabled, interactive: true, region: 'map' | 'content' }`。地图首页、地图选点器（聚餐、海报、日记、地点位置、列表中心等）和日记地图预览用左侧 **24pt**；普通网页内容页及其表单、确认框用 **80pt**。按最上层消费返回的浮层判断，选点器底下的页面路径不参与覆盖；浮层打开/关闭、路径改变时，即使 `enabled` 未变也重新上报档位。无返回目标时手势关闭。

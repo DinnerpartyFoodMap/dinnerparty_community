@@ -9,7 +9,6 @@ import SwiftUI
 /// - 宿主正在呈现其他界面（系统分享、相册、网页弹出的选择器……）时不弹出，每 0.3 秒检查一次，空闲后再弹出；
 /// - 自己的面板上方还叠着其他界面（大图预览）时不收起，否则会连带关闭它；
 /// - 同一面板（id 不变）只原地刷新内容与停靠高度。
-@available(iOS 26.0, *)
 final class MapChromeSheetPresenter: NSObject {
     static let compactDetent = UISheetPresentationController.Detent.Identifier("foodmap.compact")
     /// 地点卡片第一段占最大停靠高度的比例：停靠高度不含状态栏与底部安全区，0.36 约等于整屏的三分之一
@@ -107,8 +106,8 @@ final class MapChromeSheetPresenter: NSObject {
             self?.toggleCardExpanded()
         })
         let controller = MapChromeHostingController(rootView: root, model: model)
-        // 背景交给系统：iOS 26 的面板是 Liquid Glass，视图不铺底色
-        controller.view.backgroundColor = .clear
+        // 背景交给系统：iOS 26 的面板是 Liquid Glass，视图不铺底色；更早的系统面板本身透明，铺整页底色
+        controller.view.backgroundColor = ChromeMaterial.glassAvailable ? .clear : FM.UI.bgBase
         controller.modalPresentationStyle = .pageSheet
         if let sheetController = controller.sheetPresentationController {
             configure(sheetController)
@@ -173,7 +172,6 @@ final class MapChromeSheetPresenter: NSObject {
     }
 }
 
-@available(iOS 26.0, *)
 extension MapChromeSheetPresenter: UISheetPresentationControllerDelegate {
     /// 用户下滑或点遮罩关闭：通知网页（同一 token 不会再弹出）
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
@@ -189,7 +187,6 @@ extension MapChromeSheetPresenter: UISheetPresentationControllerDelegate {
 }
 
 /// 面板内容入口。只显示创建时那一个面板：换成别的面板时，正在收起的旧面板保留最后一次内容，不闪成新面板。
-@available(iOS 26.0, *)
 struct MapChromeSheetRoot: View {
     @ObservedObject var model: MapChromeModel
     let initial: MapChromeSheet
@@ -201,6 +198,7 @@ struct MapChromeSheetRoot: View {
         MapChromePlaceCard(model: model, sheet: sheet, onToggleExpand: onToggleCard)
         .tint(Color(uiColor: model.theme.primary))
         .environment(\.colorScheme, model.theme.dark ? .dark : .light)
+        .environment(\.chromeGlass, model.glass)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 }
@@ -208,7 +206,6 @@ struct MapChromeSheetRoot: View {
 /// 住民菜单 / 我的收藏 / 随机美食的正文。玻璃外壳由 MapChromeMorphingPanel 持有并缩回右侧按钮。
 /// 不再用 UIKit 系统面板：iOS 26 半屏面板的系统玻璃比工具栏的 Glass.regular 更厚、更亮，两者看起来不一致。
 /// 交互与系统面板一致：右上角关闭、拖住顶部下滑关闭、点地图关闭（PassThroughHostView）；内容超出可用高度时滚动。
-@available(iOS 26.0, *)
 struct MapChromeMenuPanel: View {
     @ObservedObject var model: MapChromeModel
     let sheet: MapChromeSheet
@@ -509,7 +506,7 @@ struct MapChromeMenuPanel: View {
             .padding(16).frame(width: 288)
             // Popover 是独立的呈现层，不能只依赖地图正文的 colorScheme。
             // 同步 SwiftUI 和系统呈现的外观，让文字与 Liquid Glass 都跟随地图主题。
-            .glassEffect(Glass.regular, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
+            .chromeGlass(RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous), elevated: false)
             .environment(\.colorScheme, model.theme.dark ? .dark : .light)
             .preferredColorScheme(model.theme.dark ? .dark : .light)
             .tint(accent)
@@ -851,7 +848,6 @@ private struct MapChromeRowButtonStyle: ButtonStyle {
 /// 再露出简介的开头；上滑（或点“详情”）到全屏后继续显示完整简介、地址、相关日记与图片。
 /// 展会面板用同一张卡片：左上角是展会图标（image），正文按 paragraphs 分段（展会信息、展会简介，行内 Markdown），
 /// 地址行显示展会地点；展会名放不下时来回滚动。
-@available(iOS 26.0, *)
 struct MapChromePlaceCard: View {
     @ObservedObject var model: MapChromeModel
     let sheet: MapChromeSheet
@@ -1038,7 +1034,7 @@ struct MapChromePlaceCard: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .glassEffect(Glass.regular.interactive(), in: .circle)
+        .chromeGlass(Circle(), interactive: true, elevated: false)
         .disabled(disabled)
         .opacity(disabled ? 0.5 : 1)
         .accessibilityLabel(Text(label))
@@ -1265,7 +1261,6 @@ struct MapChromePlaceCard: View {
 
 /// 单行标题（展会名）：放得下时与普通标题一样居中；放不下时来回滚动，两端各停一会儿（速度与网页 MarqueeText 相同）。
 /// 减弱动态效果时不自动滚动，改为可以手动横向滑动。读屏朗读完整标题。
-@available(iOS 26.0, *)
 struct MapChromeMarqueeText: View {
     let text: String
     let font: Font
@@ -1349,7 +1344,6 @@ struct MapChromeImagePreviewItem: Identifiable {
 }
 
 /// 图片大图：左右滑动切换，右上角关闭
-@available(iOS 26.0, *)
 struct MapChromeImagePreview: View {
     let item: MapChromeImagePreviewItem
     let closeLabel: String
