@@ -95,6 +95,9 @@ function classifyProviderError(providerCode = '') {
 /**
  * Text of an international verification SMS (no template there). Chinese plus a short English
  * line, kept under 70 characters so it is one UCS-2 segment.
+ * The code must stay the first number in the text: some routes deliver only a fixed template
+ * with the code taken from our text (a US number got just "Your verification code is <code>"
+ * on 2026-11-17 while Aliyun recorded this full text).
  */
 function intlMessage(code, minutes) {
     return `【东方饭联地图】验证码 ${code}，${minutes} 分钟内有效，请勿告诉他人。Your code: ${code}`;

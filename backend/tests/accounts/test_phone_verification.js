@@ -97,6 +97,7 @@ async function testSmsClient() {
         ['SendMessageToGlobe', '2018-05-01', '85261234567', 'FoodMap', 'OTP', '300']);
     assert.equal(intlParams.Message, sms.intlMessage('654321', '5'));
     assert.ok(intlParams.Message.includes('654321') && intlParams.Message.length <= 70, 'one UCS-2 segment');
+    assert.equal(intlParams.Message.match(/\d+/)[0], '654321', 'routes that resend a fixed template take the first number');
     assert.equal(intlParams.SignName, undefined, 'no signature or template on the international channel');
     reply = { status: 200, body: { ResponseCode: 'MOBILE_NUMBER_ILLEGAL', ResponseDescription: 'bad number', RequestId: 'req-intl-2' } };
     await assert.rejects(intlClient.sendVerifyCode({ phone: '+852 61234567', code: '654321', purpose: 'register' }),
