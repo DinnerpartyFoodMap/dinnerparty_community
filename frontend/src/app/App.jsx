@@ -36,6 +36,7 @@ import { supportsNativeAdmin } from "../admin/useNativeAdmin";
 import NativeJourneyHost from "../journey/NativeJourneyHost";
 import { supportsNativeJourney } from "../journey/useNativeJourney";
 import AppUpdatePrompt from "./components/AppUpdatePrompt";
+import LocationPermissionNotice from "./components/LocationPermissionNotice";
 import FeedbackHost from "../feedback/FeedbackHost";
 import { normalizeFeedbackPrefill } from "../feedback/feedbackTypes";
 import { getNoticeColorOption } from "../components/feedback/noticeColors";
@@ -1164,6 +1165,8 @@ export default function App() {
                             onClose={handleAuthClose}
                         />
                     </AppFrame>
+                    {/* Android 弹出系统定位授权时顶部的用途说明 */}
+                    <LocationPermissionNotice />
                 </ConfirmProvider>
             </TipsProvider>
         </AuthProvider>

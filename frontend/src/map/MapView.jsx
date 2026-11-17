@@ -1757,7 +1757,10 @@ export default function MapView({
 
         try {
             // 统一返回 GCJ-02：网页端为浏览器定位（本地转换）或高德 IP 定位，Android 为高德定位 SDK（境外才本地转换），iOS 为系统定位 + 本地转换（只转换一次）
-            const position = await getCurrentLocation({ map, onUpdate, signal: controller.signal });
+            // Android 启动时只用已授予的定位权限、不弹授权（应用市场合规：进入应用时不申请权限，拒绝后重启不再弹窗）；
+            // 没有权限时由用户点定位按钮再申请，申请时顶部显示用途说明（LocationPermissionNotice）
+            const prompt = !(auto && getPlatform() === "android");
+            const position = await getCurrentLocation({ map, onUpdate, signal: controller.signal, prompt });
             if (controller.signal.aborted || !mapRef.current) return;
 
             ensureUserLocationMarker([position.lng, position.lat]);
@@ -1797,7 +1800,8 @@ export default function MapView({
         }
     };
 
-    // App（安卓 / iOS）进入后自动申请一次定位：首次会弹出系统授权，之后直接定位到当前位置。每次启动只做一次
+    // App（安卓 / iOS）进入后自动定位一次，每次启动只做一次：iOS 首次会弹出系统授权；
+    // Android 只在已授予定位权限时定位，没有权限时不弹窗（见 handleLocateMe 的 prompt）
     useEffect(() => {
         if (!mapReady || autoLocateAttempted || !isNativePlatform()) return;
         autoLocateAttempted = true;

@@ -21,7 +21,9 @@
     "timeoutIos": "定位超时，请稍后重试。",
     "notReady": "地图尚未就绪，稍候再试。",
     "unknown": "定位失败，请稍后重试。",
-    "failed": "定位失败"
+    "failed": "定位失败",
+    "permissionNoticeTitle": "位置权限使用说明",
+    "permissionNoticeBody": "用于在地图上显示你的位置、查找附近和顺路的店，以及在日记里填入当前地点。不授权也可以浏览地图、手动选点。"
   },
   "mediaPicker": {
     "permissionDenied": "没有访问相册或相机的权限，请在系统设置中允许后重试。",

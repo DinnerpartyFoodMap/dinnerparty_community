@@ -1,6 +1,6 @@
 // 网页与 iOS 渐进定位、App 权限、超时、取消；npm run test:platform
 import assert from 'node:assert/strict';
-import { getCurrentLocation, locateWithBrowser, locateWithWatch, LOCATION_ERROR } from '../../../src/platform/geolocation.js';
+import { getCurrentLocation, locateWithBrowser, locateWithWatch, onLocationPermissionPrompt, LOCATION_ERROR } from '../../../src/platform/geolocation.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const permitted = () => Promise.resolve();
@@ -410,8 +410,33 @@ for (const [code, expected] of [
             return { location: 'denied', coarseLocation: 'denied' };
         };
         request = () => assert.fail('denied permission must not request a position');
+        const notices = [];
+        const stopListening = onLocationPermissionPrompt((active) => notices.push(active));
         await assert.rejects(getCurrentLocation(), { code: LOCATION_ERROR.PERMISSION_DENIED });
         assert.deepEqual(calls, ['AMapLocation.checkPermissions', 'AMapLocation.requestPermissions']);
+        // Android 系统授权弹窗期间显示用途说明，答复后（含拒绝）收起
+        assert.deepEqual(notices, [true, false]);
+
+        // 请求授权中途出错也要收起说明
+        notices.length = 0;
+        requestPermission = async () => { throw nativeError('UNAVAILABLE'); };
+        await assert.rejects(getCurrentLocation());
+        assert.deepEqual(notices, [true, false]);
+
+        // 启动时的自动定位（prompt: false）：没有权限只检查不申请，也不显示说明
+        calls.length = 0;
+        notices.length = 0;
+        requestPermission = () => assert.fail('auto locate must not request permission');
+        await assert.rejects(getCurrentLocation({ prompt: false }), { code: LOCATION_ERROR.PERMISSION_DENIED });
+        assert.deepEqual(calls, ['AMapLocation.checkPermissions']);
+        assert.deepEqual(notices, []);
+
+        // 已授予（含仅模糊位置）时 prompt: false 照常定位
+        permission = { location: 'denied', coarseLocation: 'granted' };
+        request = async () => amapFix(2000);
+        assert.equal((await getCurrentLocation({ prompt: false })).accuracy, 2000);
+        assert.deepEqual(notices, []);
+        stopListening();
         permission = { location: 'granted', coarseLocation: 'granted' };
 
         // 原生无回调：JS 截止时间必须释放调用，不能永远锁住定位按钮。
@@ -514,6 +539,17 @@ for (const [code, expected] of [
         assert.deepEqual(iosUpdates, [8]);
         await sleep(0);
         assert.deepEqual(cleared, ['watch-1', 'watch-2']);
+
+        // iOS 系统弹窗自带 Info.plist 的用途文字：申请授权时不显示网页说明
+        const iosNotices = [];
+        const stopIosListening = onLocationPermissionPrompt((active) => iosNotices.push(active));
+        permission = { location: 'prompt', coarseLocation: 'prompt' };
+        requestPermission = async () => ({ location: 'granted', coarseLocation: 'granted' });
+        startWatch = (options, callback) => callback(freshFix(30));
+        assert.equal((await getCurrentLocation()).accuracy, 30);
+        assert.deepEqual(iosNotices, []);
+        stopIosListening();
+        permission = { location: 'granted', coarseLocation: 'granted' };
 
         // 插件错误码；检查权限时系统定位总开关关闭
         for (const [code, expected] of [

@@ -12,6 +12,7 @@
 - PLT-C07（待自动化，PLT-01）同账号多窗口凭证更新、A→B 切换与安全存储失败；预期订阅清理、账号隔离和失败回退明确，不能由旧 restore promise 恢复退出前 token。
 - PLT-C08（人工真机，PLT-02）系统分享取消、相册保存权限、键盘、状态栏安全区、前后台、深链/返回、原生地图 sheet 和系统面板竞争；记录设备/系统/应用版本及实际可见结果，不将 JS 协议通过写成原生编译通过。
 - PLT-C09（已有逻辑 + Android 模拟器，test:platform）App 仅模糊权限、精确权限、原生无回调、取消后结果迟到、授权弹窗长时间等待；Android 走高德插件 AMapLocation（GCJ-02 不再转换、境外结果与系统定位兜底的 WGS-84 转换、高德错误码映射），iOS 走 @capacitor/geolocation。预期不重复要求精确权限、无回调时超时并释放按钮、取消后不再获取或应用位置、授权等待不占用获取位置的倒计时；模拟器与真机覆盖边界见 [定位回归记录](../../../native/doc/android-location-checklist.md)。
+- PLT-C09a（已有逻辑 test:platform + Android 真机待验证，2026-11-17）应用市场隐私检测：`prompt: false` 无权限时只调用 checkPermissions、不调用 requestPermissions、不显示用途说明，已授予（含仅模糊）时照常定位；默认 prompt 在 Android 申请授权前后通知 true / false（拒绝或出错也收起），iOS 不通知。真机预期：全新安装同意隐私政策后进入地图不弹定位授权；点定位按钮时系统弹窗与顶部“位置权限使用说明”同时出现；拒绝后杀进程重启不再弹窗，再点定位才重新申请（系统固定拒绝时直接提示去设置）。
 - PLT-C10（已有逻辑 test:native-panels；真机待验证）顺路吃原生面板：网页下发分类、出行方式、距离档位与文案，原生 `submit` / `chooseRoute` 经 `alongRouteEvent` 交给网页；预期只接受白名单字段，网页完成解析、规划、画线与查询后按 requestId 回传格式化结果；关闭原生面板后路线与结果标记清除，失败回退网页顺路面板。UI 间距、地图与半屏面板的触摸竞争、玻璃材质需 iOS 26+ 真机检查。
 - PLT-C11（已有逻辑 test:native-panels；真机待验证）住民主页原生页：网页取 profile 并执行 `setTasteLevel` / `saveWidgets` / `setBlocked`，原生只显示六轴雷达、小组件与关系状态；预期屏蔽成功后收起主页并打开举报表，解除屏蔽与小组件保存回传最新快照，打开地点交回网页地图；失败回退 `UserProfilePage`。雷达绘制、VoiceOver 与系统玻璃需真机检查。
 - PLT-C12（已有逻辑 test:native-panels；真机待验证）管理后台原生页：按 YUYUKO / YOUMU / KOMACHI 权限列出面板，动作与表单经 `adminEvent` 回传；预期请求与凭证不进入原生，旧 requestId 不更新当前页面，反馈截图按需读取，失败回退网页后台。九个面板的真实数据、表单校验与玻璃材质需真机检查。

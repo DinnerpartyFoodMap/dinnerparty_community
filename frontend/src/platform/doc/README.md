@@ -2,6 +2,8 @@
 
 业务通过本目录访问配置、导航/返回、凭证、定位、媒体、分享、生命周期、本机草稿和原生桥接；index.js 是能力导出入口，允许现有消费者直接导入单项文件。nativeMapChrome/nativeSettings 是 JS 会话，Swift 实现在 ios 工程；Android 定位走应用内高德插件 AMapLocation（android/app/.../AMapLocationPlugin.java，高德失败时插件改用系统定位），iOS 用 @capacitor/geolocation；nativeShell 负责启动与深链。
 
+定位授权（2026-11-17，vivo 隐私检测驳回后）：`getCurrentLocation({ prompt: false })` 在 App 中只用已授予的权限，没有权限直接报 `PERMISSION_DENIED`、不弹系统授权，地图在 Android 启动时的自动定位用它（进入应用不申请权限、拒绝后重启不再弹窗）；默认 `prompt: true` 留给用户点击触发的定位。Android 弹系统授权期间，`onLocationPermissionPrompt` 通知 true / false，`app/components/LocationPermissionNotice.jsx` 在顶部显示位置权限用途（系统弹窗本身不说明目的）；iOS 系统弹窗已显示 Info.plist 的用途文字，不发通知。
+
 `cacheStore.js`（2026-11-15）是可随时丢弃的 IndexedDB 缓存（库 `yuyuko-cache`），目前存地图标记快照，下次启动先画出来再后台刷新；读写失败一律当作没有缓存，不退回 localStorage，与草稿（`localDraftStore.js`）分开。`polling.js` 管公共数据（公告、展会）的低频轮询：每 5 分钟一次、页面在后台时跳过，回到前台或窗口获得焦点时距上次超过 1 分钟补一次；管理员改了公告或展会后调用 `announcePublicUpdate('notice' | 'exhibition')`，本页立即用 `freshUrl`（一次性 `fresh` 参数）绕过 CDN 和浏览器缓存重读。这些接口的缓存规则见 backend [CDN 缓存](../../../../backend/doc/CDN_CACHE.md)。
 
 `privacyConsent.js` 保存本机隐私选择与政策版本。缺失、损坏、旧版本记录均需重新确认；存储异常时保留本次选择。`main.jsx` 在同意前不导入业务 App、不初始化原生容器、不加载字体 CDN；`amapLoader.js` 拒绝未同意时的加载请求，包括已有 `window.AMap` 的情况。拒绝界面可独立阅读政策并重新选择。验证入口为 `npm run test:privacy`，它不访问真实高德或用户账号。

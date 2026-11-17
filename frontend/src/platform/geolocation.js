@@ -324,20 +324,47 @@ async function nativeLocator() {
     };
 }
 
-async function locateNative({ timeout: requested, onUpdate, signal }) {
+// Android 弹出系统定位授权时，网页层同时在顶部显示用途说明（应用市场合规检测要求申请权限时告知目的，
+// 系统弹窗本身不带说明；iOS 的系统弹窗已显示 Info.plist 里的用途文字）。监听者收到 true / false。
+const permissionPromptListeners = new Set();
+
+export function onLocationPermissionPrompt(listener) {
+    permissionPromptListeners.add(listener);
+    return () => permissionPromptListeners.delete(listener);
+}
+
+function announcePermissionPrompt(active) {
+    for (const listener of permissionPromptListeners) {
+        try { listener(active); } catch (e) { /* 说明条出错不影响定位 */ }
+    }
+}
+
+const hasLocationPermission = (permission) => permission?.location === 'granted' || permission?.coarseLocation === 'granted';
+
+async function locateNative({ timeout: requested, onUpdate, signal, prompt }) {
     const { plugin, classify: toLocationError, timeout: platformTimeout, locate } = await nativeLocator();
     const timeout = requested ?? platformTimeout;
     let permission;
     try {
         permission = await nativeCall(() => plugin.checkPermissions(), { timeout, signal });
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') {
-            permission = await nativeCall(() => plugin.requestPermissions({ permissions: ['location', 'coarseLocation'] }), { signal });
-        }
     } catch (error) {
         // 系统定位总开关关闭时，iOS 插件检查权限本身就会失败
         throw toLocationError(error);
     }
-    if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') {
+    if (!hasLocationPermission(permission)) {
+        // prompt: false（启动时的自动定位）只用已授予的权限，不弹系统授权
+        if (!prompt) throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
+        const explain = getPlatform() === 'android';
+        if (explain) announcePermissionPrompt(true);
+        try {
+            permission = await nativeCall(() => plugin.requestPermissions({ permissions: ['location', 'coarseLocation'] }), { signal });
+        } catch (error) {
+            throw toLocationError(error);
+        } finally {
+            if (explain) announcePermissionPrompt(false);
+        }
+    }
+    if (!hasLocationPermission(permission)) {
         throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
     }
     try {
@@ -591,10 +618,11 @@ function locateWeb({ map, timeout, onUpdate, signal }) {
  * 网页端和 iOS 先返回最先拿到的位置（可能只是粗略位置）；传了 onUpdate 时，之后明显更准的位置继续回调，
  * 直到精度达到 20 米、超时（网页默认 30 秒，iOS 20 秒）或 signal 取消。
  * Android 只返回一次定位结果（高德定位 SDK，默认 10 秒超时），不会回调 onUpdate。
- * @param {{ map?: any, timeout?: number, onUpdate?: (position: object) => void, signal?: AbortSignal }} options
+ * prompt（默认 true）只作用于 App：为 false 时没有定位权限就直接报 PERMISSION_DENIED，不弹系统授权。
+ * @param {{ map?: any, timeout?: number, onUpdate?: (position: object) => void, signal?: AbortSignal, prompt?: boolean }} options
  */
-export async function getCurrentLocation({ map, timeout, onUpdate, signal } = {}) {
-    if (isNativePlatform()) return locateNative({ timeout, onUpdate, signal });
+export async function getCurrentLocation({ map, timeout, onUpdate, signal, prompt = true } = {}) {
+    if (isNativePlatform()) return locateNative({ timeout, onUpdate, signal, prompt });
     return locateWeb({ map, timeout: timeout ?? WEB_LOCATE_TIMEOUT_MS, onUpdate, signal });
 }
 
