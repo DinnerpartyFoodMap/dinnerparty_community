@@ -3,6 +3,7 @@
 // 所有函数返回 { ok, message, ... }，由调用方决定如何提示；网络异常照常抛出。
 import { t } from '../i18n/index.js';
 import { storedMapSettings } from './mapSettings';
+import { normalizeCountryCode, normalizePhoneNumber } from '../components/forms/phoneRegions';
 
 async function readResponse(res) {
     const text = await res.text();
@@ -52,6 +53,58 @@ export async function savePassword({ backendUrl, token, currentPassword, newPass
         user: data && data.user,
         token: data && data.token
     };
+}
+
+/** 读取当前绑定的手机号（打码）。返回 { ok, phoneMasked }，未绑定时 phoneMasked 为 null。 */
+export async function loadPhoneBinding({ backendUrl, token }) {
+    if (!backendUrl || !token) return { ok: false, message: t('settings:editPhone.missingSession') };
+    const res = await fetch(`${backendUrl}/users/me`, { headers: { Authorization: `Bearer ${token}` } });
+    const { text, data } = await readResponse(res);
+    if (!res.ok) return { ok: false, message: errorMessage(res, text, data, t('settings:editPhone.loadFailed')) };
+    return { ok: true, phoneMasked: (data && data.user && data.user.phone_masked) || null };
+}
+
+/**
+ * 换绑手机号第一步：向新号码发短信验证码（不验证旧号码）。countryCode 是不带 + 的区号（默认 86）。
+ * 返回 { ok, message, retryAfter, phone（规范形式 "+区号 号码"）, phoneMasked, resendAfter, expiresIn }。
+ */
+export async function requestPhoneCode({ backendUrl, token, phone, countryCode }) {
+    if (!backendUrl || !token) return { ok: false, message: t('settings:editPhone.missingSession') };
+    const normalized = normalizePhoneNumber(phone, countryCode);
+    if (!normalized) return { ok: false, message: t('settings:editPhone.invalidPhone') };
+    const res = await fetch(`${backendUrl}/users/me/phone/code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ countryCode: normalizeCountryCode(countryCode), phone })
+    });
+    const { text, data } = await readResponse(res);
+    if (!res.ok) {
+        return { ok: false, message: errorMessage(res, text, data, t('settings:editPhone.sendFailed')), retryAfter: Number(data && data.retry_after) || 0 };
+    }
+    return {
+        ok: true,
+        phone: normalized,
+        phoneMasked: (data && data.phone) || normalized,
+        resendAfter: Number(data && data.resend_after) || 60,
+        expiresIn: Number(data && data.expires_in) || 300
+    };
+}
+
+/** 换绑手机号第二步：凭短信验证码绑定新号码。成功时返回打码后的新号码。 */
+export async function savePhone({ backendUrl, token, phone, countryCode, code }) {
+    if (!backendUrl || !token) return { ok: false, message: t('settings:editPhone.missingSession') };
+    const normalized = normalizePhoneNumber(phone, countryCode);
+    if (!normalized) return { ok: false, message: t('settings:editPhone.invalidPhone') };
+    const trimmed = String(code || '').trim();
+    if (!/^\d{6}$/.test(trimmed)) return { ok: false, message: t('settings:editPhone.invalidCode') };
+    const res = await fetch(`${backendUrl}/users/me/phone`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ countryCode: normalizeCountryCode(countryCode), phone, code: trimmed })
+    });
+    const { text, data } = await readResponse(res);
+    if (!res.ok) return { ok: false, message: errorMessage(res, text, data, t('settings:editPhone.failed')) };
+    return { ok: true, message: t('settings:editPhone.updated'), phoneMasked: data && data.phone_masked };
 }
 
 /** 上传已裁剪好的头像图片（后端统一转成 200×200 WebP）。 */

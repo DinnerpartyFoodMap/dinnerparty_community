@@ -12,6 +12,10 @@ function parsePositiveInt(value, fallback, min, max) {
 }
 
 const slowRequestMs = parsePositiveInt(process.env.LOG_SLOW_REQUEST_MS, 1500, 1, 600000);
+// 客户端源端口（与 IP 一起才能在 NAT 后定位到人）。经过代理时 TCP 对端是代理，
+// 端口由最外层代理写进这个请求头（nginx $remote_port、Caddy {http.request.remote.port}），
+// 只在对端是受信任代理时采用；直连时用套接字自己的端口。设为空字符串不读请求头。
+const clientPortHeader = String(process.env.LOG_CLIENT_PORT_HEADER ?? 'X-Client-Port').trim();
 const noisyPrefixes = String(process.env.LOG_NOISY_PATH_PREFIXES || DEFAULT_NOISY_PREFIXES.join(','))
     .split(',')
     .map((value) => value.trim())
@@ -24,6 +28,26 @@ function getRequestId(req) {
     } catch (error) { }
     const supplied = String(req.get('X-Request-ID') || queryRequestId).trim();
     return REQUEST_ID_PATTERN.test(supplied) ? supplied : crypto.randomUUID();
+}
+
+function parsePort(value) {
+    const text = String(value || '').split(',')[0].trim();
+    if (!/^\d{1,5}$/.test(text)) return undefined;
+    const port = Number(text);
+    return port >= 1 && port <= 65535 ? port : undefined;
+}
+
+function clientPort(req) {
+    const socket = req.socket || {};
+    const trust = req.app && typeof req.app.get === 'function' ? req.app.get('trust proxy fn') : null;
+    const peerTrusted = typeof trust === 'function' && trust(socket.remoteAddress, 0);
+    if (clientPortHeader && peerTrusted) {
+        const fromHeader = parsePort(req.get(clientPortHeader));
+        if (fromHeader) return fromHeader;
+    }
+    // 没有转发头说明对端就是客户端；有转发头而没有端口头时端口未知，不记录代理的端口
+    if (!req.get('X-Forwarded-For')) return socket.remotePort || undefined;
+    return undefined;
 }
 
 function sanitizeUrl(rawUrl) {
@@ -73,11 +97,13 @@ function requestLogger(req, res, next) {
         return originalJson(responseBody);
     };
 
-    logger.runWithContext({ requestId, ip: req.ip }, () => {
+    const port = clientPort(req);
+    logger.runWithContext({ requestId, ip: req.ip, port }, () => {
         const baseFields = {
             method: req.method,
             path: requestPath,
             ip: req.ip,
+            port,
             origin: shortHeader(req.get('Origin')),
             userAgent: shortHeader(req.get('User-Agent')),
             requestContentType: shortHeader(req.get('Content-Type'), 200),
@@ -146,4 +172,4 @@ function errorHandler(error, req, res, next) {
     });
 }
 
-module.exports = { requestLogger, notFoundHandler, errorHandler, sanitizeUrl };
+module.exports = { requestLogger, notFoundHandler, errorHandler, sanitizeUrl, clientPort };

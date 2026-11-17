@@ -1,5 +1,6 @@
-// skins：主题皮肤（切换已拥有的皮肤；iOS 不提供兑换码）是网页页面，原生首页只放入口
-const ACTIONS = new Set(['back', 'avatar', 'username', 'password', 'themes', 'personalize', 'skins', 'logoutAll', 'deleteAccount']);
+// skins：主题皮肤（切换已拥有的皮肤；iOS 不提供兑换码）是网页页面，原生首页只放入口；
+// phone：绑定 / 换绑手机号（短信验证码）也是网页页面
+const ACTIONS = new Set(['back', 'avatar', 'username', 'password', 'phone', 'themes', 'personalize', 'skins', 'logoutAll', 'deleteAccount']);
 export const MOTION_KEYS = Object.freeze(['clusterMotion', 'webMotion', 'nativeGlass', 'clusterGlass']);
 let sequence = 0;
 

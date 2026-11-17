@@ -8,7 +8,8 @@ import WebKit
 /// 住民设置整套由 SwiftUI 呈现：首页与头像、住民名、通行密码、个性化主题、个性化地图五个二级页。
 /// 编辑都在原生里完成，但凭证和账号请求不离开现有业务层：二级页把用户输入经 settingsEvent 交给网页，
 /// 网页发出请求后按 requestId 用 respond 回传结果（附带住民名、头像、明暗、主题色等需要刷新的状态）。
-/// 退出全部设备、除名仍以白名单动作交回网页执行；“主题皮肤”（切换已拥有的皮肤；iOS 不提供兑换码）是网页页面，以 skins 动作交回网页打开。
+/// 退出全部设备、除名仍以白名单动作交回网页执行；“主题皮肤”（切换已拥有的皮肤；iOS 不提供兑换码）是网页页面，以 skins 动作交回网页打开；
+/// “绑定手机号”（区号 + 短信验证码）同样是网页页面，以 phone 动作交回网页打开，首页行只显示网页下发的打码号码。
 /// 动效开关是本机偏好，切换后立即通知网页。
 /// 首页最下方的用户协议、隐私权政策由网页下发标题与公开地址，在设置页之上用 Safari 视图打开，关闭后仍回到设置。
 @objc(NativeSettingsPlugin)
@@ -383,6 +384,10 @@ final class NativeSettingsStore: ObservableObject {
     let lightStyleOptions: [StyleOption]
     /// 网页下发的外部页面；旧版网页包没有时不显示这一组
     let links: [LinkRow]
+    /// 绑定的手机号（打码；空字符串 = 未绑定，nil = 网页还不知道，只显示标题）
+    let phone: String?
+    /// 网页包支持 phone 动作（下发了 phoneTitle）时才显示“绑定手机号”
+    let phoneAvailable: Bool
     private let labels: [String: String]
     private let mapLabels: [String: String]
     private let send: ([String: Any]) -> Void
@@ -401,6 +406,8 @@ final class NativeSettingsStore: ObservableObject {
         let labels = Self.strings(call.getObject("labels"))
         self.labels = labels
         pagesAvailable = !labels.isEmpty
+        phone = call.getString("phone").map { String($0.prefix(32)) }
+        phoneAvailable = labels["phoneTitle"] != nil
 
         let themes = call.getObject("themes") ?? [:]
         dark = (themes["dark"] as? Bool) ?? call.getBool("dark", false)
@@ -615,6 +622,19 @@ private struct NativeSettingsView: View {
                         Text(store.username).foregroundStyle(.secondary).lineLimit(1)
                     }
                     page(store.text("passwordTitle", "修改通行密码"), symbol: "key.fill", action: "password", destination: NativePasswordView(store: store)) { EmptyView() }
+                    if store.phoneAvailable {
+                        // 绑定 / 换绑手机号（区号与短信验证码）是网页页面：交回网页打开，返回时再回到这里
+                        Button { perform("phone") } label: {
+                            HStack(spacing: 10) {
+                                settingLabel(store.text("phoneTitle", "绑定手机号"), symbol: "phone.fill", color: .brown)
+                                if let phone = store.phone {
+                                    Text(phone.isEmpty ? store.text("phoneUnbound", "未绑定") : phone)
+                                        .foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                                }
+                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
                 }
                 Section {
                     page(store.text("themesTitle", "个性化主题"), symbol: "paintpalette.fill", action: "themes", destination: NativeThemesView(store: store)) { EmptyView() }

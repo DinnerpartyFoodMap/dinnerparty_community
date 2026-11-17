@@ -1,6 +1,6 @@
 # 登录、注册与身份上下文
 
-AuthPage.jsx 包含登录、QQ 验证码注册与重置的表单/请求生命周期；AuthContext.jsx 提供认证状态；components/AuthModal.jsx 负责响应式面板；BanNotice.jsx 展示封禁信息；services/authDiagnostics.js 上报受限诊断阶段。账号菜单在 app，凭证持久化在 platform。
+AuthPage.jsx 包含登录、注册（QQ 验证码 + 手机短信验证码；手机号用 components/forms/PhoneNumberInput 选国家或地区区号，短信要在 QQ 验证码填好后才能获取）与重置（只走 QQ）的表单/请求生命周期；AuthContext.jsx 提供认证状态；components/AuthModal.jsx 负责响应式面板；BanNotice.jsx 展示封禁信息；services/authDiagnostics.js 上报受限诊断阶段。账号菜单在 app，凭证持久化在 platform。
 
 ```mermaid
 flowchart TD

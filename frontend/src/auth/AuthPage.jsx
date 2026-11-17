@@ -11,6 +11,8 @@ import { reportAuthStage } from "./services/authDiagnostics";
 import { getClientInfo } from "../platform/env";
 import { t, tx } from "../i18n/index.js";
 import LegalLinks, { LegalLink } from './components/LegalLinks.jsx';
+import PhoneNumberInput from "../components/forms/PhoneNumberInput";
+import { DEFAULT_COUNTRY_CODE, normalizeCountryCode, normalizePhoneNumber } from "../components/forms/phoneRegions";
 
 const REQUEST_TIMEOUT_MS = 12000;
 const MAX_USERNAME_LENGTH = 64;
@@ -26,6 +28,8 @@ const DEFAULT_RESEND_SECONDS = 60;
 // 超过这个等待时间（小时级限流）只提示，不在按钮上倒计时
 const MAX_COUNTDOWN_SECONDS = 120;
 const CODE_PURPOSE = { register: 'register', reset: 'reset_password' };
+// 阿里云下发短信通常几秒内返回；超时后短信仍可能到达，后端会保留这条验证码
+const SEND_SMS_TIMEOUT_MS = 20000;
 
 function getStaticColors(dark) {
     return {
@@ -263,6 +267,12 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
     const [showPassword, setShowPassword] = useState(false);
     const [qq, setQq] = useState("");
     const [verificationCode, setVerificationCode] = useState("");
+    // 注册时绑定的手机号（区号 + 号码）与短信验证码；短信要在 QQ 验证码填好之后才能获取
+    const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
+    const [phone, setPhone] = useState("");
+    const [phoneCode, setPhoneCode] = useState("");
+    const [phoneCodeSentTo, setPhoneCodeSentTo] = useState(null); // { phone, masked, minutes } | null
+    const [phoneCooldown, setPhoneCooldown] = useState({ phone: "", seconds: 0 });
     // 登记名册前须勾选同意用户协议与隐私权政策
     const [agreedTerms, setAgreedTerms] = useState(false);
     // 验证码已私聊发到哪个 QQ，显示在验证码输入框下方
@@ -367,6 +377,14 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         return () => window.clearTimeout(timerId);
     }, [cooldown]);
 
+    useEffect(() => {
+        if (phoneCooldown.seconds <= 0) return undefined;
+        const timerId = window.setTimeout(() => {
+            setPhoneCooldown((prev) => ({ ...prev, seconds: Math.max(0, prev.seconds - 1) }));
+        }, 1000);
+        return () => window.clearTimeout(timerId);
+    }, [phoneCooldown]);
+
     const switchTab = (nextTab) => {
         if (loading) return;
         // 找回密码填的是新密码，不沿用登录框里输错的那个
@@ -378,6 +396,8 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         setRegisterStep("qrcode");
         setVerificationCode("");
         setCodeSentTo(null);
+        setPhoneCode("");
+        setPhoneCodeSentTo(null);
         setMessage("");
     };
 
@@ -409,6 +429,21 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         if (message) setMessage("");
         // 允许直接粘贴机器人整条消息：验证码是消息里最先出现的数字
         setVerificationCode(value.replace(/\D/g, "").slice(0, VERIFICATION_CODE_LENGTH));
+    };
+
+    const handleCountryCodeChange = (value) => {
+        if (message) setMessage("");
+        setCountryCode(value);
+    };
+
+    const handlePhoneChange = (value) => {
+        if (message) setMessage("");
+        setPhone(value);
+    };
+
+    const handlePhoneCodeChange = (value) => {
+        if (message) setMessage("");
+        setPhoneCode(value.replace(/\D/g, "").slice(0, VERIFICATION_CODE_LENGTH));
     };
 
     const showRequestError = (err, request) => {
@@ -504,6 +539,46 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         }
     };
 
+    // 注册用的短信验证码：后端先核对 QQ 验证码（不消耗），证明是群成员在注册
+    const handleSendPhoneCode = async () => {
+        if (loading) return;
+        setMessage("");
+        const normalizedPhone = normalizePhoneNumber(phone, countryCode);
+        if (!normalizedPhone) return failFields(t('auth:page.phone.invalidPhone'), ["phone"]);
+        if (phoneCooldown.seconds > 0 && phoneCooldown.phone === normalizedPhone) return;
+        const normalizedQq = qq.trim();
+        if (!QQ_PATTERN.test(normalizedQq)) return failFields(t('auth:page.code.invalidQq'), ["qq"]);
+        if (!VERIFICATION_CODE_PATTERN.test(verificationCode.trim())) return failFields(t('auth:page.phone.qqCodeFirst'), ["code"]);
+        const request = startRequest("phoneCode");
+        try {
+            const { response: res, data } = await fetchResponseWithTimeout(withRequestId(`${backendUrl}/users/phone-code`, request.requestId), {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+                body: formBody({ qq: normalizedQq, verificationCode: verificationCode.trim(), countryCode: normalizeCountryCode(countryCode), phone })
+            }, request, SEND_SMS_TIMEOUT_MS);
+            if (request.cancelled || activeRequestRef.current !== request) return;
+            if (res.ok) {
+                setPhoneCooldown({ phone: normalizedPhone, seconds: Number(data.resend_after) || DEFAULT_RESEND_SECONDS });
+                setPhoneCodeSentTo({
+                    phone: normalizedPhone,
+                    masked: data.phone || normalizedPhone,
+                    minutes: Math.max(1, Math.round((Number(data.expires_in) || 300) / 60))
+                });
+            } else {
+                const retryAfter = Number(data.retry_after);
+                if (res.status === 429 && retryAfter > 0 && retryAfter <= MAX_COUNTDOWN_SECONDS) {
+                    setPhoneCooldown({ phone: normalizedPhone, seconds: retryAfter });
+                }
+                const text = appendRequestId(getFriendlyErrorMessage(res.status, data.error, t('auth:page.phone.action')), data.requestId);
+                failFields(text, /QQ/.test(String(data.error || '')) ? ["code"] : ["phone"]);
+            }
+        } catch (err) {
+            showRequestError(err, request);
+        } finally {
+            finishRequest(request);
+        }
+    };
+
     const handleRegister = async (e) => {
         e && e.preventDefault();
         if (loading) return;
@@ -511,21 +586,27 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         const normalizedUsername = username.trim();
         const normalizedQq = qq.trim();
         const normalizedCode = verificationCode.trim();
-        if (!normalizedUsername || !password || !confirmPassword || !normalizedQq || !normalizedCode) {
-            return failFields(t('auth:page.register.missingFields'), [!normalizedUsername && "username", !password && "password", !confirmPassword && "confirmPassword", !normalizedQq && "qq", !normalizedCode && "code"]);
+        const normalizedPhoneCode = phoneCode.trim();
+        if (!normalizedUsername || !password || !confirmPassword || !normalizedQq || !normalizedCode || !phone.trim() || !normalizedPhoneCode) {
+            return failFields(t('auth:page.register.missingFields'), [!normalizedUsername && "username", !password && "password", !confirmPassword && "confirmPassword", !normalizedQq && "qq", !normalizedCode && "code", !phone.trim() && "phone", !normalizedPhoneCode && "phoneCode"]);
         }
         if (normalizedUsername.length > MAX_USERNAME_LENGTH) return failFields(t('auth:page.usernameTooLong', { MAX_USERNAME_LENGTH }), ["username"]);
         if (password.length > MAX_PASSWORD_LENGTH) return failFields(t('auth:page.passwordTooLong', { MAX_PASSWORD_LENGTH }), ["password"]);
         if (password !== confirmPassword) return failFields(t('auth:page.register.passwordMismatch'), ["confirmPassword"]);
         if (!QQ_PATTERN.test(normalizedQq)) return failFields(t('auth:page.code.invalidQq'), ["qq"]);
         if (!VERIFICATION_CODE_PATTERN.test(normalizedCode)) return failFields(t('auth:page.code.invalidCode'), ["code"]);
+        if (!normalizePhoneNumber(phone, countryCode)) return failFields(t('auth:page.phone.invalidPhone'), ["phone"]);
+        if (!VERIFICATION_CODE_PATTERN.test(normalizedPhoneCode)) return failFields(t('auth:page.phone.invalidCode'), ["phoneCode"]);
         if (!agreedTerms) return failFields(t('auth:page.register.agreeRequired'), ["terms"]);
         const request = startRequest();
         try {
             const { response: res, data } = await fetchResponseWithTimeout(withRequestId(`${backendUrl}/users/register`, request.requestId), {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-                body: formBody({ username: normalizedUsername, password, qq: normalizedQq, verificationCode: normalizedCode, ...clientFields() })
+                body: formBody({
+                    username: normalizedUsername, password, qq: normalizedQq, verificationCode: normalizedCode,
+                    countryCode: normalizeCountryCode(countryCode), phone, phoneCode: normalizedPhoneCode, ...clientFields()
+                })
             }, request);
             if (request.cancelled || activeRequestRef.current !== request) return;
             if (res.ok || res.status === 201) {
@@ -539,7 +620,9 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                 }
             } else {
                 const text = appendRequestId(getFriendlyErrorMessage(res.status, data.error, t('auth:page.register.action')), data.requestId);
-                failFields(text, res.status === 409 ? ["username"] : []);
+                // field：哪个验证码错了（code = QQ，phoneCode = 短信）
+                const field = data.field === 'phoneCode' || data.field === 'code' ? data.field : null;
+                failFields(text, field ? [field] : res.status === 409 ? [/手机号/.test(String(data.error || '')) ? "phone" : "username"] : []);
             }
         } catch (err) {
             showRequestError(err, request);
@@ -749,6 +832,76 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
         );
     };
 
+    // 区号 + 手机号，短信验证码 + 获取按钮（放在验证码这一行，窄屏上手机号一行放不下三个控件）
+    const renderPhoneFields = (idPrefix) => {
+        const normalizedPhone = normalizePhoneNumber(phone, countryCode);
+        const coolingDown = !!normalizedPhone && phoneCooldown.seconds > 0 && phoneCooldown.phone === normalizedPhone;
+        const sentToCurrent = !!phoneCodeSentTo && phoneCodeSentTo.phone === normalizedPhone;
+        const sendLabel = loading && pendingAction === "phoneCode"
+            ? t('auth:page.code.sending')
+            : coolingDown
+                ? t('auth:page.code.resendIn', { seconds: phoneCooldown.seconds })
+                : sentToCurrent ? t('auth:page.code.resend') : t('auth:page.code.send');
+        return (
+            <>
+                <div style={{ marginTop: 10 }}>
+                    <label htmlFor={`${idPrefix}-phone`} style={labelStyle}>{t('auth:page.phone.label')}</label>
+                    <PhoneNumberInput
+                        id={`${idPrefix}-phone`}
+                        countryCode={countryCode}
+                        onCountryCodeChange={handleCountryCodeChange}
+                        phone={phone}
+                        onPhoneChange={handlePhoneChange}
+                        placeholder={t('auth:page.phone.placeholder')}
+                        invalidProps={fieldError("phone")}
+                    />
+                    <p style={{ margin: '6px 2px 0', fontSize: 12, color: uiColors.textMuted, lineHeight: 1.5 }}>{t('auth:page.phone.privacy')}</p>
+                </div>
+                <div style={{ marginTop: 10 }}>
+                    <label htmlFor={`${idPrefix}-phone-code`} style={labelStyle}>{t('auth:page.phone.codeLabel')}</label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <TextInput
+                            id={`${idPrefix}-phone-code`}
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            placeholder={t('auth:page.phone.codePlaceholder')}
+                            value={phoneCode}
+                            onChange={(e) => handlePhoneCodeChange(e.target.value)}
+                            aria-describedby={sentToCurrent ? `${idPrefix}-phone-code-hint` : undefined}
+                            {...fieldError("phoneCode")}
+                            style={{ flex: 1, minWidth: 0, letterSpacing: phoneCode ? '0.2em' : undefined }}
+                        />
+                        <Button
+                            type="button"
+                            onClick={handleSendPhoneCode}
+                            disabled={loading || coolingDown}
+                            style={{
+                                flexShrink: 0,
+                                height: 44,
+                                boxSizing: 'border-box',
+                                padding: '0 14px',
+                                borderRadius: 'var(--radius-full)',
+                                border: `1px solid ${uiColors.primaryActionBorder}`,
+                                fontWeight: 600,
+                                whiteSpace: 'nowrap',
+                                fontVariantNumeric: 'tabular-nums',
+                                opacity: coolingDown ? 0.6 : 1
+                            }}
+                        >
+                            {sendLabel}
+                        </Button>
+                    </div>
+                    {sentToCurrent && (
+                        <p id={`${idPrefix}-phone-code-hint`} style={{ margin: '6px 2px 0', fontSize: 12, color: uiColors.textMuted, lineHeight: 1.5 }}>
+                            {t('auth:page.phone.sent', { phone: phoneCodeSentTo.masked, minutes: phoneCodeSentTo.minutes })}
+                        </p>
+                    )}
+                </div>
+            </>
+        );
+    };
+
     return (
         <ScrollableView
             className="fm-auth-page"
@@ -915,6 +1068,7 @@ export default function AuthPage({ backendUrl, onLoginSuccess, onClose, closeRef
                         onChange: handleConfirmPasswordChange
                     })}
                     {renderVerificationFields("auth-register")}
+                    {renderPhoneFields("auth-register")}
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13, lineHeight: 1.5, color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
                         <input
                             type="checkbox"

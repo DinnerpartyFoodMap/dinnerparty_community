@@ -9,6 +9,8 @@ const { db } = require("../../../infrastructure/database");
 const { requireAuth, attachViewer, sessionStore } = require("../middleware/auth");
 const { newSessionId } = require('../services/sessions');
 const verification = require('../services/qqVerification');
+const phoneVerification = require('../services/phoneVerification');
+const { getSmsClient } = require('../../../infrastructure/aliyunSms');
 const { getQQBot } = require('../../qqbot/runtime/index');
 const botConfig = require('../../qqbot/runtime/config');
 const { sendPrivateText } = require('../../qqbot/runtime/directMessage');
@@ -88,6 +90,19 @@ function registrationFailure(status, reason, message) {
 }
 
 const VERIFICATION_CODE_PATTERN = /^\d{6}$/;
+
+// 注册是否必须验证手机号。旧版客户端的注册表单没有手机号：开关关闭（默认）时，请求里
+// 既没有 phone 也没有 phoneCode 的注册仍只凭 QQ 验证码通过（手机号留空，之后可在住民设置绑定）；
+// 带了手机号就必须通过短信验证。旧版本淘汰后设 REGISTRATION_PHONE_REQUIRED=true。
+function registrationPhoneRequired() {
+    return /^(1|true|yes|on)$/i.test(String(process.env.REGISTRATION_PHONE_REQUIRED || '').trim());
+}
+
+function clientSummary(body) {
+    const client = body && typeof body.client === 'object' && body.client ? body.client : {};
+    const text = (value) => (typeof value === 'string' ? value.slice(0, 32) : undefined);
+    return { platform: text(client.platform), appVersion: text(client.app_version) };
+}
 const MIN_RESET_PASSWORD_LENGTH = 6;
 
 function findUsersByQQ(qq) {
@@ -113,20 +128,39 @@ function resolveResetAccount(qq) {
     return users[0];
 }
 
-const registerUserTransaction = db._raw.transaction(({ username, passwordHash, qq, verificationCode, userId }) => {
+// One account per phone. `exceptUserId` lets a resident re-check their own number.
+// Only checked after the SMS code for that number was verified: checking before sending
+// would let anyone probe which numbers are registered without receiving the SMS.
+function assertPhoneAvailable(phone, exceptUserId = null) {
+    const owner = phoneVerification.findUserByPhone(phone);
+    if (owner && String(owner.id) !== String(exceptUserId)) {
+        throw registrationFailure(409, 'phone_already_bound', '该手机号已绑定其他住民');
+    }
+}
+
+const registerUserTransaction = db._raw.transaction(({ username, passwordHash, qq, verificationCode, phone, phoneCode, userId }) => {
     if (db._raw.prepare('SELECT id FROM User WHERE username = ?').get(username)) {
         throw registrationFailure(400, 'username_exists', '住民名已被使用');
     }
     assertQQCanRegister(qq);
+    // phone is null only for an old client's form without a phone number (see registrationPhoneRequired).
 
     // A wrong code is returned rather than thrown so its attempt count commits.
+    // Both codes are checked before either is consumed: a wrong SMS code keeps the QQ code usable.
     const check = verification.checkCode({ purpose: verification.PURPOSES.register, qq, code: verificationCode });
     if (!check.ok) return { failure: check };
+    let phoneCheck = null;
+    if (phone) {
+        phoneCheck = phoneVerification.checkCode({ purpose: phoneVerification.PURPOSES.register, phone, code: phoneCode, subject: qq });
+        if (!phoneCheck.ok) return { failure: { ...phoneCheck, field: 'phoneCode' } };
+        assertPhoneAvailable(phone);
+    }
     verification.consumeCode(check.id);
+    if (phoneCheck) phoneVerification.consumeCode(phoneCheck.id);
 
     db._raw.prepare(
-        'INSERT INTO User (id, username, password, qq) VALUES (?, ?, ?, ?)'
-    ).run(userId, username, passwordHash, qq);
+        'INSERT INTO User (id, username, password, qq, phone) VALUES (?, ?, ?, ?, ?)'
+    ).run(userId, username, passwordHash, qq, phone);
     return {
         user: db._raw.prepare(
             'SELECT id, username, admin_level, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?'
@@ -147,6 +181,17 @@ const resetPasswordTransaction = db._raw.transaction(({ qq, verificationCode, pa
         ).get(account.id)
     };
 });
+
+// 注册发短信前核对 QQ 验证码（不消耗）。返回失败对象而不是抛出，错误次数才会提交。
+const checkRegistrationQQCodeTransaction = db._raw.transaction(({ qq, qqCode }) => {
+    assertQQCanRegister(qq);
+    const check = verification.checkCode({ purpose: verification.PURPOSES.register, qq, code: qqCode });
+    return check.ok ? null : check;
+});
+
+function checkRegistrationQQCode(qq, qqCode) {
+    return checkRegistrationQQCodeTransaction.immediate({ qq, qqCode });
+}
 
 function sendVerificationError(res, error) {
     if (error.retryAfterSeconds) res.set('Retry-After', String(error.retryAfterSeconds));
@@ -235,13 +280,114 @@ router.post('/verification-code', async (req, res) => {
     }
 });
 
+const INVALID_PHONE_MESSAGE = '请输入正确的手机号（中国大陆为 11 位手机号，境外号码请选择对应的国家或地区区号）';
+
+const SMS_FAILURES = {
+    not_configured: [503, '短信服务暂未开通，请稍后再试'],
+    intl_not_configured: [400, '暂不支持向境外手机号发送验证码，请使用中国大陆手机号'],
+    invalid_phone: [400, '这个手机号收不到短信，请检查号码'],
+    rate_limited: [429, '这个手机号今天收到的验证码太多了，请稍后再试'],
+    blocked: [400, '这个手机号拒收了短信，请换一个号码'],
+    failed: [502, '短信发送失败，请稍后重试']
+};
+
+// 预留验证码 → 阿里云短信下发 → 标记已发送。subject 是要验证码的人（注册时为 QQ，换绑时为住民 UUID）。
+async function deliverPhoneCode(req, res, { purpose, phone, subject }) {
+    const client = getSmsClient();
+    if (!client.supports(phone)) {
+        const reason = phoneVerification.isMainland(phone) ? 'not_configured' : 'intl_not_configured';
+        logger.warn('SMS code not sent: SMS channel not configured', { event: `auth.sms.${reason}`, purpose, phone: phoneVerification.maskPhone(phone) });
+        const [status, message] = SMS_FAILURES[reason];
+        return res.status(status).json({ error: message });
+    }
+    let reservation;
+    try {
+        reservation = phoneVerification.reserveCode({ purpose, phone, subject, ip: req.ip });
+    } catch (error) {
+        if (error instanceof phoneVerification.VerificationError) {
+            logAuthRejected(req, `sms.${purpose}`, error.reason);
+            return sendVerificationError(res, error);
+        }
+        res.locals.unhandledError = error;
+        return res.status(500).json({ error: '短信验证码发送失败，请稍后重试' });
+    }
+    const success = () => res.json({
+        success: true,
+        phone: phoneVerification.maskPhone(phone),
+        expires_in: Math.round(phoneVerification.CODE_TTL_MS / 1000),
+        resend_after: Math.round(phoneVerification.RESEND_COOLDOWN_MS / 1000)
+    });
+    try {
+        const delivery = await client.sendVerifyCode({ phone, code: reservation.code, purpose, outId: `sms-${reservation.id}` });
+        phoneVerification.markSent(reservation.id);
+        logger.info('SMS code sent', {
+            event: 'auth.sms.sent', purpose, phone: phoneVerification.maskPhone(phone), channel: delivery.channel,
+            bizId: delivery.bizId, providerRequestId: delivery.requestId
+        });
+        return success();
+    } catch (error) {
+        const fields = {
+            event: 'auth.sms.delivery_failed', purpose, phone: phoneVerification.maskPhone(phone),
+            reason: error.code || 'failed', providerCode: error.providerCode, providerMessage: error.providerMessage,
+            providerRequestId: error.requestId, outcomeUnknown: !!error.outcomeUnknown
+        };
+        if (error.outcomeUnknown) {
+            // 超时或连接中断时短信可能已经发出：保留这条验证码，住民收不到可以 60 秒后重发
+            phoneVerification.markSent(reservation.id);
+            logger.warn('SMS code delivery outcome unknown', { ...fields, error });
+            return success();
+        }
+        phoneVerification.markFailed(reservation.id);
+        const [status, message] = SMS_FAILURES[error.code] || SMS_FAILURES.failed;
+        if (status >= 500) logger.error('SMS code delivery failed', { ...fields, error });
+        else logger.warn('SMS code delivery failed', fields);
+        return res.status(status).json({ error: message });
+    }
+}
+
+// 注册用的短信验证码。先要有有效的 QQ 验证码（只核对、不消耗，错误照常计次），
+// 证明是饭联群成员在注册，陌生人不能用这个接口刷短信。
+router.post('/phone-code', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const body = req.body || {};
+    const qq = normalizeQQ(body.qq);
+    const phone = phoneVerification.normalizePhone(body.phone, body.countryCode);
+    const qqCode = typeof body.verificationCode === 'string' ? body.verificationCode.trim() : '';
+    if (!phone) return res.status(400).json({ error: INVALID_PHONE_MESSAGE });
+    if (!qq) return res.status(400).json({ error: '请先填写QQ号' });
+    if (!VERIFICATION_CODE_PATTERN.test(qqCode)) return res.status(400).json({ error: '请先获取并填写QQ验证码，再获取短信验证码' });
+    try {
+        const failure = checkRegistrationQQCode(qq, qqCode);
+        if (failure) {
+            logAuthRejected(req, 'sms.register', failure.reason);
+            return res.status(400).json({ error: `QQ${failure.message}` });
+        }
+    } catch (error) {
+        if (!error || !error.reason) {
+            res.locals.unhandledError = error;
+            return res.status(500).json({ error: '短信验证码发送失败，请稍后重试' });
+        }
+        logAuthRejected(req, 'sms.register', error.reason);
+        return res.status(error.status || 400).json({ error: error.publicMessage });
+    }
+    return deliverPhoneCode(req, res, { purpose: phoneVerification.PURPOSES.register, phone, subject: qq });
+});
+
 router.post("/register", async (req, res) => {
-    const { username, password, qq, verificationCode } = req.body || {};
+    const { username, password, qq, verificationCode, phone: rawPhone, phoneCode } = req.body || {};
     if (typeof username !== 'string' || typeof password !== 'string'
         || typeof verificationCode !== 'string' || !qq) {
         logAuthRejected(req, 'register', 'missing_fields', username);
         return res.status(400).json({ error: "缺少字段" });
     }
+    // 旧版客户端的表单没有手机号字段：开关关闭时照旧注册，打开后提示更新而不是只说“缺少字段”
+    const withoutPhone = !rawPhone && !(typeof phoneCode === 'string' && phoneCode.trim());
+    if (withoutPhone && registrationPhoneRequired()) {
+        logAuthRejected(req, 'register', 'phone_required', username);
+        return res.status(400).json({ error: '注册需要验证手机号：请填写手机号和短信验证码（App 请先更新到最新版本）' });
+    }
+    const normalizedPhone = withoutPhone ? null : phoneVerification.normalizePhone(rawPhone, req.body.countryCode);
+    const normalizedPhoneCode = typeof phoneCode === 'string' ? phoneCode.trim() : '';
     const normalizedUsername = username.trim();
     const normalizedQq = normalizeQQ(qq);
     const normalizedCode = verificationCode.trim();
@@ -251,6 +397,10 @@ router.post("/register", async (req, res) => {
     }
     if (!normalizedQq) return res.status(400).json({ error: '请输入正确的QQ号' });
     if (!VERIFICATION_CODE_PATTERN.test(normalizedCode)) return res.status(400).json({ error: '验证码是 6 位数字' });
+    if (!withoutPhone) {
+        if (!normalizedPhone) return res.status(400).json({ error: INVALID_PHONE_MESSAGE });
+        if (!VERIFICATION_CODE_PATTERN.test(normalizedPhoneCode)) return res.status(400).json({ error: '短信验证码是 6 位数字' });
+    }
 
     const userId = crypto.randomUUID();
     let row;
@@ -260,11 +410,14 @@ router.post("/register", async (req, res) => {
             passwordHash: hashPassword(password),
             qq: normalizedQq,
             verificationCode: normalizedCode,
+            phone: normalizedPhone,
+            phoneCode: normalizedPhoneCode,
             userId
         });
         if (result.failure) {
             logAuthRejected(req, 'register', result.failure.reason, normalizedUsername);
-            return res.status(400).json({ error: result.failure.message });
+            const field = result.failure.field || 'code';
+            return res.status(400).json({ error: `${field === 'phoneCode' ? '短信' : 'QQ'}${result.failure.message}`, field });
         }
         row = result.user;
     } catch (error) {
@@ -277,13 +430,23 @@ router.post("/register", async (req, res) => {
     }
 
     row.has_avatar = !!row.has_avatar;
+    row.phone_masked = phoneVerification.maskPhone(normalizedPhone);
     logger.addContext({ userId });
     const { token, sessionStored } = await issueSessionToken({ id: userId, username: normalizedUsername }, req, 'register');
     logger.info('Registration succeeded', {
         event: 'auth.register.succeeded',
         username: row.username,
+        phone: phoneVerification.maskPhone(normalizedPhone),
         sessionStored
     });
+    if (withoutPhone) {
+        // 旧版客户端没有手机号：单独记一条，便于判断何时可以打开 REGISTRATION_PHONE_REQUIRED
+        logger.warn('Registration without phone (old client)', {
+            event: 'auth.register.without_phone',
+            username: row.username,
+            client: clientSummary(req.body)
+        });
+    }
     res.set('Cache-Control', 'no-store');
     return res.status(201).json({ user: row, token });
 });
@@ -309,6 +472,7 @@ router.post("/login", (req, res) => {
         }
 
         row.has_avatar = !!row.has_avatar;
+        row.phone_masked = phoneVerification.maskPhone(phoneVerification.userPhone(row.id));
         logger.addContext({ userId: row.id });
         // 每次登录建立独立的设备会话，不会顶掉该住民在其他设备上的登录。
         const { token, sessionStored } = await issueSessionToken(row, req, 'login');
@@ -363,6 +527,7 @@ router.post('/password-reset', async (req, res) => {
     }
 
     user.has_avatar = !!user.has_avatar;
+    user.phone_masked = phoneVerification.maskPhone(phoneVerification.userPhone(user.id));
     logger.addContext({ userId: user.id });
     // 与修改密码一致：旧密码可能已泄露，所有设备上的旧会话一并失效。
     let revoked = null;
@@ -388,10 +553,79 @@ router.post('/password-reset', async (req, res) => {
 
 // 获取当前用户信息（JWT + Redis session 一致性校验）
 // rejected_place_count：自己被驳回的地点数（头像与“我创建的地点”上的小红点）
+// phone_masked：绑定的手机号（中间四位打码），没绑定为 null；完整号码不下发
 router.get('/me', requireAuth, (req, res) => {
     let rejected = 0;
+    let phoneMasked = null;
     try { rejected = rejectedPlaceCount(req.user.id); } catch (error) { res.locals.unhandledError = error; }
-    res.json({ user: { ...req.user, rejected_place_count: rejected } });
+    try { phoneMasked = phoneVerification.maskPhone(phoneVerification.userPhone(req.user.id)); } catch (error) { res.locals.unhandledError = error; }
+    res.json({ user: { ...req.user, rejected_place_count: rejected, phone_masked: phoneMasked } });
+});
+
+// 换绑 / 绑定手机号：只验证新号码（不验证旧号码），一个手机号只能绑定一位住民。
+// 先发短信验证码，再凭验证码提交；验证码只对要它的这位住民有效。
+// 号码是否已被别人绑定只在验证码通过后才告诉住民（见 assertPhoneAvailable）。
+function assertPhoneChanged(userId, phone) {
+    if (phoneVerification.userPhone(userId) === phone) {
+        throw registrationFailure(400, 'phone_unchanged', '这已经是你绑定的手机号');
+    }
+}
+
+router.post('/me/phone/code', requireAuth, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const phone = phoneVerification.normalizePhone(req.body && req.body.phone, req.body && req.body.countryCode);
+    if (!phone) return res.status(400).json({ error: INVALID_PHONE_MESSAGE });
+    try {
+        assertPhoneChanged(req.user.id, phone);
+    } catch (error) {
+        if (!error || !error.reason) {
+            res.locals.unhandledError = error;
+            return res.status(500).json({ error: '短信验证码发送失败，请稍后重试' });
+        }
+        logAuthRejected(req, 'sms.change_phone', error.reason);
+        return res.status(error.status || 400).json({ error: error.publicMessage });
+    }
+    return deliverPhoneCode(req, res, { purpose: phoneVerification.PURPOSES.changePhone, phone, subject: req.user.id });
+});
+
+const changePhoneTransaction = db._raw.transaction(({ userId, phone, code }) => {
+    assertPhoneChanged(userId, phone);
+    const check = phoneVerification.checkCode({ purpose: phoneVerification.PURPOSES.changePhone, phone, code, subject: userId });
+    if (!check.ok) return { failure: check };
+    assertPhoneAvailable(phone, userId);
+    phoneVerification.consumeCode(check.id);
+    const previous = phoneVerification.userPhone(userId);
+    db._raw.prepare('UPDATE User SET phone = ? WHERE id = ?').run(phone, userId);
+    return { previous };
+});
+
+router.put('/me/phone', requireAuth, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const phone = phoneVerification.normalizePhone(req.body && req.body.phone, req.body && req.body.countryCode);
+    const code = typeof (req.body && req.body.code) === 'string' ? req.body.code.trim() : '';
+    if (!phone) return res.status(400).json({ error: INVALID_PHONE_MESSAGE });
+    if (!VERIFICATION_CODE_PATTERN.test(code)) return res.status(400).json({ error: '短信验证码是 6 位数字' });
+    try {
+        const result = changePhoneTransaction.immediate({ userId: req.user.id, phone, code });
+        if (result.failure) {
+            logAuthRejected(req, 'phone_change', result.failure.reason);
+            return res.status(400).json({ error: result.failure.message });
+        }
+        logger.info('Phone number changed', {
+            event: 'auth.phone.changed',
+            userId: req.user.id,
+            previousPhone: phoneVerification.maskPhone(result.previous),
+            phone: phoneVerification.maskPhone(phone)
+        });
+        return res.json({ success: true, phone_masked: phoneVerification.maskPhone(phone) });
+    } catch (error) {
+        if (error && error.reason) {
+            logAuthRejected(req, 'phone_change', error.reason);
+            return res.status(error.status || 400).json({ error: error.publicMessage });
+        }
+        res.locals.unhandledError = error;
+        return res.status(500).json({ error: '换绑手机号失败，请稍后重试' });
+    }
 });
 
 // 住民主页的两个小组件（公开收藏夹 / 最近创建 / 最喜欢），见 services/userProfile.js

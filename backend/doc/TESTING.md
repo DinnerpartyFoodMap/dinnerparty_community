@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | 静态结构 | npm run test:structure | 导入、业务文档、文档链接、稳定数据根目录 |
 | 全部非浏览器 | npm test | 自动发现 tests 各模块；每文件独立进程、串行、180 秒超时，失败汇总 |
-| 账号 | npm run test:session-store / test:sessions / test:qq-verification | 多设备、旧 token、验证码、重置撤销 |
+| 账号 | npm run test:session-store / test:sessions / test:qq-verification / test:phone-verification | 多设备、旧 token、QQ 与短信验证码、注册双验证、换绑手机号、重置撤销 |
 | 地点 | npm run test:transactions / test:place-share / test:place-markers / test:place-duplicates / test:creator-places | 申请事务、账号事务、分享与缩略图、标记快照与公共缓存头、同位置同名、住民地点列表 |
 | HTTP 与发版 | npm run test:compression / test:app-release | JSON 压缩；安卓安装包跳转与长期缓存 |
 | 评分 | npm run test:ratings | schema、数学权重、批处理、HTTP 与配额 |
@@ -34,7 +34,7 @@
 | 偏好与社区 | npm run test:preferences / test:community | 行为去重、画像、同好隐私 |
 | 日记 | npm run test:journeys / test:journey-resolution / test:journey-publication | 修订、澄清、公开快照、幂等提交 |
 | Bot 与图片 | npm run test:qq-bot / test:images | 协议替身、草稿、通知、隐私、OSS 迁移 |
-| 技术能力 | npm run test:ai-clients / test:logging / test:migration | 上游异常、脱敏、旧 schema |
+| 技术能力 | npm run test:ai-clients / test:logging / test:migration | 上游异常、脱敏、客户端源端口、日志保留下限、旧 schema |
 | 资源路径 | node tests/infrastructure/test_resource_paths.js | 更换 cwd 后相对 DB_FILE、默认上传与日志仍指向既有位置；也由 npm test 执行 |
 | 数据库备份 | npm run test:backup | 临时 WAL/向量库、模拟 OSS、上传与失败保留、恢复摘要、跨进程互斥、CLI 与日志；也由 npm test 执行 |
 | 备份计划任务 | node tests/infrastructure/test_backup_task.js | PowerShell parser 与模拟 ScheduledTasks 边界；不安装真实任务，无 PowerShell 环境明确跳过运行检查 |

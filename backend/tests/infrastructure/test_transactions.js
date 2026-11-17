@@ -15,6 +15,7 @@ const { db, init } = require('../../infrastructure/database');
 const redis = require('../../infrastructure/redis');
 const usersRouter = require('../../modules/accounts/routes/users');
 const verification = require('../../modules/accounts/services/qqVerification');
+const phoneVerification = require('../../modules/accounts/services/phoneVerification');
 const placeRequestsRouter = require('../../modules/places/routes/placeRequests');
 const { requestLogger, notFoundHandler, errorHandler } = require('../../http/middleware/requestLogger');
 
@@ -24,6 +25,13 @@ const JWT_SECRET = process.env.JWT_SECRET || 'yuyuko_secret_key';
 function issueSentCode(qq) {
     const { id, code } = verification.reserveCode({ purpose: verification.PURPOSES.register, qq, ip: '198.51.100.9' });
     verification.markSent(id);
+    return code;
+}
+
+// Stands in for the SMS sender: a registration SMS code requested along with this QQ.
+function issueSentPhoneCode(qq, phone) {
+    const { id, code } = phoneVerification.reserveCode({ purpose: phoneVerification.PURPOSES.register, phone: phoneVerification.normalizePhone(phone), subject: qq, ip: '198.51.100.9' });
+    phoneVerification.markSent(id);
     return code;
 }
 
@@ -56,11 +64,12 @@ async function main() {
         db._raw.prepare('INSERT INTO QQWhitelist (qq) VALUES (?)').run('100002');
         const firstCode = issueSentCode('100001');
         const secondCode = issueSentCode('100002');
+        const firstPhoneCode = issueSentPhoneCode('100001', '13800000001');
 
         const firstRegistration = await jsonRequest(`${baseUrl}/users/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'register-transaction-0001' },
-            body: JSON.stringify({ username: 'first-user', password: 'secret-1', verificationCode: firstCode, qq: '100001' })
+            body: JSON.stringify({ username: 'first-user', password: 'secret-1', verificationCode: firstCode, qq: '100001', phone: '13800000001', phoneCode: firstPhoneCode })
         });
         assert.strictEqual(firstRegistration.response.status, 201, JSON.stringify(firstRegistration.body));
         sessionIds.push(firstRegistration.body.user.id);
@@ -69,7 +78,7 @@ async function main() {
         const reusedCode = await jsonRequest(`${baseUrl}/users/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'register-transaction-0002' },
-            body: JSON.stringify({ username: 'second-user', password: 'secret-2', verificationCode: firstCode, qq: '100001' })
+            body: JSON.stringify({ username: 'second-user', password: 'secret-2', verificationCode: firstCode, qq: '100001', phone: '13800000002', phoneCode: '123456' })
         });
         assert.strictEqual(reusedCode.response.status, 400);
 
@@ -78,7 +87,7 @@ async function main() {
         const wrongRegistration = await jsonRequest(`${baseUrl}/users/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'register-transaction-0003' },
-            body: JSON.stringify({ username: 'second-user', password: 'secret-2', verificationCode: wrongCode, qq: '100002' })
+            body: JSON.stringify({ username: 'second-user', password: 'secret-2', verificationCode: wrongCode, qq: '100002', phone: '13800000002', phoneCode: '123456' })
         });
         assert.strictEqual(wrongRegistration.response.status, 400);
         assert.strictEqual(db._raw.prepare('SELECT attempts FROM QQVerificationCode WHERE qq = ? AND status = ?').get('100002', 'sent').attempts, 1);

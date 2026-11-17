@@ -9,6 +9,7 @@ import { supportsNativeSettings } from "../settings/useNativeSettings";
 import RoutePageShell from "../components/layout/RoutePageShell";
 import EditUsername from "../settings/EditUsername";
 import EditPassword from "../settings/EditPassword";
+import EditPhone from "../settings/EditPhone";
 import PersonalizeMap from "../settings/PersonalizeMap";
 import CustomThemes from "../settings/CustomThemes";
 import EditAvatar from "../settings/EditAvatar";
@@ -169,7 +170,10 @@ export default function App() {
         });
         reportAuthStage(BACKEND_URL, requestId, 'state_commit_started');
         flushSync(() => {
-            setUser(u);
+            // 改住民名 / 密码 / 头像的响应不带 phone_masked（只有登录、注册与 /users/me 带）：同一住民时沿用已知的值
+            setUser((prev) => (u && prev && prev.id === u.id && u.phone_masked === undefined && prev.phone_masked !== undefined
+                ? { ...u, phone_masked: prev.phone_masked }
+                : u));
             setToken(t);
             setAuthCheckFailed(false);
             setCredentialsRestoring(false);
@@ -578,6 +582,7 @@ export default function App() {
     const nativeSettingsActive = showSettingsBase && !!user && !nativeSettingsFailed && supportsNativeSettings();
     const showSettingsEdit = pathname === "/settings/username";
     const showSettingsPassword = pathname === "/settings/password";
+    const showSettingsPhone = pathname === "/settings/phone";
     const showSettingsPersonalize = pathname === "/settings/personalize";
     const showSettingsThemes = pathname === "/settings/themes";
     const showSettingsSkins = pathname === "/settings/skins";
@@ -836,10 +841,27 @@ export default function App() {
                     onOpenEditAvatar={() => goPath('/settings/avatar')}
                     onOpenEditUsername={() => goPath('/settings/username')}
                     onOpenEditPassword={() => goPath('/settings/password')}
+                    onOpenEditPhone={() => goPath('/settings/phone')}
                     onOpenPersonalize={() => goPath('/settings/personalize')}
                     onOpenThemes={() => goPath('/settings/themes')}
                     onOpenSkins={() => goPath('/settings/skins')}
                     nativeDisabled={nativeSettingsFailed}
+                />
+            ) : (
+                <div style={placeholderStyle}>
+                    {t('common:app.verifyingSession')}
+                </div>
+            )
+        );
+
+        if (showSettingsPhone) return (
+            user ? (
+                <EditPhone
+                    user={user}
+                    onBack={() => goPath('/settings')}
+                    backendUrl={BACKEND_URL}
+                    token={token}
+                    onUpdateUser={handleLoginSuccess}
                 />
             ) : (
                 <div style={placeholderStyle}>
@@ -1053,6 +1075,7 @@ export default function App() {
                                 onOpenEditAvatar={() => goPath('/settings/avatar')}
                                 onOpenEditUsername={() => goPath('/settings/username')}
                                 onOpenEditPassword={() => goPath('/settings/password')}
+                                onOpenEditPhone={() => goPath('/settings/phone')}
                                 onOpenPersonalize={() => goPath('/settings/personalize')}
                                 onOpenThemes={() => goPath('/settings/themes')}
                                 onOpenSkins={() => goPath('/settings/skins')}

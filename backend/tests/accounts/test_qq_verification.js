@@ -66,6 +66,12 @@ const { createSessionStore } = require('../../modules/accounts/services/sessions
 const { FakeRedis } = require('../helpers/fakeRedis');
 const verification = require('../../modules/accounts/services/qqVerification');
 const usersRouter = require('../../modules/accounts/routes/users');
+const { setSmsClientForTesting } = require('../../infrastructure/aliyunSms');
+
+// Registration also needs an SMS code (covered in test_phone_verification.js); this
+// fake sender only lets the QQ cases reach a successful registration.
+const smsSent = [];
+setSmsClientForTesting({ configured: true, supports: () => true, async sendVerifyCode(message) { smsSent.push(message); return { bizId: 'biz', requestId: 'req' }; } });
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -114,8 +120,16 @@ async function main() {
         return { status: response.status, headers: response.headers, body: await response.json().catch(() => ({})) };
     }
     const sendCode = (qq, purpose = 'register', options) => call('POST', '/users/verification-code', { body: { qq, purpose }, ...options });
-    const register = (username, qq, verificationCode, password = 'secret-1') =>
-        call('POST', '/users/register', { body: { username, password, qq, verificationCode } });
+    // phoneCode defaults to a code that was never sent: QQ failures are reported first.
+    // A fresh unbound phone per call keeps the one-account-per-phone rule out of the QQ cases.
+    let phoneCounter = 100;
+    const register = (username, qq, verificationCode, password = 'secret-1', phone = `13900000${phoneCounter++}`, phoneCode = '000000') =>
+        call('POST', '/users/register', { body: { username, password, qq, verificationCode, phone, phoneCode } });
+    const requestPhoneCode = async (qq, verificationCode, phone = '13900000001') => {
+        const response = await call('POST', '/users/phone-code', { body: { qq, verificationCode, phone } });
+        assert.equal(response.status, 200, JSON.stringify(response.body));
+        return smsSent[smsSent.length - 1].code;
+    };
     const resetPassword = (qq, verificationCode, newPassword) =>
         call('POST', '/users/password-reset', { body: { qq, verificationCode, newPassword } });
     const login = (username, password) => call('POST', '/users/login', { body: { username, password } });
@@ -172,7 +186,7 @@ async function main() {
             assert.equal((await register('新住民', '200001', firstCode)).status, 400, 'old code is no longer valid');
         }
         assert.deepEqual(codeRows('200001').map((row) => row.status), ['superseded', 'sent']);
-        res = await register('新住民', '200001', secondCode);
+        res = await register('新住民', '200001', secondCode, 'secret-1', '13900000001', await requestPhoneCode('200001', secondCode));
         assert.equal(res.status, 201, JSON.stringify(res.body));
         assert.ok(res.body.token);
         const registeredToken = res.body.token;

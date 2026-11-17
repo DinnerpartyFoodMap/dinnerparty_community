@@ -483,11 +483,18 @@ function init() {
         addIfMissing('avatar_blob BLOB');
         // 住民主页的两个小组件（accounts/services/userProfile.js），JSON 数组
         addIfMissing('profile_widgets TEXT');
+        // 绑定的手机号（11 位，大陆号码；accounts/services/phoneVerification.js）。注册时必填，老住民可以为空
+        addIfMissing('phone TEXT');
 
         try {
             rawDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_qq ON User(qq);`);
         } catch (e) {
             console.warn('Failed to create idx_user_qq:', e.message);
+        }
+        try {
+            rawDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_phone ON User(phone);`);
+        } catch (e) {
+            console.warn('Failed to create idx_user_phone:', e.message);
         }
 
         // 住民屏蔽（accounts/services/userRelations.js）：user_id 屏蔽了 blocked_id，只影响 user_id 自己看到的内容
@@ -746,6 +753,7 @@ function init() {
         require('../modules/ratings/services/algorithmSchema').initAlgorithmSchema(rawDb);
         require('../modules/qqbot/services/qqBotSchema').initQQBotSchema(rawDb);
         require('../modules/accounts/services/userLocation').initUserLocationSchema(rawDb);
+        require('../modules/accounts/services/phoneVerification').initPhoneVerificationSchema(rawDb);
         require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
         require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);

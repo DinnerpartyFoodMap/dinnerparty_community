@@ -85,6 +85,7 @@
     "editAvatar": "修改头像",
     "editUsername": "修改住民名",
     "editPassword": "修改通行密码",
+    "editPhone": "绑定手机号",
     "customThemes": "个性化主题",
     "personalizeMap": "个性化地图",
     "skins": "主题皮肤"
@@ -113,5 +114,34 @@
     "generated": "AI 生成",
     "assisted": "AI 辅助整理",
     "exportLabel": "（本文由 AI 辅助生成）"
+  },
+  "phoneRegion": {
+    "label": "国家或地区区号",
+    "codeLabel": "区号",
+    "other": "其他国家或地区",
+    "CN": "中国大陆",
+    "HK": "中国香港",
+    "MO": "中国澳门",
+    "TW": "中国台湾",
+    "JP": "日本",
+    "KR": "韩国",
+    "SG": "新加坡",
+    "MY": "马来西亚",
+    "TH": "泰国",
+    "VN": "越南",
+    "PH": "菲律宾",
+    "ID": "印度尼西亚",
+    "US": "美国 / 加拿大",
+    "GB": "英国",
+    "AU": "澳大利亚",
+    "NZ": "新西兰",
+    "DE": "德国",
+    "FR": "法国",
+    "IT": "意大利",
+    "ES": "西班牙",
+    "NL": "荷兰",
+    "RU": "俄罗斯",
+    "AE": "阿联酋",
+    "IN": "印度"
   }
 }

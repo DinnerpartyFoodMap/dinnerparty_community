@@ -9,6 +9,10 @@ const SENSITIVE_KEY = /password|passwd|pwd|token|authorization|cookie|secret|inv
 const MAX_DEPTH = 5;
 const MAX_KEYS = 60;
 const MAX_ARRAY_ITEMS = 30;
+// 网络安全法要求网络日志留存不少于六个月；最长的六个月（7/1–12/31）是 184 天，
+// 配置得更短也按 184 天保留，默认多留两天余量。
+const MIN_RETENTION_DAYS = 184;
+const DEFAULT_RETENTION_DAYS = 186;
 
 const originalConsole = {
     debug: console.debug.bind(console),
@@ -49,7 +53,8 @@ const config = {
     toConsole: parseBoolean(process.env.LOG_TO_CONSOLE, true),
     prettyConsole: parseBoolean(process.env.LOG_PRETTY_CONSOLE, true),
     maxFileBytes: parsePositiveInt(process.env.LOG_MAX_FILE_MB, 20, 1, 1024) * 1024 * 1024,
-    retentionDays: parsePositiveInt(process.env.LOG_RETENTION_DAYS, 14, 1, 3650),
+    retentionDays: Math.max(MIN_RETENTION_DAYS, parsePositiveInt(process.env.LOG_RETENTION_DAYS, DEFAULT_RETENTION_DAYS, 1, 3650)),
+    configuredRetentionDays: parsePositiveInt(process.env.LOG_RETENTION_DAYS, DEFAULT_RETENTION_DAYS, 1, 3650),
     service: String(process.env.LOG_SERVICE_NAME || 'yuyuko-food-map-backend').trim()
 };
 
@@ -107,7 +112,7 @@ function sanitize(value, depth = 0, seen = new WeakSet()) {
     return result;
 }
 
-function cleanupOldLogs() {
+function cleanupOldLogs({ atStartup = false } = {}) {
     if (!fileLoggingAvailable) return;
     const cutoff = Date.now() - config.retentionDays * 24 * 60 * 60 * 1000;
     try {
@@ -115,12 +120,18 @@ function cleanupOldLogs() {
         for (const name of fs.readdirSync(config.directory)) {
             if (!/^(app|error)-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.log$/.test(name)) continue;
             const filePath = path.join(config.directory, name);
-            const stat = fs.statSync(filePath);
-            if (stat.mtimeMs < cutoff) fs.unlinkSync(filePath);
+            try {
+                if (fs.statSync(filePath).mtimeMs < cutoff) fs.unlinkSync(filePath);
+            } catch (error) {
+                // A file held open by a log reader is retried at the next cleanup.
+                originalConsole.warn(`[logger] Could not remove old log ${name}: ${error.message}`);
+            }
         }
     } catch (error) {
-        fileLoggingAvailable = false;
-        originalConsole.error(`[logger] Cannot initialize log directory ${config.directory}:`, error);
+        // At startup an unusable directory disables file logging; a later cleanup
+        // failure (file locked by a reader) must not stop logging.
+        if (atStartup) fileLoggingAvailable = false;
+        originalConsole.error(`[logger] ${atStartup ? 'Cannot initialize log directory' : 'Log cleanup failed in'} ${config.directory}:`, error);
     }
 }
 
@@ -157,6 +168,8 @@ function ensureWriter(kind, bytesToWrite) {
     if (mustRotate) {
         closeWriterState(state);
         writerStates.delete(kind);
+        // 进程可能连续运行几个月：每天换文件时顺带清理超过保留期的旧文件
+        if (state.dateStamp !== dateStamp) cleanupOldLogs();
         state = null;
     }
     if (state && state.stream) return state;
@@ -199,7 +212,7 @@ function writeToConsole(entry) {
         return;
     }
     const details = [];
-    for (const key of ['requestId', 'event', 'method', 'path', 'status', 'durationMs', 'ip', 'userId']) {
+    for (const key of ['requestId', 'event', 'method', 'path', 'status', 'durationMs', 'ip', 'port', 'userId']) {
         if (entry[key] !== undefined) details.push(`${key}=${entry[key]}`);
     }
     const suffix = details.length ? ` ${details.join(' ')}` : '';
@@ -316,9 +329,13 @@ const logger = {
         writerStates.clear();
         return Promise.allSettled(pending);
     },
-    config: { ...config }
+    config: { ...config },
+    MIN_RETENTION_DAYS
 };
 
-cleanupOldLogs();
+cleanupOldLogs({ atStartup: true });
+if (config.configuredRetentionDays < MIN_RETENTION_DAYS) {
+    originalConsole.warn(`[logger] LOG_RETENTION_DAYS=${config.configuredRetentionDays} is below the legal minimum; keeping logs for ${MIN_RETENTION_DAYS} days.`);
+}
 
 module.exports = logger;

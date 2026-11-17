@@ -89,6 +89,18 @@ async function main() {
         });
         assert.strictEqual(failureResponse.status, 500);
 
+        // Client source port: from the trusted proxy's header, the socket for direct
+        // connections, unknown (not the proxy's port) when only X-Forwarded-For is present.
+        for (const [id, headers] of [
+            ['port-proxied-12345678', { 'X-Forwarded-For': '203.0.113.50', 'X-Client-Port': '54321' }],
+            ['port-direct-123456789', {}],
+            ['port-unknown-12345678', { 'X-Forwarded-For': '203.0.113.51' }]
+        ]) {
+            await fetch(`http://127.0.0.1:${port}/__logging_missing_route`, { headers: { 'X-Request-ID': id, ...headers } });
+        }
+        assert.ok(logger.config.retentionDays >= logger.MIN_RETENTION_DAYS && logger.MIN_RETENTION_DAYS >= 184,
+            'logs must be kept for at least six months');
+
         logger.info('Redaction probe', {
             event: 'test.redaction',
             password: 'super-secret-test',
@@ -136,6 +148,14 @@ async function main() {
             && entry.requestId === validLoginRequestId);
         assert.strictEqual(completedLogin.userId, testUserId, 'request completion lost the authenticated user UUID');
         assert.ok(completedLogin.ip, 'request completion lost the client IP');
+        const completedFor = (id) => entries.find((entry) => entry.requestId === id && entry.event === 'http.request.completed');
+        assert.strictEqual(completedFor('port-proxied-12345678').port, 54321, 'proxied request lost the client port');
+        assert.strictEqual(completedFor('port-proxied-12345678').ip, '203.0.113.50');
+        assert.ok(Number.isInteger(completedFor('port-direct-123456789').port) && completedFor('port-direct-123456789').port > 0,
+            'direct request lost the socket port');
+        assert.strictEqual(completedFor('port-unknown-12345678').port, undefined, 'the proxy port must not pass as the client port');
+        assert.ok(entries.find((entry) => entry.event === 'auth.login.succeeded' && entry.userId === testUserId).port,
+            'login event lost the client port');
         const failureEntries = entries.filter((entry) => entry.requestId === failureRequestId);
         assert.strictEqual(
             failureEntries.filter((entry) => entry.level === 'error').length,

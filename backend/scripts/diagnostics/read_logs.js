@@ -48,7 +48,7 @@ function formatEntry(entry) {
         entry.path || '',
         entry.status !== undefined ? `status=${entry.status}` : '',
         entry.durationMs !== undefined ? `${entry.durationMs}ms` : '',
-        entry.ip ? `ip=${entry.ip}` : '',
+        entry.ip ? `ip=${entry.ip}${entry.port ? `:${entry.port}` : ''}` : '',
         entry.userId ? `user=${entry.userId}` : '',
         entry.event ? `event=${entry.event}` : '',
         entry.stage ? `stage=${entry.stage}` : '',
@@ -60,6 +60,11 @@ function formatEntry(entry) {
     return parts.join(' ');
 }
 
+function localDateStamp(date) {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function printUsage() {
     console.log(`用法：npm run logs -- [选项]
 
@@ -68,6 +73,7 @@ function printUsage() {
   --level warn          最低级别：debug/info/warn/error/fatal
   --request-id ID       按请求编号精确检索
   --ip ADDRESS          按客户端 IP 精确检索
+  --port PORT           按客户端源端口精确检索（与 --ip 合用定位 NAT 后的访问者）
   --user-id UUID        按用户 UUID 精确检索
   --event TEXT          按事件名包含匹配
   --limit 100           最多输出条数（1-2000）
@@ -89,6 +95,7 @@ function main() {
     if (minimumLevel === undefined) throw new Error(`未知日志级别：${requestedLevel}`);
     const requestId = getArg('--request-id');
     const ipFilter = getArg('--ip');
+    const portFilter = getArg('--port');
     const userIdFilter = getArg('--user-id');
     const eventFilter = getArg('--event');
     const outputJson = hasArg('--json');
@@ -98,8 +105,11 @@ function main() {
         return;
     }
 
+    // 日志保留半年：按文件名日期跳过明显早于 --since 的文件（留一天余量，文件名是本地日期）
+    const oldestStamp = localDateStamp(new Date(since - 24 * 60 * 60 * 1000));
     const files = fs.readdirSync(logDirectory)
         .filter((name) => /^(app|error)-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.log$/.test(name))
+        .filter((name) => name.replace(/^(?:app|error)-/, '').slice(0, 10) >= oldestStamp)
         .map((name) => ({ name, mtimeMs: fs.statSync(path.join(logDirectory, name)).mtimeMs }))
         .sort((a, b) => b.mtimeMs - a.mtimeMs)
         .map((item) => item.name);
@@ -123,6 +133,7 @@ function main() {
             if ((LEVELS[entry.level] || 0) < minimumLevel) continue;
             if (requestId && entry.requestId !== requestId) continue;
             if (ipFilter && entry.ip !== ipFilter) continue;
+            if (portFilter && String(entry.port) !== String(portFilter)) continue;
             if (userIdFilter && entry.userId !== userIdFilter) continue;
             if (eventFilter && !String(entry.event || '').includes(eventFilter)) continue;
             matches.push(entry);

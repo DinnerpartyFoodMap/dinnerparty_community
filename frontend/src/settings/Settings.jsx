@@ -10,7 +10,7 @@ import { t } from "../i18n/index.js";
 
 // headless：App 内原生设置打开期间不渲染任何网页内容（地图留在底下，原生页直接从地图上弹起）；
 // 原生不可用或异常结束时通过 onNativeUnavailable 让 App 切回网页版设置页，此后以 nativeDisabled 渲染、不再重试原生。
-export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUsername, onOpenEditPassword, onOpenPersonalize, onOpenThemes, onOpenSkins, backendUrl, token, onLogout, onUpdateUser, headless = false, nativeDisabled = false, onNativeUnavailable }) {
+export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUsername, onOpenEditPassword, onOpenEditPhone, onOpenPersonalize, onOpenThemes, onOpenSkins, backendUrl, token, onLogout, onUpdateUser, headless = false, nativeDisabled = false, onNativeUnavailable }) {
     const [deleting, setDeleting] = useState(false);
     const { showTip } = React.useContext(TipsContext);
     const confirm = useConfirm();
@@ -73,7 +73,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
     };
 
     const nativeSettings = useNativeSettings({ user, backendUrl, token, onUpdateUser, disabled: nativeDisabled, actions: {
-        back: onBack, avatar: onOpenEditAvatar, username: onOpenEditUsername, password: onOpenEditPassword,
+        back: onBack, avatar: onOpenEditAvatar, username: onOpenEditUsername, password: onOpenEditPassword, phone: onOpenEditPhone,
         themes: onOpenThemes, personalize: onOpenPersonalize, skins: onOpenSkins,
         logoutAll: () => handleLogoutAll(true), deleteAccount: () => handleDeleteAccount(true)
     } });
@@ -149,6 +149,29 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                     </div>
 
                     <div style={{ paddingLeft: 10, paddingRight: 10, paddingBottom: 2, background: sepBg, margin: 0 }} />
+
+                    {onOpenEditPhone && <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 12 }}>
+                            <div>
+                                <strong>{t('common:nav.editPhone')}</strong>
+                                {/* phone_masked 只有登录 / 刷新住民信息后才有；没有时不猜“未绑定” */}
+                                {user && user.phone_masked !== undefined && (
+                                    <span style={{ marginLeft: 8, color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                                        {user.phone_masked || t('settings:editPhone.unbound')}
+                                    </span>
+                                )}
+                            </div>
+                            <div>
+                                <Tooltip text={t('common:nav.editPhone')} placement="top">
+                                    <Button variant="secondary" size="sm" onClick={onOpenEditPhone}>
+                                        <span className="material-symbols-outlined">chevron_right</span>
+                                    </Button>
+                                </Tooltip>
+                            </div>
+                        </div>
+
+                        <div style={{ paddingLeft: 10, paddingRight: 10, paddingBottom: 2, background: sepBg, margin: 0 }} />
+                    </>}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 12 }}>
                         <div><strong>{t('common:nav.customThemes')}</strong></div>

@@ -1,6 +1,6 @@
 # HTTP 共用边界
 
-middleware/requestLogger.js 导出 requestLogger、notFoundHandler、errorHandler。index.js 在 CORS 与解析请求体之前挂请求日志，路由之后挂 404 与错误处理；因此预检拒绝、JSON 错误及中断请求也有 requestId。身份和管理权限中间件分别归 accounts 与 admin。
+middleware/requestLogger.js 导出 requestLogger、notFoundHandler、errorHandler。index.js 在 CORS 与解析请求体之前挂请求日志，路由之后挂 404 与错误处理；因此预检拒绝、JSON 错误及中断请求也有 requestId。每条请求日志带客户端 IP 与源端口 `port`（来源规则与代理配置见 [日志文档](../../infrastructure/doc/LOGGING.md#客户端源端口)）。身份和管理权限中间件分别归 accounts 与 admin。
 
 middleware/publicCache.js 在 `cors()` 之前挂上：与观看者无关的 GET（公告、展会、`/api/amap/js-config`、`/places/regions`、`/places/markers`）固定回 `Access-Control-Allow-Origin: *` 并跳过按 Origin 回头的 `cors()`（`skipForPublic`），200 / 304 带公共 `Cache-Control`（含 `s-maxage`），出错时 `no-store`；路由自己不要再设 `Cache-Control`。路径清单、ESA 规则与前端约束见 [CDN 缓存](../../doc/CDN_CACHE.md)，测试 `npm run test:place-markers`。
 

@@ -69,6 +69,8 @@ function buildLabels() {
         usernameTitle: t('common:nav.editUsername'),
         usernameLabel: t('settings:editUsername.label'),
         passwordTitle: t('common:nav.editPassword'),
+        phoneTitle: t('common:nav.editPhone'),
+        phoneUnbound: t('settings:editPhone.unbound'),
         passwordCurrent: t('settings:editPassword.current'),
         passwordNew: t('settings:editPassword.new'),
         passwordConfirm: t('settings:editPassword.confirm'),
@@ -197,6 +199,8 @@ export default function useNativeSettings({ user, backendUrl, token, onUpdateUse
             const current = latest.current.user;
             session = createNativeSettingsSession(registerPlugin('NativeSettings'), {
                 username: current?.username || '', dark: latest.current.dark,
+                // 绑定的手机号（打码）；还不知道时不下发，原生行只显示标题
+                ...(current && current.phone_masked !== undefined ? { phone: current.phone_masked || '' } : {}),
                 avatarURL: avatarURLOf(current, false),
                 mapPage: buildMapPage(current),
                 themes: buildThemes(current),
