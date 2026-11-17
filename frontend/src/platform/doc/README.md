@@ -37,7 +37,7 @@ flowchart TD
 
 ## iOS 原生底图与 iOS 18 起原生控件（2026-11-17）
 
-- `nativeMap.js` 是原生底图（MapKit，`NativeMapPlugin.swift` 协议 v1）的会话：`canUseNativeMap()`（iOS App 且插件可用）、`NativeMapSession`（握手、按发出顺序串行调用、按会话过滤事件、结束时 dispose）与清洗函数（地点按列编码、覆盖物与折线、触摸矩形、CSS 颜色转 `#RRGGBB(AA)`），上限与 Swift 相同。地图侧的替身与标记层见 [地图文档](../../map/doc/README.md)。
+- `nativeMap.js` 是原生底图（MapKit，`NativeMapPlugin.swift` 协议 v1）的会话：`canUseNativeMap()`（iOS App 且插件可用）、`NativeMapSession`（握手、按发出顺序串行调用、可单独放宽超时的调用（校准搜索 15 秒）、按会话过滤事件 `camera` / `tap` / `markerTap` / `clusterTap`、结束时 dispose）与清洗函数（节点快照按列编码、转场计划只保留两份快照都有的 key、校准地标、覆盖物与折线、触摸矩形、CSS 颜色转 `#RRGGBB(AA)`），上限与 Swift 相同。`coordTransform.js` 新增不看范围的 `wgs84ToGcj02Raw` 与迭代反算 `gcj02ToWgs84Raw`，供底图坐标校准换算。地图侧的替身与标记层见 [地图文档](../../map/doc/README.md)。
 - 原生侧：`FoodMapBridgeViewController` 用 `FoodMapWebView`（WKWebView 子类）创建 WebView，把 MKMapView 放在它下面；网页接管后 WebView 变透明，`hitTest` 按网页上报的触摸区域把地图画布上的触摸交给底图。WebView 重载时插件收起底图、恢复不透明。左边缘侧滑手势挂在容器上，地图区域的触摸也能识别。
 - `nativeMapChrome.js` 协议 v17：iOS 18 起都由原生控件接管，capabilities 不再上报 `supportsGlass`；`useMapChrome` 把住民的「原生玻璃按钮」偏好作为 `glass` 随状态下发，原生在 iOS 26 且为真时画 Liquid Glass，否则用不透明材质。偏好不再决定是否接管。
 

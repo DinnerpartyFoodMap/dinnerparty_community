@@ -263,7 +263,7 @@ iOS 原生：半屏面板用 `NativeSheetHeader`；地图玻璃面板、店卡�
 
 ## 8. 动效
 
-沿用 `src/motion/` 与 `docs/map-motion-implementation.md`：页面切换 220ms `cubic-bezier(.05,.7,.1,1)`，控件过渡 150–160ms ease，按压 120ms；`prefers-reduced-motion` 与 `data-motion='reduced'` 降级为淡入淡出。原生用系统动画，不额外定义。
+沿用 `src/motion/` 与 `docs/map-motion-implementation.md`：页面切换 220ms `cubic-bezier(.05,.7,.1,1)`，控件过渡 150–160ms ease，按压 120ms；`prefers-reduced-motion` 与 `data-motion='reduced'` 降级为淡入淡出。原生用系统动画，不额外定义；例外是 iOS 原生底图的标记合并 / 拆分，与网页 `MARKER_TIMING` 同一组时长与缓动（`NativeMapNodeView`），两端看起来一样。
 
 ## 9. 令牌的来源与生成
 

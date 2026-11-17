@@ -32,6 +32,15 @@ function transformLng(x, y) {
 /** @returns {{lng: number, lat: number}} */
 export function wgs84ToGcj02(lng, lat) {
     if (isOutOfChina(lng, lat)) return { lng, lat };
+    return wgs84ToGcj02Raw(lng, lat);
+}
+
+/**
+ * 不看范围的 GCJ-02 偏移：iOS 原生底图在两套坐标之间换算时用（map/nativeMapFrames.js），
+ * 那里已经按地区决定要不要换算。
+ * @returns {{lng: number, lat: number}}
+ */
+export function wgs84ToGcj02Raw(lng, lat) {
     let dLat = transformLat(lng - 105.0, lat - 35.0);
     let dLng = transformLng(lng - 105.0, lat - 35.0);
     const radLat = lat / 180.0 * Math.PI;
@@ -41,4 +50,22 @@ export function wgs84ToGcj02(lng, lat) {
     dLat = (dLat * 180.0) / ((A * (1 - EE)) / (magic * sqrtMagic) * Math.PI);
     dLng = (dLng * 180.0) / (A / sqrtMagic * Math.cos(radLat) * Math.PI);
     return { lng: lng + dLng, lat: lat + dLat };
+}
+
+/**
+ * GCJ-02 → WGS-84（不看范围）。偏移没有解析逆，用不动点迭代：每轮把正向偏移的残差减掉，几轮内收敛到 1e-9 度（毫米级）。
+ * @returns {{lng: number, lat: number}}
+ */
+export function gcj02ToWgs84Raw(lng, lat) {
+    let wLng = lng;
+    let wLat = lat;
+    for (let i = 0; i < 12; i++) {
+        const shifted = wgs84ToGcj02Raw(wLng, wLat);
+        const dLng = shifted.lng - lng;
+        const dLat = shifted.lat - lat;
+        wLng -= dLng;
+        wLat -= dLat;
+        if (Math.abs(dLng) < 1e-10 && Math.abs(dLat) < 1e-10) break;
+    }
+    return { lng: wLng, lat: wLat };
 }

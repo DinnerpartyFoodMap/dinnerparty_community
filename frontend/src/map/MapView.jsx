@@ -645,7 +645,7 @@ export default function MapView({
             const preferredStyles = getPreferredCandidates(pageDark);
 
             if (useNative) {
-                // 原生底图：标记、聚合点与名称由 MapKit 画，拖动缩放时与底图同帧移动；不需要高德 SDK、海外叠图与双指补丁
+                // 原生底图：标记、聚合点与名称是 MapKit 标注，拖动缩放时与底图同帧移动；不需要高德 SDK、海外叠图与双指补丁
                 const nativeMap = new NativeMapView(containerRef.current, {
                     center: savedView ? [savedView.lng, savedView.lat] : DEFAULT_CENTER,
                     zoom: savedView ? savedView.zoom : DEFAULT_ZOOM,
@@ -653,9 +653,10 @@ export default function MapView({
                 });
                 mapRef.current = nativeMap;
                 styleSyncRef.current = { want: preferredStyles[0] || null, sent: 0, timer: null };
+                // 聚合与转场规则同网页（同一个聚合引擎），合并 / 拆分动画由原生播放；点聚合走同一个 handleClusterClick
                 markerLayerRef.current = new NativeMarkerLayer(nativeMap, {
-                    onPlaceClick: (place) => markerHandlersRef.current.onPlaceClick?.(place),
-                    onClusterMembers: (members) => markerHandlersRef.current.onClusterMembers?.(members)
+                    onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
+                    onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
                 });
                 nativeMap.setVisible(nativeVisibleRef.current);
                 nativeMap.ready.catch((error) => {
@@ -1244,9 +1245,7 @@ export default function MapView({
 
     markerHandlersRef.current = {
         onPlaceClick: handleMapPlaceClick,
-        onClusterClick: handleClusterClick,
-        // 原生底图：能放大拆开的聚合由原生放大，拆不开（同一位置、已到最大缩放）时回传成员
-        onClusterMembers: (members) => setClusterMembers(members)
+        onClusterClick: handleClusterClick
     };
 
     const handleAlongRouteResults = (results) => {

@@ -11,9 +11,13 @@ import Capacitor
 /// panBy({ sessionId, dx, dy, animated }) -> { camera }
 /// setStyle({ sessionId, style: { glyphs, glyphWidth, glyphHeight, clusterImage, clusterCrop?, clusterWidth, clusterHeight,
 ///            countX, countY, countColor, labelText, labelBackground, labelBorder, avoidText, avoidBackground, avoidBorder,
-///            collisionSize, kindSuffix, clusterLabel } })
-/// setPlaces({ sessionId, ids, coords: [lng0, lat0, lng1, lat1, …], names, kinds, selected })   整份替换，原生只增删变化的部分
+///            kindSuffix, clusterLabel } })
+/// setNodes({ sessionId, ids, clusters: [Bool], coords: [lng0, lat0, …], counts, names, glyphs, selected, animate,
+///            reuse: [新, 旧, …], splitFrom: [新, 旧父, …], mergeInto: [旧, 新父, …], splitSources: [旧], mergeTargets: [新] })
+///   网页聚合引擎的一份快照与转场计划（cluster/transitions.js）；原生按计划播放拆分 / 合并动画
 /// setSelected({ sessionId, id })
+/// search({ sessionId, probes: [{ id, names: [String], lng, lat, radius }] }) -> { results: [{ id, points: [lng, lat, …] }] }
+///   坐标校准：苹果地点搜索在地标附近按名称搜，结果原样返回，由网页判断这台手机上各地区的底图用哪种坐标
 /// setOverlays({ sessionId, markers: [{ id, kind, lng, lat, text?, fill, textColor?, border?, size?, zIndex?, label? }],
 ///               lines: [{ id, coords, color, width, opacity, dashed, zIndex }] })
 /// setAppearance({ sessionId, dark, muted }) / setInsets({ sessionId, top, right, bottom, left })
@@ -21,9 +25,9 @@ import Capacitor
 /// dispose({ sessionId })
 ///
 /// 事件：camera { sessionId, phase: start|change|end, lng, lat, zoom, minLng, minLat, maxLng, maxLat, width, height, gesture, zoomChanged? }
-///      tap { sessionId, lng, lat }（地图空白处）、markerTap { sessionId, id }、clusterMembers { sessionId, ids, lng, lat }
+///      tap { sessionId, lng, lat }（地图空白处）、markerTap { sessionId, id }（单点）、clusterTap { sessionId, id }（聚合）
 ///
-/// - 标记、聚合点与名称都是 MapKit 标注视图，拖动缩放时与底图同帧移动；网页只在数据变化时下发。
+/// - 标记、聚合点与名称都是 MapKit 标注视图，拖动缩放时与底图同帧移动；网页只在缩放结束、数据变化时下发。
 /// - 旧会话的调用被拒绝（STALE_SESSION）；WebView 重新加载时由根控制器收起底图并清空（handleWebViewReload）。
 @objc(NativeMapPlugin)
 public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -36,7 +40,8 @@ public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "fitBounds", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "panBy", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setStyle", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setPlaces", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setNodes", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "search", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setSelected", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setOverlays", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setAppearance", returnType: CAPPluginReturnPromise),
@@ -46,7 +51,8 @@ public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     static let protocolVersion = 1
-    static let placeLimit = 50_000
+    static let nodeLimit = 5_000
+    static let probeLimit = 12
     static let overlayLimit = 200
     static let pathPointLimit = 20_000
     static let holeLimit = 400
@@ -144,12 +150,31 @@ public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func setPlaces(_ call: CAPPluginCall) {
-        let places = Self.parsePlaces(call)
+    @objc func setNodes(_ call: CAPPluginCall) {
+        let nodes = Self.parseNodes(call)
+        let plan = Self.parsePlan(call)
         let selected = call.getString("selected")
+        let animate = call.getBool("animate") ?? false
         withController(call) { controller in
-            controller.setPlaces(places, selected: selected)
-            call.resolve(["count": places.count])
+            controller.setNodes(nodes, plan: plan, animate: animate, selected: selected)
+            call.resolve(["count": nodes.count])
+        }
+    }
+
+    @objc func search(_ call: CAPPluginCall) {
+        let probes = (call.getArray("probes", JSObject.self) ?? []).prefix(Self.probeLimit).compactMap(Self.parseProbe)
+        withController(call) { _ in
+            var results: [[String: Any]] = []
+            let group = DispatchGroup()
+            for probe in probes {
+                group.enter()
+                // MKLocalSearch 在主线程回调，results 只在主线程修改
+                NativeMapController.search(probe) { points in
+                    results.append(["id": probe.id, "points": points])
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) { call.resolve(["results": results]) }
         }
     }
 
@@ -240,9 +265,9 @@ public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self, self.sessionId == session else { return }
             self.notifyListeners("markerTap", data: ["sessionId": session, "id": id])
         }
-        controller.onClusterMembers = { [weak self] ids, coordinate in
+        controller.onClusterTap = { [weak self] id in
             guard let self, self.sessionId == session else { return }
-            self.notifyListeners("clusterMembers", data: ["sessionId": session, "ids": ids, "lng": coordinate.longitude, "lat": coordinate.latitude])
+            self.notifyListeners("clusterTap", data: ["sessionId": session, "id": id])
         }
     }
 
@@ -326,7 +351,6 @@ public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
         if let value = color(raw["avoidText"]) { style.avoidText = value }
         if let value = color(raw["avoidBackground"]) { style.avoidBackground = value }
         if let value = color(raw["avoidBorder"]) { style.avoidBorder = value }
-        if let size = number(raw["collisionSize"]), size >= 20, size <= 200 { style.collisionSize = CGFloat(size) }
         if let suffix = raw["kindSuffix"] as? JSObject {
             for (key, value) in suffix where glyphKinds.contains(key) {
                 if let text = text(value, limit: 20) { style.kindSuffix[key] = text }
@@ -336,23 +360,66 @@ public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
         return style
     }
 
-    static func parsePlaces(_ call: CAPPluginCall) -> [NativeMapPlaceInput] {
+    static func parseNodes(_ call: CAPPluginCall) -> [NativeMapNodeInput] {
         let ids = call.getArray("ids") ?? []
+        let clusters = call.getArray("clusters") ?? []
         let coords = call.getArray("coords") ?? []
+        let counts = call.getArray("counts") ?? []
         let names = call.getArray("names") ?? []
-        let kinds = call.getArray("kinds") ?? []
-        let count = min(ids.count, coords.count / 2, placeLimit)
-        var result: [NativeMapPlaceInput] = []
+        let glyphs = call.getArray("glyphs") ?? []
+        let count = min(ids.count, coords.count / 2, nodeLimit)
+        var result: [NativeMapNodeInput] = []
         result.reserveCapacity(count)
         for index in 0..<count {
-            guard let id = text(ids[index], limit: 120), !id.isEmpty,
+            guard let id = text(ids[index], limit: 160), !id.isEmpty,
                   let coordinate = coordinate(number(coords[index * 2]), number(coords[index * 2 + 1])) else { continue }
+            let cluster = index < clusters.count ? ((clusters[index] as? Bool) ?? false) : false
+            let total = index < counts.count ? Int(min(10_000_000, max(1, number(counts[index]) ?? 1))) : 1
             let name = index < names.count ? (text(names[index]) ?? "") : ""
-            let rawKind = index < kinds.count ? (kinds[index] as? String) : nil
-            let kind = rawKind.flatMap { glyphKinds.contains($0) ? $0 : nil } ?? "place"
-            result.append(NativeMapPlaceInput(id: id, coordinate: coordinate, name: name, glyph: kind, accessibility: name))
+            let rawGlyph = index < glyphs.count ? (glyphs[index] as? String) : nil
+            let glyph = rawGlyph.flatMap { glyphKinds.contains($0) ? $0 : nil } ?? "place"
+            result.append(NativeMapNodeInput(id: id, cluster: cluster, coordinate: coordinate, count: cluster ? max(2, total) : 1,
+                                             name: cluster ? "" : name, glyph: glyph))
         }
         return result
+    }
+
+    /// 计划按成对的扁平数组下发：[新, 旧, 新, 旧, …]
+    private static func pairs(_ value: JSArray?) -> [String: String] {
+        guard let value else { return [:] }
+        var result: [String: String] = [:]
+        var index = 0
+        while index + 1 < value.count, result.count < nodeLimit {
+            if let key = text(value[index], limit: 160), let other = text(value[index + 1], limit: 160), !key.isEmpty, !other.isEmpty {
+                result[key] = other
+            }
+            index += 2
+        }
+        return result
+    }
+
+    private static func keys(_ value: JSArray?) -> Set<String> {
+        Set((value ?? []).prefix(nodeLimit).compactMap { text($0, limit: 160) }.filter { !$0.isEmpty })
+    }
+
+    static func parsePlan(_ call: CAPPluginCall) -> NativeMapTransitionPlan {
+        NativeMapTransitionPlan(
+            reuse: pairs(call.getArray("reuse")),
+            splitFrom: pairs(call.getArray("splitFrom")),
+            mergeInto: pairs(call.getArray("mergeInto")),
+            splitSources: keys(call.getArray("splitSources")),
+            mergeTargets: keys(call.getArray("mergeTargets"))
+        )
+    }
+
+    static func parseProbe(_ raw: JSObject) -> NativeMapSearchProbe? {
+        guard let id = text(raw["id"], limit: 64), !id.isEmpty,
+              let center = coordinate(number(raw["lng"]), number(raw["lat"])),
+              let rawNames = raw["names"] as? [Any] else { return nil }
+        let names = rawNames.prefix(4).compactMap { text($0, limit: 60) }.filter { !$0.isEmpty }
+        guard !names.isEmpty else { return nil }
+        let radius = number(raw["radius"]).map { min(20_000, max(200, $0)) } ?? 3000
+        return NativeMapSearchProbe(id: id, names: names, center: center, radius: radius)
     }
 
     static func parseOverlay(_ raw: JSObject) -> NativeMapOverlayInput? {

@@ -1,13 +1,24 @@
 // iOS 原生底图的标记层：与 MarkerLayerController 同一个入口（update / setSelectedKey / refreshAppearance / destroy），
-// 但不在网页里画任何东西。地点、聚合点与名称都由 MapKit 的标注视图显示，拖动缩放时与底图同帧移动；
-// 聚合由 MapKit 按碰撞框完成（碰撞框边长取网页的聚合半径 CLUSTER_DEFAULTS.radiusPx）。
-// 网页只在数据或外观变化时下发：地点列表（id、坐标、名称、图标种类）与样式（图片、颜色、读屏文案）。
-import { normalizePlaces, CLUSTER_DEFAULTS } from './cluster/engine.js';
+// 同一套聚合与转场规则，只是不在网页里画东西。
+//
+// - 聚合：网页的聚合引擎（cluster/engine.js，Supercluster）与快照、转场计划（snapshot.js、transitions.js）原样复用；
+//   相机静止后（moveend）按当前缩放取一份快照，与上一份比出计划，连同节点一起交给原生（setNodes）。
+// - 显示：节点（单点或聚合）是 MapKit 的标注视图，拖动缩放时与底图同帧移动；合并 / 拆分动画由原生按计划用 Core Animation
+//   播放，节奏与网页的 MARKER_TIMING 相同。网页只在缩放结束、数据变化时发一次，不逐帧参与。
+// - 点按：单点回传 markerTap（打开卡片），聚合回传 clusterTap，交给 MapView 的 handleClusterClick（与网页相同的展开逻辑）。
+import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
+import { buildSnapshot, computeLogicalZoom } from './cluster/snapshot.js';
+import { planTransition } from './cluster/transitions.js';
 import { PLACE_GLYPH, CLUSTER_GLYPH } from './cluster/glyph.js';
 import { placeGlyphKind, markerImageSources, DEFAULT_CLUSTER_CROP } from './markerContent.js';
+import { readViewBounds, getMapZoomRange } from './viewport.js';
 import { nativeImageSource } from '../skins/nativeSkin.js';
 import { nativeColor } from '../platform/nativeMap.js';
+import { getMotionPolicy } from '../motion/policy.js';
 import { t } from '../i18n/index.js';
+
+// 原生视图只在进入屏幕时创建，所以节点范围可以给大一些：上下左右各多一屏，平移时很少需要等新节点
+export const NATIVE_BUFFER_RATIO = 1;
 
 function cssVar(name) {
     try {
@@ -59,7 +70,6 @@ export function buildNativeMarkerStyle({ readVar = cssVar, sources = markerImage
         avoidText: color('--color-danger-text', '--color-danger'),
         avoidBackground: color('--color-bg-overlay'),
         avoidBorder: color('--color-danger'),
-        collisionSize: CLUSTER_DEFAULTS.radiusPx,
         kindSuffix: {
             avoid: t('map:marker.avoidSuffix'),
             unexplored: t('map:marker.unexploredSuffix'),
@@ -69,60 +79,129 @@ export function buildNativeMarkerStyle({ readVar = cssVar, sources = markerImage
     };
 }
 
-/** 当前模式的地点 → 原生标记（key 作为原生 id，图标种类同网页 placeGlyphKind） */
-export function nativeMarkerEntries(places) {
-    return normalizePlaces(places).map(({ key, lng, lat, place }) => ({
-        id: key,
-        lng,
-        lat,
-        name: String(place.name || ''),
-        kind: placeGlyphKind(place),
-        place
-    }));
+/** 快照里的节点 → 原生节点（店铺坐标；原生前的坐标换算在 NativeMapView.setNodes） */
+export function nativeNode(node) {
+    const cluster = node.kind === 'cluster';
+    const place = cluster ? null : node.place || {};
+    return {
+        id: node.key,
+        cluster,
+        lng: node.coordinate[0],
+        lat: node.coordinate[1],
+        count: node.count,
+        name: place ? String(place.name || '') : '',
+        glyph: place ? placeGlyphKind(place) : 'place'
+    };
+}
+
+function nodesSignature(nodes) {
+    return nodes.map((n) => `${n.id}|${n.lng}|${n.lat}|${n.count}|${n.glyph}|${n.name}`).join('\n');
 }
 
 export class NativeMarkerLayer {
     /**
      * @param {import('./nativeMapView.js').NativeMapView} map
-     * @param {{ onPlaceClick?: (place: object) => void,
-     *           onClusterMembers?: (members: { key: string, coordinate: [number, number], places: object[] }) => void }} options
+     * @param {{ onPlaceClick?: (place: object, node: object) => void,
+     *           onClusterClick?: (node: object, engine: ClusterEngine) => void,
+     *           clusterRadiusPx?: number }} options
      */
     constructor(map, options = {}) {
         this.map = map;
         this.options = options;
-        this.placeByKey = new Map();
+        this.zoomRange = getMapZoomRange(map);
+        this.engine = null;
+        this.snapshot = null;
+        this.logicalZoom = undefined;
+        this.queryMode = 'nearby';
         this.selectedKey = null;
-        this.signature = '';
+        this.sentKeys = new Set();
+        this.sentSignature = '';
+        this.version = 0;
+        this.cameraMoving = false;
+        this.pendingData = false;
         this.styleKey = '';
+        this.styleTimer = 0;
         this.destroyed = false;
+
+        this._onMoveStart = () => { this.cameraMoving = true; };
+        this._onMoveEnd = () => {
+            this.cameraMoving = false;
+            this.pendingData = false;
+            this._commit('camera');
+        };
         this._onMarkerTap = ({ id }) => {
-            const place = this.placeByKey.get(id);
-            if (place) this.options.onPlaceClick?.(place);
+            const node = this.snapshot?.nodeByKey.get(id);
+            const place = this.engine?.placeByKey.get(id);
+            if (place) this.options.onPlaceClick?.(place, node);
         };
-        this._onClusterMembers = ({ ids, lng, lat }) => {
-            const places = (Array.isArray(ids) ? ids : []).map((id) => this.placeByKey.get(id)).filter(Boolean);
-            if (places.length) this.options.onClusterMembers?.({ key: `cluster:${ids.slice().sort().join(',')}`, coordinate: [Number(lng), Number(lat)], places });
+        this._onClusterTap = ({ id }) => {
+            const node = this.snapshot?.nodeByKey.get(id);
+            if (node && node.kind === 'cluster' && this.engine) this.options.onClusterClick?.(node, this.engine);
         };
+        // 校准结果变了：同一份节点按新坐标重发（不播放转场）
+        this._onFrameChange = () => this._commit('frames');
+        map.on('movestart', this._onMoveStart);
+        map.on('moveend', this._onMoveEnd);
         map.on('markerTap', this._onMarkerTap);
-        map.on('clusterMembers', this._onClusterMembers);
+        map.on('clusterTap', this._onClusterTap);
+        map.on('framechange', this._onFrameChange);
+
         // 主题色、深浅色、皮肤变化：重新下发样式（网页标记靠 CSS 变量自动更新，原生要显式下发）
         this._onTheme = () => this._scheduleStyle();
         window.addEventListener('themechange', this._onTheme);
         this.themeObserver = typeof MutationObserver !== 'undefined' ? new MutationObserver(this._onTheme) : null;
         this.themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style', 'data-skin', 'class'] });
-        this.styleTimer = 0;
         this.refreshAppearance();
     }
 
-    update({ places = [] } = {}) {
+    /** 单一数据入口：当前模式下应参与聚合的完整列表（同 MarkerLayerController.update） */
+    update({ places = [], queryMode = 'nearby' } = {}) {
         if (this.destroyed) return;
-        const entries = nativeMarkerEntries(places);
-        this.placeByKey = new Map(entries.map((entry) => [entry.id, entry.place]));
-        // 只有 id、坐标、名称、图标种类变化才下发（评价、收藏等其他字段不影响标记）
-        const signature = entries.map((entry) => `${entry.id}|${entry.lng}|${entry.lat}|${entry.kind}|${entry.name}`).join('\n');
-        if (signature === this.signature) return;
-        this.signature = signature;
-        this.map.setPlaces(entries, this.selectedKey);
+        const normalized = normalizePlaces(places);
+        const signature = dataSignature(normalized);
+        if (!this.engine || this.engine.signature !== signature) {
+            this.engine = new ClusterEngine(normalized, {
+                maxZoom: Math.min(30, Math.ceil(this.zoomRange.max)),
+                minZoom: Math.max(0, Math.floor(this.zoomRange.min)),
+                radiusPx: this.options.clusterRadiusPx || CLUSTER_DEFAULTS.radiusPx
+            });
+        } else {
+            this.engine.updatePlaces(normalized);
+        }
+        this.queryMode = queryMode;
+        this._commit('data');
+    }
+
+    _commit(reason) {
+        if (this.destroyed || !this.engine) return;
+        // 拖动、缩放中不换节点（与网页相同）：数据变化等相机静止后一起提交
+        if (this.cameraMoving && reason === 'data') {
+            this.pendingData = true;
+            return;
+        }
+        const viewBounds = readViewBounds(this.map);
+        if (!viewBounds) return;
+        const zoom = Number(this.map.getZoom());
+        this.logicalZoom = computeLogicalZoom(zoom, this.logicalZoom, { minZoom: this.engine.minZoom, maxZoom: this.engine.maxZoom });
+        const next = buildSnapshot(this.engine, {
+            viewBounds,
+            logicalZoom: this.logicalZoom,
+            queryMode: this.queryMode,
+            bufferRatio: NATIVE_BUFFER_RATIO,
+            transitionVersion: ++this.version
+        });
+        const plan = planTransition(this.snapshot, next);
+        this.snapshot = next;
+        const nodes = next.visibleNodes.map(nativeNode);
+        const signature = nodesSignature(nodes);
+        // 平移后节点没变（仍在缓冲区内）：不用再发
+        if (signature === this.sentSignature && reason !== 'frames') return;
+        const policy = getMotionPolicy();
+        const animate = policy.clusterMotion && policy.pageVisible && plan.kind !== 'initial' && reason !== 'frames';
+        const prevKeys = this.sentKeys;
+        this.sentKeys = new Set(nodes.map((node) => node.id));
+        this.sentSignature = signature;
+        this.map.setNodes(nodes, plan, { prevKeys, animate, selected: this.selectedKey });
     }
 
     setSelectedKey(key) {
@@ -132,7 +211,7 @@ export class NativeMarkerLayer {
         this.map.setSelectedPlace(next);
     }
 
-    /** 皮肤、主题变化后重新下发样式（不重发地点） */
+    /** 皮肤、主题变化后重新下发样式（不重发节点） */
     refreshAppearance() {
         if (this.destroyed) return;
         const style = buildNativeMarkerStyle();
@@ -149,19 +228,20 @@ export class NativeMarkerLayer {
 
     setNativeGlassVisible() { }
 
-    /** MapView 的聚合展开在原生里完成，不需要网页的聚合引擎 */
     getEngine() {
-        return null;
+        return this.engine;
     }
 
+    /** 搜索结果自动适配视野时使用（同 MarkerLayerController） */
     getDataBounds() {
+        if (!this.engine || !this.engine.size) return null;
         let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
-        for (const place of this.placeByKey.values()) {
+        for (const place of this.engine.placeByKey.values()) {
             const lng = Number(place.longitude), lat = Number(place.latitude);
             minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
             minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
         }
-        return this.placeByKey.size ? { minLng, minLat, maxLng, maxLat } : null;
+        return { minLng, minLat, maxLng, maxLat };
     }
 
     destroy() {
@@ -170,7 +250,10 @@ export class NativeMarkerLayer {
         window.clearTimeout(this.styleTimer);
         window.removeEventListener('themechange', this._onTheme);
         this.themeObserver?.disconnect();
+        this.map.off('movestart', this._onMoveStart);
+        this.map.off('moveend', this._onMoveEnd);
         this.map.off('markerTap', this._onMarkerTap);
-        this.map.off('clusterMembers', this._onClusterMembers);
+        this.map.off('clusterTap', this._onClusterTap);
+        this.map.off('framechange', this._onFrameChange);
     }
 }

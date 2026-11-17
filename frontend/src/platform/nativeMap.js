@@ -1,18 +1,20 @@
 // iOS 原生底图（MapKit）的网页端会话。协议见 ios/App/App/NativeMapPlugin.swift。
 //
 // 底图、标记、聚合点与名称都由原生画：拖动缩放时 MapKit 在同一帧里移动它们，网页不逐帧参与。
-// 网页只在数据变化时下发（相机、标记、样式、覆盖物、触摸区域），原生把相机变化与点按作为事件回传。
+// 聚合仍由网页的聚合引擎计算：缩放结束、数据变化时下发一份节点快照与转场计划，原生按计划播放合并 / 拆分动画。
+// 网页只在这些时候下发（相机、节点、样式、覆盖物、触摸区域），原生把相机变化与点按作为事件回传。
 // 只在 iOS App 里、插件可用时启用；握手失败时 MapView 回到高德网页地图。
 import { getPlatform, isPluginAvailable } from './env.js';
 import { parseColorToRgb } from '../theme/theme.js';
 
 export const NATIVE_MAP_PROTOCOL = 1;
-export const NATIVE_MAP_EVENTS = Object.freeze(['camera', 'tap', 'markerTap', 'clusterMembers']);
+export const NATIVE_MAP_EVENTS = Object.freeze(['camera', 'tap', 'markerTap', 'clusterTap']);
 export const NATIVE_MAP_GLYPHS = Object.freeze(['place', 'avoid', 'unexplored', 'add']);
 export const NATIVE_MAP_OVERLAY_KINDS = Object.freeze(['location', 'pin', 'badge']);
 const PLUGIN_NAME = 'NativeMap';
 const CALL_TIMEOUT_MS = 2500;
-const PLACE_LIMIT = 50000;
+const NODE_LIMIT = 5000;
+const KEY_LIMIT = 160;
 const OVERLAY_LIMIT = 200;
 const PATH_POINT_LIMIT = 20000;
 const HOLE_LIMIT = 400;
@@ -78,21 +80,60 @@ export function nativeColor(value) {
 }
 
 /**
- * 标记列表按列编码（原生解析数组比解析对象数组快得多）。
- * @param {Array<{ id: string, lng: number, lat: number, name?: string, kind?: string }>} entries
+ * 一份节点快照按列编码（原生解析数组比解析对象数组快得多）。
+ * @param {Array<{ id: string, cluster: boolean, lng: number, lat: number, count?: number, name?: string, glyph?: string }>} nodes
  */
-export function encodeNativePlaces(entries) {
-    const ids = [], coords = [], names = [], kinds = [];
-    for (const entry of Array.isArray(entries) ? entries : []) {
-        if (ids.length >= PLACE_LIMIT) break;
-        const id = text(entry?.id, 120);
-        if (!id || !isNativeCoordinate(entry.lng, entry.lat)) continue;
+export function encodeNativeNodes(nodes) {
+    const ids = [], clusters = [], coords = [], counts = [], names = [], glyphs = [];
+    const seen = new Set();
+    for (const node of Array.isArray(nodes) ? nodes : []) {
+        if (ids.length >= NODE_LIMIT) break;
+        const id = text(node?.id, KEY_LIMIT);
+        if (!id || seen.has(id) || !isNativeCoordinate(node.lng, node.lat)) continue;
+        seen.add(id);
+        const cluster = node.cluster === true;
         ids.push(id);
-        coords.push(entry.lng, entry.lat);
-        names.push(text(entry.name));
-        kinds.push(NATIVE_MAP_GLYPHS.includes(entry.kind) ? entry.kind : 'place');
+        clusters.push(cluster);
+        coords.push(node.lng, node.lat);
+        counts.push(cluster ? Math.max(2, Math.round(Number(node.count) || 2)) : 1);
+        names.push(cluster ? '' : text(node.name));
+        glyphs.push(!cluster && NATIVE_MAP_GLYPHS.includes(node.glyph) ? node.glyph : 'place');
     }
-    return { ids, coords, names, kinds };
+    return { ids, clusters, coords, counts, names, glyphs };
+}
+
+/**
+ * 转场计划（cluster/transitions.js 的 planTransition）编码成扁平数组：成对的 [新, 旧, …]。
+ * 只保留两份快照里确实存在的 key（原生只认识它画过和这次要画的节点）。
+ */
+export function encodeNativePlan(plan, { nextKeys, prevKeys }) {
+    const has = (set, key) => typeof key === 'string' && key.length > 0 && key.length <= KEY_LIMIT && set.has(key);
+    const pairs = (map, left, right) => {
+        const out = [];
+        for (const [a, b] of map || []) if (has(left, a) && has(right, b)) out.push(a, b);
+        return out;
+    };
+    const list = (values, set) => [...(values || [])].filter((key) => has(set, key));
+    return {
+        reuse: pairs(plan?.reuse, nextKeys, prevKeys),
+        splitFrom: pairs(plan?.splitFrom, nextKeys, prevKeys),
+        mergeInto: pairs(plan?.mergeInto, prevKeys, nextKeys),
+        splitSources: list(plan?.splitSources, prevKeys),
+        mergeTargets: list(plan?.mergeTargets, nextKeys)
+    };
+}
+
+/** 校准搜索的参数清洗（与 Swift parseProbe 相同的上限） */
+export function sanitizeProbes(probes) {
+    const out = [];
+    for (const probe of Array.isArray(probes) ? probes : []) {
+        if (out.length >= 12) break;
+        const id = text(probe?.id, 64);
+        const names = (Array.isArray(probe?.names) ? probe.names : []).map((name) => text(name, 60)).filter(Boolean).slice(0, 4);
+        if (!id || !names.length || !isNativeCoordinate(probe.lng, probe.lat)) continue;
+        out.push({ id, names, lng: probe.lng, lat: probe.lat, radius: finite(probe.radius) ? Math.min(20000, Math.max(200, probe.radius)) : 3000 });
+    }
+    return out;
 }
 
 export function sanitizeOverlayMarker(marker) {
@@ -196,10 +237,10 @@ export class NativeMapSession {
     }
 
     /** 按发出顺序串行调用（相机与标记的先后不能乱）；会话结束后的调用直接丢弃 */
-    call(method, args = {}) {
+    call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS) {
         const run = async () => {
             if (this.stopped || !this.sessionId || !this.plugin) return null;
-            return withTimeout(this.plugin[method]({ sessionId: this.sessionId, ...args }), CALL_TIMEOUT_MS);
+            return withTimeout(this.plugin[method]({ sessionId: this.sessionId, ...args }), timeoutMs);
         };
         const next = this.chain.then(run, run);
         this.chain = next.catch(() => null);

@@ -18,6 +18,8 @@ const DATA_STRINGS = {
     "src/admin/AdminDashboard.jsx": ['用户管理', '操作日志', '标记点管理', '评论管理', 'QQ白名单管理', '公告发布', '普通用户管理', '皮肤兑换码', '住民反馈'],
     // 后端未登录报错的匹配词
     'src/admin/AdminComments.jsx': ['未登录'],
+    // iOS 原生底图坐标校准：交给苹果地点搜索的地标名称（搜索词，不是界面文案）
+    'src/map/nativeMapFrames.js': ['天安门', '东方明珠广播电视塔', '国际金融中心二期', '香港会议展览中心', '大三巴牌坊', '澳门旅游塔', '台北101', '台北车站'],
     'src/admin/AdminGeneralUsers.jsx': ['未登录'],
     'src/admin/AdminPlaces.jsx': ['未登录'],
     'src/admin/AdminUsers.jsx': ['未登录'],

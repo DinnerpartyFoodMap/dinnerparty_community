@@ -99,7 +99,7 @@
 
 - **iOS 18–25 也用原生地图控件**：`MapChromeView`、`MapChromeSheets` 等去掉 `@available(iOS 26.0, *)`，根控制器在 iOS 18 起都创建容器与控件宿主。材质统一走 `NativeGlassComponents.swift` 的 `chromeGlass` / `chromeGlassID` / `ChromeGlassContainer`：iOS 26 且住民打开「原生玻璃按钮」时是 Liquid Glass，否则是 `regularMaterial` + 1pt 细描边 + e1 阴影（设计参考第 5 节）；不用玻璃时没有玻璃融合形变，过渡靠各自的 transition。地点卡片的系统面板在 iOS 26 以前铺 `FM.UI.bgBase`。
 - **协议 16 → 17**：capabilities 不再上报 `supportsGlass`，版本号一致即可接管（宿主还没就绪时 `attach` 报 UNAVAILABLE，网页按普通故障重试）；setState 增加 `glass`（住民偏好）。「原生玻璃按钮」关掉只换材质，不再退回网页工具栏。
-- **原生底图（`NativeMapPlugin.swift` v1）**：MapKit 视图放在透明 WebView 下面，地点、聚合点与名称都是 MapKit 标注视图；网页侧 `platform/nativeMap.js`、`map/nativeMapView.js`、`map/nativeMarkerLayer.js`，见 [地图文档](../src/map/doc/README.md)。WebView 换成 `FoodMapWebView`（触摸分配），左边缘侧滑手势改挂在容器上。
+- **原生底图（`NativeMapPlugin.swift` v1）**：MapKit 视图放在透明 WebView 下面，地点、聚合点与名称都是 MapKit 标注视图；聚合沿用网页的聚合引擎与转场计划（`setNodes`），合并 / 拆分动画由原生按 `MARKER_TIMING` 播放；`search` 供坐标校准（苹果地点搜索查地标）；事件 `camera` / `tap` / `markerTap` / `clusterTap`。网页侧 `platform/nativeMap.js`、`map/nativeMapView.js`、`map/nativeMarkerLayer.js`、`map/nativeMapFrames.js`，见 [地图文档](../src/map/doc/README.md)。WebView 换成 `FoodMapWebView`（触摸分配），左边缘侧滑手势改挂在容器上。
 - 网页与 Swift 同时升级；`test:native-chrome` 覆盖 v17 握手与 `glass` 下发，`test:map` 的 `test-native-map.mjs` 覆盖底图协议清洗、替身与 Swift 白名单对照。未验证：Swift 未编译，iOS 18 与 iOS 26 的控件外观、底图触摸与标记需真机检查（[原生案例](../native/doc/README.md)）。
 
 ## 日记 · 同好细节（2026-11-02 第七轮）

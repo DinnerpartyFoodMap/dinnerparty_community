@@ -1,31 +1,40 @@
 import UIKit
 import MapKit
 
-/// 原生底图（MapKit）：放在透明 WebView 下面。标记、聚合点、名称与覆盖物都是 MapKit 的标注视图，
-/// 拖动、缩放时由 MapKit 在同一帧里移动，不经过网页。网页只在数据变化时下发（标记、样式、覆盖物、相机），
-/// 相机变化与点按以事件回传（NativeMapPlugin）。
+/// 原生底图（MapKit）：放在透明 WebView 下面。地点、聚合点、数量与名称都是 MapKit 的标注视图，
+/// 拖动、缩放时由 MapKit 在同一帧里移动，不经过网页。
+///
+/// 聚合与网页相同：网页的聚合引擎（Supercluster）在缩放结束时算出新的节点和转场计划（谁沿用、谁从哪个聚合拆出、
+/// 谁并进哪个聚合，src/map/cluster/transitions.js），原生按计划用 Core Animation 播放与网页同样节奏的动画
+/// （MARKER_TIMING：拆分 320ms 从父聚合位置飞出；合并 260ms 吸向父聚合并缩小，父聚合延迟 110ms 回弹出现）。
+/// 动画在系统渲染进程里逐帧执行，网页只在缩放结束时发一次计划。新的手势开始时，进行中的转场立即收敛到终态（同网页）。
 ///
 /// 缩放级别与网页、高德一致（Web Mercator、256 像素瓦片）：MKMapSize.world 宽 2^28 = 256·2^20，
 /// 所以 z = 20 − log2(可见 MKMapRect 宽度 / 视图宽度)。地图不旋转、不倾斜，网页按同一公式在 JS 里投影。
-/// 坐标原样使用：店铺坐标在高德的境内格子里是 GCJ-02，MapKit 在中国大陆同样按 GCJ-02 显示（港澳台与边境待实测）。
+/// 坐标由网页换算好（map/nativeMapFrames.js 按校准结果把店铺坐标转成这台手机上底图用的坐标）。
 final class NativeMapController: NSObject {
-    static let clusterIdentifier = "fm.place"
     static let minZoom: Double = 3
     static let maxZoom: Double = 20
     /// MKMapPoint 与 256 像素瓦片缩放级别的换算基准（log2(2^28 / 256) = 20）
     static let worldZoom = log2(MKMapSize.world.width / 256)
     /// 拖动、缩放过程中的相机事件最多这么频繁（秒）
     static let changeInterval: CFTimeInterval = 0.1
+    /// 一次转场最多播放这么多个节点的动画（网页 LIMITS.travelers）；超出时直接到终态
+    static let animatedNodeLimit = 400
+    /// 屏幕外这么远的节点不播放动画（网页 ONSCREEN_MARGIN）
+    static let onscreenMargin: CGFloat = 80
 
     let mapView: MKMapView
 
     var onCamera: (([String: Any]) -> Void)?
     var onTap: ((CLLocationCoordinate2D) -> Void)?
     var onMarkerTap: ((String) -> Void)?
-    var onClusterMembers: (([String], CLLocationCoordinate2D) -> Void)?
+    var onClusterTap: ((String) -> Void)?
 
     private(set) var style = NativeMapMarkerStyle()
-    private var places: [String: NativeMapPlaceAnnotation] = [:]
+    private var nodes: [String: NativeMapNodeAnnotation] = [:]
+    private var ghosts: [NativeMapNodeAnnotation] = []
+    private var transition = 0
     private var selectedId: String?
     private var overlayAnnotations: [String: NativeMapOverlayAnnotation] = [:]
     private var polylines: [String: NativeMapPolyline] = [:]
@@ -33,6 +42,7 @@ final class NativeMapController: NSObject {
     private var moveStartZoom: Double = 0
     private var lastChangeEmit: CFTimeInterval = 0
     private var tapRecognizer: UITapGestureRecognizer?
+    private var doubleTapLinked = false
 
     override init() {
         mapView = MKMapView(frame: .zero)
@@ -48,8 +58,7 @@ final class NativeMapController: NSObject {
         mapView.selectableMapFeatures = []
         mapView.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .default)
         mapView.delegate = self
-        mapView.register(NativeMapPlaceView.self, forAnnotationViewWithReuseIdentifier: NativeMapPlaceView.reuseId)
-        mapView.register(NativeMapClusterView.self, forAnnotationViewWithReuseIdentifier: NativeMapClusterView.reuseId)
+        mapView.register(NativeMapNodeView.self, forAnnotationViewWithReuseIdentifier: NativeMapNodeView.reuseId)
         mapView.register(NativeMapOverlayView.self, forAnnotationViewWithReuseIdentifier: NativeMapOverlayView.reuseId)
         installTap()
     }
@@ -68,10 +77,12 @@ final class NativeMapController: NSObject {
 
     /// 网页会话结束（重载、失效）：收起并清空，等待下一次握手
     func detach() {
+        transition += 1
         mapView.isHidden = true
         mapView.removeAnnotations(mapView.annotations)
         mapView.removeOverlays(mapView.overlays)
-        places.removeAll()
+        nodes.removeAll()
+        ghosts.removeAll()
         overlayAnnotations.removeAll()
         polylines.removeAll()
         selectedId = nil
@@ -162,7 +173,7 @@ final class NativeMapController: NSObject {
 
     // MARK: - 外观
 
-    /// dark 跟网页的深浅色；muted 为高德的浅色 / 灰色样式（标准地图的柔和强调）
+    /// dark 跟所选样式（高德的深色样式）；muted 为高德的浅色 / 灰色样式（标准地图的柔和强调）
     func setAppearance(dark: Bool, muted: Bool) {
         mapView.overrideUserInterfaceStyle = dark ? .dark : .light
         let emphasis: MKStandardMapConfiguration.EmphasisStyle = muted ? .muted : .default
@@ -175,95 +186,139 @@ final class NativeMapController: NSObject {
         if mapView.layoutMargins != insets { mapView.layoutMargins = insets }
     }
 
-    // MARK: - 标记
+    // MARK: - 标记与聚合
 
     func setStyle(_ next: NativeMapMarkerStyle) {
         style = next
-        for annotation in mapView.annotations {
-            guard let view = mapView.view(for: annotation) else { continue }
-            if let place = annotation as? NativeMapPlaceAnnotation, let placeView = view as? NativeMapPlaceView {
-                placeView.configure(place, style: style)
-            } else if let cluster = annotation as? MKClusterAnnotation, let clusterView = view as? NativeMapClusterView {
-                clusterView.configure(count: cluster.memberAnnotations.count, style: style)
-            }
+        for annotation in nodes.values {
+            (mapView.view(for: annotation) as? NativeMapNodeView)?.configure(annotation, style: style)
         }
-    }
-
-    /// 整份替换当前要显示的地点：只增删变化的部分，坐标变化原地移动，名称、图标变化原地重画
-    func setPlaces(_ next: [NativeMapPlaceInput], selected: String?) {
-        selectedId = selected
-        var seen = Set<String>()
-        var added: [NativeMapPlaceAnnotation] = []
-        var reinserted: [NativeMapPlaceAnnotation] = []
-        for input in next {
-            guard !seen.contains(input.id) else { continue }
-            seen.insert(input.id)
-            let isSelected = input.id == selected
-            if let existing = places[input.id] {
-                let clusteringChanged = existing.selected != isSelected
-                let appearanceChanged = existing.name != input.name || existing.glyph != input.glyph || clusteringChanged
-                if existing.coordinate.latitude != input.coordinate.latitude || existing.coordinate.longitude != input.coordinate.longitude {
-                    existing.coordinate = input.coordinate
-                }
-                existing.name = input.name
-                existing.glyph = input.glyph
-                existing.accessibility = input.accessibility
-                existing.selected = isSelected
-                if clusteringChanged {
-                    // 选中的地点不参与聚合：重新加入，MapKit 才会重新计算聚合
-                    reinserted.append(existing)
-                } else if appearanceChanged, let view = mapView.view(for: existing) as? NativeMapPlaceView {
-                    view.configure(existing, style: style)
-                }
-            } else {
-                let annotation = NativeMapPlaceAnnotation(input: input, selected: isSelected)
-                places[input.id] = annotation
-                added.append(annotation)
-            }
-        }
-        let removed = places.filter { !seen.contains($0.key) }
-        for key in removed.keys { places.removeValue(forKey: key) }
-        if !removed.isEmpty || !reinserted.isEmpty { mapView.removeAnnotations(Array(removed.values) + reinserted) }
-        if !added.isEmpty || !reinserted.isEmpty { mapView.addAnnotations(added + reinserted) }
     }
 
     func setSelected(_ id: String?) {
         guard id != selectedId else { return }
         let previous = selectedId
         selectedId = id
-        var changed: [NativeMapPlaceAnnotation] = []
         for key in [previous, id].compactMap({ $0 }) {
-            guard let place = places[key] else { continue }
-            place.selected = key == id
-            changed.append(place)
+            guard let annotation = nodes[key] else { continue }
+            annotation.selected = key == id
+            (mapView.view(for: annotation) as? NativeMapNodeView)?.configure(annotation, style: style)
         }
-        guard !changed.isEmpty else { return }
-        mapView.removeAnnotations(changed)
-        mapView.addAnnotations(changed)
     }
 
-    /// 点聚合：能放大拆开就把成员放进可见区域；成员重合或已到最大缩放时交给网页列出成员
-    private func expand(_ cluster: MKClusterAnnotation) {
-        let members = cluster.memberAnnotations.compactMap { $0 as? NativeMapPlaceAnnotation }
-        guard !members.isEmpty else { return }
-        var rect = MKMapRect.null
-        for member in members {
-            rect = rect.union(MKMapRect(origin: MKMapPoint(member.coordinate), size: MKMapSize(width: 0, height: 0)))
+    /// 网页的一份新快照与转场计划。沿用的节点原地更新（位置变了从旧位置滑过去，数量变了轻微回弹）；
+    /// 新节点按计划从父聚合飞出、作为汇合目标回弹出现，或淡入；离开的节点吸向父聚合、原地收拢或淡出后移除。
+    func setNodes(_ inputs: [NativeMapNodeInput], plan: NativeMapTransitionPlan, animate requested: Bool, selected: String?) {
+        finishTransitions()
+        transition += 1
+        let version = transition
+        let reduced = UIAccessibility.isReduceMotionEnabled
+        let animate = requested && !mapView.isHidden && mapView.window != nil && inputs.count <= Self.animatedNodeLimit
+        selectedId = selected
+        let previous = nodes
+        var next: [String: NativeMapNodeAnnotation] = [:]
+        var consumed = Set<String>()
+        var added: [NativeMapNodeAnnotation] = []
+        let deadline = CACurrentMediaTime() + 0.2
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in self?.completeTransition(version) }
+
+        for input in inputs where next[input.id] == nil {
+            let isSelected = input.id == selected
+            let previousKey = plan.reuse[input.id] ?? (previous[input.id] != nil ? input.id : nil)
+            if let previousKey, !consumed.contains(previousKey), let annotation = previous[previousKey] {
+                // 沿用：同一个视图，原地更新
+                consumed.insert(previousKey)
+                let fromPoint = point(annotation.coordinate)
+                let oldCount = annotation.count
+                let wasCluster = annotation.cluster
+                let moved = annotation.coordinate.latitude != input.coordinate.latitude || annotation.coordinate.longitude != input.coordinate.longitude
+                annotation.apply(input, selected: isSelected)
+                if moved { annotation.coordinate = input.coordinate }
+                next[input.id] = annotation
+                guard let view = mapView.view(for: annotation) as? NativeMapNodeView else { continue }
+                view.configure(annotation, style: style)
+                guard animate, isOnScreen(view) else { continue }
+                if moved {
+                    let to = point(input.coordinate)
+                    view.playMove(from: CGPoint(x: fromPoint.x - to.x, y: fromPoint.y - to.y), reduced: reduced)
+                }
+                if wasCluster && input.cluster && oldCount != input.count && !reduced { view.playRecount() }
+                continue
+            }
+            let annotation = NativeMapNodeAnnotation(input: input, selected: isSelected)
+            if animate {
+                if let parentKey = plan.splitFrom[input.id], let parent = previous[parentKey], !reduced {
+                    // 从父聚合的位置飞出；起始大小按父聚合与自己的高度比缩小（网页 parentScale × 0.7）
+                    let parentHeight = NativeMapGlyph.size(cluster: parent.cluster, count: parent.count, style: style).height
+                    let ownHeight = NativeMapGlyph.size(cluster: input.cluster, count: input.count, style: style).height
+                    annotation.entrance = .split(from: parent.coordinate, scale: min(1, parentHeight / max(1, ownHeight) * 0.7))
+                } else if plan.mergeTargets.contains(input.id) && !reduced {
+                    annotation.entrance = .mergeTarget
+                } else {
+                    annotation.entrance = .fade
+                }
+                annotation.entranceDeadline = deadline
+            }
+            next[input.id] = annotation
+            added.append(annotation)
         }
-        // 同一位置（几个点在最大缩放下也不到 1 个屏幕点）放大也拆不开
-        let samePlace = rect.size.width / Self.scale(for: Self.maxZoom) < 1 && rect.size.height / Self.scale(for: Self.maxZoom) < 1
-        let current = zoom
-        if samePlace || current >= Self.maxZoom - 0.05 {
-            onClusterMembers?(members.map(\.id), cluster.coordinate)
-            return
+
+        var removeNow: [NativeMapNodeAnnotation] = []
+        for (key, annotation) in previous where !consumed.contains(key) {
+            guard animate, let view = mapView.view(for: annotation) as? NativeMapNodeView, isOnScreen(view) else {
+                removeNow.append(annotation)
+                continue
+            }
+            // 残影：只做视觉过渡、不可点，转场结束后移除
+            annotation.ghost = true
+            view.configure(annotation, style: style)
+            ghosts.append(annotation)
+            if let targetKey = plan.mergeInto[key], let target = next[targetKey], !reduced {
+                let from = point(annotation.coordinate)
+                let to = point(target.coordinate)
+                view.playMergeExit(by: CGPoint(x: to.x - from.x, y: to.y - from.y))
+            } else if plan.splitSources.contains(key) && !reduced {
+                view.playSplitSourceExit()
+            } else {
+                view.playFadeExit(reduced: reduced)
+            }
         }
-        let margins = mapView.layoutMargins
-        let pad: CGFloat = 48
-        let padding = UIEdgeInsets(top: margins.top + pad, left: pad, bottom: margins.bottom + pad, right: pad)
-        guard let fit = fitZoom(rect, padding: padding) else { return }
-        // 至少放大到下一级：成员本来就都在视野里时相机也要动，聚合才会拆开（与网页 handleClusterClick 相同）
-        let target = Self.clampZoom(max(fit, ceil(current + 0.01)))
-        moveCamera(to: rect, padding: padding, zoom: target, animated: true)
+
+        nodes = next
+        if !removeNow.isEmpty { mapView.removeAnnotations(removeNow) }
+        if !added.isEmpty { mapView.addAnnotations(added) }
+        CATransaction.commit()
+    }
+
+    /// 新的手势、新的快照到来时：进行中的转场立即收敛到终态（视图回到静止位置，残影移除）
+    private func finishTransitions() {
+        transition += 1
+        for annotation in nodes.values {
+            annotation.entrance = nil
+            (mapView.view(for: annotation) as? NativeMapNodeView)?.finishAnimations()
+        }
+        if !ghosts.isEmpty {
+            mapView.removeAnnotations(ghosts)
+            ghosts.removeAll()
+        }
+    }
+
+    private func completeTransition(_ version: Int) {
+        guard version == transition, !ghosts.isEmpty else { return }
+        mapView.removeAnnotations(ghosts)
+        ghosts.removeAll()
+    }
+
+    private func point(_ coordinate: CLLocationCoordinate2D) -> CGPoint {
+        mapView.convert(coordinate, toPointTo: mapView)
+    }
+
+    private func isOnScreen(_ view: UIView) -> Bool {
+        guard let superview = view.superview else { return false }
+        let center = superview.convert(view.center, to: mapView)
+        return mapView.bounds.insetBy(dx: -Self.onscreenMargin, dy: -Self.onscreenMargin).contains(center)
     }
 
     // MARK: - 覆盖物（添加地点的图钉、我的位置、路线与起终点、日记站点）
@@ -339,8 +394,6 @@ final class NativeMapController: NSObject {
         tapRecognizer = tap
     }
 
-    private var doubleTapLinked = false
-
     /// 双击放大不能同时算作一次点按：等 MapKit 的双击识别失败后再处理
     private func requireDoubleTapFailure() {
         guard let tap = tapRecognizer, !doubleTapLinked else { return }
@@ -362,6 +415,40 @@ final class NativeMapController: NSObject {
         }
         onTap?(mapView.convert(point, toCoordinateFrom: mapView))
     }
+
+    // MARK: - 校准用的地点搜索
+
+    /// 苹果地点搜索：在给定位置附近按名称依次搜（中文、英文），把搜到的前几个坐标原样返回给网页判断坐标系
+    static func search(_ probe: NativeMapSearchProbe, names: ArraySlice<String>? = nil, completion: @escaping ([Double]) -> Void) {
+        var remaining = names ?? probe.names[...]
+        guard let name = remaining.popFirst() else {
+            completion([])
+            return
+        }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = name
+        request.region = MKCoordinateRegion(center: probe.center, latitudinalMeters: probe.radius * 2, longitudinalMeters: probe.radius * 2)
+        request.resultTypes = .pointOfInterest
+        let localSearch = MKLocalSearch(request: request)
+        Self.activeSearches.insert(localSearch)
+        localSearch.start { response, _ in
+            Self.activeSearches.remove(localSearch)
+            var points: [Double] = []
+            for item in (response?.mapItems ?? []).prefix(5) {
+                let coordinate = item.placemark.coordinate
+                points.append(coordinate.longitude)
+                points.append(coordinate.latitude)
+            }
+            if points.isEmpty {
+                Self.search(probe, names: remaining, completion: completion)
+            } else {
+                completion(points)
+            }
+        }
+    }
+
+    /// 搜索进行中要保持引用
+    private static var activeSearches = Set<MKLocalSearch>()
 }
 
 extension NativeMapController: UIGestureRecognizerDelegate {
@@ -373,14 +460,9 @@ extension NativeMapController: UIGestureRecognizerDelegate {
 
 extension NativeMapController: MKMapViewDelegate {
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        if let place = annotation as? NativeMapPlaceAnnotation {
-            let view = mapView.dequeueReusableAnnotationView(withIdentifier: NativeMapPlaceView.reuseId, for: place)
-            (view as? NativeMapPlaceView)?.configure(place, style: style)
-            return view
-        }
-        if let cluster = annotation as? MKClusterAnnotation {
-            let view = mapView.dequeueReusableAnnotationView(withIdentifier: NativeMapClusterView.reuseId, for: cluster)
-            (view as? NativeMapClusterView)?.configure(count: cluster.memberAnnotations.count, style: style)
+        if let node = annotation as? NativeMapNodeAnnotation {
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: NativeMapNodeView.reuseId, for: node)
+            (view as? NativeMapNodeView)?.configure(node, style: style)
             return view
         }
         if let overlay = annotation as? NativeMapOverlayAnnotation {
@@ -389,6 +471,28 @@ extension NativeMapController: MKMapViewDelegate {
             return view
         }
         return nil
+    }
+
+    /// 新节点的视图加到地图上时播放入场（视图由 MapKit 按需创建，所以入场在这里而不是 setNodes 里开始）
+    func mapView(_ mapView: MKMapView, didAdd views: [MKAnnotationView]) {
+        let now = CACurrentMediaTime()
+        let reduced = UIAccessibility.isReduceMotionEnabled
+        for case let view as NativeMapNodeView in views {
+            guard let annotation = view.annotation as? NativeMapNodeAnnotation, let entrance = annotation.entrance else { continue }
+            annotation.entrance = nil
+            // 过了时限才创建的视图（之后平移到可见范围）直接显示，不补播
+            guard now <= annotation.entranceDeadline, !annotation.ghost else { continue }
+            switch entrance {
+            case .split(let from, let scale):
+                let parent = point(from)
+                let own = point(annotation.coordinate)
+                view.playSplitEntrance(offset: CGPoint(x: parent.x - own.x, y: parent.y - own.y), scale: scale)
+            case .mergeTarget:
+                view.playMergeTargetEntrance()
+            case .fade:
+                view.playFadeEntrance(reduced: reduced)
+            }
+        }
     }
 
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -402,10 +506,11 @@ extension NativeMapController: MKMapViewDelegate {
         guard let annotation = view.annotation else { return }
         // 选中状态由网页决定（setSelected）：系统的选中立即取消，同一个标记可以再点
         DispatchQueue.main.async { mapView.deselectAnnotation(annotation, animated: false) }
-        if let cluster = annotation as? MKClusterAnnotation {
-            expand(cluster)
-        } else if let place = annotation as? NativeMapPlaceAnnotation {
-            onMarkerTap?(place.id)
+        guard let node = annotation as? NativeMapNodeAnnotation, !node.ghost else { return }
+        if node.cluster {
+            onClusterTap?(node.id)
+        } else {
+            onMarkerTap?(node.id)
         }
     }
 
@@ -413,6 +518,8 @@ extension NativeMapController: MKMapViewDelegate {
         guard !mapView.isHidden, !moving else { return }
         moving = true
         moveStartZoom = zoom
+        // 手势优先：进行中的合并、拆分立即收敛（网页 movestart / zoomstart 时同样处理）
+        finishTransitions()
         onCamera?(cameraPayload(phase: "start", gesture: userGestureActive))
     }
 
@@ -435,35 +542,71 @@ extension NativeMapController: MKMapViewDelegate {
 
 // MARK: - 数据
 
-/// 网页下发的一个地点（标记只需要这些字段）
-struct NativeMapPlaceInput {
+/// 网页下发的一个节点：单个地点或聚合（聚合与 key 由网页的聚合引擎决定）
+struct NativeMapNodeInput {
     let id: String
+    let cluster: Bool
     let coordinate: CLLocationCoordinate2D
+    let count: Int
     let name: String
-    /// 图标种类：place / avoid / unexplored / add（与 markerContent.js 的 placeGlyphKind 相同）
+    /// 单点的图标种类：place / avoid / unexplored / add（与 markerContent.js 的 placeGlyphKind 相同）
     let glyph: String
-    let accessibility: String
 }
 
-final class NativeMapPlaceAnnotation: NSObject, MKAnnotation {
-    let id: String
+/// 网页的转场计划（cluster/transitions.js 的 planTransition），只含两份快照都用到的 key
+struct NativeMapTransitionPlan {
+    /// 新 key → 旧 key：沿用同一个视图
+    var reuse: [String: String] = [:]
+    /// 新 key → 旧父聚合：从父聚合的位置飞出
+    var splitFrom: [String: String] = [:]
+    /// 旧 key → 新父聚合：吸向父聚合并收拢
+    var mergeInto: [String: String] = [:]
+    /// 被拆开的旧聚合：原地收拢淡出
+    var splitSources: Set<String> = []
+    /// 汇合后出现的新聚合：延迟回弹出现
+    var mergeTargets: Set<String> = []
+}
+
+enum NativeMapEntrance {
+    case split(from: CLLocationCoordinate2D, scale: CGFloat)
+    case mergeTarget
+    case fade
+}
+
+final class NativeMapNodeAnnotation: NSObject, MKAnnotation {
+    var id: String
     @objc dynamic var coordinate: CLLocationCoordinate2D
+    var cluster: Bool
+    var count: Int
     var name: String
     var glyph: String
-    var accessibility: String
     var selected: Bool
+    /// 离开中的残影：不可点，转场结束后移除
+    var ghost = false
+    var entrance: NativeMapEntrance?
+    var entranceDeadline: CFTimeInterval = 0
 
-    init(input: NativeMapPlaceInput, selected: Bool) {
+    init(input: NativeMapNodeInput, selected: Bool) {
         id = input.id
         coordinate = input.coordinate
+        cluster = input.cluster
+        count = input.count
         name = input.name
         glyph = input.glyph
-        accessibility = input.accessibility
         self.selected = selected
     }
 
-    var title: String? { name }
-    var avoid: Bool { glyph == "avoid" }
+    /// 沿用时换成新节点的内容（坐标由调用方单独设置，以便先记下旧位置）
+    func apply(_ input: NativeMapNodeInput, selected: Bool) {
+        id = input.id
+        cluster = input.cluster
+        count = input.count
+        name = input.name
+        glyph = input.glyph
+        self.selected = selected
+    }
+
+    var title: String? { cluster ? nil : name }
 }
 
 /// 标记的图标与名称样式：网页按当前主题色、皮肤与深浅色算好后下发（与 marker-motion.css 同一套取值）
@@ -483,8 +626,6 @@ struct NativeMapMarkerStyle {
     var avoidText: UIColor = .systemRed
     var avoidBackground: UIColor = .secondarySystemBackground
     var avoidBorder: UIColor = .systemRed
-    /// 与网页聚合半径（CLUSTER_DEFAULTS.radiusPx）相当的碰撞框边长：框相互重叠时 MapKit 合并为聚合
-    var collisionSize: CGFloat = 68
     /// 读屏：地点名后的后缀（避雷、待探索、未收录）与聚合的读法（%d 为数量）
     var kindSuffix: [String: String] = [:]
     var clusterLabel = "%d 个地点"
@@ -564,6 +705,14 @@ final class NativeMapPolyline: MKPolyline {
     }
 }
 
+/// 校准用的一次地点搜索（NativeMapPlugin.search）
+struct NativeMapSearchProbe {
+    let id: String
+    let names: [String]
+    let center: CLLocationCoordinate2D
+    let radius: CLLocationDistance
+}
+
 // MARK: - 图片
 
 /// 标记图片：读取网页下发的地址（同 MapChromeSkinImages），按显示尺寸预先缩好并缓存，避免每个标记都缩放大图
@@ -601,6 +750,13 @@ enum NativeMapGlyph {
         guard count >= 2 else { return 1 }
         let growth = min(0.55, 0.09 * log2(max(1, Double(count) / 2)))
         return CGFloat(1 + growth * (0.3 / 0.55))
+    }
+
+    static func size(cluster: Bool, count: Int, style: NativeMapMarkerStyle) -> CGSize {
+        guard cluster else { return style.glyphSize }
+        let scale = clusterScale(count)
+        return CGSize(width: (style.clusterBaseSize.width * scale * 10).rounded() / 10,
+                      height: (style.clusterBaseSize.height * scale * 10).rounded() / 10)
     }
 
     static func formatCount(_ count: Int) -> String {
@@ -665,11 +821,38 @@ final class NativeMapNameLabel: UILabel {
     }
 }
 
-/// 单个地点：36×43 图标（底边中点在坐标上）与下方的名称。碰撞框取网页的聚合半径，图标居中，
-/// 名称画在框外、不参与碰撞；点按范围是图标（至少 44×44）与名称。
-final class NativeMapPlaceView: MKAnnotationView {
-    static let reuseId = "fm.place"
-    private let glyphView = UIImageView()
+/// 一个节点（单个地点或聚合），结构与网页 markerContent.js 相同：
+/// 视图本身（底边中点在坐标上）└ travel 位移层（转场的平移与淡入淡出）
+///                              ├ glyph 图形层（缩放与回弹，锚点在底边中点）：图标或聚合图 + 数量
+///                              └ label 名称（单点；转场期间隐藏，结束后淡入）
+/// 动画都用 Core Animation：先把图层设成终态，再加从起始值出发的动画，收敛时只要移除动画。
+final class NativeMapNodeView: MKAnnotationView {
+    static let reuseId = "fm.node"
+
+    // 与网页 MARKER_TIMING 相同（秒）
+    private enum Timing {
+        static let merge: CFTimeInterval = 0.26
+        static let mergeTargetDelay: CFTimeInterval = 0.11
+        static let mergeTarget: CFTimeInterval = 0.21
+        static let split: CFTimeInterval = 0.32
+        static let splitSource: CFTimeInterval = 0.17
+        static let fadeIn: CFTimeInterval = 0.16
+        static let fadeOut: CFTimeInterval = 0.14
+        static let reposition: CFTimeInterval = 0.22
+        static let reducedFade: CFTimeInterval = 0.12
+        static let labelIn: CFTimeInterval = 0.14
+    }
+
+    // 网页 EASE_OUT、EASE_IN_OUT 与 CSS 的 ease-out / ease-in
+    private static let easeOut = CAMediaTimingFunction(controlPoints: 0.22, 0.8, 0.25, 1)
+    private static let easeInOut = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.2, 1)
+    private static let cssEaseOut = CAMediaTimingFunction(name: .easeOut)
+    private static let cssEaseIn = CAMediaTimingFunction(name: .easeIn)
+
+    private let travel = UIView()
+    private let glyph = UIView()
+    private let imageView = UIImageView()
+    private let countLabel = UILabel()
     private let label = NativeMapNameLabel(frame: .zero)
     private var glyphFrame = CGRect.zero
 
@@ -678,10 +861,17 @@ final class NativeMapPlaceView: MKAnnotationView {
         backgroundColor = .clear
         clipsToBounds = false
         canShowCallout = false
-        collisionMode = .rectangle
-        glyphView.contentMode = .center
-        addSubview(glyphView)
-        addSubview(label)
+        travel.isUserInteractionEnabled = false
+        glyph.isUserInteractionEnabled = false
+        glyph.layer.anchorPoint = CGPoint(x: 0.5, y: 1)
+        imageView.contentMode = .center
+        countLabel.textAlignment = .center
+        countLabel.isAccessibilityElement = false
+        addSubview(travel)
+        travel.addSubview(glyph)
+        glyph.addSubview(imageView)
+        glyph.addSubview(countLabel)
+        travel.addSubview(label)
         isAccessibilityElement = true
         accessibilityTraits = .button
     }
@@ -690,83 +880,159 @@ final class NativeMapPlaceView: MKAnnotationView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ place: NativeMapPlaceAnnotation, style: NativeMapMarkerStyle) {
-        let glyph = style.glyphSize
-        let box = CGSize(width: max(glyph.width, style.collisionSize), height: max(glyph.height, style.collisionSize))
-        bounds = CGRect(origin: .zero, size: box)
-        // 视图中心对准图标中心：图标底边中点落在坐标上
-        centerOffset = CGPoint(x: 0, y: -glyph.height / 2)
-        glyphFrame = CGRect(x: (box.width - glyph.width) / 2, y: (box.height - glyph.height) / 2, width: glyph.width, height: glyph.height)
-        glyphView.frame = glyphFrame
-        glyphView.image = NativeMapImages.image(style.glyphs[place.glyph] ?? style.glyphs["place"], size: glyph) ?? NativeMapImages.fallbackPin
-        label.apply(name: place.name, avoid: place.avoid, selected: place.selected, style: style)
-        let width = label.fittingWidth
-        label.frame = CGRect(x: (box.width - width) / 2, y: glyphFrame.maxY + 3, width: width, height: NativeMapNameLabel.height)
-        label.isHidden = place.name.isEmpty
-        clusteringIdentifier = place.selected ? nil : NativeMapController.clusterIdentifier
-        displayPriority = place.selected ? .required : .defaultHigh
-        zPriority = place.selected ? .max : .defaultUnselected
-        let suffix = style.kindSuffix[place.glyph] ?? ""
-        accessibilityLabel = place.name.isEmpty ? place.accessibility : place.name + suffix
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        finishAnimations()
     }
 
+    func configure(_ node: NativeMapNodeAnnotation, style: NativeMapMarkerStyle) {
+        let size = NativeMapGlyph.size(cluster: node.cluster, count: node.count, style: style)
+        bounds = CGRect(origin: .zero, size: size)
+        // 视图中心对准图形中心：图形底边中点落在坐标上
+        centerOffset = CGPoint(x: 0, y: -size.height / 2)
+        glyphFrame = CGRect(origin: .zero, size: size)
+        travel.frame = glyphFrame
+        glyph.bounds = glyphFrame
+        glyph.center = CGPoint(x: size.width / 2, y: size.height)
+        imageView.frame = glyphFrame
+        if node.cluster {
+            imageView.image = NativeMapImages.image(style.clusterImage, size: size, crop: style.clusterCrop) ?? NativeMapImages.fallbackPin
+            let text = NativeMapGlyph.formatCount(node.count)
+            countLabel.isHidden = false
+            countLabel.text = text
+            countLabel.font = .monospacedDigitSystemFont(ofSize: NativeMapGlyph.countFontSize(text, scale: NativeMapGlyph.clusterScale(node.count)), weight: .semibold)
+            countLabel.textColor = style.countColor
+            countLabel.sizeToFit()
+            countLabel.center = CGPoint(x: size.width * style.countPosition.x, y: size.height * style.countPosition.y)
+            label.isHidden = true
+            accessibilityLabel = style.clusterLabel.replacingOccurrences(of: "%d", with: String(node.count))
+        } else {
+            imageView.image = NativeMapImages.image(style.glyphs[node.glyph] ?? style.glyphs["place"], size: size) ?? NativeMapImages.fallbackPin
+            countLabel.isHidden = true
+            label.apply(name: node.name, avoid: node.glyph == "avoid", selected: node.selected, style: style)
+            let width = label.fittingWidth
+            label.frame = CGRect(x: (size.width - width) / 2, y: size.height + 3, width: width, height: NativeMapNameLabel.height)
+            label.isHidden = node.name.isEmpty
+            accessibilityLabel = node.name + (style.kindSuffix[node.glyph] ?? "")
+        }
+        clusteringIdentifier = nil
+        displayPriority = .required
+        // 层级与网页 Z_INDEX 相同的先后：残影 < 单点 < 聚合（越大越靠上）< 选中
+        let base = MKAnnotationViewZPriority.defaultUnselected.rawValue
+        if node.ghost {
+            zPriority = MKAnnotationViewZPriority(rawValue: base - 100)
+        } else if node.selected {
+            zPriority = .max
+        } else if node.cluster {
+            zPriority = MKAnnotationViewZPriority(rawValue: base + 10 + Float(min(40, log2(Double(max(node.count, 1))) * 4)))
+        } else {
+            zPriority = .defaultUnselected
+        }
+        isEnabled = !node.ghost
+        isAccessibilityElement = !node.ghost
+    }
+
+    /// 点按范围：图形（至少 44×44）与名称；残影不可点
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard isEnabled else { return false }
         let hit = glyphFrame.insetBy(dx: -max(4, (44 - glyphFrame.width) / 2), dy: -max(2, (44 - glyphFrame.height) / 2))
         return hit.contains(point) || (!label.isHidden && label.frame.contains(point))
     }
-}
 
-/// 聚合点：聚合图（大小随数量增长到 1.3 倍）与数量，碰撞框同单点
-final class NativeMapClusterView: MKAnnotationView {
-    static let reuseId = "fm.cluster"
-    private let imageView = UIImageView()
-    private let countLabel = UILabel()
-    private var glyphFrame = CGRect.zero
+    // MARK: 动画
 
-    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
-        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        backgroundColor = .clear
-        clipsToBounds = false
-        canShowCallout = false
-        collisionMode = .rectangle
-        imageView.contentMode = .center
-        countLabel.textAlignment = .center
-        countLabel.adjustsFontSizeToFitWidth = false
-        countLabel.isAccessibilityElement = false
-        addSubview(imageView)
-        addSubview(countLabel)
-        isAccessibilityElement = true
-        accessibilityTraits = .button
+    /// 移除全部动画并回到静止状态（新手势、新快照、复用时）
+    func finishAnimations() {
+        for layer in [travel.layer, glyph.layer, label.layer] {
+            layer.removeAllAnimations()
+            layer.transform = CATransform3DIdentity
+            layer.opacity = 1
+        }
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    /// 拆分：从父聚合的位置飞到自己的位置，图形从小、半透明长到原大（前 55% 完成）
+    func playSplitEntrance(offset: CGPoint, scale: CGFloat) {
+        let size = CGSize(width: offset.x, height: offset.y)
+        add(travel.layer, "transform.translation", values: [NSValue(cgSize: size), NSValue(cgSize: .zero)],
+            duration: Timing.split, timing: Self.easeOut)
+        add(glyph.layer, "transform.scale", values: [scale, 1, 1], times: [0, 0.55, 1], duration: Timing.split, timing: Self.easeOut)
+        add(glyph.layer, "opacity", values: [0.35, 1, 1], times: [0, 0.55, 1], duration: Timing.split, timing: Self.easeOut)
+        revealLabel(after: Timing.split)
     }
 
-    func configure(count: Int, style: NativeMapMarkerStyle) {
-        let scale = NativeMapGlyph.clusterScale(count)
-        let glyph = CGSize(width: (style.clusterBaseSize.width * scale * 10).rounded() / 10,
-                           height: (style.clusterBaseSize.height * scale * 10).rounded() / 10)
-        let box = CGSize(width: max(glyph.width, style.collisionSize), height: max(glyph.height, style.collisionSize))
-        bounds = CGRect(origin: .zero, size: box)
-        centerOffset = CGPoint(x: 0, y: -glyph.height / 2)
-        glyphFrame = CGRect(x: (box.width - glyph.width) / 2, y: (box.height - glyph.height) / 2, width: glyph.width, height: glyph.height)
-        imageView.frame = glyphFrame
-        imageView.image = NativeMapImages.image(style.clusterImage, size: glyph, crop: style.clusterCrop) ?? NativeMapImages.fallbackPin
-        let text = NativeMapGlyph.formatCount(count)
-        countLabel.text = text
-        countLabel.font = .monospacedDigitSystemFont(ofSize: NativeMapGlyph.countFontSize(text, scale: scale), weight: .semibold)
-        countLabel.textColor = style.countColor
-        countLabel.sizeToFit()
-        countLabel.center = CGPoint(x: glyphFrame.minX + glyph.width * style.countPosition.x,
-                                    y: glyphFrame.minY + glyph.height * style.countPosition.y)
-        displayPriority = .defaultHigh
-        zPriority = MKAnnotationViewZPriority(rawValue: MKAnnotationViewZPriority.defaultUnselected.rawValue + Float(min(40, log2(Double(max(count, 1))) * 4)))
-        accessibilityLabel = style.clusterLabel.replacingOccurrences(of: "%d", with: String(count))
+    /// 汇合目标：等子节点吸过来一段后出现，并轻微回弹
+    func playMergeTargetEntrance() {
+        add(glyph.layer, "transform.scale", values: [0.82, 1.06, 0.985, 1], times: [0, 0.55, 0.8, 1],
+            duration: Timing.mergeTarget, delay: Timing.mergeTargetDelay, timing: Self.cssEaseOut)
+        add(glyph.layer, "opacity", values: [0, 1, 1, 1], times: [0, 0.55, 0.8, 1],
+            duration: Timing.mergeTarget, delay: Timing.mergeTargetDelay, timing: Self.cssEaseOut)
+        revealLabel(after: Timing.mergeTargetDelay + Timing.mergeTarget)
     }
 
-    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        glyphFrame.insetBy(dx: -max(4, (44 - glyphFrame.width) / 2), dy: -max(2, (44 - glyphFrame.height) / 2)).contains(point)
+    func playFadeEntrance(reduced: Bool) {
+        add(travel.layer, "opacity", values: [0, 1], duration: reduced ? Timing.reducedFade : Timing.fadeIn, timing: Self.cssEaseOut)
+    }
+
+    /// 沿用的节点换了位置：从旧位置滑到新位置
+    func playMove(from offset: CGPoint, reduced: Bool) {
+        guard abs(offset.x) > 0.5 || abs(offset.y) > 0.5 else { return }
+        if reduced {
+            add(travel.layer, "opacity", values: [0, 1], duration: Timing.reducedFade, timing: Self.cssEaseOut)
+            return
+        }
+        add(travel.layer, "transform.translation", values: [NSValue(cgSize: CGSize(width: offset.x, height: offset.y)), NSValue(cgSize: .zero)],
+            duration: Timing.reposition, timing: Self.easeOut)
+        revealLabel(after: Timing.reposition)
+    }
+
+    /// 聚合数量变化：轻微回弹
+    func playRecount() {
+        add(glyph.layer, "transform.scale", values: [0.94, 1.04, 1], times: [0, 0.6, 1], duration: Timing.mergeTarget, timing: Self.easeOut)
+    }
+
+    /// 合并：吸向父聚合，同时缩小、最后淡出（终态留在父聚合位置、不可见，直到移除）
+    func playMergeExit(by delta: CGPoint) {
+        label.layer.opacity = 0
+        travel.layer.transform = CATransform3DMakeTranslation(delta.x, delta.y, 0)
+        glyph.layer.transform = CATransform3DMakeScale(0.72, 0.72, 1)
+        glyph.layer.opacity = 0
+        add(travel.layer, "transform.translation", values: [NSValue(cgSize: .zero), NSValue(cgSize: CGSize(width: delta.x, height: delta.y))],
+            duration: Timing.merge, timing: Self.easeInOut)
+        add(glyph.layer, "transform.scale", values: [1, 0.82, 0.72], times: [0, 0.7, 1], duration: Timing.merge, timing: Self.easeInOut)
+        add(glyph.layer, "opacity", values: [1, 1, 0], times: [0, 0.7, 1], duration: Timing.merge, timing: Self.easeInOut)
+    }
+
+    /// 被拆开的父聚合：原地收拢淡出
+    func playSplitSourceExit() {
+        label.layer.opacity = 0
+        glyph.layer.transform = CATransform3DMakeScale(0.86, 0.86, 1)
+        glyph.layer.opacity = 0
+        add(glyph.layer, "transform.scale", values: [1, 0.86], duration: Timing.splitSource, timing: Self.cssEaseIn)
+        add(glyph.layer, "opacity", values: [1, 0], duration: Timing.splitSource, timing: Self.cssEaseIn)
+    }
+
+    func playFadeExit(reduced: Bool) {
+        travel.layer.opacity = 0
+        add(travel.layer, "opacity", values: [1, 0], duration: reduced ? Timing.reducedFade : Timing.fadeOut, timing: Self.cssEaseIn)
+    }
+
+    /// 名称在转场结束后淡入（网页同样在转场期间隐藏名称）
+    private func revealLabel(after delay: CFTimeInterval) {
+        guard !label.isHidden else { return }
+        add(label.layer, "opacity", values: [0, 1], duration: Timing.labelIn, delay: delay, timing: Self.cssEaseOut)
+    }
+
+    /// 关键帧动画：图层的模型值已是终态，动画在开始前（含延迟）停在第一帧，结束后移除
+    private func add(_ layer: CALayer, _ keyPath: String, values: [Any], times: [NSNumber]? = nil,
+                     duration: CFTimeInterval, delay: CFTimeInterval = 0, timing: CAMediaTimingFunction) {
+        let animation = CAKeyframeAnimation(keyPath: keyPath)
+        animation.values = values
+        animation.keyTimes = times
+        animation.duration = duration
+        animation.timingFunction = timing
+        animation.fillMode = .backwards
+        if delay > 0 { animation.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + delay }
+        layer.add(animation, forKey: "fm.\(keyPath)")
     }
 }
 

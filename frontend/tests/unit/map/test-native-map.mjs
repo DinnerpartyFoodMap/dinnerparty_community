@@ -1,5 +1,5 @@
-// iOS 原生底图（MapKit）网页侧：协议清洗、会话、AMap.Map 替身（相机、投影、事件、覆盖物）、触摸命中采样、原生标记层，
-// 以及与 Swift 源码的白名单 / 版本对照。Swift 不在这里编译，真机检查见 native/doc/README.md。
+// iOS 原生底图（MapKit）网页侧：协议清洗、会话、AMap.Map 替身（相机、投影、事件、覆盖物）、坐标校准、触摸命中采样、
+// 原生标记层（网页聚合引擎 + 转场计划 → 原生），以及与 Swift 源码的白名单 / 版本 / 动画时长对照。Swift 不在这里编译，真机检查见 native/doc/README.md。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -16,6 +16,7 @@ globalThis.window = {
 globalThis.document = {
     visibilityState: 'visible',
     documentElement: {
+        dataset: {},
         setAttribute: (key, value) => rootAttributes.set(key, value),
         removeAttribute: (key) => rootAttributes.delete(key),
         getAttribute: (key) => (rootAttributes.has(key) ? rootAttributes.get(key) : null)
@@ -29,14 +30,19 @@ globalThis.document = {
 
 const {
     NATIVE_MAP_PROTOCOL, NATIVE_MAP_GLYPHS, NATIVE_MAP_OVERLAY_KINDS, NativeMapSession,
-    nativeColor, encodeNativePlaces, sanitizeOverlayMarker, sanitizeOverlayLine, sanitizeHoles, encodeRect
+    nativeColor, encodeNativeNodes, encodeNativePlan, sanitizeProbes, sanitizeOverlayMarker, sanitizeOverlayLine, sanitizeHoles, encodeRect
 } = await import('../../../src/platform/nativeMap.js');
 const {
     NativeMapView, NativeMarkerOverlay, NativePolylineOverlay, isNativeMap, nativeMapAppearance, sampleTouchHoles, readPoint
 } = await import('../../../src/map/nativeMapView.js');
-const { NativeMarkerLayer, buildNativeMarkerStyle, nativeMarkerEntries } = await import('../../../src/map/nativeMarkerLayer.js');
+const { NativeMarkerLayer, buildNativeMarkerStyle, nativeNode, NATIVE_BUFFER_RATIO } = await import('../../../src/map/nativeMarkerLayer.js');
+const {
+    frameRegion, FRAME_PROBES, decideProbe, decideFrames, toNativeCoordinate, fromNativeCoordinate, distanceMeters,
+    readCachedFrames, saveCachedFrames, nativeProbeRequests, FRAMES_CACHE_MS
+} = await import('../../../src/map/nativeMapFrames.js');
+const { wgs84ToGcj02Raw, gcj02ToWgs84Raw, wgs84ToGcj02 } = await import('../../../src/platform/coordTransform.js');
 const { worldPixel } = await import('../../../src/map/viewport.js');
-const { CLUSTER_DEFAULTS } = await import('../../../src/map/cluster/engine.js');
+const { MARKER_TIMING } = await import('../../../src/map/MarkerLayerController.js');
 
 const tick = (n = 1) => new Promise((resolve) => setTimeout(resolve, n));
 
@@ -61,13 +67,18 @@ class FakeMapPlugin {
     last(method) { return this.calls.filter(([name]) => name === method).at(-1)?.[1]; }
     count(method) { return this.calls.filter(([name]) => name === method).length; }
 }
-for (const method of ['setCamera', 'panBy', 'setStyle', 'setPlaces', 'setSelected', 'setOverlays', 'setAppearance', 'setInsets', 'setTouch', 'dispose']) {
+for (const method of ['setCamera', 'panBy', 'setStyle', 'setNodes', 'setSelected', 'setOverlays', 'setAppearance', 'setInsets', 'setTouch', 'dispose']) {
     FakeMapPlugin.prototype[method] = async function (args) {
         this.calls.push([method, args]);
         if (method !== 'dispose' && args.sessionId !== this.session) throw new Error('STALE_SESSION');
         return {};
     };
 }
+FakeMapPlugin.prototype.search = async function (args) {
+    this.calls.push(['search', args]);
+    if (args.sessionId !== this.session) throw new Error('STALE_SESSION');
+    return { results: this.options.searchResults ? this.options.searchResults(args.probes) : [] };
+};
 FakeMapPlugin.prototype.fitBounds = async function (args) {
     this.calls.push(['fitBounds', args]);
     return { camera: { phase: 'end', lng: (args.minLng + args.maxLng) / 2, lat: (args.minLat + args.maxLat) / 2, zoom: Math.min(args.maxZoom, 15), width: 390, height: 844 } };
@@ -83,16 +94,33 @@ FakeMapPlugin.prototype.fitBounds = async function (args) {
     assert.equal(nativeColor('var(--theme-primary)'), undefined, '没解析的 CSS 变量不下发');
     assert.equal(nativeColor(''), undefined);
 
-    const encoded = encodeNativePlaces([
-        { id: 'place:1', lng: 113.3, lat: 23.1, name: '店', kind: 'avoid' },
+    const encoded = encodeNativeNodes([
+        { id: 'place:1', cluster: false, lng: 113.3, lat: 23.1, name: '店', glyph: 'avoid' },
         { id: 'place:2', lng: 200, lat: 23.1, name: '超出范围' },
         { id: '', lng: 113, lat: 23 },
-        { id: 'place:3', lng: 113.4, lat: 23.2, name: 'x'.repeat(200), kind: 'evil' }
+        { id: 'cluster:1:5', cluster: true, lng: 113.35, lat: 23.15, count: 1, name: '聚合没有名称', glyph: 'avoid' },
+        { id: 'place:1', lng: 113.3, lat: 23.1 },
+        { id: 'place:3', lng: 113.4, lat: 23.2, name: 'x'.repeat(200), glyph: 'evil' }
     ]);
-    assert.deepEqual(encoded.ids, ['place:1', 'place:3']);
-    assert.deepEqual(encoded.coords, [113.3, 23.1, 113.4, 23.2]);
-    assert.deepEqual(encoded.kinds, ['avoid', 'place'], '未知图标种类按普通地点');
-    assert.equal(encoded.names[1].length, 80, '名称截断');
+    assert.deepEqual(encoded.ids, ['place:1', 'cluster:1:5', 'place:3'], '无效坐标、空 id、重复 id 丢弃');
+    assert.deepEqual(encoded.clusters, [false, true, false]);
+    assert.deepEqual(encoded.coords, [113.3, 23.1, 113.35, 23.15, 113.4, 23.2]);
+    assert.deepEqual(encoded.counts, [1, 2, 1], '聚合至少 2 个');
+    assert.deepEqual(encoded.glyphs, ['avoid', 'place', 'place'], '未知图标种类与聚合按普通地点');
+    assert.deepEqual([encoded.names[1], encoded.names[2].length], ['', 80], '聚合不带名称，名称截断');
+
+    const plan = {
+        reuse: new Map([['a', 'a'], ['b', 'gone-prev']]),
+        splitFrom: new Map([['c', 'p'], ['x', 'p']]),
+        mergeInto: new Map([['p', 'c'], ['q', 'missing']]),
+        splitSources: new Set(['p', 'unknown']),
+        mergeTargets: new Set(['c', 'zz'])
+    };
+    assert.deepEqual(encodeNativePlan(plan, { nextKeys: new Set(['a', 'b', 'c']), prevKeys: new Set(['a', 'p']) }), {
+        reuse: ['a', 'a'], splitFrom: ['c', 'p'], mergeInto: ['p', 'c'], splitSources: ['p'], mergeTargets: ['c']
+    }, '计划只保留两份快照里都存在的 key');
+    assert.deepEqual(sanitizeProbes([{ id: 'p', names: ['天安门', '', 'x'.repeat(99), 3], lng: 116.4, lat: 39.9, radius: 1 }, { id: 'bad', names: [], lng: 1, lat: 1 }]),
+        [{ id: 'p', names: ['天安门', 'x'.repeat(60)], lng: 116.4, lat: 39.9, radius: 200 }]);
 
     assert.equal(sanitizeOverlayMarker({ id: 'a', kind: 'evil', lng: 1, lat: 1 }), null);
     assert.deepEqual(sanitizeOverlayMarker({ id: 'a', kind: 'badge', lng: 1, lat: 2, text: '12345', fill: 'rgb(255,0,0)', size: 999, zIndex: -5, onclick: 'x' }),
@@ -242,6 +270,9 @@ const canvas = {
     await tick(5);
     assert.equal(plugin.count('setAppearance'), appearanceCalls, '外观不变时不重发');
 
+    assert.equal(plugin.count('search'), 1, '握手后自动校准一次');
+    assert.equal(plugin.last('search').probes.length, FRAME_PROBES.length);
+
     map.destroy();
     await tick(5);
     assert.equal(rootAttributes.has('data-native-map'), false);
@@ -251,6 +282,99 @@ const canvas = {
     assert.equal(plugin.count('setCamera'), 2, '销毁后的调用不发');
     assert.deepEqual(readPoint({ getLng: () => 1, getLat: () => 2 }), [1, 2]);
     assert.equal(readPoint([1, 99]), null);
+}
+
+// ---- 坐标：反算、地区、地标判断、换算、缓存 ----
+{
+    for (const [lng, lat] of [[116.397, 39.909], [114.158, 22.285], [121.56, 25.03], [87.6, 43.8]]) {
+        const gcj = wgs84ToGcj02Raw(lng, lat);
+        const back = gcj02ToWgs84Raw(gcj.lng, gcj.lat);
+        assert.ok(distanceMeters([back.lng, back.lat], [lng, lat]) < 0.01, '反算误差小于 1 厘米');
+    }
+    assert.deepEqual(wgs84ToGcj02(139.7, 35.68), { lng: 139.7, lat: 35.68 }, '高德境外不偏移');
+
+    const regions = {
+        mainland: [[116.397, 39.909], [114.055, 22.535], [114.068, 22.524], [113.92, 22.485], [114.118, 22.537], [113.53, 22.13], [113.55, 22.225], [118.35, 24.44], [119.79, 25.50], [131.9, 43.1]],
+        hk: [[114.158, 22.285], [114.172, 22.297], [113.97, 22.39], [114.065, 22.512], [114.11, 22.528]],
+        mo: [[113.543, 22.193], [113.56, 22.157]],
+        tw: [[121.56, 25.03], [119.57, 23.57], [120.30, 22.62]],
+        abroad: [[139.7, 35.68], [-122.4, 37.8]]
+    };
+    for (const [region, points] of Object.entries(regions)) {
+        for (const [lng, lat] of points) assert.equal(frameRegion(lng, lat), region, `${lng},${lat} 属于 ${region}`);
+    }
+
+    for (const probe of FRAME_PROBES) {
+        assert.ok(distanceMeters(probe.wgs, probe.gcj) > 400, `${probe.id} 两套坐标相距足够远`);
+        assert.equal(decideProbe(probe, [[probe.gcj[0] + 0.0004, probe.gcj[1]]]), 'gcj');
+        assert.equal(decideProbe(probe, [[999, 0], [probe.wgs[0], probe.wgs[1] + 0.0003]]), 'wgs', '取离地标最近的结果');
+        assert.equal(decideProbe(probe, [[(probe.wgs[0] + probe.gcj[0]) / 2, (probe.wgs[1] + probe.gcj[1]) / 2]]), null, '落在中间不下结论');
+        assert.equal(decideProbe(probe, [[probe.wgs[0] + 0.1, probe.wgs[1]]]), null, '搜到别处不下结论');
+        assert.equal(decideProbe(probe, []), null);
+    }
+    const flat = (point) => [point[0], point[1]];
+    const results = (pick) => FRAME_PROBES.map((probe) => ({ id: probe.id, points: pick(probe) }));
+    assert.deepEqual(decideFrames(results((p) => flat(p.gcj))), { mainland: 'gcj', hk: 'gcj', mo: 'gcj', tw: 'gcj' }, '手机在大陆：高德版');
+    assert.deepEqual(decideFrames(results((p) => flat(p.region === 'mainland' ? p.gcj : p.wgs))), { mainland: 'gcj', hk: 'wgs', mo: 'wgs', tw: 'wgs' }, '手机在香港：全球版');
+    assert.deepEqual(decideFrames(results((p) => (p.id === 'hk-ifc' ? flat(p.gcj) : p.region === 'hk' ? flat(p.wgs) : []))), {}, '同一地区两个地标矛盾时不下结论');
+    assert.deepEqual(decideFrames(results((p) => (p.id === 'tw-101' ? flat(p.wgs) : []))), { tw: 'wgs' }, '只有一个地标有结论也采用');
+    assert.equal(nativeProbeRequests()[0].radius, 3000);
+
+    const hk = [114.158, 22.285];
+    assert.deepEqual(toNativeCoordinate(hk[0], hk[1], {}), hk, '没有结论不换算');
+    assert.deepEqual(toNativeCoordinate(hk[0], hk[1], { hk: 'gcj' }), hk);
+    const hkNative = toNativeCoordinate(hk[0], hk[1], { hk: 'wgs' });
+    assert.ok(distanceMeters(hkNative, hk) > 400, '香港用 WGS-84 时转成 WGS-84');
+    assert.ok(distanceMeters(fromNativeCoordinate(hkNative[0], hkNative[1], { hk: 'wgs' }), hk) < 0.01, '读回时换回店铺坐标');
+    assert.deepEqual(toNativeCoordinate(116.397, 39.909, { hk: 'wgs' }), [116.397, 39.909], '其他地区不受影响');
+    assert.deepEqual(toNativeCoordinate(139.7, 35.68, { mainland: 'wgs' }), [139.7, 35.68], '境外两边都是 WGS-84');
+
+    const store = new Map();
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    saveCachedFrames({ hk: 'wgs', mainland: 'gcj' }, 1000, storage);
+    assert.deepEqual(readCachedFrames(2000, storage), { mainland: 'gcj', hk: 'wgs' });
+    assert.equal(readCachedFrames(1000 + FRAMES_CACHE_MS + 1, storage), null, '过期的缓存不用');
+    store.set('foodmap.nativeMapFrames', '{"frames":{"hk":"evil"},"at":1000}');
+    assert.deepEqual(readCachedFrames(2000, storage), {}, '只认 gcj / wgs');
+    assert.equal(readCachedFrames(0, { getItem() { throw new Error('denied'); } }), null);
+}
+
+// ---- 校准接入底图：结果变化时换算相机、点按与覆盖物 ----
+{
+    // 手机在香港：大陆 GCJ-02，港澳台 WGS-84
+    const plugin = new FakeMapPlugin({ searchResults: (probes) => probes.map((p) => {
+        const probe = FRAME_PROBES.find((item) => item.id === p.id);
+        const point = probe.region === 'mainland' ? probe.gcj : probe.wgs;
+        return { id: p.id, points: [point[0], point[1]] };
+    }) });
+    const map = new NativeMapView(canvas, { center: [114.158, 22.285], zoom: 16, session: new NativeMapSession({ plugin }) });
+    const changes = [];
+    map.on('framechange', (event) => changes.push(event.frames));
+    await map.ready;
+    assert.deepEqual(plugin.last('attach').lng, 114.158, '握手时还没校准，原样');
+    await map.calibrate();
+    await tick(5);
+    assert.deepEqual(changes, [{ mainland: 'gcj', hk: 'wgs', mo: 'wgs', tw: 'wgs' }]);
+    map.setZoomAndCenter(17, [114.158, 22.285]);
+    await tick(5);
+    const sent = plugin.last('setCamera');
+    assert.ok(distanceMeters([sent.lng, sent.lat], [114.158, 22.285]) > 400, '香港的相机按 WGS-84 发');
+    const seen = [];
+    map.on('click', (event) => seen.push([event.lnglat.getLng(), event.lnglat.getLat()]));
+    plugin.emit('tap', { sessionId: plugin.session, lng: sent.lng, lat: sent.lat });
+    assert.ok(distanceMeters(seen[0], [114.158, 22.285]) < 0.01, '点按换回店铺坐标');
+    const pin = new NativeMarkerOverlay({ position: [114.158, 22.285], kind: 'pin' });
+    pin.setMap(map);
+    await tick(5);
+    const marker = plugin.last('setOverlays').markers[0];
+    assert.ok(distanceMeters([marker.lng, marker.lat], [114.158, 22.285]) > 400, '覆盖物同样换算');
+    map.setNodes([{ id: 'place:1', cluster: false, lng: 116.397, lat: 39.909, name: '大陆', glyph: 'place' }], null);
+    await tick(5);
+    assert.deepEqual(plugin.last('setNodes').coords, [116.397, 39.909], '大陆仍是 GCJ-02，不换算');
+    await map.calibrate();
+    await tick(5);
+    assert.equal(changes.length, 1, '结果不变不重发');
+    map.destroy();
 }
 
 // ---- 握手失败：ready 拒绝，调用方回到高德 ----
@@ -282,51 +406,118 @@ const canvas = {
     ], '图标被按钮包住不重复发，越界的公告裁到画布内，页面外壳与画布本身不算网页区域');
 }
 
-// ---- 原生标记层 ----
+// ---- 原生标记层：网页聚合引擎出快照与转场计划，交给原生 ----
 {
-    const calls = [];
-    const handlers = new Map();
-    const fakeMap = {
-        on: (type, fn) => handlers.set(type, fn),
-        off: (type) => handlers.delete(type),
-        setPlaces: (entries, selected) => calls.push(['places', entries.map((e) => [e.id, e.kind, e.name]), selected]),
-        setSelectedPlace: (id) => calls.push(['selected', id]),
-        setMarkerStyle: (style) => calls.push(['style', style])
-    };
+    class FakeMap {
+        constructor() {
+            this.handlers = new Map();
+            this.calls = [];
+            this.zoom = 18;
+            this.center = [113.3, 23.1];
+        }
+        on(type, fn) { if (!this.handlers.has(type)) this.handlers.set(type, new Set()); this.handlers.get(type).add(fn); }
+        off(type, fn) { this.handlers.get(type)?.delete(fn); }
+        emit(type, event = {}) { for (const fn of this.handlers.get(type) || []) fn(event); }
+        getZoom() { return this.zoom; }
+        getZooms() { return [3, 20]; }
+        getBounds() {
+            const span = 0.02 * Math.pow(2, 18 - this.zoom);
+            const sw = { lng: this.center[0] - span, lat: this.center[1] - span };
+            const ne = { lng: this.center[0] + span, lat: this.center[1] + span };
+            return { getSouthWest: () => sw, getNorthEast: () => ne };
+        }
+        setNodes(nodes, plan, options) { this.calls.push(['nodes', nodes, plan, options]); }
+        setSelectedPlace(id) { this.calls.push(['selected', id]); }
+        setMarkerStyle(style) { this.calls.push(['style', style]); }
+        last(kind) { return this.calls.filter(([k]) => k === kind).at(-1); }
+        count(kind) { return this.calls.filter(([k]) => k === kind).length; }
+    }
+    const map = new FakeMap();
     const clicked = [];
-    const members = [];
-    const layer = new NativeMarkerLayer(fakeMap, { onPlaceClick: (place) => clicked.push(place.id), onClusterMembers: (value) => members.push(value) });
-    assert.equal(calls.filter(([kind]) => kind === 'style').length, 1, '创建时下发一次样式');
+    const clusters = [];
+    const layer = new NativeMarkerLayer(map, {
+        onPlaceClick: (place) => clicked.push(place.id),
+        onClusterClick: (node, engine) => clusters.push([node.key, engine.memberKeys(node).length])
+    });
+    assert.equal(map.count('style'), 1, '创建时下发一次样式');
+    // 两组相距约 50 米的店：放大时各自分开，缩小后合并
     const places = [
-        { id: 1, name: '甲', longitude: 113.3, latitude: 23.1, rating_count: 0 },
-        { id: 1, name: '重复', longitude: 113.3, latitude: 23.1 },
-        { id: 2, name: '避雷', longitude: 113.4, latitude: 23.2, rating_count: 3, rating_average: 1.2 },
-        { id: 'amap_B0', isMarked: false, name: '未收录', longitude: 113.5, latitude: 23.3 },
-        { id: 3, name: '没坐标', longitude: 'x', latitude: 23 }
+        { id: 1, name: '甲', longitude: 113.3000, latitude: 23.1000 },
+        { id: 2, name: '乙', longitude: 113.3005, latitude: 23.1000 },
+        { id: 3, name: '避雷', longitude: 113.3010, latitude: 23.1000, rating_count: 3, rating_average: 1.2 },
+        { id: 'amap_B0', isMarked: false, name: '未收录', longitude: 113.3015, latitude: 23.1000 },
+        { id: 4, name: '没坐标', longitude: 'x', latitude: 23 }
     ];
     layer.update({ places });
-    const sent = calls.filter(([kind]) => kind === 'places');
-    assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0][1], [['place:1', 'place', '甲'], ['place:2', 'avoid', '避雷'], ['poi:amap:B0', 'add', '未收录']]);
+    let [, nodes, plan, options] = map.last('nodes');
+    assert.deepEqual(nodes.map((n) => [n.id, n.cluster, n.glyph, n.name]), [
+        ['place:1', false, 'place', '甲'], ['place:2', false, 'place', '乙'], ['place:3', false, 'avoid', '避雷'], ['poi:amap:B0', false, 'add', '未收录']
+    ], '18 级时四家店各自显示');
+    assert.equal(options.animate, false, '首份快照不播放转场');
+    assert.equal(plan.kind, 'initial');
+
     layer.update({ places: places.map((p) => ({ ...p, favorite: true })) });
-    assert.equal(calls.filter(([kind]) => kind === 'places').length, 1, '与标记无关的字段变化不重发');
-    layer.update({ places: [{ ...places[0], name: '甲改' }] });
-    assert.equal(calls.filter(([kind]) => kind === 'places').length, 2);
+    assert.equal(map.count('nodes'), 1, '与标记无关的字段变化不重发');
+
+    // 缩小到 14 级：四家店合并成一个聚合，计划是 mergeInto → 同一个父聚合
+    map.zoom = 14;
+    map.emit('movestart');
+    layer.update({ places: places.slice(0, 3) });
+    assert.equal(map.count('nodes'), 1, '相机移动中不换节点');
+    map.emit('moveend');
+    [, nodes, plan, options] = map.last('nodes');
+    assert.equal(nodes.length, 1);
+    assert.equal(nodes[0].cluster, true);
+    assert.equal(nodes[0].count, 3, '移动中的数据变化在相机静止后一起提交');
+    assert.equal(options.animate, true);
+    assert.ok(options.prevKeys.has('place:1'), '计划对照上一份发给原生的节点');
+    assert.ok(plan.mergeTargets.has(nodes[0].id) || plan.kind === 'data', '缩小时子节点并进父聚合');
+
+    // 平移一点点：节点没变不重发
+    const sentBefore = map.count('nodes');
+    map.center = [113.3001, 23.1001];
+    map.emit('movestart');
+    map.emit('moveend');
+    assert.equal(map.count('nodes'), sentBefore, '平移后节点不变不重发');
+
+    // 放大回 18 级：聚合拆开，子节点从父聚合出发
+    const parentKey = nodes[0].id;
+    map.zoom = 18;
+    map.center = [113.3, 23.1];
+    map.emit('movestart');
+    map.emit('moveend');
+    [, nodes, plan, options] = map.last('nodes');
+    assert.equal(nodes.length, 3);
+    assert.equal(plan.kind, 'zoom-in');
+    assert.ok(plan.splitSources.has(parentKey), '被拆开的父聚合');
+    assert.deepEqual(nodes.map((n) => plan.splitFrom.get(n.id)), [parentKey, parentKey, parentKey], '子节点从父聚合位置飞出');
+
+    // 点按：单点交给 onPlaceClick，聚合交给 onClusterClick（与网页同一个展开逻辑）
+    map.emit('markerTap', { id: 'place:2' });
+    map.emit('markerTap', { id: 'place:404' });
+    assert.deepEqual(clicked, [2]);
+    map.zoom = 14;
+    map.emit('movestart');
+    map.emit('moveend');
+    const cluster = map.last('nodes')[1][0];
+    map.emit('clusterTap', { id: cluster.id });
+    map.emit('clusterTap', { id: 'place:1' });
+    assert.deepEqual(clusters, [[cluster.id, 3]]);
+
+    // 校准结果变化：同一份节点重发，不播放转场
+    map.emit('framechange', { frames: { hk: 'wgs' } });
+    assert.equal(map.last('nodes')[3].animate, false);
+
     layer.setSelectedKey('place:1');
     layer.setSelectedKey('place:1');
-    assert.deepEqual(calls.filter(([kind]) => kind === 'selected'), [['selected', 'place:1']]);
-    handlers.get('markerTap')({ id: 'place:1' });
-    handlers.get('markerTap')({ id: 'place:404' });
-    assert.deepEqual(clicked, [1]);
-    layer.update({ places });
-    handlers.get('clusterMembers')({ ids: ['place:2', 'place:1', 'gone'], lng: 113.3, lat: 23.1 });
-    assert.deepEqual(members[0].places.map((p) => p.id), [2, 1]);
-    assert.deepEqual(members[0].coordinate, [113.3, 23.1]);
-    assert.equal(layer.getEngine(), null);
-    assert.deepEqual(layer.getDataBounds(), { minLng: 113.3, minLat: 23.1, maxLng: 113.5, maxLat: 23.3 });
+    assert.equal(map.count('selected'), 1);
+    assert.equal(layer.getEngine().size, 3);
+    assert.deepEqual(layer.getDataBounds(), { minLng: 113.3, minLat: 23.1, maxLng: 113.301, maxLat: 23.1 });
+    assert.equal(NATIVE_BUFFER_RATIO, 1);
     layer.destroy();
-    assert.equal(handlers.size, 0);
-    assert.equal(nativeMarkerEntries([{ id: 9, longitude: 1, latitude: 2 }])[0].name, '');
+    assert.equal([...map.handlers.values()].reduce((n, set) => n + set.size, 0), 0, '销毁后不再监听');
+    assert.deepEqual(nativeNode({ key: 'place:9', kind: 'place', coordinate: [1, 2], count: 1, place: { id: 9 } }),
+        { id: 'place:9', cluster: false, lng: 1, lat: 2, count: 1, name: '', glyph: 'place' });
 }
 
 // ---- 标记样式：与 marker-motion.css 同一套取值 ----
@@ -347,7 +538,6 @@ const canvas = {
     assert.equal(style.glyphs.place, 'capacitor://localhost/assets/yes.png');
     assert.equal(style.labelBorder, '#e2789f', '名称描边是主题色');
     assert.equal(style.avoidText, '#b64642');
-    assert.equal(style.collisionSize, CLUSTER_DEFAULTS.radiusPx, '碰撞框取网页的聚合半径');
     assert.equal(style.clusterCrop.length, 4, '默认聚合图裁去留白');
     assert.deepEqual([style.countX, style.countY], [0.5, 0.35]);
     assert.ok(style.clusterLabel.includes('%d'));
@@ -372,7 +562,7 @@ const canvas = {
     assert.equal(Number(plugin.match(/static let protocolVersion = (\d+)/)[1]), NATIVE_MAP_PROTOCOL);
     assert.deepEqual(set('glyphKinds'), [...NATIVE_MAP_GLYPHS].sort());
     assert.deepEqual(set('overlayKinds'), [...NATIVE_MAP_OVERLAY_KINDS].sort());
-    for (const method of ['attach', 'setCamera', 'fitBounds', 'panBy', 'setStyle', 'setPlaces', 'setSelected', 'setOverlays', 'setAppearance', 'setInsets', 'setTouch', 'dispose']) {
+    for (const method of ['attach', 'setCamera', 'fitBounds', 'panBy', 'setStyle', 'setNodes', 'search', 'setSelected', 'setOverlays', 'setAppearance', 'setInsets', 'setTouch', 'dispose']) {
         assert.match(plugin, new RegExp(`CAPPluginMethod\\(name: "${method}"`), `Swift 插件缺少 ${method}`);
     }
     const bridge = read('FoodMapBridgeViewController.swift');
@@ -385,6 +575,15 @@ const canvas = {
     assert.match(controller, /min\(0\.55, 0\.09 \* log2/);
     assert.match(controller, /growth \* \(0\.3 \/ 0\.55\)/);
     assert.match(controller, /text\.count <= 2 \? 20 : text\.count == 3 \? 16 : 13/);
+    // 原生转场与网页 MARKER_TIMING 同一组时长（秒 = 毫秒 / 1000）
+    for (const [key, ms] of Object.entries({ merge: MARKER_TIMING.merge, mergeTargetDelay: MARKER_TIMING.mergeTargetDelay, mergeTarget: MARKER_TIMING.mergeTarget,
+        split: MARKER_TIMING.split, splitSource: MARKER_TIMING.splitSource, fadeIn: MARKER_TIMING.fadeIn, fadeOut: MARKER_TIMING.fadeOut,
+        reposition: MARKER_TIMING.reposition, reducedFade: MARKER_TIMING.reducedFade })) {
+        const match = controller.match(new RegExp(`static let ${key}: CFTimeInterval = ([0-9.]+)`));
+        assert.ok(match, `Swift 缺少时长 ${key}`);
+        assert.equal(Math.round(Number(match[1]) * 1000), ms, `${key} 与网页一致`);
+    }
+    assert.doesNotMatch(controller, /clusteringIdentifier = (?!nil)/, '不用 MapKit 自带的聚合');
     const pbxproj = readFileSync(new URL('../../../ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
     for (const file of ['FoodMapWebView.swift', 'NativeMapController.swift', 'NativeMapPlugin.swift']) {
         assert.ok(pbxproj.includes(`/* ${file} in Sources */,`), `${file} 要加入 Xcode 工程的 Sources`);

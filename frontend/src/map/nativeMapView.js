@@ -7,19 +7,26 @@
 // - 覆盖物：NativeMarkerOverlay / NativePolylineOverlay 代替 AMap.Marker / AMap.Polyline（同样的 setMap、setOptions、
 //   CLASS_NAME），add / remove 后合并成一次 setOverlays 下发。
 // - 触摸：NativeMapTouch 用网页自己的命中判断（elementFromPoint）找出地图画布上方的网页元素，其余位置的触摸交给原生。
-// - 坐标原样传给 MapKit（大陆 GCJ-02、境外 WGS-84，与高德一致）；港澳台与边境格子待真机实测，转换入口是 toNative / fromNative。
-import { NativeMapSession, encodeNativePlaces, sanitizeOverlayMarker, sanitizeOverlayLine, encodeRect, sanitizeHoles, isNativeCoordinate } from '../platform/nativeMap.js';
+// - 坐标：苹果在各地区用 GCJ-02 还是 WGS-84 取决于手机在哪，启动时（与长时间切到后台回来后）用苹果地点搜索校准
+//   （nativeMapFrames.js），交给原生前按结果换算，读回时换回店铺坐标。网页内部（相机缓存、投影、事件）始终是店铺坐标。
+import {
+    NativeMapSession, encodeNativeNodes, encodeNativePlan, sanitizeProbes,
+    sanitizeOverlayMarker, sanitizeOverlayLine, encodeRect, sanitizeHoles, isNativeCoordinate
+} from '../platform/nativeMap.js';
 import { worldPixel, unprojectWorldPixel, getMapSafeInsets } from './viewport.js';
-import { subscribeOverlays, getOverlayEntries } from '../components/overlay/overlayStack.js';
+import { subscribeOverlays } from '../components/overlay/overlayStack.js';
 import { onAppStateChange } from '../platform/lifecycle.js';
+import {
+    nativeProbeRequests, decideFrames, toNativeCoordinate, fromNativeCoordinate, sameFrames, readCachedFrames, saveCachedFrames
+} from './nativeMapFrames.js';
 
 export const NATIVE_MAP_ZOOMS = Object.freeze([3, 20]);
+// 校准搜索可能要几秒（每个地标一两次网络请求）
+const CALIBRATION_TIMEOUT_MS = 15000;
+// 切到后台这么久再回来就重新校准（可能出境、入境了）
+const RECALIBRATE_AFTER_BACKGROUND_MS = 30 * 60 * 1000;
 
 let overlaySeq = 0;
-
-/** 坐标交给 MapKit 前的转换（目前原样：MapKit 在大陆同样按 GCJ-02 显示） */
-const toNative = (lng, lat) => [lng, lat];
-const fromNative = (lng, lat) => [lng, lat];
 
 export function isNativeMap(map) {
     return !!map && map.isNativeMap === true;
@@ -152,9 +159,9 @@ export class NativeMarkerOverlay extends NativeOverlay {
     setTop() { }
     setzIndex(zIndex) { this.setOptions({ zIndex }); }
 
-    _toNative() {
+    _toNative(map) {
         if (!this.position) return null;
-        const [lng, lat] = toNative(this.position[0], this.position[1]);
+        const [lng, lat] = map._toNative(this.position[0], this.position[1]);
         return sanitizeOverlayMarker({ id: this.id, lng, lat, ...this.options });
     }
 
@@ -182,10 +189,10 @@ export class NativePolylineOverlay extends NativeOverlay {
         return this.path.map(([lng, lat]) => lngLat(lng, lat));
     }
 
-    _toNative() {
+    _toNative(map) {
         return sanitizeOverlayLine({
             id: this.id,
-            path: this.path.map(([lng, lat]) => toNative(lng, lat)),
+            path: this.path.map(([lng, lat]) => map._toNative(lng, lat)),
             color: this.options.strokeColor,
             width: Number(this.options.strokeWeight),
             opacity: Number(this.options.strokeOpacity),
@@ -339,6 +346,11 @@ export class NativeMapView {
         this.attached = false;
         this.visible = true;
         this.appearance = { dark: !!dark, muted: !!muted };
+        // 各地区底图用的坐标：先用最近一次的校准结果（没有时不换算），握手后重新校准
+        this.frames = readCachedFrames() || {};
+        this.lastNativeCamera = null;
+        this.calibrating = null;
+        this.stopCalibrationLifecycle = null;
         const [lng, lat] = readPoint(center) || [113.394405, 23.016485];
         this.camera = { lng, lat, zoom: this._clampZoom(zoom), width: 0, height: 0 };
         this.moveStartZoom = this.camera.zoom;
@@ -349,7 +361,7 @@ export class NativeMapView {
     }
 
     async _start() {
-        const [lng, lat] = toNative(this.camera.lng, this.camera.lat);
+        const [lng, lat] = this._toNative(this.camera.lng, this.camera.lat);
         const camera = await this.session.start({ lng, lat, zoom: this.camera.zoom, ...this.appearance });
         if (this.destroyed) throw new Error('destroyed');
         this.attached = true;
@@ -360,6 +372,48 @@ export class NativeMapView {
         this.touch.setActive(this.visible);
         this._scheduleOverlaySync();
         this._emit('complete', {});
+        this.calibrate();
+        this.stopCalibrationLifecycle = onAppStateChange(({ active, backgroundMs }) => {
+            if (active && backgroundMs > RECALIBRATE_AFTER_BACKGROUND_MS) this.calibrate();
+        });
+    }
+
+    // ---- 坐标校准 ----
+
+    /** 店铺坐标 → 这台手机上底图用的坐标 */
+    _toNative(lng, lat) {
+        return toNativeCoordinate(lng, lat, this.frames);
+    }
+
+    _fromNative(lng, lat) {
+        return fromNativeCoordinate(lng, lat, this.frames);
+    }
+
+    /**
+     * 用苹果地点搜索查地标，判断各地区的底图坐标（nativeMapFrames.js）。结果有变化时重发标记、覆盖物与相机缓存（framechange）。
+     * 搜索失败或没有结论的地区沿用之前的结果；同一时间只跑一次。
+     */
+    calibrate() {
+        if (this.calibrating || this.destroyed || !this.attached) return this.calibrating || Promise.resolve(this.frames);
+        this.calibrating = this.session.call('search', { probes: sanitizeProbes(nativeProbeRequests()) }, CALIBRATION_TIMEOUT_MS)
+            .then((result) => {
+                if (this.destroyed || !result) return this.frames;
+                const decided = decideFrames(result.results);
+                const next = { ...this.frames, ...decided };
+                saveCachedFrames(next);
+                if (!sameFrames(next, this.frames)) this._setFrames(next);
+                return this.frames;
+            })
+            .catch(() => this.frames)
+            .finally(() => { this.calibrating = null; });
+        return this.calibrating;
+    }
+
+    _setFrames(frames) {
+        this.frames = frames;
+        if (this.lastNativeCamera) this._applyCamera(this.lastNativeCamera);
+        this._scheduleOverlaySync();
+        this._emit('framechange', { frames });
     }
 
     _call(method, args) {
@@ -385,7 +439,8 @@ export class NativeMapView {
     }
 
     _applyCamera(data) {
-        const [lng, lat] = fromNative(Number(data.lng), Number(data.lat));
+        this.lastNativeCamera = data;
+        const [lng, lat] = this._fromNative(Number(data.lng), Number(data.lat));
         if (Number.isFinite(lng) && Number.isFinite(lat)) { this.camera.lng = lng; this.camera.lat = lat; }
         if (Number.isFinite(Number(data.zoom))) this.camera.zoom = Number(data.zoom);
         if (Number(data.width) > 0) this.camera.width = Number(data.width);
@@ -407,10 +462,10 @@ export class NativeMapView {
                 if (data.zoomChanged || Math.abs(this.camera.zoom - this.moveStartZoom) > 0.001) this._emit('zoomend', {});
             }
         } else if (name === 'tap') {
-            const [lng, lat] = fromNative(Number(data.lng), Number(data.lat));
+            const [lng, lat] = this._fromNative(Number(data.lng), Number(data.lat));
             if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
             this._emit('click', { lnglat: lngLat(lng, lat) });
-        } else if (name === 'markerTap' || name === 'clusterMembers') {
+        } else if (name === 'markerTap' || name === 'clusterTap') {
             this._emit(name, data);
         }
     }
@@ -498,7 +553,7 @@ export class NativeMapView {
         this.camera.lng = lng;
         this.camera.lat = lat;
         this.camera.zoom = this._clampZoom(zoom);
-        const [x, y] = toNative(lng, lat);
+        const [x, y] = this._toNative(lng, lat);
         this._call('setCamera', { lng: x, lat: y, zoom: this.camera.zoom, animated: !!animated });
     }
 
@@ -558,8 +613,8 @@ export class NativeMapView {
         // 乐观更新：中心先取范围中心，原生回传的相机会覆盖它
         this.camera.lng = (box.minLng + box.maxLng) / 2;
         this.camera.lat = (box.minLat + box.maxLat) / 2;
-        const [minLng, minLat] = toNative(box.minLng, box.minLat);
-        const [maxLng, maxLat] = toNative(box.maxLng, box.maxLat);
+        const [minLng, minLat] = this._toNative(box.minLng, box.minLat);
+        const [maxLng, maxLat] = this._toNative(box.maxLng, box.maxLat);
         this._call('fitBounds', { minLng, minLat, maxLng, maxLat, ...padding, maxZoom: this._clampZoom(maxZoom), animated })
             .then((result) => { if (result?.camera) this._applyCamera(result.camera); });
     }
@@ -616,7 +671,7 @@ export class NativeMapView {
             if (this.destroyed || !this.attached) return;
             const markers = [], lines = [];
             for (const overlay of this.overlays) {
-                const encoded = overlay._toNative();
+                const encoded = overlay._toNative(this);
                 if (!encoded) continue;
                 (overlay instanceof NativePolylineOverlay ? lines : markers).push(encoded);
             }
@@ -626,11 +681,18 @@ export class NativeMapView {
 
     // ---- 标记（NativeMarkerLayer 调用） ----
 
-    setPlaces(entries, selectedId = null) {
-        return this._call('setPlaces', { ...encodeNativePlaces(entries.map((entry) => {
-            const [lng, lat] = toNative(entry.lng, entry.lat);
-            return { ...entry, lng, lat };
-        })), selected: selectedId || undefined });
+    /**
+     * 一份节点快照与转场计划（cluster/transitions.js）。nodes 为 { id, cluster, lng, lat, count, name, glyph }（店铺坐标）；
+     * prevKeys：上一份发给原生的节点 key，计划只保留两边都存在的 key。
+     */
+    setNodes(nodes, plan, { prevKeys = new Set(), animate = false, selected = null } = {}) {
+        const converted = nodes.map((node) => {
+            const [lng, lat] = this._toNative(node.lng, node.lat);
+            return { ...node, lng, lat };
+        });
+        const encoded = encodeNativeNodes(converted);
+        const nextKeys = new Set(encoded.ids);
+        return this._call('setNodes', { ...encoded, ...encodeNativePlan(plan, { nextKeys, prevKeys }), animate: !!animate, selected: selected || undefined });
     }
 
     setSelectedPlace(id) {
@@ -657,6 +719,7 @@ export class NativeMapView {
     destroy() {
         if (this.destroyed) return;
         this.destroyed = true;
+        this.stopCalibrationLifecycle?.();
         this.touch?.destroy();
         this.touch = null;
         this.handlers.clear();
