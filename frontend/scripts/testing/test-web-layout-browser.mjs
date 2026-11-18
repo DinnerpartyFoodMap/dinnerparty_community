@@ -149,6 +149,19 @@ try {
         return {submit:[s.width,s.height],filter:[f.width,f.height],gap:f.left-s.right,topDelta:f.top-s.top,routeButtons:[...document.querySelectorAll('[data-tour="alongRoute"]')].filter(e=>e.getBoundingClientRect().width>0).length};
     })()`);
     assert.deepEqual(wide, { submit: [44,44], filter: [44,44], gap: 8, topDelta: 0, routeButtons: 0 }, 'wide filter is immediately right of submit with 8px gap and route has no separate round button');
+    const mapButtons = await evaluate(`(() => {
+        const selectors = ['[data-tour="add"]', '[data-tour="journey"]', '[data-tour="locate"]', '[data-tour="listView"]', '.fm-map-search__submit', '.fm-map-search__filter [data-tour="filter"]'];
+        const color = document.createElement('canvas').getContext('2d');
+        return selectors.map(selector => {
+            const button = document.querySelector('.fm-map-root ' + selector);
+            color.fillStyle = getComputedStyle(button).backgroundColor;
+            return { selector, icon: getComputedStyle(button.querySelector('.material-symbols-outlined')).color, background: color.fillStyle };
+        });
+    })()`);
+    for (const { selector, icon, background } of mapButtons) {
+        assert.equal(icon, 'rgb(255, 255, 255)', `${selector} uses a white icon on the web map`);
+        assert.ok(['#e2789f', '#ff8fb1'].includes(background), `${selector} retains its default pink background`);
+    }
     await screenshot('wide-search-filter');
     await click('header [data-tour="more"]');
     await waitFor(`[...document.querySelectorAll('[role="menuitem"]')].some(e=>e.textContent.trim()==='顺路吃')`);
@@ -255,9 +268,13 @@ try {
             color.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim();
             const theme = color.fillStyle;
             color.fillStyle = style.backgroundColor;
-            return { text: style.color, background: color.fillStyle, theme };
+            const background = color.fillStyle;
+            color.fillStyle = style.color;
+            const text = color.fillStyle;
+            color.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--theme-on-primary').trim();
+            return { text, background, theme, onPrimary: color.fillStyle };
         })()`);
-        assert.equal(primaryButton.text, 'rgb(255, 255, 255)', 'the pink web primary button uses white text in both themes');
+        assert.equal(primaryButton.text, primaryButton.onPrimary, 'the random panel keeps the standard primary text color');
         assert.ok(['#e2789f', '#ff8fb1'].includes(primaryButton.theme), 'the real page uses one of the original default pinks');
         assert.equal(primaryButton.background, primaryButton.theme, 'the web primary button keeps the original default pink background');
         const layout = await evaluate(`(() => {

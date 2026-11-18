@@ -2,11 +2,6 @@
    规格见 frontend/doc/DESIGN_SYSTEM.md */
 @import './tokens.generated.css';
 
-/* 网页的默认粉色主按钮使用白字。 */
-:root:not([data-platform='ios'], [data-platform='android'], [data-custom-primary]) {
-    --web-primary-action-text: white;
-}
-
 /* 键盘焦点环：所有可聚焦元素的统一可见焦点样式 */
 :focus-visible {
     outline: 2px solid var(--theme-primary);

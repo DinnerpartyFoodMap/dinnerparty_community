@@ -41,7 +41,7 @@
 /* 主要操作：一组按钮里只放一个 */
 .fm-button--primary {
     background: var(--theme-primary);
-    color: var(--web-primary-action-text, var(--theme-on-primary));
+    color: var(--theme-on-primary);
     font-weight: var(--weight-semibold);
 }
 

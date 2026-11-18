@@ -20,7 +20,7 @@ import { useExternalSearch } from '../discovery/hooks/useExternalSearch';
 import { currentMapCenter, unmarkedExternalPlaces } from '../discovery/externalSearch';
 import ScrollableView from "../components/layout/ScrollableView";
 import Notice from "../components/feedback/Notice";
-import { getThemeColor, pickContrastTextColor } from "../theme/theme";
+import { DEFAULT_DARK_PRIMARY, DEFAULT_PRIMARY, getThemeColor, pickContrastTextColor } from "../theme/theme";
 import defaultAvatar from '../img/default.png';
 import AlongRoutePanel from "../discovery/components/AlongRoutePanel";
 import useNativeAlongRoute from "../discovery/useNativeAlongRoute";
@@ -608,6 +608,9 @@ export default function MapUI(props) {
     const nativeIcon = (slot) => (iosApp ? nativeSkinIcon(slot) : {});
     // 底栏选中按钮的图标与文字颜色（皮肤可换）
     const toolbarSelectedColor = customThemeColor ? `var(--skin-toolbar-selected-color, ${customThemeColor})` : 'var(--skin-toolbar-selected-color)';
+    const whiteMapControlIcons = platform === 'web' && !pickerMode
+        && [DEFAULT_PRIMARY, DEFAULT_DARK_PRIMARY].includes(customThemeColor?.toUpperCase());
+    const mapControlIconColor = whiteMapControlIcons ? 'white' : 'var(--theme-on-primary)';
     // 自己有被驳回的地点：头像与“我创建的地点”上的小红点（GET /users/me 的 rejected_place_count）
     const rejectedCount = isAuthenticated ? (Number(currentUser?.rejected_place_count) || 0) : 0;
     // 与地点卡片“最近修改”相同：地图只显示这些地点，同时打开列表（被驳回的地点在列表里有“未通过”标识）
@@ -1297,7 +1300,7 @@ export default function MapUI(props) {
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                         // 颜色不随状态变化，只换图标（列表 / 地图）
                         background: customThemeColor,
-                        color: 'var(--theme-on-primary)', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
+                        color: mapControlIconColor, border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
                     }}
                 >
                     <span className="material-symbols-outlined" style={{ fontSize: size }}>{listShown ? 'map' : 'view_list'}</span>
@@ -1320,7 +1323,7 @@ export default function MapUI(props) {
                         width: 44, height: 44, padding: 0, borderRadius: '50%', position: 'relative',
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                         background: filterActive || filterOpen ? 'var(--color-primary-active)' : customThemeColor,
-                        color: 'var(--theme-on-primary)', border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
+                        color: mapControlIconColor, border: 'none', boxShadow: 'var(--shadow-sm)', opacity: mapReady ? 1 : 0.6
                     }}
                 >
                     <span className="material-symbols-outlined" style={{ fontSize: size }}>filter_list</span>
@@ -1629,7 +1632,7 @@ export default function MapUI(props) {
     const searchButtonLabel = hasSubmittedSearch
         ? (searchResultsVisible ? t('map:ui.collapseResults') : t('map:ui.expandResults'))
         : (tipText || t('common:action.search'));
-    const searchButtonIconColor = pickContrastTextColor(customThemeColor);
+    const searchButtonIconColor = whiteMapControlIcons ? mapControlIconColor : pickContrastTextColor(customThemeColor);
 
     const handleSearchButtonClick = () => {
         if (addMode) { submitSearch(searchTerm); return; }
@@ -2538,7 +2541,7 @@ export default function MapUI(props) {
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     background: locating ? 'var(--color-success)' : customThemeColor,
-                                    color: locating ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
+                                    color: locating ? 'var(--color-on-emphasis)' : mapControlIconColor,
                                     border: 'none',
                                     boxShadow: 'var(--shadow-sm)',
                                     opacity: (!mapReady || locating) ? 0.65 : 1
@@ -2659,7 +2662,7 @@ export default function MapUI(props) {
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
                                                 background: addMode ? 'var(--color-danger)' : customThemeColor,
-                                                color: addMode ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
+                                                color: addMode ? 'var(--color-on-emphasis)' : mapControlIconColor,
                                                 border: 'none',
                                                 boxShadow: addMode ? '0 4px 12px rgba(217,83,79,0.22)' : '0 4px 12px var(--color-glow)',
                                                 transition: 'background 180ms ease, transform 220ms ease',
@@ -2690,7 +2693,7 @@ export default function MapUI(props) {
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         background: customThemeColor,
-                                        color: 'var(--theme-on-primary)',
+                                        color: mapControlIconColor,
                                         border: 'none',
                                         transition: 'background 180ms ease, transform 220ms ease',
                                         cursor: authPending ? 'not-allowed' : 'pointer',
@@ -2773,7 +2776,7 @@ export default function MapUI(props) {
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             background: locating ? 'var(--color-success)' : customThemeColor,
-                                            color: locating ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
+                                            color: locating ? 'var(--color-on-emphasis)' : mapControlIconColor,
                                             border: 'none',
                                             transition: 'background 180ms ease, transform 220ms ease',
                                             cursor: (!mapReady || authPending) ? 'not-allowed' : 'pointer',

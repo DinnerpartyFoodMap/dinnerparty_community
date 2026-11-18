@@ -27,7 +27,7 @@
 
 规则：
 
-- 默认粉色上白字只有 2.8:1，所以 **on-primary 一律用计算值**（`pickContrastTextColor`），不写死白色。
+- 主色底的通用前景使用计算值（`pickContrastTextColor`）。网页主地图的六个粉底圆钮使用白色图标，见图标按钮规范。
 - 浅色模式下主色当文字只有 2.8:1。`--theme-primary-text` 由 `theme.js` 在应用主题时计算：把主色逐步加深（`darkenColor`），直到在 `bg-surface` 和 `bg-overlay` 上都 ≥ 4.5:1；深色模式直接用主色（8.3:1）。
 - 两个计算值由 `theme.js` 的 `applyThemeColor` 写入（`pickContrastTextColor`、`readableTextColor`），tokens.json 里是默认主题算出的结果，`test:design-tokens` 检查两者一致。
 - iOS 原生从主题快照（`nativeThemeColors()`）拿 `primary`、`secondary`、`onPrimary`、`primaryText` 四个值，`tint` 用 primary，文字按钮用 primaryText。快照里没有这两个派生值时，原生用同一算法自己算（`NativeGlassComponents.swift` 的 `UIColor.fmOnColor` / `UIColor.fmReadableText`、`Color.fmReadableText`），`nativeThemeColors(primary:secondary:)` 也会自动放进环境。
@@ -190,7 +190,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 
 | 变体 | 网页 | iOS |
 |---|---|---|
-| primary | 默认粉色底配白字，自定义主色底配 `--theme-on-primary`，无描边 | `.borderedProminent` + tint |
+| primary | 主色底、`--theme-on-primary` 字、无描边 | `.borderedProminent` + tint |
 | secondary | `bg-overlay` 底、`text-primary` 字 | `.bordered` |
 | plain | 透明、`--theme-primary-text` 字 | `.borderless` |
 | destructive | `danger` 字；需要底时 danger 14% 底 | `role: .destructive` |
@@ -201,9 +201,10 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 - iOS：工具栏上的文字按钮（提交、保存、存草稿、管理）`.tint` 用加深的主色（`primaryText`），主色实心圆钮里的符号用 `onPrimary`。
 - 住民设置的一级返回图标与二级系统返回统一使用 `primaryText`，由同一个 NavigationStack 继承。开关、滑杆的填充仍使用原始主色，不能随导航文字一起加深。
 - 网页实现：`components/primitives/Button.jsx` + `button.css`（`variant`、`size`、`full`；另有 `menu` 变体给菜单行）。调用方用 `style` 自定义了底色时自动按 secondary 的基础样式（正文色文字、细边框），避免主色上的文字色落到别的底色上。日记模块的裸 `<button>` 由 `journey.css` 给同一规格（胶囊、44 高），整行 / 列表式按钮单独用矩形圆角。
-- 浏览器默认粉色主按钮的白字由 `--web-primary-action-text` 控制，使用原有浅色 `#E2789F`、深色 `#FF8FB1` 及原来的悬停和按压样式。独立下载页的推荐入口同样使用白字。`npm run test:web-layout-browser` 检查主按钮在默认主题下的实际文字色和底色。
 
 ### 7.2 图标按钮
+
+- 网页主地图的新增地点、日记、定位、列表、搜索和筛选圆钮，在默认粉底上使用白色图标。自定义主题、选点地图和 App 沿用各自的前景色。`npm run test:web-layout-browser` 检查这六个圆钮的图标和背景色。
 
 44 × 44 圆形；默认透明底；需要底时用 `color-mix(text-primary 8%)`（原生 `Color.primary.opacity(0.08)`）。关闭按钮图标 `close` / `xmark`，17 号 semibold。iOS 地点卡标题栏左右圆钮统一为 `NativeCloseButton.diameter`（52pt），使用同种 regular interactive glass；不能只把 44pt 按钮外面的占位扩大成 52pt。
 网页实现：`components/primitives/IconButton.jsx`（`.fm-icon-button`，与面板关闭钮同一样式；`spinning` 时图标转圈，用于刷新进行中）。所有关闭 X 固定在所属容器右上角；iOS 用 `NativeCloseButton` 复用搜索收键盘按钮的外观：52 × 52 圆形、18pt semibold `xmark`、primary 前景、regular interactive glass（旧系统回退 regular material）。X 不使用皮肤自定义图案。清空输入、删除图片等非关闭动作不受此规则影响。
