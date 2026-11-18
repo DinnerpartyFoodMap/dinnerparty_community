@@ -35,13 +35,15 @@ import { t } from '../i18n/index.js';
 // v17 iOS 18 起都用原生控件：capabilities 不再带 supportsGlass，版本号一致即可接管；
 // setState 的 glass 是住民的「原生玻璃按钮」偏好（iOS 26 才画玻璃），关掉时只换成不透明材质，不再退回网页工具栏。
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
+// v18 聚合成员列表也使用原生面板（clusterMembers，list 样式，同收藏、住民的地点列表）：点聚合拆不开（最大缩放、相机放不大）时打开，
+// 点一行回传地点 key（place:<id>），关闭只收起列表。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
-export const NATIVE_CHROME_PROTOCOL = 17;
+export const NATIVE_CHROME_PROTOCOL = 18;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
-export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces', 'random', 'filter']);
+export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces', 'random', 'filter', 'clusterMembers']);
 export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss']);
 export const NATIVE_DRAWER_EVENTS = Object.freeze(['select']);
 // 操作指引的目标：上滑展开更多功能（工具栏本身）

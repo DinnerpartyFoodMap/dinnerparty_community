@@ -102,6 +102,12 @@
 - **原生底图（`NativeMapPlugin.swift` v1）**：MapKit 视图放在透明 WebView 下面，地点、聚合点与名称都是 MapKit 标注视图；聚合沿用网页的聚合引擎与转场计划（`setNodes`），合并 / 拆分动画由原生按 `MARKER_TIMING` 播放；`search` 供坐标校准（苹果地点搜索查地标）；事件 `camera` / `tap` / `markerTap` / `clusterTap`。网页侧 `platform/nativeMap.js`、`map/nativeMapView.js`、`map/nativeMarkerLayer.js`、`map/nativeMapFrames.js`，见 [地图文档](../src/map/doc/README.md)。WebView 换成 `FoodMapWebView`（触摸分配），左边缘侧滑手势改挂在容器上。
 - 网页与 Swift 同时升级；`test:native-chrome` 覆盖 v17 握手与 `glass` 下发，`test:map` 的 `test-native-map.mjs` 覆盖底图协议清洗、替身与 Swift 白名单对照。未验证：Swift 未编译，iOS 18 与 iOS 26 的控件外观、底图触摸与标记需真机检查（[原生案例](../native/doc/README.md)）。
 
+## 聚合成员列表与原生底图的相机修正（2026-11-18，控件协议 v18）
+
+- **协议 17 → 18**：聚合成员列表（“此处有 N 家店”）改为原生 list 面板 `clusterMembers`（`map/clusterMembers.js` 的 `clusterMembersChromeSheet`），与收藏、住民的地点列表同一种玻璃外观；此前是网页 `ResponsivePanel`，底色与玻璃和其他原生面板不一致。点一行回传地点 key（`place:<id>` / `poi:amap:<id>`），下滑、点地图或关闭只收起列表；网页面板只在网页工具栏时显示。
+- **原生底图相机修正（底图协议仍为 v1，不改字段）**：iOS 点聚合只放大一点点、随后出现成员列表。MapKit 把 `setVisibleMapRect` 的请求放进自己的可见区域再显示，实际缩放比请求的小、中心偏移，补放大落到同一处。`NativeMapController` 在视图尺寸、`layoutMargins`、安全区变化后同步试探一次（同样构造的矩形、读回、恢复，不回传相机事件），学到“比例 + 偏移”后修正每次请求；相机事件与 `panBy` 的中心改取可见矩形中点。网页在原生底图上补放大时多要差掉的那一截（`nextClusterZoom`），作为修正失效时的后备。
+- 网页与 Swift 同时升级；`test:native-chrome` 对照 v18 与面板白名单，`test:map` 的 test-cluster-zoom 覆盖成员面板快照与补放大，test-native-map 对照 Swift 的试探与事件抑制。未验证：Swift 未编译，修正是否让点聚合一次拆开需真机检查（[原生案例](../native/doc/README.md)）。
+
 ## 日记 · 同好细节（2026-11-02 第七轮）
 
 - **日历滑动抖动、拉不动**：两处原因一起处理。① 子页只保留全屏一档（`onDepthChange` 换掉 detents，并关闭 `prefersScrollingExpandsWhenScrolledToEdge`），列表滚到顶继续下拉时不再和系统面板抢手势；② 月历与素材照片不再用列表行里的 `LazyVGrid`（懒加载网格在滚动中反复改行高），改为固定的周行 / 四列行。

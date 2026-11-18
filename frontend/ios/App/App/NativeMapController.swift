@@ -24,6 +24,8 @@ final class NativeMapController: NSObject {
     static let animatedNodeLimit = 400
     /// 屏幕外这么远的节点不播放动画（网页 ONSCREEN_MARGIN）
     static let onscreenMargin: CGFloat = 80
+    /// 相机修正的试探缩放范围（见 calibrateCameraFit）
+    static let calibrationZoomRange: ClosedRange<Double> = 6...17
 
     let mapView: MKMapView
 
@@ -44,6 +46,10 @@ final class NativeMapController: NSObject {
     private var lastChangeEmit: CFTimeInterval = 0
     private var tapRecognizer: UITapGestureRecognizer?
     private var doubleTapLinked = false
+    /// 设置相机时 MapKit 实际落下的范围与请求的关系（见 calibrateCameraFit）
+    private var cameraFit: NativeMapCameraFit?
+    /// 试探期间的区域变化在同一帧内完成，不回传相机事件
+    private var calibratingCamera = false
 
     override init() {
         mapView = MKMapView(frame: .zero)
@@ -104,20 +110,65 @@ final class NativeMapController: NSObject {
 
     private static func clampZoom(_ zoom: Double) -> Double { min(maxZoom, max(minZoom, zoom)) }
 
+    /// 中心在 center、缩放为 zoom 时整个视图对应的地图矩形（与网页 viewport.js 同一公式）
+    private func cameraRect(center: MKMapPoint, zoom: Double) -> MKMapRect {
+        let size = mapView.bounds.size
+        let scale = Self.scale(for: zoom)
+        let width = Double(size.width) * scale
+        let height = Double(size.height) * scale
+        return MKMapRect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
+    }
+
+    /// 当前视图中心（可见矩形的中点）：相机事件、平移都以它为准，与网页的投影（中心在视图正中）一致
+    private var visibleCenter: MKMapPoint {
+        let rect = mapView.visibleMapRect
+        return MKMapPoint(x: rect.midX, y: rect.midY)
+    }
+
     func setCamera(center: CLLocationCoordinate2D, zoom: Double, animated: Bool) {
         let size = mapView.bounds.size
         guard size.width > 0, size.height > 0, CLLocationCoordinate2DIsValid(center) else { return }
-        let scale = Self.scale(for: Self.clampZoom(zoom))
-        let point = MKMapPoint(center)
-        let width = Double(size.width) * scale
-        let height = Double(size.height) * scale
-        mapView.setVisibleMapRect(MKMapRect(x: point.x - width / 2, y: point.y - height / 2, width: width, height: height), animated: animated)
+        calibrateCameraFit()
+        let target = cameraRect(center: MKMapPoint(center), zoom: Self.clampZoom(zoom))
+        let request = cameraFit?.request(for: target, viewWidth: Double(size.width)) ?? target
+        mapView.setVisibleMapRect(request, animated: animated)
+    }
+
+    /// MapKit 设置可见范围时会把矩形放进它自己的可见区域再显示（安全区、layoutMargins 等都可能参与，没有接口可查），
+    /// 实际落下的缩放可能比请求的小、中心也可能偏：点聚合放大到展开层级时只放大一点点、聚合拆不开，
+    /// 补放大落到同一个位置后只能打开成员列表。视图尺寸或边距变化后，用当前相机同步试探一次：
+    /// 设置一个与 setCamera 同样构造的矩形、读回实际范围、再按结果恢复原样（同一帧内完成，不回传相机事件），
+    /// 得到“实际宽度 = 请求宽度 × 比例、实际中心 = 请求中心 + 偏移（屏幕点）”，之后每次设置相机都先按它修正请求。
+    /// MapKit 没有改动请求时比例为 1、偏移为 0，修正不起作用。
+    private func calibrateCameraFit() {
+        let size = mapView.bounds.size
+        let margins = mapView.layoutMargins
+        let safe = mapView.safeAreaInsets
+        let key = "\(size.width)x\(size.height)|\(margins.top),\(margins.left),\(margins.bottom),\(margins.right)|\(safe.top),\(safe.left),\(safe.bottom),\(safe.right)"
+        // 动画、手势进行中不试探（会打断它）：沿用上一次的结果
+        guard cameraFit?.key != key, !moving, !mapView.isHidden, mapView.window != nil, size.width > 0, size.height > 0 else { return }
+        let visible = mapView.visibleMapRect
+        guard !visible.isNull, visible.size.width > 0 else { return }
+        let center = MKMapPoint(x: visible.midX, y: visible.midY)
+        let current = zoom
+        // 试探放在中间的缩放：太小（刚显示时的全国视野）或太大时 MapKit 自己的缩放上下限会截住试探，量出错误的比例
+        let probeZoom = min(Self.calibrationZoomRange.upperBound, max(Self.calibrationZoomRange.lowerBound, current))
+        let probe = cameraRect(center: center, zoom: probeZoom)
+        calibratingCamera = true
+        defer { calibratingCamera = false }
+        mapView.setVisibleMapRect(probe, animated: false)
+        let fit = NativeMapCameraFit.measure(key: key, requested: probe, actual: mapView.visibleMapRect, viewSize: size)
+        cameraFit = fit
+        // 试探改变了相机：按刚得到的修正回到原来的范围
+        if !fit.isIdentity || probeZoom != current {
+            mapView.setVisibleMapRect(fit.request(for: cameraRect(center: center, zoom: current), viewWidth: Double(size.width)), animated: false)
+        }
     }
 
     /// 地图中心不变，按屏幕点平移（网页的 panBy：正值让内容向右下移动）
     func panBy(dx: Double, dy: Double, animated: Bool) {
         let scale = Self.scale(for: zoom)
-        let center = MKMapPoint(mapView.centerCoordinate)
+        let center = visibleCenter
         let next = MKMapPoint(x: center.x - dx * scale, y: center.y - dy * scale)
         setCamera(center: next.coordinate, zoom: zoom, animated: animated)
     }
@@ -148,7 +199,7 @@ final class NativeMapController: NSObject {
     }
 
     func cameraPayload(phase: String, gesture: Bool = false) -> [String: Any] {
-        let center = mapView.centerCoordinate
+        let center = visibleCenter.coordinate
         let rect = mapView.visibleMapRect
         let topLeft = MKMapPoint(x: rect.minX, y: rect.minY).coordinate
         let bottomRight = MKMapPoint(x: rect.maxX, y: rect.maxY).coordinate
@@ -516,7 +567,7 @@ extension NativeMapController: MKMapViewDelegate {
     }
 
     func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
-        guard !mapView.isHidden, !moving else { return }
+        guard !mapView.isHidden, !moving, !calibratingCamera else { return }
         moving = true
         moveStartZoom = zoom
         // 手势优先：进行中的合并、拆分立即收敛（网页 movestart / zoomstart 时同样处理）
@@ -525,7 +576,7 @@ extension NativeMapController: MKMapViewDelegate {
     }
 
     func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-        guard !mapView.isHidden, moving else { return }
+        guard !mapView.isHidden, moving, !calibratingCamera else { return }
         let now = CACurrentMediaTime()
         guard now - lastChangeEmit >= Self.changeInterval else { return }
         lastChangeEmit = now
@@ -533,11 +584,51 @@ extension NativeMapController: MKMapViewDelegate {
     }
 
     func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-        guard !mapView.isHidden else { return }
+        guard !mapView.isHidden, !calibratingCamera else { return }
         moving = false
         var payload = cameraPayload(phase: "end")
         payload["zoomChanged"] = abs(zoom - moveStartZoom) > 0.001
         onCamera?(payload)
+    }
+}
+
+// MARK: - 相机修正
+
+/// MapKit 对 setVisibleMapRect 请求的改动：实际可见宽度 = 请求宽度 × scale，实际中心 = 请求中心 + (dx, dy) 个屏幕点。
+/// 把请求放进某个内缩区域再显示（安全区、边距）正好是这种形式：比例与偏移（视图中心与该区域中心之差）都不随缩放变化。
+struct NativeMapCameraFit {
+    let key: String
+    let scale: Double
+    let dx: Double
+    let dy: Double
+
+    var isIdentity: Bool { scale == 1 && dx == 0 && dy == 0 }
+
+    /// 从一次同步设置的结果得出修正；差别小到可以忽略、或明显不合理（被缩放上下限截住等）时不修正
+    static func measure(key: String, requested: MKMapRect, actual: MKMapRect, viewSize: CGSize) -> NativeMapCameraFit {
+        let identity = NativeMapCameraFit(key: key, scale: 1, dx: 0, dy: 0)
+        let width = Double(viewSize.width)
+        let height = Double(viewSize.height)
+        guard width > 0, height > 0, !actual.isNull, requested.size.width > 0, actual.size.width > 0 else { return identity }
+        let scale = actual.size.width / requested.size.width
+        guard scale.isFinite, scale >= 0.5, scale <= 4 else { return identity }
+        let perPoint = actual.size.width / width
+        let dx = (actual.midX - requested.midX) / perPoint
+        let dy = (actual.midY - requested.midY) / perPoint
+        guard dx.isFinite, dy.isFinite, abs(dx) < width / 2, abs(dy) < height / 2 else { return identity }
+        if abs(log2(scale)) < 0.002 && abs(dx) < 0.5 && abs(dy) < 0.5 { return identity }
+        return NativeMapCameraFit(key: key, scale: scale, dx: dx, dy: dy)
+    }
+
+    /// 要让 MapKit 实际显示 target（整个视图的范围），应当请求的矩形
+    func request(for target: MKMapRect, viewWidth: Double) -> MKMapRect {
+        guard !isIdentity, viewWidth > 0 else { return target }
+        let perPoint = target.size.width / viewWidth
+        let width = target.size.width / scale
+        let height = target.size.height / scale
+        let midX = target.midX - dx * perPoint
+        let midY = target.midY - dy * perPoint
+        return MKMapRect(x: midX - width / 2, y: midY - height / 2, width: width, height: height)
     }
 }
 

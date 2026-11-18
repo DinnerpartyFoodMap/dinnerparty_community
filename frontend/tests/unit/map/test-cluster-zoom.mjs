@@ -1,7 +1,9 @@
 // 聚合相关的缩放决定：打开地点时放大到它单独显示；点聚合后的放大没到时补一次或打开成员列表。
 import assert from 'node:assert/strict';
 import { createEngine, placeKey } from '../../../src/map/cluster/engine.js';
-import { standaloneZoom, revealZoom, clusterZoomOutcome, CLUSTER_ZOOM_MAX_RETRIES } from '../../../src/map/clusterZoom.js';
+import { standaloneZoom, revealZoom, clusterZoomOutcome, nextClusterZoom, CLUSTER_ZOOM_MAX_RETRIES } from '../../../src/map/clusterZoom.js';
+import { clusterMembersChromeSheet, findClusterMember, clusterMemberRowId } from '../../../src/map/clusterMembers.js';
+import { sanitizeSheet, NATIVE_SHEETS } from '../../../src/platform/nativeMapChrome.js';
 
 // ---- 打开地点：放大到它单独显示 ----
 {
@@ -50,6 +52,45 @@ import { standaloneZoom, revealZoom, clusterZoomOutcome, CLUSTER_ZOOM_MAX_RETRIE
     assert.equal(clusterZoomOutcome({ ...base, zoom: 13.13, logicalZoom: 13, previousZoom: 13.13, attempts: 1 }), 'members', '补放大没进展（MapKit 到不了目标层级）：打开成员列表');
     assert.equal(clusterZoomOutcome({ ...base, zoom: 13.8, logicalZoom: 13, previousZoom: 13.6, attempts: CLUSTER_ZOOM_MAX_RETRIES }), 'members', '补放大次数有上限');
     assert.equal(clusterZoomOutcome({ ...base, zoom: NaN }), 'done', '读不到缩放时不再跟进');
+
+    // iOS：MapKit 把请求放进自己的可见区域，每次都差同样多（13→14 落在 13.37）。补放大多要差掉的那一截
+    assert.equal(nextClusterZoom({ targetZoom: 14, requestedZoom: 14, zoom: 13.37, maxZoom: 20, compensate: true }), 14.63);
+    assert.equal(clusterZoomOutcome({ ...base, zoom: 13.37, logicalZoom: 13 }), 'retry', '第一次落在 13.37：补放大');
+    assert.equal(clusterZoomOutcome({ ...base, zoom: 14, logicalZoom: 14, previousZoom: 13.37, attempts: 1 }), 'done', '多要 0.63 后正好落到 14，聚合拆开');
+    assert.equal(nextClusterZoom({ targetZoom: 14, requestedZoom: 14.63, zoom: 13.8, maxZoom: 20, compensate: true }), 14.83, '还差就继续累加');
+    assert.equal(nextClusterZoom({ targetZoom: 19, requestedZoom: 19, zoom: 18.2, maxZoom: 20, compensate: true }), 19.8);
+    assert.equal(nextClusterZoom({ targetZoom: 19, requestedZoom: 19.8, zoom: 18.2, maxZoom: 20, compensate: true }), 20, '不超过地图最大缩放');
+    assert.equal(clusterZoomOutcome({ expansion: 19, targetZoom: 19, zoom: 18.2, logicalZoom: 18, previousZoom: 18.2, attempts: 1 }), 'members',
+        'MapKit 到不了 19 级：补放大没进展，打开成员列表');
+    // 高德：动画被打断，再要同一个目标
+    assert.equal(nextClusterZoom({ targetZoom: 14, requestedZoom: 14, zoom: 13.13, maxZoom: 20, compensate: false }), 14);
+    assert.equal(nextClusterZoom({ targetZoom: 14, requestedZoom: 14, zoom: 14.2, maxZoom: 20, compensate: true }), 14, '多放大了不往回补');
+}
+
+// ---- 成员列表（“此处有 N 家店”）：iOS 原生列表面板 ----
+{
+    const members = { key: 'cluster:1:5', places: [
+        { id: 7, name: '甲', category: '拉面', per_person_cost: 40, longitude: 113.3, latitude: 23.1 },
+        { id: 8, name: '', category: '', longitude: 113.3, latitude: 23.1, rating_count: 3, rating_average: 1.2 },
+        { id: 'amap_B0', isMarked: false, name: '未收录', longitude: 113.3, latitude: 23.1 }
+    ] };
+    const sheet = clusterMembersChromeSheet(members);
+    assert.equal(sheet.id, 'clusterMembers');
+    assert.equal(sheet.title, '此处有 3 家店');
+    assert.equal(sheet.size, 'list', '与收藏、住民的地点列表同一种原生面板');
+    assert.deepEqual(sheet.sections[0].rows.map((row) => row.id), ['place:7', 'place:8', 'poi:amap:B0']);
+    assert.equal(sheet.sections[0].rows[0].subtitle, '拉面 · 人均 ¥40');
+    assert.equal(sheet.sections[0].rows[1].title, '未命名地点');
+    assert.equal(sheet.sections[0].rows[1].tone, 'danger', '避雷的店标红');
+    assert.equal(findClusterMember(members, 'place:8'), members.places[1]);
+    assert.equal(findClusterMember(members, 'place:404'), null);
+    assert.equal(clusterMemberRowId(members.places[2]), 'poi:amap:B0');
+    assert.ok(NATIVE_SHEETS.includes('clusterMembers'));
+    const clean = sanitizeSheet({ ...sheet, token: 4 });
+    assert.equal(clean.id, 'clusterMembers', '原生桥接接受这个面板');
+    assert.equal(clean.sections[0].rows.length, 3);
+    assert.equal('longitude' in clean.sections[0].rows[0], false, '不向原生传坐标');
+    assert.deepEqual(clusterMembersChromeSheet(null).sections, []);
 }
 
 console.log('cluster zoom tests passed');

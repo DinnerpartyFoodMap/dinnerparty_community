@@ -28,7 +28,7 @@
 
 ### MAP-C08 点聚合放大与打开地点的缩放（已有逻辑 + 浏览器自动化，安卓模拟器已验，iOS 待真机）
 
-前置：广州天河一带的公开快照（4194 个地点，13 级时有 12、21 个成员的聚合，17 级时仍被聚合、18 级才单独显示的店，如“希灵三文鱼”）。操作：手指点 13 级的聚合；点按后人为补发一次 mousedown 打断放大；从聚合上开始拖动；地图列表模式把中心换成地图中心后点那家店；坐标重合的两家店、MapKit 到不了目标层级（替身：相机不动 / 补放大没进展）。预期：一次点按放大到展开层级（13→14）并拆开，点按后不再出现 mousedown 与地图 click；被打断时补放大到 14 并拆开；拖动照常平移、不展开聚合；列表点店放大到 18 级、该店单独显示并打开卡片；重合地点保持基准层级；相机放不大时打开成员列表。入口 test:map 的 test-cluster-zoom（standaloneZoom / revealZoom / clusterZoomOutcome）、`npm run test:native-clusters-browser`（聚合上的触摸取消 pointerdown，鼠标与单点不取消）；2026-11-18 在安卓模拟器（debug 包 2.2.5，WebView DevTools 记录相机事件）逐项验证；iOS 原生底图见 native/doc 的原生底图清单。
+前置：广州天河一带的公开快照（4194 个地点，13 级时有 12、21 个成员的聚合，17 级时仍被聚合、18 级才单独显示的店，如“希灵三文鱼”）。操作：手指点 13 级的聚合；点按后人为补发一次 mousedown 打断放大；从聚合上开始拖动；地图列表模式把中心换成地图中心后点那家店；坐标重合的两家店、MapKit 到不了目标层级（替身：相机不动 / 补放大没进展）。预期：一次点按放大到展开层级（13→14）并拆开，点按后不再出现 mousedown 与地图 click；被打断时补放大到 14 并拆开；拖动照常平移、不展开聚合；列表点店放大到 18 级、该店单独显示并打开卡片；重合地点保持基准层级；相机放不大时打开成员列表。入口 test:map 的 test-cluster-zoom（standaloneZoom / revealZoom / clusterZoomOutcome；原生底图每次差同样多时 nextClusterZoom 多要差掉的那一截；成员列表的原生面板快照与桥接清洗）、test-native-map（Swift 相机修正：设置前试探并修正请求、试探期间不回传事件）、`npm run test:native-clusters-browser`（聚合上的触摸取消 pointerdown，鼠标与单点不取消）；2026-11-18 在安卓模拟器（debug 包 2.2.5，WebView DevTools 记录相机事件）逐项验证；iOS 原生底图见 native/doc 的原生底图清单。
 
 ### MAP-C06 定位上报（已有逻辑自动化）
 

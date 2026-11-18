@@ -322,7 +322,7 @@ function makeSession(plugin, extra = {}) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 17);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 18);
     // v16 地区下拉菜单（menu 分组）与地点卡片展开后的几行副标题（最多 3 行，空行丢弃）
     const menuSheet = sanitizeSheet({ id: 'filter', size: 'list', sections: [{ id: 'region-province', style: 'menu', rows: [{ id: 'region:province:', title: '不限', tone: 'accent' }] }] });
     assert.equal(menuSheet.sections[0].style, 'menu');

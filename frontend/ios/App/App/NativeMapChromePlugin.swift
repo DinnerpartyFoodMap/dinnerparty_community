@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 17）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 18）。
 ///
 /// capabilities() -> { protocolVersion, systemVersion, accessibility }
 /// attach({ sessionId, ownerId }) -> { ready }
@@ -50,6 +50,8 @@ import Capacitor
 ///   地点卡片展开后显示 subtitleExpanded（几行：评分（人数） | 人均，下一行标签），收起时仍是一行 subtitle。
 /// - v17：iOS 18 起都使用原生控件，不再上报 supportsGlass（版本号相同即可接管，宿主未就绪时 attach 报 UNAVAILABLE、网页重试）。
 ///   setState 的 glass 是住民的「原生玻璃按钮」偏好：iOS 26 且为真时画 Liquid Glass，否则用不透明的 regularMaterial。
+/// - v18：聚合成员列表（clusterMembers，list 样式的玻璃面板，同收藏、住民的地点列表）：点聚合拆不开时打开，
+///   点一行回传地点 key，下滑、点地图或关闭只收起列表。此前是网页面板，底色与玻璃和其他原生面板不一致。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -69,11 +71,11 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 17
+    static let protocolVersion = 18
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "random", "add", "search", "alongRoute", "account", "locate", "filter", "listView"]
-    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces", "random", "filter"]
+    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces", "random", "filter", "clusterMembers"]
     /// 单个面板最多的行数（收藏列表）
     static let sheetRowLimit = 300
     /// 心跳超时（秒）；网页每 1.5 秒发一次

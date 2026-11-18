@@ -641,6 +641,20 @@ const canvas = {
         assert.equal(Math.round(Number(match[1]) * 1000), ms, `${key} 与网页一致`);
     }
     assert.doesNotMatch(controller, /clusteringIdentifier = (?!nil)/, '不用 MapKit 自带的聚合');
+    // MapKit 会改动 setVisibleMapRect 的请求（放进自己的可见区域）：iOS 点聚合只放大一点点、补放大落在同一处就打开成员列表。
+    // 设置相机前按同步试探学到的比例与偏移修正请求；试探不回传相机事件；事件与平移的中心取可见矩形的中点
+    const setCamera = controller.slice(controller.indexOf('func setCamera('), controller.indexOf('private func calibrateCameraFit()'));
+    assert.match(setCamera, /calibrateCameraFit\(\)[\s\S]*cameraFit\?\.request\(for: target[\s\S]*setVisibleMapRect\(request, animated: animated\)/);
+    const calibrate = controller.slice(controller.indexOf('private func calibrateCameraFit()'), controller.indexOf('func panBy('));
+    assert.match(calibrate, /guard cameraFit\?\.key != key, !moving/, '动画、手势进行中不试探');
+    assert.match(calibrate, /calibratingCamera = true[\s\S]*setVisibleMapRect\(probe, animated: false\)[\s\S]*NativeMapCameraFit\.measure/);
+    assert.match(calibrate, /layoutMargins[\s\S]*safeAreaInsets/, '边距、安全区变化后重新试探');
+    for (const delegate of ['regionWillChangeAnimated', 'mapViewDidChangeVisibleRegion(', 'regionDidChangeAnimated']) {
+        const body = controller.slice(controller.indexOf(delegate), controller.indexOf(delegate) + 200);
+        assert.match(body, /!calibratingCamera/, `${delegate} 在试探期间不回传`);
+    }
+    assert.match(controller, /let center = visibleCenter\.coordinate/, '相机事件的中心与网页投影一致');
+    assert.match(controller, /struct NativeMapCameraFit[\s\S]*scale >= 0\.5, scale <= 4[\s\S]*func request\(for target: MKMapRect/);
     const pbxproj = readFileSync(new URL('../../../ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
     for (const file of ['FoodMapWebView.swift', 'NativeMapController.swift', 'NativeMapPlugin.swift']) {
         assert.ok(pbxproj.includes(`/* ${file} in Sources */,`), `${file} 要加入 Xcode 工程的 Sources`);

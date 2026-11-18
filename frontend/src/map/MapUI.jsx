@@ -80,6 +80,7 @@ import { describePlaceFilter } from '../places/components/PlaceFilterPanel';
 import { applyFilterSheetRow, filterChromeSheet } from '../places/filterChromeSheet';
 import { loadCategoryDirectory } from '../places/categoryDirectory';
 import { sfSymbol } from '../platform/iconRegistry.js';
+import { clusterMembersChromeSheet, clusterMemberRowId, clusterMemberDetail, clusterMembersTitle, findClusterMember } from './clusterMembers';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
 // 窄屏底部元素需要避开底部安全区（iPhone 主屏指示条、Android 手势条）；桌面与多数浏览器场景下为 0
@@ -1168,6 +1169,8 @@ export default function MapUI(props) {
         : (filterOpen && !pickerMode) ? 'filter'
         // 展会面板盖在地点卡片之上：关闭后仍选中的地点卡片重新出现
         : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
+        // 聚合成员列表（“此处有 N 家店”）：选中其中一家后关闭，让位给地点卡片
+        : (clusterMembers && !pickerMode) ? 'clusterMembers'
         : (selectedPlace && !pickerMode) ? 'place'
         // 住民的地点列表：选中其中一个地点后让位给地点卡片
         : (userFilter && userPlacesOpen && !pickerMode) ? 'userPlaces'
@@ -1314,6 +1317,8 @@ export default function MapUI(props) {
         if (closeIcon.image) Object.assign(chromeSheet, { closeImage: closeIcon.image, closeImageTemplate: closeIcon.imageTemplate });
     } else if (openSheetId === 'userPlaces') {
         chromeSheet = userPlacesChromeSheet(userFilter);
+    } else if (openSheetId === 'clusterMembers') {
+        chromeSheet = clusterMembersChromeSheet(clusterMembers);
     }
     if (chromeSheet) chromeSheet.token = sheetTokenRef.current.token;
 
@@ -1433,6 +1438,10 @@ export default function MapUI(props) {
             // 下滑、点地图或关闭钮只收起列表，筛选保留
             if (type === 'dismiss') { setUserPlacesOpen(false); return; }
             runUserPlacesRow(rowId);
+        } else if (sheetId === 'clusterMembers') {
+            const place = type === 'select' && findClusterMember(clusterMembers, rowId);
+            if (place) onSelectClusterMember?.(place);
+            else onCloseClusterMembers?.();
         }
     };
 
@@ -3505,11 +3514,11 @@ export default function MapUI(props) {
                 </>
             )}
 
-            {/* 最大缩放下仍重合的地点：成员列表保证每家店都能访问 */}
+            {/* 最大缩放下仍重合的地点：成员列表保证每家店都能访问；iOS 原生控件接管时用原生列表面板（clusterMembersChromeSheet） */}
             <ResponsivePanel
-                open={!!clusterMembers}
+                open={!!clusterMembers && !nativeChrome}
                 onClose={() => onCloseClusterMembers && onCloseClusterMembers()}
-                title={clusterMembers ? t('map:ui.clusterTitle', { count: clusterMembers.places.length }) : ''}
+                title={clusterMembers ? clusterMembersTitle(clusterMembers) : ''}
                 kind="cluster-members"
                 desktop="center"
                 mobile="sheet"
@@ -3520,7 +3529,7 @@ export default function MapUI(props) {
                     <div role="list">
                         {clusterMembers.places.map((place) => (
                             <button
-                                key={placeKey(place)}
+                                key={clusterMemberRowId(place)}
                                 type="button"
                                 role="listitem"
                                 className="fm-pressable"
@@ -3533,7 +3542,7 @@ export default function MapUI(props) {
                                 }}
                             >
                                 <span style={{ fontSize: 15, fontWeight: 600, overflowWrap: 'anywhere', color: isAvoidedPlace(place) ? 'var(--color-danger)' : undefined }}>{place.name || t('common:label.unnamedPlace')}</span>
-                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{place.category || t('common:label.uncategorized')}{place.per_person_cost != null ? t('common:label.perPersonCost', { per_person_cost: place.per_person_cost }) : ''}</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{clusterMemberDetail(place)}</span>
                             </button>
                         ))}
                     </div>

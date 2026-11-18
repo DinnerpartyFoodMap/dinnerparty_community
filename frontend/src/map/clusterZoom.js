@@ -66,3 +66,15 @@ export function clusterZoomOutcome({ zoom, logicalZoom, expansion, targetZoom, p
     if (attempts < maxRetries && (attempts === 0 || progressed)) return 'retry';
     return 'members';
 }
+
+/**
+ * 补放大时请求的缩放。高德的不足是动画被打断，再要同一个目标即可；
+ * 原生底图（MapKit）的不足是系统性的（它把请求的范围放进自己的可见区域再显示，每次都差同样多），
+ * 再要同一个目标只会落到同一处：compensate 时多要差掉的那一截。不低于目标、不超过地图最大缩放。
+ */
+export function nextClusterZoom({ targetZoom, requestedZoom, zoom, maxZoom, compensate = false }) {
+    const max = Number.isFinite(maxZoom) ? maxZoom : targetZoom;
+    if (!compensate || !Number.isFinite(zoom) || !Number.isFinite(requestedZoom)) return Math.min(max, targetZoom);
+    const shortfall = Math.max(0, targetZoom - zoom);
+    return Math.min(max, Math.max(targetZoom, requestedZoom + shortfall));
+}

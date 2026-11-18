@@ -13,7 +13,7 @@ import { canUseNativeMap } from "../platform/nativeMap";
 import { MarkerSnapshotStore, markerSnapshotSource } from "./markerSnapshot";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
 import { computeLogicalZoom } from "./cluster/snapshot";
-import { clusterZoomOutcome, revealZoom } from "./clusterZoom";
+import { clusterZoomOutcome, nextClusterZoom, revealZoom } from "./clusterZoom";
 import { readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
 import { createLocationReporter } from "./locationReport";
@@ -1225,9 +1225,12 @@ export default function MapView({
         window.clearTimeout(request.timer);
         request.phase = 'waiting';
         armSkipAutoSearch();
+        // 聚合落在未被遮挡区域的中央（按这次请求的缩放算中心）
+        const [lng, lat] = request.coordinate;
+        const center = centerForScreenTarget({ lng, lat, zoom: request.requestedZoom, ...request.screen });
         try {
-            if (typeof map.setZoomAndCenter === 'function') map.setZoomAndCenter(request.targetZoom, request.center, false);
-            else { map.setCenter(request.center); map.setZoom(request.targetZoom); }
+            if (typeof map.setZoomAndCenter === 'function') map.setZoomAndCenter(request.requestedZoom, center, false);
+            else { map.setCenter(center); map.setZoom(request.requestedZoom); }
         } catch (e) {
             console.warn('展开聚合失败', e);
             cancelClusterZoom();
@@ -1247,11 +1250,18 @@ export default function MapView({
             : NaN;
         const outcome = clusterZoomOutcome({
             zoom, logicalZoom, expansion: request.expansion, targetZoom: request.targetZoom,
-            previousZoom: request.previousZoom, attempts: request.attempts
+            previousZoom: request.previousZoom, attempts: request.attempts,
+            // 空闲计时到点时还在等相机动起来：这次请求没有让相机动
+            moved: request.phase !== 'waiting'
         });
         if (outcome === 'retry') {
             request.attempts += 1;
             request.previousZoom = zoom;
+            // 原生底图每次都差同样多：多要差掉的那一截；高德是被打断，再要同一个目标
+            request.requestedZoom = nextClusterZoom({
+                targetZoom: request.targetZoom, requestedZoom: request.requestedZoom, zoom,
+                maxZoom: request.maxZoom, compensate: isNativeMap(map)
+            });
             issueClusterZoom(request);
             return;
         }
@@ -1276,14 +1286,11 @@ export default function MapView({
         const width = container?.clientWidth || window.innerWidth;
         const height = container?.clientHeight || window.innerHeight;
         const insets = getMapSafeInsets(container);
-        const [lng, lat] = node.coordinate;
-        const center = centerForScreenTarget({
-            lng, lat, zoom: targetZoom,
-            targetX: width / 2,
-            targetY: insets.top + (height - insets.top - insets.bottom) / 2,
-            width, height
+        const screen = { targetX: width / 2, targetY: insets.top + (height - insets.top - insets.bottom) / 2, width, height };
+        Object.assign(request, {
+            targetZoom, requestedZoom: targetZoom, maxZoom, screen,
+            previousZoom: currentZoom, attempts: 0, phase: 'waiting', timer: 0
         });
-        Object.assign(request, { targetZoom, center, previousZoom: currentZoom, attempts: 0, phase: 'waiting', timer: 0 });
         clusterZoomRef.current = request;
         issueClusterZoom(request);
     };
@@ -1295,13 +1302,21 @@ export default function MapView({
             const request = clusterZoomRef.current;
             if (!request) return;
             if (request.phase === 'waiting') {
-                window.clearTimeout(request.timer);
-                request.phase = 'moving';
-                // moveend 迟迟不来（被别的操作接管）时不再跟进
-                request.timer = window.setTimeout(cancelClusterZoom, CLUSTER_ZOOM_MOVE_LIMIT_MS);
+                startMoving(request);
             } else if (request.phase === 'settling') {
                 cancelClusterZoom();
             }
+        };
+        // 相机在动但没收到 movestart（原生动画的开始事件丢了）：同样算动起来了
+        const onMapMove = () => {
+            const request = clusterZoomRef.current;
+            if (request?.phase === 'waiting') startMoving(request);
+        };
+        const startMoving = (request) => {
+            window.clearTimeout(request.timer);
+            request.phase = 'moving';
+            // moveend 迟迟不来（被别的操作接管）时不再跟进
+            request.timer = window.setTimeout(cancelClusterZoom, CLUSTER_ZOOM_MOVE_LIMIT_MS);
         };
         const onMoveEnd = () => {
             const request = clusterZoomRef.current;
@@ -1313,6 +1328,7 @@ export default function MapView({
         };
         const onUserInput = () => cancelClusterZoom();
         map.on('movestart', onMoveStart);
+        map.on('mapmove', onMapMove);
         map.on('moveend', onMoveEnd);
         map.on('dragstart', onUserInput);
         const inputOptions = { capture: true, passive: true };
@@ -1321,6 +1337,7 @@ export default function MapView({
             cancelClusterZoom();
             try {
                 map.off('movestart', onMoveStart);
+                map.off('mapmove', onMapMove);
                 map.off('moveend', onMoveEnd);
                 map.off('dragstart', onUserInput);
             } catch (e) { /* 地图已销毁 */ }
