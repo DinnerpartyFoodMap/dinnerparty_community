@@ -221,7 +221,11 @@ function fakeServer({ leafStatus = 200 } = {}) {
     let now = 1000;
     const store = new MarkerTileStore(source, { now: () => now, switchWaitMs: 500 });
     let notified = 0;
-    store.subscribe(() => { notified += 1; });
+    const leafPublications = new Set();
+    store.subscribe(() => {
+        notified += 1;
+        if (store.band?.kind === 'leaf') leafPublications.add(store.all());
+    });
     const gzBounds = { minLng: 113.255, maxLng: 113.275, minLat: 23.12, maxLat: 23.14 };
     assert.equal(store.setView({ bounds: gzBounds, zoom: 12 }), false, '清单还没到');
     await source.start();
@@ -242,6 +246,7 @@ function fakeServer({ leafStatus = 200 } = {}) {
     list = store.all();
     assert.deepEqual(list.map((p) => p.id).sort((a, b) => a - b), [1, 2]);
     assert.ok(list.every((p) => p.marker_only));
+    assert.equal(leafPublications.size, 1, '换级完成后，相同的明细列表只发布一次');
 
     // 本地修改：立即生效，明细瓦片追上后去掉；删除立即从地图上去掉
     store.upsert({ ...list.find((p) => p.id === 1), name: '鱼粥铺' });

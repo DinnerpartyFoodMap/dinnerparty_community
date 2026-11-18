@@ -2,13 +2,13 @@
 // 由这里决定索引、快照、持久覆盖物和转场时序。React 只提交目标数据，不逐帧参与标记定位。
 //
 // 时序规则：
-// - 缩放结束后立即基于已缓存数据提交完整目标快照并播放吸附；捏合过程中既有节点正常跟随地图。
+// - 缩放结束后提交完整目标快照；跨瓦片级别时等待对应数据，既有节点跟随地图。
 // - zoomstart / movestart / 页面隐藏 / 销毁时终止转场并收敛到目标快照，手势始终优先。
 // - 每个转场有版本号，过期的完成回调不会回收新节点。
 // - 单点标记的名称总是显示（不做碰撞避让）；转场期间先隐藏，相机静止、转场结束后统一显示。
 
 import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
-import { buildSnapshot, computeLogicalZoom } from './cluster/snapshot.js';
+import { buildSnapshot, resolveMarkerZoom } from './cluster/snapshot.js';
 import { planTransition } from './cluster/transitions.js';
 import {
     createMarkerParts, applyNodeAppearance, glyphSize
@@ -64,6 +64,7 @@ export class MarkerLayerController {
     /**
      * @param {object} map AMap.Map
      * @param {{
+     *   getMarkerViewZoom?: (zoom: number) => number,
      *   onPlaceClick?: (place: object, node: object) => void,
      *   onClusterClick?: (node: object, engine: ClusterEngine) => void,
      *   clusterRadiusPx?: number
@@ -76,6 +77,7 @@ export class MarkerLayerController {
         this.zoomRange = getMapZoomRange(map);
         this.engine = null;
         this.queryMode = 'nearby';
+        this.markerBand = null;
         this.snapshot = null;
         this.logicalZoom = undefined;
         this.entries = new Map();
@@ -138,7 +140,7 @@ export class MarkerLayerController {
      * 单一更新入口。places 为当前模式下应参与聚合的完整列表。
      * 只有 key、坐标或参与聚类的集合变化才重建索引；名称、分类等变化只刷新外观。
      */
-    update({ places = [], queryMode = 'nearby' } = {}) {
+    update({ places = [], queryMode = 'nearby', markerBand = null } = {}) {
         if (this.destroyed) return;
         const normalized = normalizePlaces(places);
         const signature = dataSignature(normalized);
@@ -154,6 +156,7 @@ export class MarkerLayerController {
             this.engine.updatePlaces(normalized);
         }
         this.queryMode = queryMode;
+        this.markerBand = markerBand;
         this._commit('data');
     }
 
@@ -244,14 +247,17 @@ export class MarkerLayerController {
         if (!viewBounds) return;
         const started = performance.now();
         const zoom = Number(this.map.getZoom());
-        this.logicalZoom = computeLogicalZoom(zoom, this.logicalZoom, {
+        const logicalZoom = resolveMarkerZoom(zoom, this.logicalZoom, {
             minZoom: this.engine.minZoom,
             maxZoom: this.engine.maxZoom
-        });
+        }, this.markerBand, this.options.getMarkerViewZoom);
+        if (logicalZoom === null) return;
+        this.logicalZoom = logicalZoom;
         const next = buildSnapshot(this.engine, {
             viewBounds,
-            logicalZoom: this.logicalZoom,
+            logicalZoom,
             queryMode: this.queryMode,
+            markerBand: this.markerBand,
             transitionVersion: this.version + 1
         });
         const plan = planTransition(this.snapshot, next);
@@ -336,7 +342,7 @@ export class MarkerLayerController {
         if (source === 'sdk' && now < (entry.touchSdkBlockedUntil || 0)) return;
         const node = entry.node;
         if (node.kind === 'place') this.options.onPlaceClick?.(node.place, node);
-        else this.options.onClusterClick?.(node, this.engine);
+        else this.options.onClusterClick?.(node, this.snapshot?.engine);
     }
 
     _removeMarkers(markers) {
@@ -393,9 +399,8 @@ export class MarkerLayerController {
 
     _apply(plan, next, reason) {
         const policy = getMotionPolicy();
-        // 相机驱动的提交发生在手势结束后，旧转场已在 movestart/zoomstart 时收敛；
-        // 数据驱动的提交（相机静止时）不打断仍在进行的转场，变化的节点从当前可视位置接续。
-        if (reason === 'camera' || reason === 'resize' || reason === 'resume' || !policy.clusterMotion || !policy.pageVisible) {
+        // 新手势开始时旧转场已收敛。相机结束事件可能晚于数据提交，保留刚开始的转场。
+        if (reason === 'resize' || reason === 'resume' || !policy.clusterMotion || !policy.pageVisible) {
             this._finishAll();
         }
         const version = ++this.version;

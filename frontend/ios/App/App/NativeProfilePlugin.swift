@@ -218,11 +218,14 @@ final class NativeProfileModel: ObservableObject {
         let canEditWidgets: Bool
         let canOpenCommunity: Bool
         let canOpenFavorites: Bool
+        let canOpenLocations: Bool
+        let canUseAccountActions: Bool
+        let rejectedPlaceCount: Int
         let collectionVisibility: Bool?
         let canBlock: Bool
         let blocked: Bool
         let widgets: [String]
-        let widgetSlotLabels: [String]
+        let hiddenWidgets: Set<String>
         let sections: [WidgetSection]
         let axes: [ProfileAxis]
         let labels: [String: String]
@@ -232,7 +235,7 @@ final class NativeProfileModel: ObservableObject {
 
     @Published private(set) var view: ProfileView
     @Published var selectedAxis: String?
-    @Published var editingWidgets: [String]?
+    @Published var editingHiddenWidgets: Set<String>?
     @Published private(set) var busy = false
     @Published var alertMessage: String?
     @Published var confirmBlock = false
@@ -358,11 +361,14 @@ final class NativeProfileModel: ObservableObject {
             canEditWidgets: (object["canEditWidgets"] as? Bool) ?? false,
             canOpenCommunity: (object["canOpenCommunity"] as? Bool) ?? false,
             canOpenFavorites: (object["canOpenFavorites"] as? Bool) ?? false,
+            canOpenLocations: (object["canOpenLocations"] as? Bool) ?? false,
+            canUseAccountActions: (object["canUseAccountActions"] as? Bool) ?? false,
+            rejectedPlaceCount: max(0, (object["rejectedPlaceCount"] as? NSNumber)?.intValue ?? 0),
             collectionVisibility: object["collectionVisibility"] as? Bool,
             canBlock: (object["canBlock"] as? Bool) ?? false,
             blocked: (object["blocked"] as? Bool) ?? false,
             widgets: (object["widgets"] as? JSArray ?? []).compactMap { $0 as? String },
-            widgetSlotLabels: (object["widgetSlotLabels"] as? JSArray ?? []).compactMap { $0 as? String },
+            hiddenWidgets: Set((object["hiddenWidgets"] as? JSArray ?? []).compactMap { $0 as? String }),
             sections: sections,
             axes: axes,
             labels: labels,
@@ -384,14 +390,18 @@ final class NativeProfileModel: ObservableObject {
         selectedAxis = selectedAxis == key ? nil : key
     }
 
-    func setEditingWidget(_ index: Int, _ kind: String) {
-        guard var widgets = editingWidgets, index >= 0, index < widgets.count else { return }
-        widgets[index] = kind
-        editingWidgets = widgets
+    func setWidgetVisible(_ kind: String, isVisible: Bool) {
+        guard var hidden = editingHiddenWidgets else { return }
+        if isVisible {
+            hidden.remove(kind)
+        } else {
+            hidden.insert(kind)
+        }
+        editingHiddenWidgets = hidden
     }
 
     func beginEditingWidgets() {
-        editingWidgets = view.widgets.isEmpty ? Array(widgetOptions.prefix(1).map(\.id)) : view.widgets
+        editingHiddenWidgets = view.hiddenWidgets
     }
 
     // MARK: 请求
@@ -418,8 +428,10 @@ final class NativeProfileModel: ObservableObject {
     }
 
     func saveWidgets() {
-        guard let widgets = editingWidgets, !widgets.isEmpty else { return }
-        start("saveWidgets", values: ["widgets": widgets])
+        guard let hidden = editingHiddenWidgets else { return }
+        let widgets = view.widgets.isEmpty ? widgetOptions.prefix(1).map(\.id) : view.widgets
+        let hiddenWidgets = widgetOptions.map(\.id).filter { hidden.contains($0) }
+        start("saveWidgets", values: ["widgets": widgets, "hiddenWidgets": hiddenWidgets])
     }
 
     func setBlocked(_ blocked: Bool) {
@@ -436,6 +448,22 @@ final class NativeProfileModel: ObservableObject {
 
     func openFavorites() {
         onFinish?("openFavorites", [:])
+    }
+
+    func openLocations() {
+        onFinish?("my-locations", [:])
+    }
+
+    func openSettings() {
+        onFinish?("settings", [:])
+    }
+
+    func openCompanion() {
+        onFinish?("companion", [:])
+    }
+
+    func logout() {
+        onFinish?("logout", [:])
     }
 
     func openPlace(_ id: String) {
@@ -459,7 +487,7 @@ final class NativeProfileModel: ObservableObject {
             let labels = view.labels.merging(Self.strings(profile["labels"] as? JSObject)) { _, new in new }
             view = Self.parse(profile, labels: labels, selfLevels: selfLevels, widgetOptions: widgetOptions)
         }
-        if entry.type == "saveWidgets" { editingWidgets = nil }
+        if entry.type == "saveWidgets" { editingHiddenWidgets = nil }
         // 屏蔽成功后网页已打开举报入口：收起主页，让举报表显示在地图页上。
         if entry.type == "setBlocked" && entry.blocked {
             onFinish?("back", [:])
@@ -523,7 +551,7 @@ private struct NativeProfileView: View {
                     .accessibilityLabel(Text(model.text("back", "返回")))
                 }
             }
-            .sheet(isPresented: Binding(get: { model.editingWidgets != nil }, set: { if !$0 { model.editingWidgets = nil } })) {
+            .sheet(isPresented: Binding(get: { model.editingHiddenWidgets != nil }, set: { if !$0 { model.editingHiddenWidgets = nil } })) {
                 widgetEditor
                     .presentationDetents([.medium, .large])
             }
@@ -554,6 +582,9 @@ private struct NativeProfileView: View {
             radarCard
             axisEditor
             widgets
+            if model.view.canUseAccountActions {
+                accountActions
+            }
         }
     }
 
@@ -565,18 +596,9 @@ private struct NativeProfileView: View {
                         .frame(width: 64, height: 64)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 8) {
-                            Text(model.view.name)
-                                .font(.title3.weight(.semibold))
-                                .lineLimit(1)
-                            if model.view.canOpenCommunity {
-                                Button(model.text("community", "同好")) { model.openCommunity() }
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(model.tint)
-                                    .buttonStyle(.plain)
-                                    .fixedSize()
-                            }
-                        }
+                        Text(model.view.name)
+                            .font(.title3.weight(.semibold))
+                            .lineLimit(1)
                         HStack(spacing: 4) {
                             Image(systemName: "location.fill")
                                 .font(.caption2)
@@ -588,6 +610,20 @@ private struct NativeProfileView: View {
                         }
                     }
                     Spacer(minLength: 0)
+                    if model.view.canOpenCommunity {
+                        Button {
+                            model.openCommunity()
+                        } label: {
+                            Text(model.text("community", "同好"))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(model.tint.fmReadableText)
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize()
+                    }
                 }
                 if model.view.canBlock {
                     Button {
@@ -680,29 +716,29 @@ private struct NativeProfileView: View {
         ForEach(model.view.sections) { section in
             NativePageCard(padding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
+                    HStack(spacing: 6) {
+                        let hasRejectedPlaces = section.kind == "recent" && model.view.rejectedPlaceCount > 0
                         Text(section.title)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityLabel(Text(hasRejectedPlaces ? model.text("rejectedPlaces", section.title) : section.title))
+                        if hasRejectedPlaces {
+                            Circle()
+                                .fill(FM.danger)
+                                .frame(width: 7, height: 7)
+                                .accessibilityHidden(true)
+                        }
                         Spacer(minLength: 0)
-                        if section.kind == "collection" {
-                            if let isPublic = model.view.collectionVisibility {
-                                Toggle(model.text("collectionPublic", "公开"), isOn: Binding(
-                                    get: { model.view.collectionVisibility ?? isPublic },
-                                    set: { model.setCollectionVisibility($0) }
-                                ))
-                                .font(.caption)
-                                .tint(model.tint)
-                                .fixedSize()
-                                .disabled(model.busy)
-                            }
-                            if model.view.canOpenFavorites {
-                                Button(model.text("viewAllFavorites", "查看全部")) { model.openFavorites() }
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(model.tint)
-                                    .buttonStyle(.plain)
-                                    .fixedSize()
-                            }
+                        if section.kind == "collection", let isPublic = model.view.collectionVisibility {
+                            Toggle(model.text("collectionPublic", "公开"), isOn: Binding(
+                                get: { model.view.collectionVisibility ?? isPublic },
+                                set: { model.setCollectionVisibility($0) }
+                            ))
+                            .font(.caption)
+                            .tint(model.tint)
+                            .fixedSize()
+                            .disabled(model.busy)
                         }
                     }
                     if !section.empty.isEmpty && section.groups.isEmpty {
@@ -720,6 +756,11 @@ private struct NativeProfileView: View {
                         ForEach(group.rows) { row in
                             placeRow(row)
                         }
+                    }
+                    if section.kind == "collection", model.view.canOpenFavorites {
+                        sectionLink(model.text("viewAllFavorites", "查看全部"), action: model.openFavorites)
+                    } else if section.kind == "recent", model.view.canOpenLocations {
+                        sectionLink(model.text("viewAllLocations", "查看全部"), action: model.openLocations)
                     }
                 }
             }
@@ -742,25 +783,66 @@ private struct NativeProfileView: View {
         }
     }
 
-    /// 调整小组件：系统表单，每个位置一个选择器；左上保存，右上关闭
+    private func sectionLink(_ title: String, action: @escaping () -> Void) -> some View {
+        HStack {
+            Spacer(minLength: 0)
+            Button(action: action) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(model.tint.fmReadableText)
+                    .padding(.leading, 10)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var accountActions: some View {
+        NativePageCard(padding: 14) {
+            VStack(spacing: 0) {
+                accountRow(model.text("settings", "住民与地图设置"), symbol: "gearshape", action: model.openSettings)
+                Divider()
+                accountRow(model.text("companion", "角色观察屋"), symbol: "figure.stand", action: model.openCompanion)
+                Divider()
+                accountRow(model.text("logout", "暂离幻想乡"), symbol: "rectangle.portrait.and.arrow.right",
+                           role: .destructive, action: model.logout)
+            }
+        }
+    }
+
+    private func accountRow(_ title: String, symbol: String, role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
+        Button(role: role, action: action) {
+            HStack {
+                Label(title, systemImage: symbol)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(role == .destructive ? FM.dangerText : Color.primary)
+                Spacer(minLength: 8)
+                if role != .destructive {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 调整小组件：独立切换各卡片；左上保存，右上关闭。
     private var widgetEditor: some View {
         NavigationStack {
             Form {
-                // 行底色用卡片底色（与网页 bg-surface 一致；深色下系统行底是中性灰），这些列表里没有单独设底色的行
-                Group {
                 Section {
-                    ForEach(Array((model.editingWidgets ?? []).enumerated()), id: \.offset) { index, _ in
-                        Picker(slotLabel(index), selection: Binding(
-                            get: { model.editingWidgets?[safe: index] ?? "recent" },
-                            set: { model.setEditingWidget(index, $0) }
-                        )) {
-                            ForEach(model.view.widgetOptions) { option in
-                                Text(option.title).tag(option.id)
-                            }
-                        }
-                        .pickerStyle(.menu)
+                    ForEach(model.view.widgetOptions) { option in
+                        Toggle(option.title, isOn: Binding(
+                            get: { !(model.editingHiddenWidgets?.contains(option.id) ?? false) },
+                            set: { model.setWidgetVisible(option.id, isVisible: $0) }
+                        ))
+                        .tint(model.tint)
+                        .disabled(model.busy)
                     }
-                }
                 }
                 .listRowBackground(FM.bgSurface)
             }
@@ -769,7 +851,7 @@ private struct NativeProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 NativeCloseToolbarItem(label: model.text("cancel", "取消")) {
-                    model.editingWidgets = nil
+                    model.editingHiddenWidgets = nil
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     if model.busy {
@@ -784,11 +866,6 @@ private struct NativeProfileView: View {
         }
         .nativeThemeColors(primary: model.tint, secondary: model.secondary)
         .preferredColorScheme(model.dark ? .dark : .light)
-    }
-
-    private func slotLabel(_ index: Int) -> String {
-        if index < model.view.widgetSlotLabels.count { return model.view.widgetSlotLabels[index] }
-        return "\(index + 1)"
     }
 
     private func placeRow(_ row: NativeProfileModel.ProfilePlaceRow) -> some View {

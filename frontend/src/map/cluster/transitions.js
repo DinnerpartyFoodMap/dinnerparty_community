@@ -1,9 +1,10 @@
 // 快照差分：决定两份聚类快照之间每个节点的去向。纯数据逻辑，不涉及 DOM 与动画时序。
 //
-// 同一索引代内用真实树关系处理一层或跨多层缩放；跨代（数据变化）不冒充缩放拆分：
-// 先按 key / 成员签名复用图形，只有明确的一对多、多对一才按成员交集连接，其余短渐变。
+// 同一索引代内使用真实树关系，跨代优先使用 key 和成员交集。
+// 附近地图换瓦片档时，剩余节点可以按匿名粗格的覆盖范围过渡。
 
 import { buildMemberToNode } from './snapshot.js';
+import { tileOf } from '../markerTiles.js';
 
 const DEFAULT_OPTIONS = { descendantBudget: 4000, memberBudget: 6000 };
 
@@ -94,6 +95,97 @@ function planZoom(plan, prev, next, options) {
     }
 }
 
+function linkNodes(nextToPrev, prevToNext, nextKey, prevKey) {
+    if (!nextToPrev.has(nextKey)) nextToPrev.set(nextKey, new Set());
+    if (!prevToNext.has(prevKey)) prevToNext.set(prevKey, new Set());
+    nextToPrev.get(nextKey).add(prevKey);
+    prevToNext.get(prevKey).add(nextKey);
+}
+
+function planRelations(plan, nextToPrev, prevToNext, bandDirection) {
+    // 只过渡互斥的一一、一对多和多对一关系；瓦片换档按粗细方向拆或合。
+    for (const [nextKey, prevKeys] of nextToPrev) {
+        const exclusive = [...prevKeys].every((prevKey) => prevToNext.get(prevKey).size === 1);
+        if (!exclusive) continue;
+        if (prevKeys.size === 1) {
+            const [prevKey] = prevKeys;
+            plan.reuse.set(nextKey, prevKey);
+        } else if (bandDirection !== 'zoom-in') {
+            plan.mergeTargets.add(nextKey);
+            for (const prevKey of prevKeys) plan.mergeInto.set(prevKey, nextKey);
+        }
+    }
+    if (bandDirection === 'zoom-out') return;
+    for (const [prevKey, nextKeys] of prevToNext) {
+        if (nextKeys.size < 2) continue;
+        const exclusive = [...nextKeys].every((nextKey) => nextToPrev.get(nextKey).size === 1);
+        if (!exclusive) continue;
+        plan.splitSources.add(prevKey);
+        for (const nextKey of nextKeys) plan.splitFrom.set(nextKey, prevKey);
+    }
+}
+
+function markerBandDirection(prev, next) {
+    const a = prev.markerBand;
+    const b = next.markerBand;
+    if (next.queryMode !== 'nearby' || !a || !b) return null;
+    if (a.kind === 'aggregate' && (b.kind === 'leaf' || a.cell < b.cell)) return 'zoom-in';
+    if (b.kind === 'aggregate' && (a.kind === 'leaf' || b.cell < a.cell)) return 'zoom-out';
+    return null;
+}
+
+function coarseCellKey(place, zoom) {
+    if (!place) return null;
+    if (place.aggregateCell) {
+        const [cellZoom, x, y] = place.aggregateCell;
+        if (cellZoom < zoom) return null;
+        const scale = 2 ** (cellZoom - zoom);
+        return `${Math.floor(x / scale)}/${Math.floor(y / scale)}`;
+    }
+    return tileOf(Number(place.longitude), Number(place.latitude), zoom).join('/');
+}
+
+function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, direction) {
+    const refining = direction === 'zoom-in';
+    const coarse = refining ? prev : next;
+    const fine = refining ? next : prev;
+    const coarseNodes = refining ? remainingPrev : remainingNext;
+    const fineNodes = refining ? remainingNext : remainingPrev;
+    if (!coarseNodes.length || !fineNodes.length) return;
+
+    const zoom = coarse.markerBand.cell;
+    const parentByCell = new Map();
+    for (const node of coarseNodes) {
+        for (const member of coarse.engine.memberKeys(node)) {
+            const place = coarse.engine.placeByKey.get(member);
+            // 同一个匿名格的行坐标相同，必定属于同一个可见节点。
+            if (place?.aggregateCell?.[0] === zoom) parentByCell.set(coarseCellKey(place, zoom), node.key);
+        }
+    }
+    if (!parentByCell.size) return;
+
+    const nextToPrev = new Map();
+    const prevToNext = new Map();
+    for (const node of fineNodes) {
+        const parents = new Set();
+        // 只按整格关联图形。核对所有成员所在的格，避免把横跨粗格的聚合按重心连到单一来源。
+        for (const member of fine.engine.memberKeys(node)) {
+            const cell = coarseCellKey(fine.engine.placeByKey.get(member), zoom);
+            const parent = parentByCell.get(cell);
+            if (!parent) {
+                parents.clear();
+                break;
+            }
+            parents.add(parent);
+        }
+        for (const parent of parents) {
+            if (refining) linkNodes(nextToPrev, prevToNext, node.key, parent);
+            else linkNodes(nextToPrev, prevToNext, parent, node.key);
+        }
+    }
+    planRelations(plan, nextToPrev, prevToNext, direction);
+}
+
 function planData(plan, prev, next, options) {
     const usedPrev = new Set(plan.reuse.values());
     // 1. 成员签名相同且核对成员一致：直接沿用图形
@@ -134,41 +226,16 @@ function planData(plan, prev, next, options) {
             const prevKey = prevMemberMap.get(member);
             if (prevKey) hits.add(prevKey);
         }
-        nextToPrev.set(node.key, hits);
-        for (const prevKey of hits) {
-            if (!prevToNext.has(prevKey)) prevToNext.set(prevKey, new Set());
-            prevToNext.get(prevKey).add(node.key);
-        }
+        for (const prevKey of hits) linkNodes(nextToPrev, prevToNext, node.key, prevKey);
     }
+    planRelations(plan, nextToPrev, prevToNext);
 
-    for (const node of remainingNext) {
-        const hits = nextToPrev.get(node.key);
-        if (!hits || !hits.size) continue;
-        const exclusive = [...hits].every((prevKey) => prevToNext.get(prevKey)?.size === 1);
-        if (!exclusive) continue; // 多对多：交给渐变
-        if (hits.size === 1) {
-            // 一一对应（例如聚合多了或少了几个成员）：沿用图形，只更新数量与位置
-            const [prevKey] = hits;
-            if (!usedPrev.has(prevKey)) {
-                plan.reuse.set(node.key, prevKey);
-                usedPrev.add(prevKey);
-            }
-        } else {
-            plan.mergeTargets.add(node.key);
-            for (const prevKey of hits) {
-                plan.mergeInto.set(prevKey, node.key);
-                usedPrev.add(prevKey);
-            }
-        }
-    }
-    // 一对多：一个旧节点只连到若干个只来自它的新节点
-    for (const [prevKey, nextKeys] of prevToNext) {
-        if (usedPrev.has(prevKey) || nextKeys.size < 2) continue;
-        const exclusive = [...nextKeys].every((nextKey) => nextToPrev.get(nextKey)?.size === 1 && !plan.reuse.has(nextKey));
-        if (!exclusive) continue;
-        plan.splitSources.add(prevKey);
-        usedPrev.add(prevKey);
-        for (const nextKey of nextKeys) plan.splitFrom.set(nextKey, prevKey);
+    // 当前画面可能已经切到新的逻辑缩放；按实际瓦片档的精度判断方向。
+    const direction = markerBandDirection(prev, next);
+    if (direction) {
+        planMarkerBand(plan, prev, next,
+            remainingPrev.filter((node) => !prevToNext.has(node.key)),
+            remainingNext.filter((node) => !nextToPrev.has(node.key)), direction);
     }
 }
 

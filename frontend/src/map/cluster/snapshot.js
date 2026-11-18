@@ -17,6 +17,18 @@ export function computeLogicalZoom(zoom, previous, { hysteresis = DEFAULT_HYSTER
     return Math.abs(zoom - previous) > 0.5 + hysteresis ? nearest : previous;
 }
 
+/** 跨瓦片级别时保留上一份快照，等新级别的数据和缩放一起提交。 */
+export function resolveMarkerZoom(zoom, previousZoom, range, markerBand, getViewZoom) {
+    const logicalZoom = computeLogicalZoom(zoom, previousZoom, range);
+    if (!markerBand) return logicalZoom;
+    const min = markerBand.minZoom;
+    const max = markerBand.maxZoom ?? Infinity;
+    // 原生在手势中更新聚类，判断是否换瓦片时仍与数据源共用停下时的滞回基准。
+    const viewZoom = getViewZoom ? getViewZoom(zoom) : logicalZoom;
+    if (viewZoom < min || viewZoom > max) return null;
+    return Math.max(min, Math.min(max, logicalZoom));
+}
+
 /** 按比例向四周扩展范围（经纬度），用于给可见节点留出缓冲区。 */
 export function expandBounds(bounds, ratio) {
     const lngSpan = bounds.maxLng - bounds.minLng;
@@ -67,9 +79,9 @@ export function pointInBounds(bounds, lng, lat) {
 
 /**
  * @param {import('./engine.js').ClusterEngine | null} engine
- * @param {{ viewBounds: object, logicalZoom: number, queryMode: string, bufferRatio?: number, transitionVersion?: number }} input
+ * @param {{ viewBounds: object, logicalZoom: number, queryMode: string, markerBand?: object|null, bufferRatio?: number, transitionVersion?: number }} input
  */
-export function buildSnapshot(engine, { viewBounds, logicalZoom, queryMode, bufferRatio = 0.35, transitionVersion = 0 }) {
+export function buildSnapshot(engine, { viewBounds, logicalZoom, queryMode, markerBand = null, bufferRatio = 0.35, transitionVersion = 0 }) {
     const coverageBounds = viewBounds ? expandBounds(viewBounds, bufferRatio) : null;
     const visibleNodes = engine && coverageBounds
         ? engine.query([coverageBounds.minLng, coverageBounds.minLat, coverageBounds.maxLng, coverageBounds.maxLat], logicalZoom)
@@ -80,6 +92,7 @@ export function buildSnapshot(engine, { viewBounds, logicalZoom, queryMode, buff
         generation: engine ? engine.generation : 0,
         engine,
         queryMode,
+        markerBand,
         logicalZoom,
         coverageBounds,
         visibleNodes,

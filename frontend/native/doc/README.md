@@ -127,6 +127,8 @@ iOS 新手指引恢复“更多功能”：原生端显示上滑示意，实际�
 
 管理后台、住民主页与日记 · 同好使用与住民设置相同的整页呈现（[NativeScreenPresentation.swift](../../ios/App/App/NativeScreenPresentation.swift)）：地图与网页留在下方，页面从右侧滑入、向右退出；左边缘侧滑在根页面关闭，在子页面交给页面栈返回。添加地点仍使用底部半屏：新建立即停在约 45% 高度，半屏时内容不滚动，上滑由面板本身连续展开到全屏；导航栏提供“展开全部”按钮，展开后才允许滚动，和地点详情卡片一致。
 
+住民主页侧滑验收：从地图头像打开自己的主页，缓慢向右拖时应看到原地图。从同好列表打开另一位住民的主页，拖动时应看到原列表。两条路径都要分别验证拖回取消、再次侧滑、用返回箭头离开和重新打开。确认收藏与创建地点栏的「查看全部」回地图打开相应列表。
+
 **新增本地插件必须注册**：除把 Swift 文件加入 Xcode 工程外，还要在 [FoodMapBridgeViewController.capacitorDidLoad()](../../ios/App/App/FoodMapBridgeViewController.swift) 调用 `bridge?.registerPluginInstance(...)`。未注册时网页 `isPluginAvailable` 为 false，会静默回退网页界面。
 
 **Xcode 工程完整性**：`project.pbxproj` 的每个对象 ID 必须唯一，文件也不能带 UTF-8 BOM；否则 `xcodebuild` 的 project loader 会以退出码 74 失败，GitHub Actions 只显示 `Process completed with exit code 74`。`scripts/patch-native-projects.mjs` 会去除 BOM、加入新 Swift 文件，并在结束时校验重复对象 ID；新增原生文件后必须运行它。

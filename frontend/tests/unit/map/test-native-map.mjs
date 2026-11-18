@@ -36,6 +36,8 @@ const {
     NativeMapView, NativeMarkerOverlay, NativePolylineOverlay, isNativeMap, nativeMapAppearance, sampleTouchHoles, readPoint
 } = await import('../../../src/map/nativeMapView.js');
 const { NativeMarkerLayer, buildNativeMarkerStyle, nativeNode, NATIVE_BUFFER_RATIO } = await import('../../../src/map/nativeMarkerLayer.js');
+const { tileOf } = await import('../../../src/map/markerTiles.js');
+const { computeLogicalZoom } = await import('../../../src/map/cluster/snapshot.js');
 const {
     frameRegion, FRAME_PROBES, decideProbe, decideFrames, toNativeCoordinate, fromNativeCoordinate, distanceMeters,
     readCachedFrames, saveCachedFrames, nativeProbeRequests, FRAMES_CACHE_MS
@@ -575,6 +577,71 @@ const canvas = {
     assert.equal([...map.handlers.values()].reduce((n, set) => n + set.size, 0), 0, '销毁后不再监听');
     assert.deepEqual(nativeNode({ key: 'place:9', kind: 'place', coordinate: [1, 2], count: 1, place: { id: 9 } }),
         { id: 'place:9', cluster: false, lng: 1, lat: 2, count: 1, name: '', glyph: 'place' });
+
+    // 跨瓦片级别时保留旧聚合，直到明细到达才发送一次拆分转场。
+    const tileMap = new FakeMap();
+    const tileLayer = new NativeMarkerLayer(tileMap);
+    const aggregateBand = { kind: 'aggregate', tile: 8, cell: 14, minZoom: 11, maxZoom: 12 };
+    const leafBand = { kind: 'leaf', tile: 12, minZoom: 13 };
+    const leafPlaces = [
+        { id: 101, name: '甲', longitude: 113.300, latitude: 23.1 },
+        { id: 102, name: '乙', longitude: 113.318, latitude: 23.1 }
+    ];
+    const aggregatePlaces = leafPlaces.map(({ longitude, latitude }) => {
+        const [x, y] = tileOf(longitude, latitude, aggregateBand.cell);
+        return { longitude, latitude, aggregate: true, aggregateCell: [aggregateBand.cell, x, y], aggregateKey: `agg:14/${x}/${y}#0` };
+    });
+    tileMap.zoom = 12;
+    tileLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    const [, [aggregate]] = tileMap.last('nodes');
+    assert.equal(aggregate.count, 2, '12 级时两个匿名点合为一处聚合');
+
+    tileMap.emit('movestart');
+    tileMap.zoom = 13;
+    tileMap.emit('mapmove');
+    assert.equal(tileMap.count('nodes'), 1, '缩放中不提前拆开旧瓦片的匿名点');
+    tileMap.emit('moveend');
+    assert.equal(tileMap.count('nodes'), 1, '没有明细时，相机停下也保留原聚合');
+
+    tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
+    assert.equal(tileMap.count('nodes'), 2, '明细到达时只发送一份转场');
+    const [, leafNodes, leafPlan, leafOptions] = tileMap.last('nodes');
+    assert.deepEqual(leafNodes.map((node) => node.id), ['place:101', 'place:102']);
+    assert.deepEqual([...leafOptions.prevKeys], [aggregate.id], '从此前显示的匿名聚合过渡');
+    assert.deepEqual([...leafPlan.splitFrom], [['place:101', aggregate.id], ['place:102', aggregate.id]]);
+    assert.equal(leafOptions.animate, true);
+    tileLayer.destroy();
+
+    // 上一次停在 13 级，回捏到 12 级时才收到明细，仍保留画面上的匿名聚合。
+    const reverseMap = new FakeMap();
+    let settledZoom = 12;
+    const clickedMembers = [];
+    const reverseLayer = new NativeMarkerLayer(reverseMap, {
+        getMarkerViewZoom: (zoom) => computeLogicalZoom(zoom, settledZoom),
+        onClusterClick: (node, engine) => clickedMembers.push(...engine.memberKeys(node))
+    });
+    reverseMap.zoom = 12;
+    reverseLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    const [, [reverseAggregate]] = reverseMap.last('nodes');
+    reverseMap.emit('movestart');
+    reverseMap.zoom = 13;
+    reverseMap.emit('mapmove');
+    reverseMap.emit('moveend');
+    settledZoom = 13;
+
+    reverseMap.emit('movestart');
+    reverseMap.zoom = 12;
+    reverseLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
+    reverseMap.emit('mapmove');
+    assert.equal(reverseMap.count('nodes'), 1, '回到 12 级时不显示迟到的明细');
+    reverseMap.emit('clusterTap', { id: reverseAggregate.id });
+    assert.deepEqual(clickedMembers, aggregatePlaces.map((place) => place.aggregateKey), '点按仍使用画面上的聚合成员');
+
+    reverseMap.zoom = 12.48;
+    reverseMap.emit('moveend');
+    assert.equal(reverseMap.count('nodes'), 2, '停在 12.48 时按上次停在 13 级的滞回规则显示明细');
+    assert.equal(reverseMap.last('nodes')[3].animate, true);
+    reverseLayer.destroy();
 }
 
 // ---- 标记样式：与 marker-motion.css 同一套取值 ----

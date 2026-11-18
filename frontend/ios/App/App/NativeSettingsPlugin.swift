@@ -242,7 +242,7 @@ private final class NativeSettingsTransitionDelegate: NSObject, UIViewController
 
     func presentationController(forPresented presented: UIViewController, presenting: UIViewController?,
                                 source: UIViewController) -> UIPresentationController? {
-        let controller = NativeSettingsPresentationController(presentedViewController: presented, presenting: presenting)
+        let controller = NativeScreenPresentationController(presentedViewController: presented, presenting: presenting)
         controller.onDismissalEnd = { [weak self] completed in self?.onDismissalEnd?(completed) }
         return controller
     }
@@ -258,29 +258,6 @@ private final class NativeSettingsTransitionDelegate: NSObject, UIViewController
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         otherGestureRecognizer is UIPanGestureRecognizer && !(otherGestureRecognizer is UIScreenEdgePanGestureRecognizer)
-    }
-}
-
-private final class NativeSettingsPresentationController: UIPresentationController {
-    var onDismissalEnd: ((Bool) -> Void)?
-
-    override var shouldRemovePresentersView: Bool { false }
-
-    override func dismissalTransitionDidEnd(_ completed: Bool) {
-        super.dismissalTransitionDidEnd(completed)
-        onDismissalEnd?(completed)
-    }
-
-    override var frameOfPresentedViewInContainerView: CGRect {
-        containerView?.bounds ?? .zero
-    }
-
-    override func containerViewWillLayoutSubviews() {
-        super.containerViewWillLayoutSubviews()
-        // 用 bounds / center 布局，保留横向动画正在使用的 transform。
-        let frame = frameOfPresentedViewInContainerView
-        presentedView?.bounds = CGRect(origin: .zero, size: frame.size)
-        presentedView?.center = CGPoint(x: frame.midX, y: frame.midY)
     }
 }
 

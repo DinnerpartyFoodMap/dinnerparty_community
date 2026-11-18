@@ -11,10 +11,9 @@ import LegalLinks from '../../auth/components/LegalLinks.jsx';
 import { resolveAvatarUrl } from '../../auth/avatarUrl.js';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
 
-const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenAlongRoute, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onOpenCompanion, onOpenMyPlaces, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
+const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onOpenAuth, onOpenAdmin, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenAlongRoute, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
     // 自己有被驳回的地点：头像与“我创建的地点”上的小红点
     const rejectedCount = Number(user?.rejected_place_count) || 0;
-    const [userOpen, setUserOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const [showUsername, setShowUsername] = useState(true);
     const [showTitle, setShowTitle] = useState(true);
@@ -27,9 +26,8 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
     const accountDefaultAvatar = useSkinDefaultAvatar(defaultAvatar);
 
     useLayoutEffect(() => {
-        const openMenu = isMobile ? null : (moreOpen ? 'more' : (isAuth && userOpen ? 'user' : null));
-        onMenuOpenChange?.(openMenu);
-    }, [isMobile, isAuth, userOpen, moreOpen, onMenuOpenChange]);
+        onMenuOpenChange?.(!isMobile && moreOpen ? 'more' : null);
+    }, [isMobile, moreOpen, onMenuOpenChange]);
 
     const assignRef = (node) => {
         rootRef.current = node;
@@ -39,7 +37,6 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
 
     useEffect(() => {
         if (interactionDisabled) {
-            setUserOpen(false);
             setMoreOpen(false);
         }
     }, [interactionDisabled]);
@@ -124,7 +121,6 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
 
     const currentPath = pathname || window.location.pathname;
     const isOnAdmin = currentPath === '/admin';
-    const isOnSettings = currentPath.startsWith('/settings');
     const isOnDinners = currentPath.startsWith('/dinners');
     const isOnPosterExport = currentPath === '/posters/new';
     const divider = <div style={{ height: 1, background: 'var(--color-border)' }} />;
@@ -171,11 +167,10 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                             data-tour="account"
                             onClick={() => {
                                 if (interactionDisabled) return;
-                                setUserOpen((value) => !value);
                                 setMoreOpen(false);
+                                onOpenProfile?.();
                             }}
-                            aria-label={t('auth:panel.openUserMenu')}
-                            aria-expanded={userOpen}
+                            aria-label={t('map:ui.myProfile')}
                             style={{
                                 maxWidth: 180,
                                 width: showUsername ? 'auto' : 44,
@@ -207,29 +202,6 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                             </Button>
                         </div>
 
-                        <AnchoredPopover open={userOpen} onClose={() => setUserOpen(false)} anchorRef={userAnchorRef} placement="bottom-start" label={t('auth:panel.userMenu')} style={menuStyle}>
-                                <div style={{ padding: '6px 10px 10px' }}>
-                                    <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{user.username}</div>
-                                    <div style={{ marginTop: 3, fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('auth:panel.verified')}</div>
-                                </div>
-                                {divider}
-                                {onOpenMyPlaces && (
-                                    <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenMyPlaces(); }}
-                                        aria-label={rejectedCount ? t('map:ui.myPlacesRejected', { count: rejectedCount }) : undefined}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                            {t('map:ui.myPlaces')}
-                                            {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot" />}
-                                        </span>
-                                    </Button>
-                                )}
-                                {onOpenProfile && (
-                                    <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenProfile(); }}>{t('map:ui.myProfile')}</Button>
-                                )}
-                                {onOpenCompanion && <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenCompanion(); }}>{t('companion:title')}</Button>}
-                                <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); isOnSettings ? onGoHome?.() : onOpenSettings?.(); }}>{isOnSettings ? t('common:action.backToMap') : t('auth:panel.settings')}</Button>
-                                {divider}
-                                <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onLogout?.(); }} style={{ color: 'var(--color-danger)' }}>{t('auth:panel.logout')}</Button>
-                        </AnchoredPopover>
                     </div>
                 )}
                 <Button
@@ -243,7 +215,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
             <div ref={moreAnchorRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Button
                     data-tour="more"
-                    onClick={() => { if (!interactionDisabled) { setMoreOpen((value) => !value); setUserOpen(false); } }}
+                    onClick={() => { if (!interactionDisabled) setMoreOpen((value) => !value); }}
                     aria-haspopup="menu"
                     aria-expanded={moreOpen}
                     style={{ width: 44, height: 44, fontSize: 15, padding: 0, borderRadius: '50%', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}

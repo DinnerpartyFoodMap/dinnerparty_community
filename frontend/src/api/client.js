@@ -398,11 +398,11 @@ export async function saveFavoriteVisibility(backendUrl, token, isPublic) {
     return data;
 }
 
-export async function saveProfileWidgets(backendUrl, token, widgets) {
+export async function saveProfileWidgets(backendUrl, token, widgets, hiddenWidgets) {
     const res = await fetch(`${backendUrl}/users/me/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ widgets })
+        body: JSON.stringify({ widgets, hidden_widgets: hiddenWidgets })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || t('profile:widgets.saveFailed'));

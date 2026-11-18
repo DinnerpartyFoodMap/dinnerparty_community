@@ -633,11 +633,11 @@ router.put('/me/phone', requireAuth, (req, res) => {
     }
 });
 
-// 住民主页第二栏的小组件，见 services/userProfile.js。
+// 住民主页地点小组件设置，见 services/userProfile.js。
 router.put('/me/profile', requireAuth, (req, res) => {
-    const widgets = saveProfileWidgets(req.user.id, req.body && req.body.widgets);
-    if (!widgets) return res.status(400).json({ error: '小组件设置无效' });
-    res.json({ widgets });
+    const settings = saveProfileWidgets(req.user.id, req.body?.widgets, req.body?.hidden_widgets);
+    if (!settings) return res.status(400).json({ error: '小组件设置无效' });
+    res.json(settings);
 });
 
 // 更新当前用户信息（允许修改 username）

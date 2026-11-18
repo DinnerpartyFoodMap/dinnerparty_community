@@ -6,6 +6,7 @@ import { useTips } from '../components/feedback/Tips';
 import { useConfirm } from '../components/feedback/Confirm';
 import TasteRadar from './TasteRadar';
 import { axisLabel, normalizeTaste, SELF_LEVELS, selfLevelLabel, axisValueWord } from './tasteAxes';
+import { hiddenProfileWidgets, PROFILE_WIDGET_KINDS, profileRejectedPlaceCount, profileWidgetEmpty, profileWidgetTitle } from './profileViewModel';
 import { fetchUserProfile, saveFavoriteVisibility, saveProfileWidgets, saveTasteLevel, setUserBlocked } from '../api/client';
 import { userReportPrefill } from '../feedback/feedbackTypes';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating';
@@ -16,14 +17,7 @@ import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { t } from '../i18n/index.js';
 import './profile.css';
 
-const WIDGETS = ['recent', 'favorite'];
-// 文案键写成字面量，i18n 检查才能覆盖
-const WIDGET_TEXT = {
-    recent: { title: () => t('profile:widgets.recent.title'), empty: () => t('profile:widgets.recent.empty') },
-    favorite: { title: () => t('profile:widgets.favorite.title'), empty: () => t('profile:widgets.favorite.empty') }
-};
-
-export default function UserProfilePage({ backendUrl, token, userId, currentUser, onOpenPlace, onOpenFeedback, onRequireAuth, onOpenCommunity, onOpenFavorites, onBack }) {
+export default function UserProfilePage({ backendUrl, token, userId, currentUser, onOpenPlace, onOpenFeedback, onRequireAuth, onOpenCommunity, onAction, onBack }) {
     const showTip = useTips();
     const confirm = useConfirm();
     const accent = getThemeColor() || DEFAULT_PRIMARY;
@@ -63,7 +57,9 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
     const { user, relation = {}, city, widgets = [], content = {} } = profile;
     const self = !!relation.self || (currentUser && String(currentUser.id) === String(user.id));
     const collection = content.collection?.[0];
-    const secondWidget = widgets.findLast((item) => WIDGETS.includes(item)) || WIDGETS[0];
+    const hiddenWidgets = hiddenProfileWidgets(profile);
+    const visibleWidgets = PROFILE_WIDGET_KINDS.filter((kind) => !hiddenWidgets.includes(kind));
+    const rejectedPlaceCount = self ? profileRejectedPlaceCount(profile, currentUser) : 0;
     const axes = normalizeTaste(profile.taste);
     const axis = axes.find((item) => item.key === selectedAxis) || null;
     const avatar = resolveAvatarUrl(user, backendUrl, { defaultUrl: defaultAvatar });
@@ -100,9 +96,9 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
     const saveWidgets = async () => {
         setBusy(true);
         try {
-            await saveProfileWidgets(backendUrl, token, ['collection', editingWidgets]);
+            const data = await saveProfileWidgets(backendUrl, token, widgets, editingWidgets);
+            setProfile((current) => ({ ...current, hidden_widgets: data.hidden_widgets ?? editingWidgets }));
             setEditingWidgets(null);
-            await load();
         } catch (e) {
             showTip(e.message || t('profile:widgets.saveFailed'));
         } finally {
@@ -127,30 +123,27 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
             <header className="fm-profile__header">
                 <div className="fm-profile__identity">
                     <img className="fm-profile__avatar" src={avatar} alt="" onError={(event) => { event.currentTarget.src = defaultAvatar; }} />
-                    <div className="fm-profile__name-row">
+                    <div className="fm-profile__identity-text">
                         <h2 className="fm-profile__name">{user.username || t('profile:anonymous')}</h2>
-                        {self && token && onOpenCommunity && <Button variant="secondary" onClick={onOpenCommunity}>{t('journey:common.feature.community')}</Button>}
-                    </div>
-                    <div className="fm-profile__city">
-                        <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
-                        {city ? t('profile:city', { city }) : t('profile:cityUnknown')}
-                    </div>
-                    {relation.can_block && (
-                        <div className="fm-profile__actions">
-                            {relation.blocked
-                                ? <Button onClick={() => setBlocked(false)} disabled={busy}>{t('profile:unblock')}</Button>
-                                : <Button onClick={() => setBlocked(true)} disabled={busy} style={{ background: 'var(--color-danger)', color: 'var(--color-on-emphasis)', border: 0 }}>{t('profile:blockAndReport')}</Button>}
+                        <div className="fm-profile__city">
+                            <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
+                            {city ? t('profile:city', { city }) : t('profile:cityUnknown')}
                         </div>
-                    )}
+                    </div>
                 </div>
+                {self && token && onOpenCommunity && <Button className="fm-profile__header-action" variant="secondary" onClick={onOpenCommunity}>{t('journey:common.feature.community')}</Button>}
+                {relation.can_block && (relation.blocked
+                    ? <Button className="fm-profile__header-action" onClick={() => setBlocked(false)} disabled={busy}>{t('profile:unblock')}</Button>
+                    : <Button className="fm-profile__header-action" variant="destructive" onClick={() => setBlocked(true)} disabled={busy}>{t('profile:blockAndReport')}</Button>)}
+            </header>
+
+            <section className="fm-profile__widget fm-profile__radar-section" aria-label={t('profile:taste.title')}>
+                <h3>{t('profile:taste.title')}</h3>
                 <div className="fm-profile__radar">
                     <TasteRadar axes={axes} selected={selectedAxis} onSelect={(key) => setSelectedAxis((current) => (current === key ? null : key))} accent={accent} />
                     {self && token && <div className="fm-profile__radar-hint">{t('profile:taste.hint')}</div>}
                 </div>
-            </header>
-
-            {axis && (
-                <section className="fm-profile__axis" aria-live="polite">
+                {axis && <div className="fm-profile__axis" aria-live="polite">
                     <div className="fm-profile__axis-title">
                         <strong>{axisLabel(axis.key)}</strong>
                         <span>{axisValueWord(axis)}</span>
@@ -170,45 +163,42 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                             </button>
                         </div>
                     </div>}
-                </section>
-            )}
+                </div>}
+            </section>
 
             {relation.blocked ? (
                 <div className="fm-profile__message">{t('profile:blockedNote')}</div>
             ) : (
                 <>
-                    {collection && <section className="fm-profile__widget">
-                        <div className="fm-profile__widget-heading">
-                            <h3>{self ? t('profile:widgets.collection.mine') : t('profile:widgets.collection.title')}</h3>
-                            {self && token && typeof profile.collection_visibility === 'boolean' && <label className="fm-profile__visibility">
+                    {collection && <ProfileWidget widget="collection" self={self} data={collection.places} onOpenPlace={onOpenPlace}
+                        onViewAll={onAction ? () => onAction('favorites', user.id, user.username) : undefined}
+                        headingAction={self && token && typeof profile.collection_visibility === 'boolean' && <label className="fm-profile__visibility">
                                 <input type="checkbox" role="switch" checked={profile.collection_visibility} disabled={busy}
                                     onChange={(event) => setCollectionVisibility(event.target.checked)} />
                                 {t('profile:widgets.collection.public')}
-                            </label>}
-                            {onOpenFavorites && <Button variant="secondary" onClick={() => onOpenFavorites(user.id)}>{t('profile:widgets.collection.viewAll')}</Button>}
-                        </div>
-                        {collection.places?.length ? <PlaceRow places={collection.places} onOpenPlace={onOpenPlace} />
-                            : <div className="fm-profile__empty">{t('profile:widgets.collection.empty')}</div>}
-                    </section>}
-                    <ProfileWidget widget={secondWidget} data={content[secondWidget]} onOpenPlace={onOpenPlace} />
-                    {self && token && (
-                        <div className="fm-profile__widgets-bar">
-                            {editingWidgets ? (
-                                <>
-                                    <label className="fm-profile__widget-select">
-                                        {t('profile:widgets.slot', { index: 2 })}
-                                        <select value={editingWidgets} onChange={(event) => setEditingWidgets(event.target.value)}>
-                                            {WIDGETS.map((option) => <option key={option} value={option}>{WIDGET_TEXT[option].title()}</option>)}
-                                        </select>
-                                    </label>
-                                    <Button onClick={() => setEditingWidgets(null)} disabled={busy}>{t('common:action.cancel')}</Button>
-                                    <Button onClick={saveWidgets} disabled={busy}>{t('common:action.save')}</Button>
-                                </>
-                            ) : (
-                                <Button onClick={() => setEditingWidgets(secondWidget)}>{t('profile:widgets.edit')}</Button>
-                            )}
-                        </div>
-                    )}
+                        </label>} />}
+                    {visibleWidgets.map((kind) => <ProfileWidget key={kind} widget={kind} self={self} data={content[kind]} onOpenPlace={onOpenPlace}
+                        rejectedPlaceCount={kind === 'recent' ? rejectedPlaceCount : 0}
+                        onViewAll={kind === 'recent' && onAction ? () => onAction('my-locations', user.id, user.username) : undefined} />)}
+                    {self && token && <div className="fm-profile__widgets-bar">
+                        {editingWidgets ? <>
+                            {PROFILE_WIDGET_KINDS.map((kind) => <label key={kind} className="fm-profile__widget-toggle">
+                                <input type="checkbox" checked={!editingWidgets.includes(kind)} disabled={busy}
+                                    onChange={(event) => {
+                                        const visible = event.target.checked;
+                                        setEditingWidgets((current) => visible ? current.filter((item) => item !== kind) : [...current, kind]);
+                                    }} />
+                                {profileWidgetTitle(kind, true)}
+                            </label>)}
+                            <Button variant="secondary" onClick={() => setEditingWidgets(null)} disabled={busy}>{t('common:action.cancel')}</Button>
+                            <Button onClick={saveWidgets} disabled={busy}>{t('common:action.save')}</Button>
+                        </> : <Button variant="secondary" onClick={() => setEditingWidgets(hiddenWidgets)} disabled={busy}>{t('profile:widgets.edit')}</Button>}
+                    </div>}
+                    {self && token && onAction && <div className="fm-profile__account-actions">
+                        <ProfileAccountAction icon="settings" onClick={() => onAction('settings', user.id)}>{t('map:ui.accountSettings')}</ProfileAccountAction>
+                        <ProfileAccountAction icon="pets" onClick={() => onAction('companion', user.id)}>{t('companion:title')}</ProfileAccountAction>
+                        <ProfileAccountAction icon="logout" onClick={() => onAction('logout', user.id)}>{t('map:ui.logout')}</ProfileAccountAction>
+                    </div>}
                 </>
             )}
         </ProfileShell>
@@ -226,21 +216,36 @@ export function ProfileShell({ onBack, title = t('profile:title'), children }) {
     );
 }
 
-function ProfileWidget({ widget, data, onOpenPlace }) {
-    const text = WIDGET_TEXT[widget] || WIDGET_TEXT.recent;
-    const title = text.title();
+function ProfileWidget({ widget, self, data, onOpenPlace, onViewAll, headingAction, rejectedPlaceCount = 0 }) {
+    const title = profileWidgetTitle(widget, self);
     const places = Array.isArray(data) ? data : [];
     return (
-        <section className="fm-profile__widget">
-            <h3>{title}</h3>
-            {places.length ? <PlaceRow places={places} onOpenPlace={onOpenPlace} showOwnScore={widget === 'favorite'} /> : <div className="fm-profile__empty">{text.empty()}</div>}
+        <section className="fm-profile__widget" aria-label={title}>
+            <div className="fm-profile__widget-heading">
+                <h3>{title}{rejectedPlaceCount > 0 && <span className="fm-profile__rejected-dot" role="img"
+                    aria-label={t('map:ui.myPlacesRejected', { count: rejectedPlaceCount })} />}</h3>
+                {headingAction}
+            </div>
+            {places.length ? <PlaceRow places={places} onOpenPlace={onOpenPlace} showOwnScore={widget === 'favorite'} />
+                : <div className="fm-profile__empty">{profileWidgetEmpty(widget)}</div>}
+            {onViewAll && <div className="fm-profile__widget-footer">
+                <Button variant="secondary" onClick={onViewAll}>{t('profile:widgets.collection.viewAll')}</Button>
+            </div>}
         </section>
     );
 }
 
-export function PlaceRow({ places, onOpenPlace, showOwnScore = false, grid = false }) {
+function ProfileAccountAction({ icon, onClick, children }) {
+    return <Button variant="menu" className="fm-profile__account-action" onClick={onClick}>
+        <span className="material-symbols-outlined" aria-hidden="true">{icon}</span>
+        {children}
+        <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+    </Button>;
+}
+
+function PlaceRow({ places, onOpenPlace, showOwnScore = false }) {
     return (
-        <ul className={grid ? 'fm-profile__places fm-profile__places--grid' : 'fm-profile__places'}>
+        <ul className="fm-profile__places">
             {places.map((place) => {
                 const tier = showOwnScore ? ratingTierFor(place.own_score) : tierForAverage(place.rating_average);
                 return (

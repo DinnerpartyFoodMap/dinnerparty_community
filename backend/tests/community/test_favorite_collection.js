@@ -59,6 +59,16 @@ async function main() {
 
     const profile = (await call(profileUrl)).data;
     assert.deepEqual(profile.widgets, ['collection', 'recent']);
+    assert.deepEqual(profile.hidden_widgets, [], 'legacy profiles show both location sections by default');
+    assert.ok(Array.isArray(profile.content.recent) && Array.isArray(profile.content.favorite));
+    const widgetSettingsUrl = '/users/me/profile';
+    assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: profile.widgets, hidden_widgets: ['recent', 'collection'] })).status, 400);
+    assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: profile.widgets, hidden_widgets: ['recent'] })).status, 200);
+    assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: ['collection', 'favorite'] })).status, 200);
+    const adjusted = (await call(profileUrl)).data;
+    assert.deepEqual(adjusted.widgets, ['collection', 'favorite']);
+    assert.deepEqual(adjusted.hidden_widgets, ['recent'], 'old clients preserve the visibility preference');
+    assert.equal(adjusted.content.recent, undefined, 'hidden widget contents are omitted for visitors');
     assert.deepEqual(ids(profile.content.collection[0].places), [3, 1]);
     assert.equal(profile.collection_visibility, undefined);
     assert.equal((await call(profileUrl, owner)).data.collection_visibility, true);

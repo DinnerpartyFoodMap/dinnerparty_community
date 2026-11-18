@@ -18,22 +18,53 @@ const prediction = { active: true, status: 'ready', average: 3.6 };
 const focusPlace = { id: 99, name: '列表定位回归面馆', category: '面食', description: '首次点击就应正确定位', longitude: 120.025, latitude: 30.02, rating_count: 0, rating_average: null, predicted_rating: prediction };
 let listHasPlace = false;
 let longList = false;
+const tileManifest = {
+    v: 1, version: 'empty', generated_at: 1, count: 0, dict: '000000000000',
+    levels: [{ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }, { tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }, { tile: 8, cell: 14, minZoom: 11, maxZoom: 12 }],
+    leaf: { tile: 12, minZoom: 13 }, tiles: { 2: {}, 5: {}, 8: {}, 12: {} }
+};
+const aggregateTileKey = '213/105';
+const leafTileKey = '3413/1689';
+const aggregateTileHash = '111111111111';
+const leafTileHash = '222222222222';
+// Two cells form one cluster at zoom 11. At zoom 13 their four points form two clusters.
+const aggregateRows = [[[], 0, -1, 0], [[], 0, -1, 0]];
+const aggregateTile = { v: 1, z: 8, cell: 14, cells: [[21, 39, 3, 4, aggregateRows], [22, 39, 4, 4, aggregateRows]] };
+const leafTile = { v: 1, fields: ['id', 'name', 'longitude', 'latitude'], rows: [
+    [1, 'West 1', 120.002, 30.002], [2, 'West 2', 120.0024, 30.002],
+    [3, 'East 1', 120.028, 30.002], [4, 'East 2', 120.0284, 30.002]
+] };
+let requestLeafTile;
 const longListPlaces = Array.from({ length: 20 }, (_, index) => ({ ...focusPlace, id: 100 + index, name: '安全区滚动测试面馆 ' + (index + 1) }));
 const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts/material-symbols.css"><style>${theme}body{margin:0;font-family:system-ui,sans-serif}</style></head><body><div id="root"></div><script>
 window.__WEB_LAYOUT_ERRORS=[]; addEventListener('error', event => window.__WEB_LAYOUT_ERRORS.push(event.message));
 addEventListener('unhandledrejection', event => window.__WEB_LAYOUT_ERRORS.push(String(event.reason)));
 localStorage.setItem('foodmap.privacy-consent', JSON.stringify({version:'2026-10-16',decision:'accepted'}));
 localStorage.setItem('foodmap.onboarding', JSON.stringify({version:3}));
-localStorage.setItem('yuyuko.motion.v1', JSON.stringify({webMotion:false,clusterMotion:false}));
+localStorage.setItem('yuyuko.motion.v1', JSON.stringify({webMotion:false,clusterMotion:new URLSearchParams(location.search).has('markerBand')}));
 </script><script type="module" src="/tests/integration/web-layout-harness.jsx"></script></body></html>`;
 const server = await createServer({ root, configFile: resolve(root, 'vite.config.js'), server: { host: '127.0.0.1', port: 0, hmr: false, watch: null }, plugins: [{ name: 'web-layout-regression', configureServer(server) {
     server.middlewares.use((req, res, next) => {
         const url = new URL(req.url, 'http://localhost');
         if (url.pathname === '/__web-layout' || url.pathname === '/p/99') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); return; }
         if (/^\/fixture-avatar\/(first|second)\.png$/.test(url.pathname)) { res.setHeader('Content-Type', 'image/png'); res.end(readFileSync(join(root, 'src/img/default.png'))); return; }
+        if (url.pathname === `/places/tiles/${leafTileHash}/12/${leafTileKey}` && requestLeafTile) {
+            requestLeafTile(() => {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(leafTile));
+            });
+            return;
+        }
         const responses = {
             '/users/me': { user: { id: 'web-layout-user', username: '布局测试住民', is_banned: false } },
-            '/places/tiles/manifest': { v: 1, version: 'empty', generated_at: 1, count: 0, dict: '000000000000', levels: [{ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }, { tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }, { tile: 8, cell: 14, minZoom: 11, maxZoom: 12 }], leaf: { tile: 12, minZoom: 13 }, tiles: { 2: {}, 5: {}, 8: {}, 12: {} } }, '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': ['面食'],
+            '/places/tiles/manifest': requestLeafTile ? {
+                ...tileManifest, version: 'marker-band-test', count: 4,
+                tiles: { ...tileManifest.tiles, 8: { [aggregateTileKey]: aggregateTileHash }, 12: { [leafTileKey]: leafTileHash } }
+            } : tileManifest,
+            '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] },
+            '/places/tiles/ticket': { ticket: 'fixture-ticket', expires_at: Number.MAX_SAFE_INTEGER },
+            [`/places/tiles/${aggregateTileHash}/8/${aggregateTileKey}`]: aggregateTile,
+            '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': ['面食'],
             '/places/random': { place: focusPlace, distanceKm: 0.3, candidateCount: 8 },
             '/api/community/consent': { feedback: false, version: 1 },
             '/api/places/search/fast': searchResults,
@@ -419,7 +450,56 @@ try {
         }
         assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'list selection has no browser errors');
     }
-    console.log(JSON.stringify({ passed: true, overlap, wide, scope, radarFillCount: radar.fills.length, screenshots: scratch }));
+    const leafTileRequested = new Promise(resolve => { requestLeafTile = resolve; });
+    await navigate('map&markerBand=1&deferredCamera=1', 1280, 900);
+    await waitFor(`window.__foodMapMarkers?.snapshot?.visibleNodes.length === 1 &&
+        window.__foodMapMarkers.snapshot.visibleNodes[0].count === 4 && window.__foodMapMarkers.txns.size === 0`);
+    await evaluate(`(() => {
+        const animate = Element.prototype.animate;
+        window.__markerTravel = [];
+        Element.prototype.animate = function (keyframes, options) {
+            if (this.matches('.fm-marker__travel')) window.__markerTravel.push(keyframes);
+            return animate.call(this, keyframes, options);
+        };
+        const map = window.__WEB_LAYOUT_MAP;
+        map.emit('movestart');
+        map.emit('zoomstart');
+        map.setZoom(13);
+        map.emit('moveend');
+    })()`);
+    const tileRequestTimeout = AbortSignal.timeout(5000);
+    const releaseLeafTile = await Promise.race([
+        leafTileRequested,
+        new Promise((_, reject) => tileRequestTimeout.addEventListener('abort', () => reject(new Error('Target marker tile was not requested'))))
+    ]);
+    let pendingSplit;
+    try {
+        // Keep the successful response pending beyond the store's fallback deadline.
+        await evaluate(`import('/src/map/markerTiles.js').then(({ BAND_SWITCH_WAIT_MS }) =>
+            new Promise(resolve => setTimeout(resolve, BAND_SWITCH_WAIT_MS + 150)))`);
+        await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+        pendingSplit = await evaluate(`({
+            counts: window.__foodMapMarkers.snapshot.visibleNodes.map(node => node.count),
+            animations: window.__markerTravel.length
+        })`);
+    } finally {
+        releaseLeafTile();
+    }
+    await waitFor(`window.__foodMapMarkers.snapshot.visibleNodes.length === 2 &&
+        window.__foodMapMarkers.snapshot.visibleNodes.every(node => node.count === 2 &&
+            window.__foodMapMarkers.engine.memberKeys(node).every(key => key.startsWith('place:'))) &&
+        window.__foodMapMarkers.txns.size === 0`);
+    const splitTravel = await evaluate('window.__markerTravel');
+    const finalChildTrips = splitTravel.slice(pendingSplit.animations).filter(frames => frames[0]?.transform?.startsWith('translate(') &&
+        frames[0].transform !== 'translate(0px, 0px)' && frames.at(-1)?.transform === 'translate(0px, 0px)');
+    assert.deepEqual(
+        { pending: pendingSplit, totalTravelAnimations: splitTravel.length, finalChildTrips: finalChildTrips.length },
+        { pending: { counts: [4], animations: 0 }, totalTravelAnimations: 2, finalChildTrips: 2 },
+        'zoom keeps the parent intact while waiting, then moves both final children from it once'
+    );
+    assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'marker tile zoom has no browser errors');
+
+    console.log(JSON.stringify({ passed: true, overlap, wide, scope, radarFillCount: radar.fills.length, markerBandSplit: splitTravel.length, screenshots: scratch }));
     await command('Browser.close');
 } catch (error) { console.error(error); console.error('Artifacts: ' + scratch); process.exitCode = 1; }
 finally { socket?.close(); processHandle?.kill(); await server.close(); }

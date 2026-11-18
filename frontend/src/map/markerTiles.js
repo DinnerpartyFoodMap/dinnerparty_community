@@ -8,8 +8,8 @@
 // 3. 明细瓦片（z12）：店名、精确坐标、评价汇总，与旧快照的字段相同（marker_only，打开卡片时再读 GET /places/:id）。
 //    按 IP / 账号限流（登录后带票据 ?t=），只在浏览器和 IndexedDB 里缓存。拿不到的那块用城市级聚合顶上。
 //
-// 显示哪一级由地图缩放决定（bandForZoom）；换级时等新一级要用的瓦片到齐（最多 BAND_SWITCH_WAIT_MS）再整体切换，
-// 不会闪空。聚合级不叠加本地修改和屏蔽（聚合数可能差几家，不显示任何店名）；明细级与旧快照一样叠加。
+// 显示哪一级由地图缩放决定（bandForZoom）；换级时等新一级的请求结束再整体切换，
+// 缺块用聚合顶上，补位瓦片最多额外等 BAND_SWITCH_WAIT_MS。聚合级不叠加本地修改和屏蔽，明细级与旧快照一样叠加。
 // 预取（prefetchLeafAt）：城市级停下、放大越过 z12.3、点聚合、跳到某家店时提前拉明细瓦片，见 doc/README.md。
 // 这里不依赖 React 和地图，npm run test:map 直接测试。
 
@@ -18,7 +18,7 @@ import { computeLogicalZoom, expandBounds, normalizeViewBounds } from './cluster
 import { readCache, writeCache, deleteCache } from '../platform/cacheStore.js';
 
 export const GLYPH_KINDS = Object.freeze(['place', 'avoid', 'unexplored']);
-/** 换级时最多等新一级的瓦片这么久，超时就先用已到的 */
+/** 换到明细级时等待补位瓦片的预算 */
 export const BAND_SWITCH_WAIT_MS = 1500;
 /** 地图移动时清单超过这个时间就后台刷新一次（CDN 与浏览器有缓存，大多数刷新不回源） */
 export const MANIFEST_MAX_AGE_MS = 5 * 60 * 1000;
@@ -427,6 +427,7 @@ export class MarkerTileStore {
     }
 
     dispose() {
+        this.switchToken += 1;
         this._unsubscribe?.();
         this._unsubscribe = null;
         this.listeners.clear();
@@ -461,7 +462,6 @@ export class MarkerTileStore {
 
     _bump() {
         this.version += 1;
-        this._memo = null;
     }
 
     _coverage(band) {
@@ -488,6 +488,15 @@ export class MarkerTileStore {
         return loads;
     }
 
+    logicalZoomAt(zoom) {
+        return computeLogicalZoom(zoom, this.view?.logicalZoom, { minZoom: 0, maxZoom: 22 });
+    }
+
+    isBandChange(zoom) {
+        const band = bandForZoom(this.source.manifest, this.logicalZoomAt(zoom));
+        return !!this.targetBand && !!band && bandId(band) !== bandId(this.targetBand);
+    }
+
     /**
      * 地图视野变化（移动结束、缩放结束）：决定显示哪一级并拉缺的瓦片。返回地图数据是否立即变化。
      * @param {{ bounds: object, zoom: number }} view bounds 为 { minLng, maxLng, minLat, maxLat }
@@ -495,12 +504,13 @@ export class MarkerTileStore {
     setView({ bounds, zoom }) {
         const normalized = normalizeViewBounds(bounds);
         if (!normalized || !Number.isFinite(zoom)) return false;
-        const logicalZoom = computeLogicalZoom(zoom, this.view?.logicalZoom, { minZoom: 0, maxZoom: 22 });
+        const logicalZoom = this.logicalZoomAt(zoom);
         this.view = { bounds: normalized, logicalZoom, zoom };
         const manifest = this.source.manifest;
         if (!manifest) return false;
         const band = bandForZoom(manifest, logicalZoom);
         this.targetBand = band;
+        const token = ++this.switchToken;
         const loads = this._neededLoads(band);
         const promises = loads.map(([z, key]) => this.source.load(z, key));
         if (bandId(band) === bandId(this.displayBand)) {
@@ -513,11 +523,15 @@ export class MarkerTileStore {
             this._bump();
             return true;
         }
-        // 换级：等新一级的瓦片到齐（或超时）再整体切换，不闪空
-        const token = ++this.switchToken;
-        const timeout = new Promise((resolve) => setTimeout(resolve, this.switchWaitMs));
-        Promise.race([Promise.allSettled(promises), timeout]).then(() => {
-            if (token !== this.switchToken || bandId(this.targetBand) !== bandId(band)) return;
+        // 目标级请求仍在途时保留旧快照，否则超时会先拆匿名点，明细到达又过渡一次。
+        const targetLoads = promises.filter((_, index) => loads[index][0] === band.tile);
+        let timer;
+        const timeout = new Promise((resolve) => { timer = setTimeout(resolve, this.switchWaitMs); });
+        const fallbackReady = Promise.race([Promise.allSettled(promises), timeout]).finally(() => {
+            clearTimeout(timer);
+        });
+        Promise.all([Promise.allSettled(targetLoads), fallbackReady]).then(() => {
+            if (token !== this.switchToken || bandId(this.displayBand) === bandId(band)) return;
             this.displayBand = band;
             this._bump();
             this._notify();
@@ -635,7 +649,7 @@ export class MarkerTileStore {
 
     _compose() {
         const now = this.now();
-        if (this._memo && now < this._memo.expiresAt) return this._memo;
+        if (this._memo?.version === this.version && now < this._memo.expiresAt) return this._memo;
         const band = this.displayBand;
         const byKey = new Map();
         let expiresAt = Infinity;
@@ -670,7 +684,7 @@ export class MarkerTileStore {
         const previous = this._memo;
         const list = Array.from(byKey.values());
         const same = previous && previous.list.length === list.length && previous.list.every((place, index) => place === list[index]);
-        this._memo = { byKey, list: same ? previous.list : list, expiresAt };
+        this._memo = { version: this.version, byKey, list: same ? previous.list : list, expiresAt };
         return this._memo;
     }
 }

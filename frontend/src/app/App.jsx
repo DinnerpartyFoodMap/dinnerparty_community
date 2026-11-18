@@ -33,7 +33,6 @@ import PosterExportPage from "../poster/PosterExportPage";
 import PlaceListPage from "../places/PlaceListPage";
 import UserProfilePage from "../profile/UserProfilePage";
 import ProfileCommunityPage from "../profile/ProfileCommunityPage";
-import ProfileFavoritesPage from "../profile/ProfileFavoritesPage";
 import NativeProfileHost from "../profile/NativeProfileHost";
 import { supportsNativeProfile } from "../profile/useNativeProfile";
 import NativeAdminHost from "../admin/NativeAdminHost";
@@ -48,7 +47,7 @@ import { getNoticeColorOption } from "../components/feedback/noticeColors";
 import { reportAuthStage } from "../auth/services/authDiagnostics";
 import { preserveJourneyBeforeLeave } from "../journey/navigation";
 import { getApiBaseUrl } from "../platform/runtimeConfig";
-import { getCurrentPath, navigate, canGoBack } from "../platform/navigation";
+import { getCurrentPath, navigate, canGoBack, currentNavigationIndex } from "../platform/navigation";
 import { useBackHandler, refreshBackTarget, BACK_PRIORITY } from "../platform/backButton";
 import { onAppStateChange } from "../platform/lifecycle";
 import { startPublicPolling, freshUrl, PUBLIC_UPDATE_EVENTS } from "../platform/polling";
@@ -104,8 +103,7 @@ export default function App() {
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
     const [randomFoodRequestId, setRandomFoodRequestId] = useState(0);
     const [alongRouteRequestId, setAlongRouteRequestId] = useState(0);
-    // 顶栏“我创建的地点”：交给地图打开自己的地点（与随机美食同样用递增的请求号）
-    const [myPlacesRequestId, setMyPlacesRequestId] = useState(0);
+    const [profileListRequest, setProfileListRequest] = useState(null);
     const [onboardingRequestId, setOnboardingRequestId] = useState(0);
     const [feedbackOpen, setFeedbackOpen] = useState(false);
     const [feedbackPrefill, setFeedbackPrefill] = useState(null);
@@ -137,6 +135,7 @@ export default function App() {
     // 每次打开都是新的原生会话：上一次没有正常回报关闭时（打开状态残留为 true），再点也能重新打开
     const [nativeJourneySession, setNativeJourneySession] = useState(0);
     const lastPathRef = useRef(pathname);
+    const webPageUnderProfile = useRef(null);
     const pageDirectionRef = useRef('push');
     const siteNoticeRef = useRef(null);
     const [noticeLayout, setNoticeLayout] = useState({ top: 12, banTop: 84 });
@@ -625,9 +624,21 @@ export default function App() {
     const openProfileCommunity = useCallback(() => {
         if (user?.id) goPath(`/users/${encodeURIComponent(user.id)}?tab=community`);
     }, [goPath, user?.id]);
-    const openProfileFavorites = useCallback((userId) => {
-        if (userId) goPath(`/users/${encodeURIComponent(userId)}?tab=favorites`);
+    const openProfileList = useCallback(async (kind, userId, name) => {
+        if (!userId) return;
+        await goPath('/', { replace: true });
+        if (getCurrentPath() === '/') setProfileListRequest({ kind, user: { id: userId, name } });
     }, [goPath]);
+    const handleProfileAction = useCallback((action, userId, name) => {
+        if (action === 'favorites' || action === 'my-locations') return openProfileList(action, userId, name);
+        if (!user || !token || String(user.id) !== String(userId)) return;
+        if (action === 'settings') return goPath('/settings');
+        if (action === 'companion') return openCompanion();
+        if (action === 'logout') return handleLogout();
+    }, [goPath, handleLogout, openCompanion, openProfileList, token, user?.id]);
+    useEffect(() => {
+        if (showProfileFavorites) void openProfileList('favorites', profileUserId);
+    }, [openProfileList, profileUserId, showProfileFavorites]);
     const changeProfileCommunityPage = (page) => goPath(`/users/${encodeURIComponent(profileUserId)}?tab=community&page=${page}`, { replace: true });
     const backFromProfile = useCallback(() => {
         if (canGoBack()) window.history.back();
@@ -818,10 +829,7 @@ export default function App() {
             <ProfileCommunityPage key={`community-${profileUserId}`} backendUrl={BACKEND_URL} token={token}
                 onOpenProfile={openProfile} onBack={backFromProfileTab} page={profileCommunityPage} onPageChange={changeProfileCommunityPage} />
         );
-        if (showProfileFavorites) return (
-            <ProfileFavoritesPage key={`favorites-${profileUserId}`} backendUrl={BACKEND_URL} token={token} userId={profileUserId}
-                currentUser={user} onOpenPlace={openPlaceOnMap} onBack={backFromProfileTab} />
-        );
+        if (showProfileFavorites) return null;
         if (profileUserId) return nativeProfileActive ? null : (
             <UserProfilePage
                 key={profileUserId}
@@ -833,7 +841,7 @@ export default function App() {
                 onOpenFeedback={openFeedback}
                 onRequireAuth={() => setShowAuth(true)}
                 onOpenCommunity={openProfileCommunity}
-                onOpenFavorites={openProfileFavorites}
+                onAction={handleProfileAction}
                 onBack={backFromProfile}
             />
         );
@@ -1013,8 +1021,19 @@ export default function App() {
         );
         return null;
     };
-    const pageElement = renderPage();
-    const pageKey = pageElement ? pathname : null;
+    const currentPage = renderPage();
+    const navigationIndex = currentNavigationIndex();
+    // 从同好或地点列表打开原生主页时保留网页，侧滑取消或返回后仍在原来的列表位置。
+    const previousWebPage = webPageUnderProfile.current;
+    const coveredWebPage = nativeProfileActive && previousWebPage?.index === navigationIndex - 1 ? previousWebPage : null;
+    const pageElement = coveredWebPage?.element ?? currentPage;
+    const pagePath = coveredWebPage?.path ?? pathname;
+    const pageKey = pageElement ? pagePath : null;
+    useLayoutEffect(() => {
+        if (!nativeProfileActive) {
+            webPageUnderProfile.current = currentPage ? { element: currentPage, path: pathname, index: navigationIndex } : null;
+        }
+    }, [currentPage, nativeProfileActive, navigationIndex, pathname]);
     // 层级方向：更深为 push，更浅为 pop（返回）
     if (lastPathRef.current !== pathname) {
         pageDirectionRef.current = navigationDirection(lastPathRef.current, pathname);
@@ -1073,7 +1092,6 @@ export default function App() {
                                 onRequireAuth={() => setShowAuth(true)}
                                 onOpenDinners={() => goPath('/dinners')}
                                 onOpenJourney={openJourney}
-                                onOpenCompanion={isAuth ? openCompanion : undefined}
                                 companion={showMapPage && !profileUserId && user?.map_settings?.companion_roaming !== false ? companion.state : null}
                                 onOpenAdmin={() => goPath('/admin')}
                                 onOpenPosterExport={() => {
@@ -1083,21 +1101,13 @@ export default function App() {
                                     }
                                     goPath('/posters/new');
                                 }}
-                                onOpenMine={() => {
-                                    if (!isAuth) {
-                                        setShowAuth(true);
-                                        return;
-                                    }
-                                    goPath('/settings');
-                                }}
-                                onLogout={handleLogout}
                                 onOpenFeedback={openFeedback}
                                 onOpenPlaceList={() => goPath('/places')}
                                 onOpenProfile={openProfile}
                                 desktopHeaderMenu={desktopHeaderMenu}
                                 randomFoodRequestId={randomFoodRequestId}
                                 alongRouteRequestId={alongRouteRequestId}
-                                myPlacesRequestId={myPlacesRequestId}
+                                profileListRequest={pathname === '/' ? profileListRequest : null}
                                 onboardingRequestId={onboardingRequestId}
                                 exhibition={exhibition}
                                 exhibitionOpen={exhibitionOpen}
@@ -1108,8 +1118,8 @@ export default function App() {
                             />
                         </div>
 
-                        <PageTransition pageKey={pageKey} direction={pageDirection} onCoveredChange={setMapCovered}>
-                            {pageElement && <RoutePageShell path={pathname} onNavigate={goPath}>{pageElement}</RoutePageShell>}
+                        <PageTransition pageKey={pageKey} direction={pageDirection} onCoveredChange={setMapCovered} coveredByNative={!!coveredWebPage}>
+                            {pageElement && <RoutePageShell path={pagePath} onNavigate={goPath}>{pageElement}</RoutePageShell>}
                         </PageTransition>
 
                         {/* 原生住民设置：不占网页页面，只负责驱动原生设置页与执行它交回的账号请求 */}
@@ -1145,7 +1155,7 @@ export default function App() {
                                 onBack={backFromProfile}
                                 onOpenPlace={openPlaceOnMap}
                                 onOpenCommunity={openProfileCommunity}
-                                onOpenFavorites={openProfileFavorites}
+                                onAction={handleProfileAction}
                                 onOpenFeedback={openFeedback}
                                 onRequireAuth={() => setShowAuth(true)}
                                 onUnavailable={() => setNativeProfileFailedId(profileUserId)}
@@ -1200,10 +1210,8 @@ export default function App() {
                             user={user}
                             isAuth={isAuth}
                             isAdmin={isAdmin}
-                            onLogout={handleLogout}
                             onOpenAuth={() => setShowAuth(true)}
                             onOpenAdmin={() => goPath("/admin")}
-                            onOpenSettings={() => goPath("/settings")}
                             onOpenDinners={() => goPath('/dinners')}
                             onOpenPosterExport={() => goPath('/posters/new')}
                             onGoHome={() => goPath("/")}
@@ -1214,8 +1222,6 @@ export default function App() {
                             onOpenFeedback={openFeedback}
                             onOpenPlaceList={() => goPath('/places')}
                             onOpenProfile={user ? () => openProfile(user.id) : undefined}
-                            onOpenCompanion={isAuth ? openCompanion : undefined}
-                            onOpenMyPlaces={user ? () => { if (!showMapPage) goPath('/'); setMyPlacesRequestId((id) => id + 1); } : undefined}
                             pathname={pathname}
                             backendUrl={BACKEND_URL}
                             interactionDisabled={authPanelDisabled}

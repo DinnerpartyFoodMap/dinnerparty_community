@@ -86,15 +86,13 @@ export default function MapView({
     isAdmin,
     onRequireAuth,
     onOpenDinners,
-    onOpenMine,
-    onLogout,
     onOpenAdmin,
     onOpenPosterExport,
     onOpenFeedback,
     desktopHeaderMenu = null,
     randomFoodRequestId = 0,
     alongRouteRequestId = 0,
-    myPlacesRequestId = 0,
+    profileListRequest = null,
     onOpenPlaceList,
     onOpenProfile,
     onboardingRequestId = 0,
@@ -114,7 +112,6 @@ export default function MapView({
     mapPageActive = false,
     mapPreviewActive = false,
     onOpenJourney = null,
-    onOpenCompanion,
     companion = null
 }) {
     const containerRef = useRef(null);
@@ -148,7 +145,8 @@ export default function MapView({
     const lastSavedViewRef = useRef(null);
     const [addingPos, setAddingPos] = useState(null);
     const [addingPrefill, setAddingPrefill] = useState(null);
-    const [places, setPlaces] = useState([]);
+    const [nearbyMarkers, setNearbyMarkers] = useState({ places: [], band: null });
+    const { places } = nearbyMarkers;
     const [mapReady, setMapReady] = useState(false);
     // iOS 原生底图：地图页被其他页面盖住时，触摸全部留给网页（地图画布之外的命中判断见 nativeMapView.js）
     const nativeVisibleRef = useRef(mapPageActive || mapPreviewActive);
@@ -257,7 +255,7 @@ export default function MapView({
     useEffect(() => { commentOpenRef.current = commentOpen; }, [commentOpen]);
     const loadPlacesRef = useRef(null);
     const refreshNearbyRef = useRef(null);
-    const placesRef = useRef([]);
+    const nearbyMarkersRef = useRef(nearbyMarkers);
     const markerHandlersRef = useRef({});
 
     const clearSearchState = ({ resetTerm = true, closeSearchUi = true, reloadPlaces = true } = {}) => {
@@ -272,7 +270,7 @@ export default function MapView({
         setAiRecommendations([]);
         if (closeSearchUi) setSearchResetKey((v) => v + 1);
         if (reloadPlaces && loadPlacesRef.current) {
-            return loadPlacesRef.current(true);
+            return loadPlacesRef.current();
         }
         return null;
     };
@@ -599,6 +597,7 @@ export default function MapView({
         let handleMapStyleChange = null;
         let resizeObserver = null;
         let releasePinchGuard = null;
+        let markerViewFrame = 0;
         let loadTimer = null;
 
         const getCurrentMapView = () => {
@@ -664,6 +663,11 @@ export default function MapView({
 
             const preferredStyles = getPreferredCandidates(pageDark);
 
+            const markerOptions = {
+                getMarkerViewZoom: (zoom) => markerStoreRef.current.logicalZoomAt(zoom),
+                onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
+                onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
+            };
             if (useNative) {
                 // 原生底图：标记、聚合点与名称是 MapKit 标注，拖动缩放时与底图同帧移动；不需要高德 SDK、海外叠图与双指补丁
                 const nativeMap = new NativeMapView(containerRef.current, {
@@ -674,10 +678,7 @@ export default function MapView({
                 mapRef.current = nativeMap;
                 styleSyncRef.current = { want: preferredStyles[0] || null, sent: 0, timer: null };
                 // 聚合与转场规则同网页（同一个聚合引擎），合并 / 拆分动画由原生播放；点聚合走同一个 handleClusterClick
-                markerLayerRef.current = new NativeMarkerLayer(nativeMap, {
-                    onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
-                    onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
-                });
+                markerLayerRef.current = new NativeMarkerLayer(nativeMap, markerOptions);
                 nativeMap.setVisible(nativeVisibleRef.current);
                 nativeMap.ready.catch((error) => {
                     if (disposed || mapRef.current !== nativeMap) return;
@@ -699,9 +700,8 @@ export default function MapView({
 
                 // 标记层：图标、名称、数量同根渲染；点击回调经 ref 读取最新闭包
                 markerLayerRef.current = new MarkerLayerController(mapRef.current, {
-                    nativeGlassVisible: mapPageActive || mapPreviewActive || pickerMode,
-                    onPlaceClick: (place, node) => markerHandlersRef.current.onPlaceClick?.(place, node),
-                    onClusterClick: (node, engine) => markerHandlersRef.current.onClusterClick?.(node, engine)
+                    ...markerOptions,
+                    nativeGlassVisible: mapPageActive || mapPreviewActive || pickerMode
                 });
                 // 双指缩放有一指先抬起时，剩下那根手指的移动不交给高德（否则地图会突然漂走，见 pinchGuard.js）
                 releasePinchGuard = installPinchGuard(mapRef.current.getContainer?.() || containerRef.current);
@@ -713,7 +713,7 @@ export default function MapView({
             mapRef.current.on('complete', () => {
                 // 地图加载完全后再次确保由于bounds已准备好，加载附近数据
                 if (loadPlacesRef.current) {
-                    loadPlacesRef.current(false);
+                    loadPlacesRef.current();
                 }
             });
 
@@ -738,17 +738,23 @@ export default function MapView({
             };
             handleViewChange = () => {
                 schedulePersistMapView();
-                // 每次移动或缩放结束时，增加适当防抖加载数据
-                if (loadTimer) {
-                    window.clearTimeout(loadTimer);
-                }
+                // 跨级尽早换瓦片，同一级的补块和停留预取继续防抖。
+                let synced = false;
+                if (markerViewFrame) window.cancelAnimationFrame(markerViewFrame);
+                markerViewFrame = window.requestAnimationFrame(() => {
+                    markerViewFrame = 0;
+                    if (markerQueryModeRef.current !== 'nearby') return;
+                    const viewport = readMapViewport(mapRef.current);
+                    if (!viewport || !markerStoreRef.current.isBandChange(viewport.zoom)) return;
+                    syncMarkerView(viewport);
+                    publishNearbyFromCache();
+                    synced = true;
+                });
+                if (loadTimer) window.clearTimeout(loadTimer);
                 loadTimer = window.setTimeout(() => {
                     loadTimer = null;
-                    if (loadPlacesRef.current) {
-                        loadPlacesRef.current(false);
-                    }
+                    loadPlacesRef.current?.({ viewAlreadySynced: synced });
                 }, 300);
-
             };
             handlePageHide = () => {
                 persistCurrentMapView(true);
@@ -832,6 +838,14 @@ export default function MapView({
 
         // 销毁当前地图与它的监听、标记层、覆盖物（卸载时；原生底图握手失败、改用高德前也用它）
         function releaseMap() {
+            if (markerViewFrame) {
+                window.cancelAnimationFrame(markerViewFrame);
+                markerViewFrame = 0;
+            }
+            if (loadTimer) {
+                window.clearTimeout(loadTimer);
+                loadTimer = null;
+            }
             if (mapRef.current) {
                 mapRef.current.off('styleChanged', handleStyleSettled);
                 if (handleMapClick) mapRef.current.off("click", handleMapClick);
@@ -882,10 +896,6 @@ export default function MapView({
                 window.clearTimeout(saveViewTimerRef.current);
                 saveViewTimerRef.current = null;
             }
-            if (loadTimer) {
-                window.clearTimeout(loadTimer);
-                loadTimer = null;
-            }
             if (skipSearchTimerRef.current) {
                 window.clearTimeout(skipSearchTimerRef.current);
                 skipSearchTimerRef.current = null;
@@ -916,10 +926,13 @@ export default function MapView({
     // 再叠加登录后的个人叠加与本地修改。移动结束时按新视野换级、补拉缺的瓦片，清单旧了后台刷新。
     // 显示哪份数据由当前模式决定（沿途 > 搜索 > 住民筛选 > 附近），标记由统一入口渲染。
     const publishNearbyFromCache = () => {
-        const all = markerStoreRef.current.all();
-        if (placesRef.current === all) return;
-        placesRef.current = all;
-        setPlaces(all);
+        const store = markerStoreRef.current;
+        const places = store.all();
+        const band = store.band;
+        if (nearbyMarkersRef.current.places === places && nearbyMarkersRef.current.band === band) return;
+        const next = { places, band };
+        nearbyMarkersRef.current = next;
+        setNearbyMarkers(next);
     };
 
     // 一份标记数据都没有时才提示（本机缓存读完后再判断），连续失败只提示一次
@@ -958,8 +971,7 @@ export default function MapView({
     }, [backendUrl]);
 
     // 按当前视野换级、补拉缺的瓦片（markerTiles.js 的 setView）
-    const syncMarkerView = () => {
-        const viewport = mapRef.current ? readMapViewport(mapRef.current) : null;
+    const syncMarkerView = (viewport = readMapViewport(mapRef.current)) => {
         if (!viewport) return false;
         const { zoom, ...bounds } = viewport;
         return markerStoreRef.current.setView({ bounds, zoom });
@@ -978,8 +990,8 @@ export default function MapView({
     };
 
     // 地图就绪、移动结束、退出搜索 / 沿途 / 住民筛选时调用：按视野换级并发布当前数据，清单旧了就后台刷新
-    const loadPlaces = () => {
-        syncMarkerView();
+    const loadPlaces = ({ viewAlreadySynced = false } = {}) => {
+        if (!viewAlreadySynced) syncMarkerView();
         prefetchAtStop();
         publishNearbyFromCache();
         return refreshMarkers();
@@ -1247,6 +1259,7 @@ export default function MapView({
     const markerQueryMode = alongRouteResults != null ? 'along' : (searchResults != null ? 'search' : (userPlaces ? 'user' : 'nearby'));
     markerQueryModeRef.current = markerQueryMode;
     const markerSource = alongRouteResults != null ? alongRouteResults : (searchResults != null ? searchResults : (userPlaces || places));
+    const markerBand = markerQueryMode === 'nearby' ? nearbyMarkers.band : null;
     useEffect(() => {
         if (!mapReady || !markerLayerRef.current) return;
         // 筛选只作用于站内地点；当前选中的地点即使不符合也保留，卡片不会失去锚点
@@ -1256,8 +1269,8 @@ export default function MapView({
         const visibleMapPlaces = venuePlace && !filtered.some((place) => placeKey(place) === placeKey(venuePlace))
             ? [...filtered, venuePlace]
             : filtered;
-        markerLayerRef.current.update({ places: visibleMapPlaces, queryMode: markerQueryMode });
-    }, [mapReady, markerSource, markerQueryMode, placeFilter, venuePlace]);
+        markerLayerRef.current.update({ places: visibleMapPlaces, queryMode: markerQueryMode, markerBand });
+    }, [mapReady, markerSource, markerQueryMode, markerBand, placeFilter, venuePlace]);
 
     useEffect(() => {
         markerLayerRef.current?.setSelectedKey(selectedPlace ? placeKey(selectedPlace) : null);
@@ -1498,7 +1511,7 @@ export default function MapView({
         }
         alongRouteResultsRef.current = null;
         setAlongRouteResults(null);
-        window.setTimeout(() => loadPlacesRef.current?.(true), 0);
+        window.setTimeout(() => loadPlacesRef.current?.(), 0);
     };
 
     // 打开某个地点时的缩放：至少 baseZoom，地点在那一级仍被聚合时放大到它单独显示的层级（clusterZoom.js 的 revealZoom）
@@ -1555,7 +1568,7 @@ export default function MapView({
         alongRouteResultsRef.current = null;
         armSkipAutoSearch();
         return focusPlaceById(placeId).then((opened) => {
-            loadPlacesRef.current?.(true);
+            loadPlacesRef.current?.();
             return opened;
         });
     };
@@ -1585,7 +1598,7 @@ export default function MapView({
         alongRouteResultsRef.current = null;
         armSkipAutoSearch();
         handleSelectAlongRoutePlace(place);
-        loadPlacesRef.current?.(true);
+        loadPlacesRef.current?.();
     };
 
     // onCreated：地点已建好（表单用它删除本机草稿），之后刷新地图失败也不影响
@@ -1881,7 +1894,7 @@ export default function MapView({
         userFilterRequestRef.current += 1;
         if (!userFilterRef.current) return;
         commitUserFilter(null);
-        if (reload) loadPlacesRef.current?.(true);
+        if (reload) loadPlacesRef.current?.();
     };
 
     // 筛选中修改 / 删除了地点、登录身份变化：静默重新读取（不移动视野、不收起卡片），失败时保留原列表
@@ -2457,8 +2470,6 @@ export default function MapView({
                     if (onOpenJourney && onOpenJourney() === true) return;
                     journeyRef.current?.open();
                 }}
-                onOpenMine={onOpenMine}
-                onLogout={onLogout}
                 onOpenAdmin={onOpenAdmin}
                 onOpenPosterExport={onOpenPosterExport}
                 onOpenFeedback={onOpenFeedback}
@@ -2467,9 +2478,9 @@ export default function MapView({
                 alongRouteRequestId={alongRouteRequestId}
                 onOpenPlaceList={onOpenPlaceList}
                 onOpenProfile={onOpenProfile}
-                onOpenCompanion={onOpenCompanion}
                 companion={companion}
-                myPlacesRequestId={myPlacesRequestId}
+                profileListRequest={profileListRequest}
+                onOpenFavoritePlace={focusPlaceById}
                 onShowExhibitionVenue={showExhibitionVenue}
                 locatedCenter={locatedCenter}
                 getMapCenter={currentMapCenter}

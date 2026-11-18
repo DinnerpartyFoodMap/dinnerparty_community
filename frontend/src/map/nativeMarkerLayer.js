@@ -8,7 +8,7 @@
 //   播放，节奏与网页的 MARKER_TIMING 相同。网页只在聚合层级变化、视野出缓冲区、数据变化时发一次，不逐帧参与。
 // - 点按：单点回传 markerTap（打开卡片），聚合回传 clusterTap，交给 MapView 的 handleClusterClick（与网页相同的展开逻辑）。
 import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
-import { buildSnapshot, computeLogicalZoom, boundsContains } from './cluster/snapshot.js';
+import { buildSnapshot, resolveMarkerZoom, boundsContains } from './cluster/snapshot.js';
 import { planTransition } from './cluster/transitions.js';
 import { PLACE_GLYPH, CLUSTER_GLYPH } from './cluster/glyph.js';
 import { placeGlyphKind, markerImageSources, DEFAULT_CLUSTER_CROP } from './markerContent.js';
@@ -102,7 +102,8 @@ function nodesSignature(nodes) {
 export class NativeMarkerLayer {
     /**
      * @param {import('./nativeMapView.js').NativeMapView} map
-     * @param {{ onPlaceClick?: (place: object, node: object) => void,
+     * @param {{ getMarkerViewZoom?: (zoom: number) => number,
+     *           onPlaceClick?: (place: object, node: object) => void,
      *           onClusterClick?: (node: object, engine: ClusterEngine) => void,
      *           clusterRadiusPx?: number }} options
      */
@@ -114,6 +115,7 @@ export class NativeMarkerLayer {
         this.snapshot = null;
         this.logicalZoom = undefined;
         this.queryMode = 'nearby';
+        this.markerBand = null;
         this.selectedKey = null;
         this.sentKeys = new Set();
         this.sentSignature = '';
@@ -129,7 +131,8 @@ export class NativeMarkerLayer {
         this._onMapMove = () => {
             if (this.destroyed || !this.engine || !this.snapshot) return;
             const zoom = Number(this.map.getZoom());
-            const logical = computeLogicalZoom(zoom, this.logicalZoom, { minZoom: this.engine.minZoom, maxZoom: this.engine.maxZoom });
+            const logical = this._resolveZoom(zoom);
+            if (logical === null) return;
             const viewBounds = readViewBounds(this.map);
             if (logical !== this.logicalZoom || (viewBounds && !boundsContains(this.snapshot.coverageBounds, viewBounds))) this._commit('live');
         };
@@ -140,12 +143,12 @@ export class NativeMarkerLayer {
         };
         this._onMarkerTap = ({ id }) => {
             const node = this.snapshot?.nodeByKey.get(id);
-            const place = this.engine?.placeByKey.get(id);
+            const place = this.snapshot?.engine?.placeByKey.get(id);
             if (place) this.options.onPlaceClick?.(place, node);
         };
         this._onClusterTap = ({ id }) => {
             const node = this.snapshot?.nodeByKey.get(id);
-            if (node && node.kind === 'cluster' && this.engine) this.options.onClusterClick?.(node, this.engine);
+            if (node?.kind === 'cluster') this.options.onClusterClick?.(node, this.snapshot.engine);
         };
         // 校准结果变了：同一份节点按新坐标重发（不播放转场）
         this._onFrameChange = () => this._commit('frames');
@@ -165,7 +168,7 @@ export class NativeMarkerLayer {
     }
 
     /** 单一数据入口：当前模式下应参与聚合的完整列表（同 MarkerLayerController.update） */
-    update({ places = [], queryMode = 'nearby' } = {}) {
+    update({ places = [], queryMode = 'nearby', markerBand = null } = {}) {
         if (this.destroyed) return;
         const normalized = normalizePlaces(places);
         const signature = dataSignature(normalized);
@@ -179,6 +182,7 @@ export class NativeMarkerLayer {
             this.engine.updatePlaces(normalized);
         }
         this.queryMode = queryMode;
+        this.markerBand = markerBand;
         this._commit('data');
     }
 
@@ -192,11 +196,14 @@ export class NativeMarkerLayer {
         const viewBounds = readViewBounds(this.map);
         if (!viewBounds) return;
         const zoom = Number(this.map.getZoom());
-        this.logicalZoom = computeLogicalZoom(zoom, this.logicalZoom, { minZoom: this.engine.minZoom, maxZoom: this.engine.maxZoom });
+        const logicalZoom = this._resolveZoom(zoom);
+        if (logicalZoom === null) return;
+        this.logicalZoom = logicalZoom;
         const next = buildSnapshot(this.engine, {
             viewBounds,
-            logicalZoom: this.logicalZoom,
+            logicalZoom,
             queryMode: this.queryMode,
+            markerBand: this.markerBand,
             bufferRatio: NATIVE_BUFFER_RATIO,
             transitionVersion: ++this.version
         });
@@ -212,6 +219,11 @@ export class NativeMarkerLayer {
         this.sentKeys = new Set(nodes.map((node) => node.id));
         this.sentSignature = signature;
         this.map.setNodes(nodes, plan, { prevKeys, animate, selected: this.selectedKey });
+    }
+
+    _resolveZoom(zoom) {
+        return resolveMarkerZoom(zoom, this.logicalZoom, { minZoom: this.engine.minZoom, maxZoom: this.engine.maxZoom },
+            this.markerBand, this.options.getMarkerViewZoom);
     }
 
     setSelectedKey(key) {

@@ -34,7 +34,7 @@ export default function useNativeProfile({
     onBack,
     onOpenPlace,
     onOpenCommunity,
-    onOpenFavorites,
+    onAction,
     onOpenFeedback,
     onRequireAuth,
     onUnavailable
@@ -88,8 +88,8 @@ export default function useNativeProfile({
                 profile = { ...profile, taste: data.taste };
                 return { ok: true, profile: view(profile) };
             }
-            if (type === 'saveWidgets') {
-                await saveProfileWidgets(backendUrl, latest.token, values.widgets);
+            if (type === 'saveWidgets' && profile?.relation?.self) {
+                await saveProfileWidgets(backendUrl, latest.token, values.widgets, values.hiddenWidgets);
                 profile = await load();
                 return { ok: true, profile: view(profile) };
             }
@@ -125,7 +125,14 @@ export default function useNativeProfile({
                     onBack: () => { if (!cancelled) onBack?.(); },
                     onOpenPlace: (placeId) => { if (!cancelled) onOpenPlace?.(placeId); },
                     onOpenCommunity: () => { if (!cancelled && profile?.relation?.self) onOpenCommunity?.(); },
-                    onOpenFavorites: () => { if (!cancelled && profile?.content?.collection?.length) onOpenFavorites?.(userId); },
+                    onAction: (action) => {
+                        if (cancelled || !profile || profile.relation?.blocked) return;
+                        if (action === 'openFavorites') {
+                            if (profile.content?.collection?.length) onAction?.('favorites', userId, profile.user?.username);
+                        } else if (action === 'my-locations' || profile.relation?.self) {
+                            onAction?.(action, userId, profile.user?.username);
+                        }
+                    },
                     onError: () => { if (!cancelled) onUnavailable?.(); }
                 });
                 const started = session.start();

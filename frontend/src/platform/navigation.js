@@ -31,7 +31,8 @@ export function getQueryParams() {
     return params;
 }
 
-function currentIndex() {
+export function currentNavigationIndex() {
+    if (typeof window === 'undefined') return 0;
     const value = window.history.state && window.history.state[NAV_INDEX_KEY];
     return Number.isInteger(value) ? value : 0;
 }
@@ -72,8 +73,7 @@ export function initNavigationState() {
 }
 
 export function canGoBack() {
-    if (typeof window === 'undefined') return false;
-    return currentIndex() > 0;
+    return currentNavigationIndex() > 0;
 }
 
 /**
@@ -84,7 +84,7 @@ export function canGoBack() {
 export function navigate(path, { replace = false } = {}) {
     if (typeof window === 'undefined') return;
     const target = String(path || '/');
-    const index = replace ? currentIndex() : currentIndex() + 1;
+    const index = currentNavigationIndex() + (replace ? 0 : 1);
     const state = { [NAV_INDEX_KEY]: index };
     if (replace) window.history.replaceState(state, '', target);
     else window.history.pushState(state, '', target);

@@ -1,5 +1,4 @@
 /* 住民主页（UserProfilePage.jsx） */
-.fm-profile__name-row,
 .fm-profile__widget-heading,
 .fm-profile__visibility,
 .fm-profile__pagination {
@@ -8,13 +7,24 @@
     gap: var(--space-2);
 }
 
-.fm-profile__name-row,
 .fm-profile__widget-heading {
     flex-wrap: wrap;
+    justify-content: space-between;
+    margin-block-end: var(--space-2);
 }
 
 .fm-profile__widget .fm-profile__widget-heading h3 {
-    margin: 0 auto 0 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+}
+
+.fm-profile__rejected-dot {
+    inline-size: var(--space-2);
+    block-size: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-danger);
 }
 
 .fm-profile__visibility {
@@ -47,7 +57,7 @@
 }
 .fm-profile__header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 16px;
@@ -57,11 +67,19 @@
 }
 .fm-profile__identity {
     min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+.fm-profile__identity-text {
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 6px;
 }
 .fm-profile__avatar {
+    flex-shrink: 0;
     width: 84px;
     height: 84px;
     border-radius: 50%;
@@ -70,7 +88,7 @@
     background: var(--color-bg-overlay);
 }
 .fm-profile__name {
-    margin: 4px 0 0;
+    margin: 0;
     font-size: 20px;
     overflow-wrap: anywhere;
 }
@@ -84,18 +102,15 @@
 .fm-profile__city .material-symbols-outlined {
     font-size: 16px;
 }
-.fm-profile__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 4px;
+.fm-profile__header-action {
+    flex-shrink: 0;
 }
 .fm-profile__radar {
-    flex: 0 1 300px;
-    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    width: min(320px, 100%);
+    margin-inline: auto;
 }
 .fm-profile__radar svg {
     width: 100%;
@@ -106,55 +121,16 @@
     color: var(--color-text-muted);
     text-align: center;
 }
-/* 手机宽度放不下头像旁的雷达（字会缩到 8px 左右）：头像和名字并排，雷达放下面 */
 @media (max-width: 480px) {
-    .fm-profile__header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    .fm-profile__identity {
-        display: grid;
-        grid-template-columns: 64px minmax(0, 1fr);
-        column-gap: 12px;
-        row-gap: 4px;
-        align-items: center;
-    }
     .fm-profile__avatar {
-        grid-row: 1 / span 2;
         width: 64px;
         height: 64px;
     }
-    .fm-profile__name {
-        margin: 0;
-    }
-    .fm-profile__name-row {
-        align-self: end;
-    }
-    .fm-profile__city {
-        align-self: start;
-    }
-    .fm-profile__actions {
-        grid-column: 1 / -1;
-    }
-    .fm-profile__radar {
-        flex: none;
-        width: min(320px, 100%);
-        align-self: center;
-    }
-    .fm-profile__widget-select {
-        flex: 1 1 100%;
-        justify-content: space-between;
-    }
-    .fm-profile__widget-select select {
-        flex: 1;
-        max-width: 240px;
-    }
 }
 .fm-profile__axis {
-    padding: 14px 16px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-bg-surface);
+    margin-block-start: var(--space-3);
+    padding-block-start: var(--space-3);
+    border-block-start: 1px solid var(--color-border);
 }
 .fm-profile__axis-title {
     display: flex;
@@ -226,21 +202,39 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: center;
     gap: 8px;
 }
-.fm-profile__widget-select {
+.fm-profile__widget-toggle {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     font-size: 13px;
 }
-.fm-profile__widget-select select {
-    min-height: 32px;
-    border-radius: var(--radius-md);
+.fm-profile__account-actions {
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--color-border);
-    background: var(--color-bg-overlay);
-    color: var(--color-text-primary);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+.fm-profile__account-actions .fm-profile__account-action {
+    gap: var(--space-2);
+    padding-inline: var(--space-4);
+}
+.fm-profile__account-actions .fm-profile__account-action + .fm-profile__account-action {
+    border-block-start: 1px solid var(--color-border);
+    border-radius: 0;
+}
+.fm-profile__account-action > span:last-child {
+    margin-inline-start: auto;
+    color: var(--color-text-muted);
+}
+.fm-profile__widget-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-block-start: var(--space-2);
 }
 .fm-profile__widget {
     padding: 14px 16px;
@@ -266,11 +260,6 @@
     gap: 10px;
     overflow-x: auto;
     scroll-snap-type: x proximity;
-}
-.fm-profile__places--grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 112px), 1fr));
-    overflow: visible;
 }
 .fm-profile__places li {
     flex: 0 0 112px;

@@ -69,7 +69,6 @@ assert.match(settingsGesture, /case \.began:[\s\S]*UIPercentDrivenInteractiveTra
 assert.match(settingsGesture, /case \.changed:[\s\S]*\.update\(progress\)/);
 assert.match(settingsGesture, /interaction\.finish\(\)[\s\S]*interaction\.cancel\(\)/);
 assert.match(settings, /func interactionControllerForDismissal\(/);
-assert.match(settings, /override var shouldRemovePresentersView: Bool\s*\{\s*false\s*\}/);
 assert.match(cancelledDismissal, /guard !completed else\s*\{\s*return\s*\}/);
 assert.match(cancelledDismissal, /finishGeneration\s*\+=\s*1/);
 assert.doesNotMatch(cancelledDismissal, /(?:host|store|pending)\s*=\s*nil|call\?\.resolve/);
@@ -102,5 +101,13 @@ assert.doesNotMatch(between(preview, 'case .began:', 'case .ended:'), /onEdgeBac
 assert.match(preview, /case \.ended:[\s\S]*commitsEdgeBack[\s\S]*onEdgeBack\?\(\)/);
 assert.match(preview, /case \.cancelled, \.failed:[\s\S]*restoreEdgePreview/);
 assert.match(profile, /screenPresenter\.onDismissed = [\s\S]*?completeDismissal\(host\)/, 'UIKit dismissal also ends the pending bridge session');
+
+// Translate only the foreground page. UIKit's containing view stays clear over the live previous page.
+const screenController = between(presentation, 'final class NativeScreenPresentationController', 'final class NativeScreenSlideAnimator');
+assert.match(screenController, /override var shouldRemovePresentersView: Bool\s*\{\s*false\s*\}/);
+assert.match(screenController, /override var shouldPresentInFullscreen: Bool\s*\{\s*false\s*\}/, 'the presentation stays in the context of the previous view');
+assert.match(screenController, /containerView\.backgroundColor = \.clear/);
+assert.match(screenController, /containerView\.isOpaque = false/);
+assert.match(settings, /let controller = NativeScreenPresentationController\(/, 'settings uses the shared live underlay');
 
 console.log('Native edge-back source contracts passed (static only; Swift not compiled).');

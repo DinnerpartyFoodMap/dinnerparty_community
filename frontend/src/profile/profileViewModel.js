@@ -21,18 +21,30 @@ const WIDGET_EMPTY = {
 };
 
 export function profileWidgetOptions() {
-    return PROFILE_WIDGET_KINDS.map((id) => ({ id, title: WIDGET_TITLE[id]() }));
+    return PROFILE_WIDGET_KINDS.map((id) => ({ id, title: profileWidgetTitle(id, true) }));
+}
+
+export function hiddenProfileWidgets(profile) {
+    const hidden = profile?.hidden_widgets;
+    return Array.isArray(hidden) ? PROFILE_WIDGET_KINDS.filter((kind) => hidden.includes(kind)) : [];
+}
+
+export function profileRejectedPlaceCount(profile, currentUser) {
+    const count = Number(profile?.rejected_place_count ?? currentUser?.rejected_place_count);
+    return Number.isSafeInteger(count) && count > 0 ? count : 0;
 }
 
 export function profileSelfLevels() {
     return [4, 3, 2, 1].map((id) => ({ id, label: selfLevelLabel(id) }));
 }
 
-function widgetTitle(kind) {
+export function profileWidgetTitle(kind, self) {
+    if (self && kind === 'recent') return t('map:ui.myPlaces');
+    if (self && kind === 'collection') return t('profile:widgets.collection.mine');
     return WIDGET_TITLE[kind]?.() || '';
 }
 
-function widgetEmpty(kind) {
+export function profileWidgetEmpty(kind) {
     return WIDGET_EMPTY[kind]?.() || '';
 }
 
@@ -55,16 +67,16 @@ function buildSection(kind, data, self) {
         const places = Array.isArray(collection?.places) ? collection.places : [];
         return {
             kind,
-            title: self ? t('profile:widgets.collection.mine') : widgetTitle(kind),
-            empty: places.length ? '' : widgetEmpty(kind),
+            title: profileWidgetTitle(kind, self),
+            empty: places.length ? '' : profileWidgetEmpty(kind),
             groups: places.length ? [{ id: 'favorites', title: '', rows: places.map((place) => placeRow(place, false)) }] : []
         };
     }
     const places = Array.isArray(data) ? data : [];
     return {
         kind,
-        title: widgetTitle(kind),
-        empty: places.length ? '' : widgetEmpty(kind),
+        title: profileWidgetTitle(kind, self),
+        empty: places.length ? '' : profileWidgetEmpty(kind),
         groups: places.length
             ? [{
                 id: kind,
@@ -80,9 +92,13 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, back
     const user = profile?.user || {};
     const relation = profile?.relation || {};
     const self = !!relation.self || (!!currentUser && String(currentUser.id) === String(user.id));
+    const canUseAccountActions = self && !!tokenPresent;
     const widget = profile?.widgets?.findLast((kind) => PROFILE_WIDGET_KINDS.includes(kind)) || 'recent';
+    const hiddenWidgets = hiddenProfileWidgets(profile);
+    const rejectedPlaceCount = self ? profileRejectedPlaceCount(profile, currentUser) : 0;
     const content = profile?.content || {};
-    const hasCollection = !!content.collection?.length;
+    const hasCollection = !relation.blocked && !!content.collection?.length;
+    const placeWidgets = relation.blocked ? [] : PROFILE_WIDGET_KINDS.filter((kind) => !hiddenWidgets.includes(kind));
     const axes = normalizeTaste(profile?.taste).map((axis) => ({
         key: axis.key,
         label: axisLabel(axis.key),
@@ -97,16 +113,23 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, back
         avatarURL: resolveAvatarUrl(user, backendUrl, { serverFallback: true }),
         city: profile?.city ? t('profile:city', { city: profile.city }) : t('profile:cityUnknown'),
         self,
-        canEditTaste: self && !!tokenPresent,
-        canEditWidgets: self && !!tokenPresent,
-        canOpenCommunity: self && !!tokenPresent,
+        canEditTaste: canUseAccountActions,
+        canEditWidgets: canUseAccountActions,
+        canOpenCommunity: canUseAccountActions,
+        canUseAccountActions,
         canOpenFavorites: hasCollection,
-        collectionVisibility: self && !!tokenPresent && typeof profile?.collection_visibility === 'boolean' ? profile.collection_visibility : null,
+        canOpenLocations: placeWidgets.includes('recent'),
+        rejectedPlaceCount,
+        collectionVisibility: canUseAccountActions && typeof profile?.collection_visibility === 'boolean' ? profile.collection_visibility : null,
         canBlock: !!relation.can_block,
         blocked: !!relation.blocked,
         widgets: [widget],
+        hiddenWidgets,
         widgetSlotLabels: [t('profile:widgets.slot', { index: 2 })],
-        sections: [...(hasCollection ? [buildSection('collection', content.collection, self)] : []), buildSection(widget, content[widget], self)],
+        sections: [
+            ...(hasCollection ? [buildSection('collection', content.collection, self)] : []),
+            ...placeWidgets.map((kind) => buildSection(kind, content[kind], self))
+        ],
         axes,
         labels: {
             ...labels,
@@ -119,6 +142,11 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, back
             widgetsEdit: t('profile:widgets.edit'),
             community: t('journey:common.feature.community'),
             viewAllFavorites: t('profile:widgets.collection.viewAll'),
+            viewAllLocations: t('profile:widgets.collection.viewAll'),
+            settings: t('map:ui.accountSettings'),
+            companion: t('companion:title'),
+            logout: t('map:ui.logout'),
+            rejectedPlaces: rejectedPlaceCount ? t('map:ui.myPlacesRejected', { count: rejectedPlaceCount }) : '',
             collectionPublic: t('profile:widgets.collection.public'),
             collectionVisibilityFailed: t('profile:widgets.collection.saveVisibilityFailed'),
             save: t('common:action.save'),

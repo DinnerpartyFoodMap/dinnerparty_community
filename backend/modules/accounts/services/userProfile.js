@@ -7,7 +7,7 @@ const { userTasteAxes } = require('../../preferences/services/tasteAxes');
 const { avatarColumns, avatarFields } = require('./userAvatar');
 
 // 住民主页（GET /users/:id/profile，见 ../doc/README.md）：头像、六类餐饮偏好雷达（preferences/services/tasteAxes.js）、上次定位的城市，
-// 以及固定的收藏与住民自己选择的一个地点小组件。
+// 以及固定的收藏、创建地点和最喜欢地点的预览。
 // 地点只给公开的；屏蔽了 Ta 时只返回头部信息（用来解除屏蔽）。
 const PROFILE_WIDGETS = Object.freeze(['collection', 'recent', 'favorite']);
 const DEFAULT_WIDGETS = Object.freeze(['collection', 'recent']);
@@ -25,6 +25,18 @@ function normalizeWidgets(value) {
     return ['collection', chosen || DEFAULT_WIDGETS[1]];
 }
 
+function readWidgetSettings(value) {
+    let stored = value;
+    if (typeof stored === 'string') {
+        try { stored = JSON.parse(stored); } catch { stored = null; }
+    }
+    const hidden = Array.isArray(stored?.hidden_widgets) ? stored.hidden_widgets : [];
+    return {
+        widgets: normalizeWidgets(stored?.widgets ?? stored),
+        hidden_widgets: CHOOSABLE_WIDGETS.filter((kind) => hidden.includes(kind))
+    };
+}
+
 function recentPlaces(userId, database = db._raw) {
     return database.prepare(`SELECT ${PLACE_COLUMNS} FROM Place p
         WHERE p.creator_id = ? AND ${publicPlaceSql('p')}
@@ -40,20 +52,17 @@ function favoritePlaces(userId, database = db._raw) {
         .map((row) => ({ ...widgetPlace(row), own_score: row.own_score }));
 }
 
-const WIDGET_LOADERS = { recent: recentPlaces, favorite: favoritePlaces };
-
 async function getUserProfile(userId, viewer = null, database = db._raw) {
     const user = database.prepare(`SELECT id, username, created_time, profile_widgets, ${avatarColumns()}
         FROM User WHERE id = ?`).get(userId);
     if (!user) return null;
     let relation = viewerRelation(viewer, user.id);
-    const widgets = normalizeWidgets(user.profile_widgets);
     const profile = {
         user: { id: user.id, username: user.username, ...avatarFields(user), created_time: user.created_time },
         relation,
         city: getUserCity(user.id),
         taste: await userTasteAxes(user.id, database),
-        widgets,
+        ...readWidgetSettings(user.profile_widgets),
         content: {}
     };
     try {
@@ -77,18 +86,24 @@ async function getUserProfile(userId, viewer = null, database = db._raw) {
     if (relation.blocked) return profile;
     const collection = getFavoriteCollection(user.id, viewer?.id, { limit: WIDGET_PLACE_LIMIT, database });
     profile.content.collection = collection ? [{ id: 'favorites', title: '我的收藏', total: collection.total, places: collection.places }] : [];
-    profile.content[widgets[1]] = WIDGET_LOADERS[widgets[1]](user.id, database);
+    if (relation.self || !profile.hidden_widgets.includes('recent')) profile.content.recent = recentPlaces(user.id, database);
+    if (relation.self || !profile.hidden_widgets.includes('favorite')) profile.content.favorite = favoritePlaces(user.id, database);
     if (relation.self && collection) profile.collection_visibility = collection.is_public;
     return profile;
 }
 
-function saveProfileWidgets(userId, widgets, database = db._raw) {
+function saveProfileWidgets(userId, widgets, hiddenWidgets, database = db._raw) {
     if (!Array.isArray(widgets) || ![1, 2].includes(widgets.length) || !widgets.every((item) => PROFILE_WIDGETS.includes(item))) {
         return null;
     }
-    const selection = normalizeWidgets(widgets);
-    database.prepare('UPDATE User SET profile_widgets = ? WHERE id = ?').run(JSON.stringify(selection), userId);
-    return selection;
+    if (hiddenWidgets !== undefined && (!Array.isArray(hiddenWidgets) || !hiddenWidgets.every((kind) => CHOOSABLE_WIDGETS.includes(kind)))) {
+        return null;
+    }
+    const settings = readWidgetSettings(database.prepare('SELECT profile_widgets FROM User WHERE id = ?').get(userId)?.profile_widgets);
+    settings.widgets = normalizeWidgets(widgets);
+    if (hiddenWidgets !== undefined) settings.hidden_widgets = CHOOSABLE_WIDGETS.filter((kind) => hiddenWidgets.includes(kind));
+    database.prepare('UPDATE User SET profile_widgets = ? WHERE id = ?').run(JSON.stringify(settings), userId);
+    return settings;
 }
 
 /** 自己被驳回的地点数：头像和“我创建的地点”上的小红点 */

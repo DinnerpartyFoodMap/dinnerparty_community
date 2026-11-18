@@ -23,7 +23,7 @@ export function navigationDirection(prev, next) {
  *           onCoveredChange?: (covered: boolean) => void }} props
  * pageKey 为 null 表示当前在地图页（没有覆盖页面）。
  */
-export default function PageTransition({ pageKey, direction, children, onCoveredChange }) {
+export default function PageTransition({ pageKey, direction, children, onCoveredChange, coveredByNative = false }) {
     const flags = useMotionFlags();
     const variants = getPageVariants({ touch: flags.touch, reduced: flags.reduced });
     const coverRef = useRef(onCoveredChange);
@@ -70,6 +70,8 @@ export default function PageTransition({ pageKey, direction, children, onCovered
                     }}
                     data-app-scroll=""
                     data-native-cluster-occluder=""
+                    aria-hidden={coveredByNative || undefined}
+                    inert={coveredByNative ? 'true' : undefined}
                 >
                     {children}
                 </motion.div>

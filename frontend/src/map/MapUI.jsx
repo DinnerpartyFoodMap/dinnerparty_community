@@ -40,6 +40,7 @@ import { amapNavigationLink } from './amapNavigation';
 import { getPlatform, APP_VERSION, isPluginAvailable } from '../platform/env';
 import { AnimatePresence, motion } from 'motion/react';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
+import { fetchProfileFavorites } from '../api/client';
 import MotionSurface from '../components/overlay/MotionSurface';
 import MapAnchoredCard from './MapAnchoredCard';
 import AnchoredPopover from '../components/overlay/AnchoredPopover';
@@ -300,8 +301,6 @@ export default function MapUI(props) {
         isAdmin,
         onRequireAuth,
         onOpenDinners,
-        onOpenMine,
-        onLogout,
         onOpenAdmin,
         onOpenPosterExport,
         onOpenFeedback,
@@ -389,7 +388,6 @@ export default function MapUI(props) {
     };
 
     const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-    const [mobileAccountOpen, setMobileAccountOpen] = useState(false);
     const [searchResultsVisible, setSearchResultsVisible] = useState(true);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailFocus, setDetailFocus] = useState(null);
@@ -435,18 +433,61 @@ export default function MapUI(props) {
     const [userPlacesOpen, setUserPlacesOpen] = useState(false);
     const openUserPlacesFor = (user) => {
         if (!user?.clickable || !onOpenUserPlaces) return;
+        setFavoritesOwner(null);
         setUserPlacesOpen(true);
         onOpenUserPlaces({ id: user.id, name: user.name });
     };
-    // 桌面顶栏的“我创建的地点”（App 递增请求号）
-    const handledMyPlacesRequest = useRef(props.myPlacesRequestId || 0);
+    const [favoritesOwner, setFavoritesOwner] = useState(null);
+    const [favoritesResult, setFavoritesResult] = useState(null);
+    const [favoriteFocusRow, setFavoriteFocusRow] = useState(null);
+    const handledProfileList = useRef(null);
     useEffect(() => {
-        if (!props.myPlacesRequestId || props.myPlacesRequestId === handledMyPlacesRequest.current || !currentUser?.id) return;
-        handledMyPlacesRequest.current = props.myPlacesRequestId;
-        openMyPlaces();
-    }, [props.myPlacesRequestId, currentUser]);
+        if (!props.profileListRequest) {
+            setFavoritesOwner(null);
+            return;
+        }
+        if (!chromeOwner || props.profileListRequest === handledProfileList.current) return;
+        const { kind, user } = props.profileListRequest;
+        handledProfileList.current = props.profileListRequest;
+        setMobileMoreOpen(false);
+        setAlongRouteOpen(false);
+        if (kind === 'my-locations') {
+            setFavoritesOwner(null);
+            openUserPlacesFor({ ...user, clickable: true });
+        } else {
+            closePopup?.();
+            setUserPlacesOpen(false);
+            setFavoritesResult(null);
+            setFavoriteFocusRow(null);
+            setFavoritesOwner(user);
+        }
+    }, [props.profileListRequest, chromeOwner]);
+    const viewingOwnFavorites = favoritesOwner && String(currentUser?.id) === String(favoritesOwner.id);
+    useEffect(() => {
+        if (!favoritesOwner || (viewingOwnFavorites && favoriteLoading)) return undefined;
+        const controller = new AbortController();
+        const options = { token, signal: controller.signal };
+        fetchProfileFavorites(backendUrl, favoritesOwner.id, options).then((result) => {
+            if (!controller.signal.aborted) setFavoritesResult({ owner: favoritesOwner, token, places: result.places || [] });
+        }).catch((error) => {
+            if (!controller.signal.aborted) setFavoritesResult({ owner: favoritesOwner, token, error: error.message });
+        });
+        return () => controller.abort();
+    }, [backendUrl, token, favoritesOwner, viewingOwnFavorites, favoriteLoading]);
+    const favoriteList = favoritesResult?.owner === favoritesOwner && favoritesResult?.token === token ? favoritesResult : null;
+    const favoritePlaces = favoriteList?.places || [];
+    const favoritesTitle = viewingOwnFavorites
+        ? t('profile:widgets.collection.mine') : t('profile:widgets.collection.title');
+    const favoritesMessage = !favoriteList ? t('common:status.loading')
+        : favoriteList.error || (favoritePlaces.length === 0 ? t('profile:widgets.collection.empty') : '');
+    const favoriteRowId = (place) => `place-${place.id}`;
+    const openFavoritePlace = (place) => {
+        setFavoriteFocusRow(favoriteRowId(place));
+        props.onOpenFavoritePlace?.(place.id);
+    };
     const toggleFilter = () => {
         if (!filterOpen) {
+            setFavoritesOwner(null);
             setUserPlacesOpen(false);
             setAlongRouteOpen(false);
         }
@@ -525,8 +566,8 @@ export default function MapUI(props) {
     }, [chromeOwner]);
     // 筛选面板与收藏、住民地点列表、顺路吃在同一侧：一个打开时另一个让位，不叠在一起
     useEffect(() => {
-        if (userPlacesOpen || alongRouteOpen) setFilterOpen(false);
-    }, [userPlacesOpen, alongRouteOpen]);
+        if (favoritesOwner || userPlacesOpen || alongRouteOpen) setFilterOpen(false);
+    }, [favoritesOwner, userPlacesOpen, alongRouteOpen]);
     const filterActive = isPlaceFilterActive(placeFilter);
     // iOS 原生筛选面板（协议 v14）的标签目录与“展开全部”；网页面板自己读目录
     const [filterDirectory, setFilterDirectory] = useState({ list: [], loading: false, error: '' });
@@ -613,10 +654,6 @@ export default function MapUI(props) {
     const mapControlIconColor = whiteMapControlIcons ? 'white' : 'var(--theme-on-primary)';
     // 自己有被驳回的地点：头像与“我创建的地点”上的小红点（GET /users/me 的 rejected_place_count）
     const rejectedCount = isAuthenticated ? (Number(currentUser?.rejected_place_count) || 0) : 0;
-    // 与地点卡片“最近修改”相同：地图只显示这些地点，同时打开列表（被驳回的地点在列表里有“未通过”标识）
-    const openMyPlaces = () => {
-        if (currentUser?.id) openUserPlacesFor({ id: currentUser.id, name: currentUser.username || '', clickable: true });
-    };
     const { user: sessionUser } = useAuth();
     const accountUser = sessionUser || currentUser;
     const accountAvatarSrc = resolveAvatarUrl(isAuthenticated ? accountUser : null, backendUrl, {
@@ -678,7 +715,7 @@ export default function MapUI(props) {
         setUserPlacesOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
-        setMobileAccountOpen(false);
+        setFavoritesOwner(null);
         clearSearch?.({ resetTerm: true, closeSearchUi: true, reloadPlaces: false });
         if (nativeAlongRouteEnabled) {
             // 原生面板自带呈现与收起；网页只保留路线与结果，不再渲染 AlongRoutePanel
@@ -725,7 +762,7 @@ export default function MapUI(props) {
         setAlongRouteOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
-        setMobileAccountOpen(false);
+        setFavoritesOwner(null);
         closePopup?.();
         if (addMode) handleToggleAddMode();
         clearSearch?.();
@@ -756,7 +793,7 @@ export default function MapUI(props) {
     useEffect(() => {
         if (!exhibitionOpen) return;
         setMobileMoreOpen(false);
-        setMobileAccountOpen(false);
+        setFavoritesOwner(null);
     }, [exhibitionOpen]);
 
     useEffect(() => {
@@ -775,7 +812,7 @@ export default function MapUI(props) {
     const toggleMobileMore = () => {
         setRandomFoodOpen(false);
         setMobileMoreOpen((open) => !open);
-        setMobileAccountOpen(false);
+        setFavoritesOwner(null);
     };
 
     const runMobileMoreAction = (action) => {
@@ -797,7 +834,7 @@ export default function MapUI(props) {
     };
     const openOnboarding = () => {
         setMobileMoreOpen(false);
-        setMobileAccountOpen(false);
+        setFavoritesOwner(null);
         if (addMode) handleToggleAddMode();
         showOnboarding();
     };
@@ -806,19 +843,12 @@ export default function MapUI(props) {
         setOnboardingOpen(false);
     };
 
-    const toggleMobileAccount = () => {
+    const openMobileProfile = () => {
         setRandomFoodOpen(false);
-        if (!isAuthenticated) {
-            onOpenMine?.();
-            return;
-        }
-        setMobileAccountOpen((open) => !open);
+        setFavoritesOwner(null);
         setMobileMoreOpen(false);
-    };
-
-    const runMobileAccountAction = (action) => {
-        setMobileAccountOpen(false);
-        action?.();
+        if (isAuthenticated) props.onOpenProfile?.(currentUser?.id);
+        else onRequireAuth?.();
     };
 
     const externalSearch = useExternalSearch(searchTerm, searchResetKey, backendUrl);
@@ -1052,15 +1082,13 @@ export default function MapUI(props) {
         { id: 'search', title: t('common:action.search'), symbol: sfSymbol('search'), ...nativeIcon('toolbar.icons.search'), selected: searchExpanded, disabled: !mapReady, opensOverlay: false },
         {
             id: 'account',
-            title: isAuthenticated ? t('map:ui.openUserMenu') : t('map:ui.login'),
+            title: isAuthenticated ? t('map:ui.myProfile') : t('map:ui.login'),
             symbol: isAuthenticated ? sfSymbol('unblock') : sfSymbol('account'),
             // 默认头像（含皮肤的默认头像）交给原生时按原生能读的格式准备；住民上传的头像原样
             avatarURL: iosApp && accountAvatarSrc === accountDefaultAvatar ? (nativeImageSource(accountDefaultAvatar) || defaultAvatar) : accountAvatarSrc,
             placement: 'account',
             badge: rejectedCount ? 'dot' : undefined,
-            selected: mobileAccountOpen,
-            opensOverlay: true,
-            sheetWhenNative: isAuthenticated
+            opensOverlay: true
         },
         // 列表 / 地图切换、筛选与定位在原生侧共用一个竖向圆角矩形（从上到下）
         { id: 'listView', title: listShown ? t('places:list.toMap') : t('places:list.toList'), symbol: listShown ? 'map' : 'list.bullet', placement: 'floating', selected: false, disabled: !mapReady, opensOverlay: false },
@@ -1094,7 +1122,7 @@ export default function MapUI(props) {
                     openAlongRoute();
                 }
                 return true;
-            case 'account': toggleMobileAccount(); return true;
+            case 'account': openMobileProfile(); return true;
             case 'search':
                 if (nativeChrome) {
                     openCompactSearch();
@@ -1126,18 +1154,9 @@ export default function MapUI(props) {
         ICP_BEIAN && { id: 'icp', title: ICP_BEIAN.text, symbol: sfSymbol('icp'), url: ICP_BEIAN.url },
         GONGAN_BEIAN && { id: 'gongan', title: GONGAN_BEIAN.text, symbol: sfSymbol('gongan'), url: GONGAN_BEIAN.url }
     ].filter(Boolean);
-    const accountMenuEntries = [
-        // 我创建的地点：地图只显示自己的地点（含审核中、未通过的）；有被驳回的地点时右侧小红点
-        { id: 'myPlaces', title: t('map:ui.myPlaces'), symbol: sfSymbol('place'), badge: rejectedCount ? 'dot' : undefined, run: openMyPlaces },
-        props.onOpenProfile && { id: 'profile', title: t('map:ui.myProfile'), symbol: sfSymbol('profile'), run: () => props.onOpenProfile(currentUser?.id) },
-        props.onOpenCompanion && { id: 'companions', title: t('companion:title'), symbol: sfSymbol('companion'), run: props.onOpenCompanion },
-        { id: 'settings', title: t('map:ui.accountSettings'), symbol: sfSymbol('account'), run: onOpenMine },
-        { id: 'logout', title: t('map:ui.logout'), symbol: sfSymbol('logout'), tone: 'danger', run: onLogout }
-    ].filter(Boolean);
     const toSheetRows = (entries) => entries.map(({ run, url, ...row }) => row);
 
-    const openSheetId = (isAuthenticated && mobileAccountOpen) ? 'account'
-        : (randomFoodOpen && !pickerMode) ? 'random'
+    const openSheetId = (randomFoodOpen && !pickerMode) ? 'random'
         // 地图筛选（原生控件接管时）：从右侧按钮组展开，改动立即作用到地图
         : (filterOpen && !pickerMode) ? 'filter'
         // 展会面板盖在地点卡片之上：关闭后仍选中的地点卡片重新出现
@@ -1145,6 +1164,7 @@ export default function MapUI(props) {
         // 聚合成员列表（“此处有 N 家店”）：选中其中一家后关闭，让位给地点卡片
         : (clusterMembers && !pickerMode) ? 'clusterMembers'
         : (selectedPlace && !pickerMode && !checkInOpen) ? 'place'
+        : (favoritesOwner && !pickerMode) ? 'favorites'
         // 住民的地点列表：选中其中一个地点后让位给地点卡片
         : (userFilter && userPlacesOpen && !pickerMode) ? 'userPlaces'
         : null;
@@ -1152,13 +1172,17 @@ export default function MapUI(props) {
     const sheetTokenRef = useRef({ id: null, token: 0 });
     sheetTokenRef.current = nextNativeSheetIdentity(sheetTokenRef.current, openSheetId, exhibition?.id);
     let chromeSheet = null;
-    if (openSheetId === 'account') {
+    if (openSheetId === 'favorites') {
         chromeSheet = {
-            id: 'account',
-            title: currentUser?.username || t('map:ui.defaultUsername'),
-            subtitle: t('map:ui.verified'),
-            size: 'fit',
-            sections: [{ id: 'account', rows: toSheetRows(accountMenuEntries) }]
+            id: 'favorites',
+            title: favoritesTitle,
+            size: 'list',
+            message: favoritesMessage || undefined,
+            messageTone: !favoriteList ? 'loading' : favoriteList.error ? 'danger' : undefined,
+            focusRow: favoriteFocusRow || undefined,
+            sections: [{ id: 'places', rows: favoritePlaces.map((place) => ({
+                id: favoriteRowId(place), title: place.name, subtitle: place.category, symbol: sfSymbol('placeRow')
+            })) }]
         };
     } else if (openSheetId === 'random') {
         chromeSheet = randomFoodChromeSheet(randomFood, { centerOptions: randomCenterOptions });
@@ -1342,10 +1366,10 @@ export default function MapUI(props) {
 
     const handleNativeSheet = ({ type, sheetId, token, rowId }) => {
         if (sheetId !== sheetTokenRef.current.id || token !== sheetTokenRef.current.token) return;
-        if (sheetId === 'account') {
-            const entry = type === 'select' && accountMenuEntries.find((item) => item.id === rowId);
-            if (entry) runMobileAccountAction(entry.run);
-            else setMobileAccountOpen(false);
+        if (sheetId === 'favorites') {
+            if (type === 'dismiss') setFavoritesOwner(null);
+            const place = type === 'select' && favoritePlaces.find((item) => favoriteRowId(item) === rowId);
+            if (place) openFavoritePlace(place);
         } else if (sheetId === 'random') {
             if (type === 'dismiss') setRandomFoodOpen(false);
             else if (rowId === 'view') randomFood.selectPlace();
@@ -1445,7 +1469,7 @@ export default function MapUI(props) {
         [onboardingVariant]
     );
     const canAutoOnboard = chromeOwner && mapReady && !pickerMode && !chrome.connecting && !onboardingOpen
-        && !selectedPlace && !addMode && !searchFocused && !searchExpanded && !mobileAccountOpen && !mobileMoreOpen;
+        && !selectedPlace && !addMode && !searchFocused && !searchExpanded && !favoritesOwner && !mobileMoreOpen;
     useEffect(() => {
         if (!canAutoOnboard || readOnboardingSeen()) return undefined;
         let timer = 0;
@@ -1508,10 +1532,6 @@ export default function MapUI(props) {
     }, [compactSearch, searchExpanded, nativeChrome, searchFocused]);
 
     useEffect(() => () => window.clearTimeout(webBlurTimerRef.current), []);
-
-    useEffect(() => {
-        if (!isAuthenticated) setMobileAccountOpen(false);
-    }, [isAuthenticated]);
 
     const stabilizeMobileSearchViewport = () => {
         if (!isNarrow) return;
@@ -2882,42 +2902,6 @@ export default function MapUI(props) {
                         </div>
                     </ResponsivePanel>
 
-                    <ResponsivePanel
-                        open={isAuthenticated && mobileAccountOpen && !nativeChrome}
-                        onClose={() => setMobileAccountOpen(false)}
-                        title={currentUser?.username || t('map:ui.defaultUsername')}
-                        label={t('map:ui.userMenu')}
-                        kind="account-menu"
-                        mobile="sheet"
-                        desktop="center"
-                        surfaceClassName="fm-skin-panel"
-                    >
-                        <div role="menu" aria-label={t('map:ui.userMenu')} className="fm-menu" style={{ display: 'flex', flexDirection: 'column', padding: '4px 0 8px' }}>
-                            <div style={{ padding: '4px 16px 10px', fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:ui.verified')}</div>
-                            <Button variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }} onClick={() => runMobileAccountAction(openMyPlaces)}
-                                aria-label={rejectedCount ? t('map:ui.myPlacesRejected', { count: rejectedCount }) : undefined}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                    {t('map:ui.myPlaces')}
-                                    {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot" />}
-                                </span>
-                            </Button>
-                            {props.onOpenProfile && (
-                                <Button variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }} onClick={() => runMobileAccountAction(() => props.onOpenProfile(currentUser?.id))}>
-                                    {t('map:ui.myProfile')}
-                                </Button>
-                            )}
-                            {props.onOpenCompanion && <Button variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }}
-                                onClick={() => runMobileAccountAction(props.onOpenCompanion)}>{t('companion:title')}</Button>}
-                            <Button variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }} onClick={() => runMobileAccountAction(onOpenMine)}>
-                                {t('map:ui.accountSettings')}
-                            </Button>
-                            <div style={{ height: 1, background: 'var(--color-border)' }} />
-                            <Button variant="menu" full role="menuitem" onClick={() => runMobileAccountAction(onLogout)} style={{ minHeight: 48, padding: '8px 16px', color: 'var(--color-danger)' }}>
-                                {t('map:ui.logout')}
-                            </Button>
-                        </div>
-                    </ResponsivePanel>
-
                     {!webChromeHidden && !(compactSearch && searchExpanded) && <nav
                         className="fm-map-toolbar"
                         aria-label={t('map:ui.mainActions')}
@@ -2998,11 +2982,9 @@ export default function MapUI(props) {
                         </Button>}
                         {!iosApp && <Button
                             data-tour="account"
-                            onClick={toggleMobileAccount}
-                            aria-label={isAuthenticated ? t('map:ui.openUserMenuNamed', { username: accountUser?.username || '' }) : t('map:ui.openLoginEntry')}
-                            aria-haspopup={isAuthenticated ? 'menu' : undefined}
-                            aria-expanded={isAuthenticated ? mobileAccountOpen : undefined}
-                            style={{ ...mobileNavButtonStyle, color: mobileAccountOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}
+                            onClick={openMobileProfile}
+                            aria-label={isAuthenticated ? t('map:ui.myProfile') : t('map:ui.openLoginEntry')}
+                            style={mobileNavButtonStyle}
                         >
                             {isAuthenticated && accountUser ? (
                                 <span style={{ position: 'relative', display: 'inline-flex' }}>
@@ -3043,9 +3025,8 @@ export default function MapUI(props) {
                         data-map-occluder=""
                         data-hide-when-keyboard=""
                         data-tour="account"
-                        onClick={toggleMobileAccount}
-                        aria-label={isAuthenticated ? t('map:ui.openUserMenu') : t('map:ui.login')}
-                        aria-expanded={isAuthenticated ? mobileAccountOpen : undefined}
+                        onClick={openMobileProfile}
+                        aria-label={isAuthenticated ? t('map:ui.myProfile') : t('map:ui.login')}
                     >
                         <SkinAvatarFrame>
                             <img
@@ -3454,6 +3435,27 @@ export default function MapUI(props) {
                     </div>
                 )}
             </ResponsivePanel>
+
+            <MapPanel
+                open={!!favoritesOwner && chromeOwner && !nativeChrome && !pickerMode && !(layout.sheet && selectedPlace)}
+                onClose={() => setFavoritesOwner(null)}
+                title={favoritesTitle}
+                kind="favorites"
+                desktopStyle={{ right: 60, top: 72, width: 300, maxHeight: '60vh' }}
+            >
+                {favoritesMessage ? (
+                    <div role={favoriteList?.error ? 'alert' : 'status'} style={{ padding: 16, textAlign: 'center', fontSize: 13, color: favoriteList?.error ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
+                        {favoritesMessage}
+                    </div>
+                ) : favoritePlaces.map((place) => (
+                    <Button key={place.id} variant="menu" full onClick={() => openFavoritePlace(place)}
+                        aria-current={String(selectedPlace?.id) === String(place.id) ? 'true' : undefined}
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', padding: '10px 16px', minHeight: 48, borderBottom: '1px solid var(--color-border)' }}>
+                        <span style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{place.name}</span>
+                        {place.category && <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{place.category}</span>}
+                    </Button>
+                ))}
+            </MapPanel>
 
             {/* 住民的地点列表（iOS 原生控件接管时为原生面板）：宽屏与收藏同一位置、地图可操作；窄屏为底部面板，选中地点后让位给卡片 */}
             <MapPanel

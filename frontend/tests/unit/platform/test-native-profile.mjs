@@ -45,6 +45,9 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(pickNativeProfileValues('setTasteLevel', { key: 'noodles', level: 9 }), null);
     assert.deepEqual(pickNativeProfileValues('saveWidgets', { widgets: ['recent', 'favorite'] }), { widgets: ['recent', 'favorite'] });
     assert.deepEqual(pickNativeProfileValues('saveWidgets', { widgets: ['recent', 'bad', 'recent'] }), { widgets: ['recent', 'recent'] });
+    assert.deepEqual(pickNativeProfileValues('saveWidgets', { widgets: ['recent'], hiddenWidgets: ['favorite', 'favorite'] }),
+        { widgets: ['recent'], hiddenWidgets: ['favorite'] });
+    assert.equal(pickNativeProfileValues('saveWidgets', { widgets: ['recent'], hiddenWidgets: ['collection'] }), null);
     assert.equal(pickNativeProfileValues('saveWidgets', { widgets: [] }), null);
     assert.deepEqual(pickNativeProfileValues('setBlocked', { blocked: true }), { blocked: true });
     assert.equal(pickNativeProfileValues('setBlocked', { blocked: 'yes' }), null);
@@ -101,21 +104,31 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(view.axes[2].value, null);
     assert.equal(view.axes[2].label.length > 0, true);
     assert.equal(view.axes[4].selfLevel, 3);
-    assert.equal(view.sections.length, 2);
-    assert.equal(view.sections[0].kind, 'collection');
-    assert.equal(view.sections[1].kind, 'recent');
+    assert.deepEqual(view.sections.map((section) => section.kind), ['collection', 'recent', 'favorite']);
     assert.equal(view.sections[0].groups[0].rows[0].name, '烧烤');
     assert.equal(view.sections[1].groups[0].rows[0].name, '小面馆');
     assert.ok(view.sections[0].groups[0].rows[0].meta.length > 0);
     assert.ok(view.sections[1].groups[0].rows[0].meta.length > 0);
     assert.equal(view.canOpenCommunity, true);
     assert.equal(view.canOpenFavorites, true);
+    assert.equal(view.canOpenLocations, true);
+    assert.equal(view.canUseAccountActions, true);
     assert.equal(view.collectionVisibility, false);
     assert.deepEqual(view.widgets, ['recent']);
     assert.equal(view.widgetSlotLabels.length, 1);
     const visitor = buildProfileViewModel({ ...profile, relation: {}, content: { ...profile.content, collection: [] } });
-    assert.deepEqual(visitor.sections.map((section) => section.kind), ['recent']);
+    assert.deepEqual(visitor.sections.map((section) => section.kind), ['recent', 'favorite']);
+    assert.equal(visitor.canUseAccountActions, false);
     assert.equal(visitor.collectionVisibility, null);
+    const configured = buildProfileViewModel({ ...profile, hidden_widgets: ['favorite', 'favorite'] }, {
+        currentUser: { id: 9, rejected_place_count: 2 }, tokenPresent: true
+    });
+    assert.deepEqual(configured.hiddenWidgets, ['favorite']);
+    assert.deepEqual(configured.sections.map((section) => section.kind), ['collection', 'recent']);
+    assert.match(configured.labels.rejectedPlaces, /2 个未通过审核/);
+    const blocked = buildProfileViewModel({ ...profile, relation: { blocked: true } });
+    assert.deepEqual(blocked.sections, []);
+    assert.equal(blocked.canOpenFavorites || blocked.canOpenLocations, false);
     assert.ok(view.labels.blockConfirm.includes('幽幽子'));
     assert.ok(view.labels.blockedNote.length > 0);
 }
@@ -188,6 +201,21 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     plugin.openResolve({ id: session.id, action: 'back' });
     await started;
     assert.deepEqual(calls, ['back']);
+}
+
+// 导航动作与返回分别交给网页路由
+for (const action of ['openFavorites', 'my-locations', 'settings', 'companion', 'logout']) {
+    const plugin = new FakePlugin();
+    const calls = [];
+    const session = createNativeProfileSession(plugin, {}, {
+        onBack: () => calls.push('back'),
+        onAction: (value) => calls.push(value)
+    });
+    const started = session.start();
+    await tick();
+    plugin.openResolve({ id: session.id, action });
+    await started;
+    assert.deepEqual(calls, [action]);
 }
 
 // 关闭与失败

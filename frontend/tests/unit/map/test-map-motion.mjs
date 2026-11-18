@@ -11,6 +11,7 @@ import { planTransition, verifySnapshotMembers } from "../../../src/map/cluster/
 import { clusterScale, glyphSize, formatCount, hitSize } from "../../../src/map/cluster/glyph.js";
 import { worldPixel, unprojectWorldPixel, centerForScreenTarget, readMapViewport } from "../../../src/map/viewport.js";
 import { tileBounds, isOverseasTile, buildCartoTileUrl } from "../../../src/map/overseasTileLayer.js";
+import { expandAggregateTile } from "../../../src/map/markerTiles.js";
 
 // ---- 可复现的随机夹具 ----
 function rng(seed) {
@@ -35,6 +36,11 @@ const WORLD = { minLng: -179.9, minLat: -85, maxLng: 179.9, maxLat: 85 };
 const viewAround = (center, span) => ({ minLng: center[0] - span, maxLng: center[0] + span, minLat: center[1] - span * 0.7, maxLat: center[1] + span * 0.7 });
 function snap(engine, zoom, view = WORLD, queryMode = 'nearby') {
     return buildSnapshot(engine, { viewBounds: view, logicalZoom: zoom, queryMode, bufferRatio: 0 });
+}
+function tileSnap(rows, logicalZoom, markerBand) {
+    return buildSnapshot(new ClusterEngine(normalizePlaces(rows)), {
+        viewBounds: WORLD, logicalZoom, queryMode: 'nearby', markerBand, bufferRatio: 0
+    });
 }
 function shuffle(list, seed) {
     const rand = rng(seed);
@@ -199,6 +205,81 @@ assert.ok(sawSplit && sawMerge, '夹具没有覆盖拆分与合并');
     const plan = planTransition(prev, next);
     assert.equal(plan.kind, 'mode');
     assert.equal(plan.splitFrom.size + plan.mergeInto.size, 0);
+}
+
+// ---- 瓦片换档：匿名行和明细 ID 没有交集，但同一格的可见节点仍应拆分和合并 ----
+{
+    const dict = { tags: [], regions: [] };
+    const row = [[], -1, -1, 0];
+    const region = { kind: 'aggregate', tile: 5, cell: 12, minZoom: 8, maxZoom: 10 };
+    const city = { kind: 'aggregate', tile: 8, cell: 14, minZoom: 11, maxZoom: 12 };
+    const leaf = { kind: 'leaf', tile: 12, minZoom: 13 };
+    const own = { id: 41, longitude: 1, latitude: -1 };
+    const coarseRows = expandAggregateTile({ z: 8, cell: 14, cells: [[0, 0, 3, 3, [row, row]]] }, dict, '128/128');
+    const fineRows = [
+        { id: 42, longitude: 0.002, latitude: -0.009 },
+        { id: 43, longitude: 0.019, latitude: -0.009 },
+        { id: 44, longitude: 0.07, latitude: -0.009 }
+    ];
+    const coarse = tileSnap([...coarseRows, own], 12, city);
+    const fine = tileSnap([...fineRows, own], 13, leaf);
+    const parent = coarse.visibleNodes.find((node) => node.kind === 'cluster');
+
+    const split = planTransition(coarse, fine);
+    assert.deepEqual(split.splitFrom, new Map([['place:42', parent.key], ['place:43', parent.key]]));
+    assert.deepEqual(split.splitSources, new Set([parent.key]));
+    assert.deepEqual(split.reuse, new Map([['place:41', 'place:41']]));
+    assert.deepEqual(split.enter, ['place:44']);
+    assert.deepEqual(split.exit, []);
+    assert.deepEqual(planTransition({ ...coarse, logicalZoom: 13 }, fine).splitFrom, split.splitFrom);
+
+    const merge = planTransition(fine, coarse);
+    assert.deepEqual(merge.mergeInto, new Map([['place:42', parent.key], ['place:43', parent.key]]));
+    assert.deepEqual(merge.mergeTargets, new Set([parent.key]));
+    assert.deepEqual(merge.exit, ['place:44']);
+    assert.deepEqual(merge.enter, []);
+
+    const regionRows = expandAggregateTile({ z: 5, cell: 12, cells: [[0, 0, 3, 3, [row, row]]] }, dict, '16/16');
+    const cityRows = expandAggregateTile({ z: 8, cell: 14, cells: [[0, 0, 3, 3, [row]], [3, 0, 3, 3, [row]]] }, dict, '128/128');
+    const regionView = tileSnap(regionRows, 10, region);
+    const cityView = tileSnap(cityRows, 11, city);
+    const regionKey = regionView.visibleNodes[0].key;
+    assert.deepEqual(planTransition(regionView, cityView).splitFrom, new Map([
+        ['agg:14/8192/8192#0', regionKey], ['agg:14/8195/8192#0', regionKey]
+    ]));
+
+    for (const plan of [
+        planTransition(coarse, fine, { memberBudget: 1 }),
+        planTransition(coarse, { ...fine, markerBand: city }),
+        planTransition({ ...coarse, queryMode: 'search' }, { ...fine, queryMode: 'search' })
+    ]) {
+        assert.equal(plan.splitFrom.size, 0);
+        assert.deepEqual(plan.enter, ['place:42', 'place:43', 'place:44']);
+    }
+}
+
+// ---- 跨粗格的明细聚合无法判断来源，相关节点保留渐变 ----
+{
+    const row = [[], -1, -1, 0];
+    const coarseRows = expandAggregateTile({ z: 8, cell: 14, cells: [
+        [0, 0, 1, 3, [row, row]], [1, 0, 6, 3, [row, row]]
+    ] }, { tags: [], regions: [] }, '128/128');
+    const fineRows = [
+        { id: 51, longitude: 0.001, latitude: -0.020 },
+        { id: 52, longitude: 0.0219, latitude: -0.002 },
+        { id: 53, longitude: 0.0220, latitude: -0.002 },
+        { id: 54, longitude: 0.042, latitude: -0.020 }
+    ];
+    const coarse = tileSnap(coarseRows, 12, { kind: 'aggregate', tile: 8, cell: 14, minZoom: 11, maxZoom: 12 });
+    const fine = tileSnap(fineRows, 13, { kind: 'leaf', tile: 12, minZoom: 13 });
+    assert.deepEqual(coarse.visibleNodes.map((node) => node.count), [2, 2]);
+    assert.deepEqual(fine.visibleNodes.map((node) => node.count).sort(), [1, 1, 2]);
+    for (const [prev, next] of [[coarse, fine], [fine, coarse]]) {
+        const plan = planTransition(prev, next);
+        assert.equal(plan.reuse.size + plan.splitFrom.size + plan.mergeInto.size, 0);
+        assert.equal(plan.enter.length, next.visibleNodes.length);
+        assert.equal(plan.exit.length, prev.visibleNodes.length);
+    }
 }
 
 // ---- 成员签名与顺序无关 ----

@@ -19,7 +19,8 @@ flowchart TD
     Leave --> History[platform History 更新路径]
     History --> Page[PageTransition 覆盖地图而非卸载]
     Back[返回键 / 原生返回] --> Stack[按优先级关闭弹层或返回页面]
-    Page --> Menu[账号菜单与页面操作随状态更新]
+    Page --> Profile[头像直达我的主页]
+    Profile --> MapList[收藏和创建地点清单在地图弹窗打开]
 ```
 
 | 当前做法 | 对照与维护判断 |

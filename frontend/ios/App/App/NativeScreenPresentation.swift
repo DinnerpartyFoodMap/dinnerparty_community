@@ -58,10 +58,17 @@ final class NativeScreenTransitionDelegate: NSObject, UIViewControllerTransition
 final class NativeScreenPresentationController: UIPresentationController {
     var onDismissalEnd: ((Bool) -> Void)?
 
+    // 在上一页的呈现上下文中铺满内容。跟手移动由页面自己负责，外层始终露出仍在绘制的上一页。
+    override var shouldPresentInFullscreen: Bool { false }
     override var shouldRemovePresentersView: Bool { false }
 
     override var frameOfPresentedViewInContainerView: CGRect {
         containerView?.bounds ?? .zero
+    }
+
+    override func presentationTransitionWillBegin() {
+        super.presentationTransitionWillBegin()
+        keepUnderlayVisible()
     }
 
     override func dismissalTransitionDidEnd(_ completed: Bool) {
@@ -71,10 +78,17 @@ final class NativeScreenPresentationController: UIPresentationController {
 
     override func containerViewWillLayoutSubviews() {
         super.containerViewWillLayoutSubviews()
+        keepUnderlayVisible()
         // 用 bounds / center 布局，保留横向动画正在使用的 transform。
         let frame = frameOfPresentedViewInContainerView
         presentedView?.bounds = CGRect(origin: .zero, size: frame.size)
         presentedView?.center = CGPoint(x: frame.midX, y: frame.midY)
+    }
+
+    private func keepUnderlayVisible() {
+        guard let containerView else { return }
+        containerView.backgroundColor = .clear
+        containerView.isOpaque = false
     }
 }
 
