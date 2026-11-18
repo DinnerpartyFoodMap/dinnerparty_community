@@ -1,6 +1,6 @@
 # 搜索、随机推荐与顺路发现
 
-入口：routes/search.js（`/api/places/search*`）、routes/alongRoute.js（`/api/along-route`）；随机路由由 places 模块挂载。AI 搜索（`POST /api/places/search/ai`）需要登录（游客 401，基础搜索不受影响）。每条推荐带 `reason_source`（`deepseek`：模型写的推荐语，前端标注“AI 生成”；`fallback`：本地模板兜底，不标注）；所用已备案模型的名称和备案号公示在用户协议第九部分。服务：placeSearch、semanticSearch、randomRecommendation、alongRoute。依赖 ratings 统一避雷规则、preferences 用户向量及基础设施 AI / 数据库。
+入口：routes/search.js（`/api/places/search*`）、routes/alongRoute.js（`/api/along-route`）；随机路由由 places 模块挂载。AI 搜索（`POST /api/places/search/ai`）需要登录（游客 401，基础搜索不受影响）。模型只判断候选是否相关、给出置信度，并从店铺介绍里逐字摘一段依据；推荐语一律由固定模板拼成（见下文“推荐语模板”），不是 AI 生成内容，前端不标注。每条推荐带 `reason_source: 'template'`（旧版 App 只给 `deepseek` 打“AI 生成”标签，所以旧版也不显示）和 `review_source`（`deepseek` / `local_fallback`：相关性由谁判断）；`status` 为 `ok`（模型审核完成）或 `partial`（退回本地阈值）。服务：placeSearch、semanticSearch、recommendationReason、randomRecommendation、alongRoute。依赖 ratings 统一避雷规则、preferences 用户向量及基础设施 AI / 数据库。
 
 ```mermaid
 flowchart TD
@@ -13,8 +13,8 @@ flowchart TD
     Rank --> Tie[距离 / 创建时间 / ID 确定性平局]
     Tie --> Limit[最后才截断 limit 并返回数组]
     AI[单独请求 AI 搜索] --> Embed[查询向量 → sqlite-vec 候选]
-    Embed --> Review[模型推荐与本地结果校验]
-    Review -->|成功| AIResult[返回结构化推荐]
+    Embed --> Review[模型相关性审核与原文摘录]
+    Review -->|成功| AIResult[逐字核对摘录 + 固定模板推荐语]
     Review -->|不可用| Degrade[503 unavailable 基础搜索仍可用]
     Random[随机推荐中心] --> Five[5km 粗筛与精确距离 / 排除避雷]
     Five --> Pool{完整池至少 5 家?}
@@ -30,5 +30,33 @@ flowchart TD
 | AI 路径 | 独立接口，可不可用 | 把关键词搜索绑在模型请求上会让网络故障扩大影响 |
 | 随机 | 固定 5km + 概率抽样 + 至少 20% 基础分布 | 只取最高相似度会失去探索；不随地图缩放变半径 |
 | 地理 | 直线距离 + 顺路几何工具 | 不等同于真实步行/行车时长 |
+
+## 推荐语模板
+
+AI 搜索卡片上的推荐语由 services/recommendationReason.js 按 [recommendationTemplates.json](../recommendationTemplates.json) 拼成，只用到固定文案、地点字段、用户原话和逐字核对过的店铺介绍摘录，不含模型写的文字。改文案只改这个 JSON 文件。
+
+| 占位符 | 内容 | 是否一定有值 |
+| --- | --- | --- |
+| `{name}` | 店名 | 一定有；`withoutExcerpt` 组必须写在方括号外，`withExcerpt` 组可以不写，用“这家”指代 |
+| `{query}` | 用户原话，截 36 字 | 一定有 |
+| `{excerpt}` | 店铺介绍摘录 | 只在 `withExcerpt` 组，必须写在方括号外；`withoutExcerpt` 组不能用 |
+| `{category}` | 分类标签：去掉“其他”“避雷”“待探索”和重复的，最多三个，用顿号连起来，如 `快餐、潮州菜` | 可能没有（只有这几种标签也算没有） |
+| `{distance}` | 离地图中心的距离，如 `800 米`、`1.2 公里` | 可能没有（正好在地图中心、四舍五入是 0 米也算没有） |
+| `{price}` | 人均整数，如 `45` | 可能没有 |
+
+- `[…]` 是可省略片段：片段里任何一个占位符没有值，整段连同标点一起去掉。可能没有值的占位符只能写在方括号里；方括号不能嵌套，每段至少有一个占位符。
+- 先处理片段再一次性填值，店名或原话里本身带 `{}`、`[]` 时原样输出。
+- 摘录：模型看到的店铺介绍是去掉 Markdown 后合并空白、截 300 字的纯文字（aiClients `descriptionForReview`）；模型给的 `evidence` 去掉首尾引号和标点后，必须是这段文字的连续子串、4–60 字且不等于店名，否则丢弃并改用 `withoutExcerpt` 组。
+- 选用：有摘录用 `withExcerpt`，没有用 `withoutExcerpt`；组内按“卡片序号 + 原话哈希”轮换，同一次搜索的几张卡句式不同，同样的原话每次结果相同。模型不参与选模板。
+- 改完模板跑 `npm run test:search`：`validateTemplates` 检查占位符、方括号，并分别用“全部有值”“可选全空”渲染，查残留符号和 `，，`、`～，` 这类断句。
+
+口吻：卡片标题是“幽幽子特别推荐”，推荐语就是幽幽子本人在说话：贪吃、俏皮，说话不急不慢，自称“我”，不用“幽幽子觉得”这种第三人称。
+
+- 店名、人均、距离、标签可以写进句子，但要说成话，接在幽幽子的反应上（“人均 20 元，得按三人份算”“离地图中心 800 米，对我来说也就是飘一会儿的事”），不排成“离地图中心约 800 米，人均约 20 元”这样的清单。除店名外一条最多带一样，组里换着带，相邻两条不带同一样。距离量的是地图中心，不说“离你”。缺数据时方括号整段去掉，剩下的部分自己要成句。
+- 长度：去掉占位符后每条 25–50 字，配上摘录、店名和数字，手机上三行上下。字数花在幽幽子自己的反应和小场景上（“筷子都拿在手里了”“给我也带一份回来，可不许偷吃”）。
+- 每条模板要对任何一家店都成立：人均和距离只报数，不说贵、便宜、远、近，不说好吃、排队，不说去过、吃过（待探索的店没人去过），不提早饭、晚饭这类时段，不说“还有一家”这类顺序（模板可能落在任意一张卡上）。
+- 贪吃写成具体的事（“这句我读了三遍”“给我也带一份”），不写“肚子在叫”这类套话。妖梦、白玉楼、亡灵这类梗每组最多用一次。
+- 不用感叹号、波浪号、破折号和表情。用户原话最多一条模板引用，几条都复述原话，读起来就是搜索引擎。
+- 同一次搜索的几张卡取组里相邻的模板，相邻两条的开头要不一样。
 
 排序公式与已有实验原文：[地点搜索](placeSearch.md)。推荐公式：[随机美食](randomRecommendation.md)。外部资料沿用原文，不是本次新核验。测试见 [案例库](TEST_CASES.md)。历史 `2566978`，待办 DSC-01 / DSC-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。

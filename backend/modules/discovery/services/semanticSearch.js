@@ -5,10 +5,11 @@ const {
     EMBEDDING_DIMENSIONS,
     createEmbedding,
     expandSearchIntent,
-    createYuyukoRecommendationReviews,
+    reviewRecommendationRelevance,
     hasEmbeddingConfiguration,
     hasDeepseekConfiguration
 } = require('../../../infrastructure/aiClients');
+const { recommendationReason, verifiedEvidence } = require('./recommendationReason');
 
 const EARTH_RADIUS_KM = 6371.0088;
 const MAX_VECTOR_CANDIDATES = 200;
@@ -213,27 +214,6 @@ function rankSemanticRows(rows, { center, bounds, limit = 5, minimumSemanticScor
         .map(({ proximity_score, detail_adjusted_score, ...candidate }) => candidate);
 }
 
-function localYuyukoReason(query, match) {
-    const place = match.place;
-    const price = Number(place.per_person_cost);
-    const priceText = Number.isFinite(price) && price > 0 ? `人均约 ${Math.round(price)} 元，` : '';
-    const categoryText = place.category ? `它的「${String(place.category).slice(0, 30)}」分类` : '它的特色';
-    const distanceText = Number.isFinite(match.distance_km)
-        ? `距离当前地图中心约 ${match.distance_km < 1 ? `${Math.round(match.distance_km * 1000)} 米` : `${match.distance_km.toFixed(1)} 公里`}，`
-        : '';
-    return `幽幽子觉得「${place.name}」很合适～${distanceText}${priceText}${categoryText}和你的“${String(query).slice(0, 36)}”颇有缘分，先去尝尝看吧。`;
-}
-
-function reasonMatchesPlace(reason, placeName, otherPlaceNames = []) {
-    const text = String(reason || '').trim();
-    const name = String(placeName || '').trim();
-    if (!text || !name || !text.includes(name)) return false;
-    return !(Array.isArray(otherPlaceNames) ? otherPlaceNames : []).some((otherName) => {
-        const normalized = String(otherName || '').trim();
-        return normalized && normalized !== name && text.includes(normalized);
-    });
-}
-
 function isConfidentRecommendationReview(review, minimumConfidence = RELEVANCE_MIN_CONFIDENCE) {
     const confidence = Number(review?.confidence);
     const safeMinimum = Number.isFinite(Number(minimumConfidence))
@@ -299,42 +279,32 @@ async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = 
 
     // Review a few extra semantic candidates so rejected generic matches can be
     // replaced while the public response still contains at most three cards.
+    // The model only judges relevance and quotes the description; the sentence
+    // shown to the user is always a fixed template (recommendationReason.js).
     const reviewCandidates = matches.slice(0, 5);
-    let generatedReviews = null;
+    let reviews = null;
     let deepseekReviewCompleted = false;
     if (hasDeepseekConfiguration()) {
         try {
-            generatedReviews = await createYuyukoRecommendationReviews(query, reviewCandidates);
-            deepseekReviewCompleted = Array.isArray(generatedReviews);
+            reviews = await reviewRecommendationRelevance(query, reviewCandidates);
+            deepseekReviewCompleted = Array.isArray(reviews);
         } catch (error) {
             console.warn('DeepSeek relevance review failed:', error.message);
         }
     }
 
-    const selectedNames = reviewCandidates.map((match) => String(match.place.name || '').trim());
-    let deepseekReasonCount = 0;
     const recommendations = [];
     for (let index = 0; index < reviewCandidates.length && recommendations.length < 3; index += 1) {
         const match = reviewCandidates[index];
-        const review = generatedReviews?.[index] || null;
+        const review = reviews?.[index] || null;
         if (deepseekReviewCompleted) {
             if (!isConfidentRecommendationReview(review)) continue;
         } else if (!passesLocalRecommendationThreshold(match)) {
             continue;
         }
 
-        let reason = String(review?.reason || '').trim();
-        let reasonSource = 'fallback';
-        const otherNames = selectedNames.filter((_, otherIndex) => otherIndex !== index);
-        if (reason && reasonMatchesPlace(reason, selectedNames[index], otherNames)) {
-            reasonSource = 'deepseek';
-            deepseekReasonCount += 1;
-        } else {
-            if (reason) {
-                console.warn(`DeepSeek recommendation mismatched ${selectedNames[index]}; using local fallback`);
-            }
-            reason = localYuyukoReason(query, match);
-        }
+        const excerpt = deepseekReviewCompleted ? verifiedEvidence(review.evidence, match.place) : '';
+        const reason = recommendationReason(query, match, excerpt, recommendations.length);
         recommendations.push({
             place: match.place,
             score: match.score,
@@ -346,7 +316,8 @@ async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = 
             review_confidence: deepseekReviewCompleted ? Number(review.confidence) : Number(match.score),
             review_source: deepseekReviewCompleted ? 'deepseek' : 'local_fallback',
             reason,
-            reason_source: reasonSource
+            // Always a fixed template: older clients label only 'deepseek', so they show no AI tag either.
+            reason_source: 'template'
         });
     }
 
@@ -360,7 +331,7 @@ async function searchSemanticPlaces(query, { limit = 5, center = null, bounds = 
     }
 
     return {
-        status: deepseekReviewCompleted && deepseekReasonCount === recommendations.length ? 'ok' : 'partial',
+        status: deepseekReviewCompleted ? 'ok' : 'partial',
         recommendation: recommendations[0] || null,
         recommendations,
         matches
@@ -382,7 +353,6 @@ module.exports = {
     REMOTE_SEARCH_RADIUS_KM,
     REMOTE_PROXIMITY_WEIGHT,
     placeDetailCompleteness,
-    reasonMatchesPlace,
     isConfidentRecommendationReview,
     passesLocalRecommendationThreshold,
     buildEmbeddingQuery

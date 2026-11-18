@@ -15,11 +15,15 @@ const queryVector = Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => i
 let deepseekMode = 'ok';
 let embeddingMode = 'ok';
 let deepseekContent = '{"ok":true}';
+let lastChatPayload = null;
 
 const upstream = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => {
+        if (req.url === '/v1/chat/completions') {
+            try { lastChatPayload = JSON.parse(raw); } catch (_) { lastChatPayload = null; }
+        }
         if (req.url === '/v1/embeddings') {
             const payload = JSON.parse(raw);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -134,7 +138,32 @@ async function main() {
             'a stalled DeepSeek review must be logged'
         );
 
-        console.log(JSON.stringify({ status: result.status, reviewSource: result.recommendations[0].review_source }));
+        assert.equal(result.recommendations[0].reason_source, 'template');
+
+        // DSC-C09: a completed review only selects and quotes; the sentence is a fixed template.
+        const searchPrettyMeal = async (evidence) => {
+            deepseekMode = 'ok';
+            deepseekContent = JSON.stringify({ recommendations: [{ name: '精致摆盘小馆', relevant: true, confidence: 0.9, evidence }] });
+            return searchSemanticPlaces('想吃一顿漂亮饭', {
+                center: { lat: 23.1291, lng: 113.2644 },
+                bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
+            });
+        };
+        const quoted = await searchPrettyMeal('菜品摆盘精致，适合拍照和朋友聚餐');
+        const sentDescription = JSON.parse(lastChatPayload.messages[1].content).recommended_places[0].description;
+        assert.ok(sentDescription.startsWith('菜品摆盘精致，适合拍照'), 'the review sees the plain description text');
+        const reviewPrompt = lastChatPayload.messages[0].content;
+        assert.ok(reviewPrompt.includes('"evidence"') && !reviewPrompt.includes('"reason"'), 'the review prompt asks for evidence, not a recommendation sentence');
+        assert.equal(quoted.status, 'ok');
+        assert.equal(quoted.recommendations[0].review_source, 'deepseek');
+        assert.equal(quoted.recommendations[0].reason_source, 'template');
+        assert.ok(quoted.recommendations[0].reason.includes('「菜品摆盘精致，适合拍照和朋友聚餐」'), 'a verbatim excerpt is quoted in the template');
+        const noEvidence = await searchPrettyMeal('');
+        const paraphrased = await searchPrettyMeal('摆盘很精致，拍照好看');
+        assert.equal(paraphrased.recommendations[0].reason, noEvidence.recommendations[0].reason, 'a paraphrased excerpt falls back to the template without a quote');
+        assert.ok(!paraphrased.recommendations[0].reason.includes('拍照好看'), 'model wording never reaches the sentence');
+
+        console.log(JSON.stringify({ status: result.status, reviewSource: result.recommendations[0].review_source, quotedReason: quoted.recommendations[0].reason }));
     } finally {
         console.warn = originalWarn;
         upstream.closeAllConnections();

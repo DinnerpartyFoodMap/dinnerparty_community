@@ -66,7 +66,6 @@ import { useSkinRevision } from '../skins/useSkin';
 import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../skins/nativeSkin';
 import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText';
 import { placeReportPrefill } from '../feedback/feedbackTypes';
-import { AiTag } from '../components/primitives/AiLabel';
 import LegalLinks from '../auth/components/LegalLinks.jsx';
 import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
 import { t, tx } from '../i18n/index.js';
@@ -1896,8 +1895,7 @@ export default function MapUI(props) {
                         </div>
                     )}
                     <div style={{ marginTop: 8, color: 'var(--color-text-primary)', fontSize: 13, lineHeight: 1.55 }}>
-                        {/* 模型写的推荐语标注“AI 生成”；本地模板兜底的不标注 */}
-                        {recommendation.reason_source === 'deepseek' && <AiTag style={{ marginRight: 6 }} />}
+                        {/* 推荐语由后端固定模板拼成（模型只判断相关性并摘店铺介绍原文），不是 AI 生成内容，不标注 */}
                         {recommendation.reason}
                     </div>
                 </Exposure>

@@ -16,7 +16,6 @@ process.env.DEEPSEEK_API_KEY = '';
 const searchRouter = require('../../modules/discovery/routes/search');
 const {
     rankSemanticRows,
-    reasonMatchesPlace,
     buildEmbeddingQuery,
     placeDetailCompleteness,
     isConfidentRecommendationReview,
@@ -24,9 +23,17 @@ const {
 } = require('../../modules/discovery/services/semanticSearch');
 const {
     parseIntentExpansionContent,
-    parseYuyukoReasonsContent,
-    parseYuyukoRecommendationReviewsContent
+    parseRecommendationReviewsContent
 } = require('../../infrastructure/aiClients');
+const {
+    renderTemplate,
+    verifiedEvidence,
+    pickTemplate,
+    reasonSlots,
+    recommendationReason,
+    validateTemplates
+} = require('../../modules/discovery/services/recommendationReason');
+const recommendationTemplates = require('../../modules/discovery/recommendationTemplates.json');
 
 async function main() {
     init();
@@ -161,50 +168,71 @@ async function main() {
             limit: 5
         });
         assert.equal(irrelevant.length, 0, 'distance must not rescue a semantically irrelevant place');
-        assert.equal(reasonMatchesPlace('推荐 Little PaPa 印度餐厅', '森焱食馆'), false, 'a reason for another shop must be rejected');
-        assert.equal(reasonMatchesPlace('森焱食馆不如 Little PaPa', '森焱食馆', ['Little PaPa']), false, 'a reason mentioning another candidate must be rejected');
-        assert.equal(reasonMatchesPlace('森焱食馆就在附近', '森焱食馆'), true, 'a reason naming the selected shop should pass');
-        const batchMatches = [
-            { place: { name: '第一家' } },
-            { place: { name: '第二家' } },
-            { place: { name: '第三家' } }
-        ];
-        const batchReasons = parseYuyukoReasonsContent(JSON.stringify({
-            recommendations: [
-                { name: '第二家', reason: '第二家适合想吃清淡口味的时候。' },
-                { name: '第一家', reason: '第一家和你的需求最贴近。' }
-            ]
-        }), batchMatches);
-        assert.deepEqual(batchReasons, [
-            '第一家和你的需求最贴近。',
-            '第二家适合想吃清淡口味的时候。',
-            ''
-        ], 'batch reasons should map to exact place names and preserve ranking order');
-
         const reviewMatches = [
             { place: { name: 'Supported Place' } },
-            { place: { name: 'Generic Place' } }
+            { place: { name: 'Generic Place' } },
+            { place: { name: 'Rejected Place' } }
         ];
-        const parsedReviews = parseYuyukoRecommendationReviewsContent(JSON.stringify({
+        const parsedReviews = parseRecommendationReviewsContent(JSON.stringify({
             recommendations: [
-                { name: 'Generic Place', relevant: true, confidence: 0.42, reason: 'Generic Place might fit.' },
-                { name: 'Supported Place', relevant: true, confidence: 0.91, reason: 'Supported Place has direct evidence.' }
+                { name: 'Generic Place', relevant: true, confidence: 0.42, evidence: '  maybe   fits ' },
+                { name: 'Supported Place', relevant: true, confidence: 0.91, evidence: 'fresh fish congee', reason: 'Supported Place is great!' },
+                { name: 'Rejected Place', relevant: false, confidence: 0.9, evidence: 'should be dropped' }
             ]
         }), reviewMatches);
         assert.equal(isConfidentRecommendationReview(parsedReviews[0]), true, 'a well-supported review should pass');
         assert.equal(isConfidentRecommendationReview(parsedReviews[1]), false, 'a low-confidence review should be rejected');
         assert.equal(parsedReviews.filter((review) => isConfidentRecommendationReview(review)).length, 1, 'review filtering should preserve only confident matches');
-        const allLowConfidence = parseYuyukoRecommendationReviewsContent(JSON.stringify({
+        assert.equal(parsedReviews[0].evidence, 'fresh fish congee', 'evidence should map to the exact place name');
+        assert.equal(parsedReviews[1].evidence, 'maybe fits', 'evidence whitespace should be normalised');
+        assert.equal(parsedReviews[2].evidence, '', 'an irrelevant place keeps no evidence');
+        assert.ok(parsedReviews.every((review) => !('reason' in review)), 'the review must not carry model-written reasons');
+        const allLowConfidence = parseRecommendationReviewsContent(JSON.stringify({
             recommendations: reviewMatches.map((match) => ({
                 name: match.place.name,
                 relevant: true,
                 confidence: 0.2,
-                reason: `${match.place.name} lacks enough evidence.`
+                evidence: ''
             }))
         }), reviewMatches);
         assert.equal(allLowConfidence.filter((review) => isConfidentRecommendationReview(review)).length, 0, 'low confidence must allow zero recommendations');
         assert.equal(passesLocalRecommendationThreshold({ score: 0.57 }), false, 'local fallback should reject weak adjusted scores');
         assert.equal(passesLocalRecommendationThreshold({ score: 0.59 }), true, 'local fallback should retain sufficiently strong adjusted scores');
+
+        // DSC-C09: recommendation sentences come only from fixed templates, place fields,
+        // the user's own query and verbatim excerpts of the place description.
+        assert.deepEqual(validateTemplates(), [], 'recommendationTemplates.json must pass the template checks');
+        assert.ok(validateTemplates({ withExcerpt: ['「{name}」[{excerpt}]'], withoutExcerpt: ['{name}人均 {price} 元'] }).length >= 2,
+            'an optional excerpt or an unbracketed optional slot must be reported');
+        assert.ok(validateTemplates({ withExcerpt: ['「{name}」「{excerpt}」[[{price}]]'], withoutExcerpt: ['「{name}」{shop}'] }).length >= 2,
+            'nested brackets and unknown slots must be reported');
+        const nameProblems = validateTemplates({ withExcerpt: ['简介里写着「{excerpt}」。'], withoutExcerpt: ['去看看吧。'] });
+        assert.ok(nameProblems.length === 1 && nameProblems[0].startsWith('withoutExcerpt[0]'),
+            'only templates without an excerpt must name the place; excerpt templates may say 这家');
+        assert.equal(reasonSlots('想吃牛排', { place: { name: '牛排馆', category: '牛排, 避雷, 其他, 西餐, 牛排, 待探索, 快餐, 烧烤' } }).category, '牛排、西餐、快餐',
+            'tags drop 其他/避雷/待探索 and repeats, keep three and join with 、');
+        assert.equal(reasonSlots('想吃牛排', { place: { name: '牛排馆', category: '其他' } }).category, '',
+            'a place tagged only 其他 has no category in the sentence');
+        assert.equal(reasonSlots('想吃牛排', { place: { name: '牛排馆' }, distance_km: 0.8 }).distance, '800 米', 'distance is spoken in metres below 1 km');
+        assert.equal(reasonSlots('想吃牛排', { place: { name: '牛排馆' }, distance_km: 0.0003 }).distance, '', 'a place at the map centre has no distance to mention');
+        const fishPlace = { name: '粥粥小馆', description: '**招牌**是新鲜的砂锅鱼片粥，晚上营业到两点。' };
+        assert.equal(verifiedEvidence('招牌是新鲜的砂锅鱼片粥', fishPlace), '招牌是新鲜的砂锅鱼片粥', 'a verbatim excerpt of the plain description passes');
+        assert.equal(verifiedEvidence('「招牌是新鲜的砂锅鱼片粥，」', fishPlace), '招牌是新鲜的砂锅鱼片粥', 'edge quotes and punctuation are trimmed');
+        assert.equal(verifiedEvidence('招牌是很新鲜的砂锅鱼片粥', fishPlace), '', 'a paraphrased excerpt is dropped');
+        assert.equal(verifiedEvidence('招牌', fishPlace), '', 'an excerpt shorter than four characters is dropped');
+        assert.equal(verifiedEvidence('粥粥小馆', { name: '粥粥小馆', description: '粥粥小馆就在路口' }), '', 'an excerpt equal to the shop name is dropped');
+        assert.equal(verifiedEvidence('新鲜的砂锅鱼片粥晚上营业到两点', fishPlace), '', 'pieces joined across the original text are dropped');
+
+        assert.equal(renderTemplate('「{name}」[，人均 {price} 元][（{category}）]', { name: '{query}[x]', price: '', category: '粥' }),
+            '「{query}[x]」（粥）', 'values are inserted once and empty optional segments disappear');
+        const fishMatch = { place: { ...fishPlace, category: '粥铺', per_person_cost: 45 }, distance_km: 0.8 };
+        const withExcerpt = recommendationReason('想吃鱼片粥', fishMatch, '招牌是新鲜的砂锅鱼片粥', 0);
+        assert.ok(withExcerpt.includes('「招牌是新鲜的砂锅鱼片粥」'), 'the excerpt template quotes the verified text');
+        assert.equal(recommendationReason('想吃鱼片粥', fishMatch, '招牌是新鲜的砂锅鱼片粥', 0), withExcerpt, 'the same query renders the same sentence');
+        const withoutExcerpt = recommendationReason('想吃鱼片粥', { place: { name: '无名小店' } }, '', 0);
+        assert.ok(withoutExcerpt.includes('无名小店') && !/[{}[\]]/.test(withoutExcerpt), 'a place without optional fields still renders cleanly');
+        const cardTemplates = [0, 1, 2].map((index) => pickTemplate('withoutExcerpt', '想吃鱼片粥', index));
+        assert.equal(new Set(cardTemplates).size, Math.min(3, recommendationTemplates.withoutExcerpt.length), 'cards of one search use different templates');
 
         // AI search needs a logged-in resident.
         const aiBodyText = JSON.stringify({

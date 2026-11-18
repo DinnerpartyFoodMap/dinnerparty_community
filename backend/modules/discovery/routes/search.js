@@ -58,8 +58,8 @@ router.get('/places/search/fast', attachViewer, sendFastSearch);
 // Backward-compatible alias used by older clients and live suggestions.
 router.get('/places/search', attachViewer, sendFastSearch);
 
-// Request B: embedding -> sqlite-vec KNN -> DeepSeek Yuyuko recommendation.
-// 需要登录；reason_source 为 deepseek 的推荐语由模型写成，前端标注“AI 生成”（所用模型公示在用户协议）。
+// Request B: embedding -> sqlite-vec KNN -> DeepSeek relevance review -> fixed-template reasons.
+// 需要登录；模型只判断相关性并逐字摘店铺介绍，推荐语由固定模板拼成（services/recommendationReason.js），不是 AI 生成内容。
 // filter：同时从原话里读出的筛选（标签 / 排除标签 / 人均，services/searchFilter.js），只套用在这次的推荐候选上，
 // 前端在推荐上方说明，不改地图筛选；读不出时为 null。
 router.post('/places/search/ai', requireAuth, async (req, res) => {
