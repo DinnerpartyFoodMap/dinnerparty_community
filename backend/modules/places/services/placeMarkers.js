@@ -15,7 +15,7 @@ const { publicPlaceSql } = require('./placeVisibility');
 
 const MARKER_FIELDS = Object.freeze([
     'id', 'name', 'category', 'longitude', 'latitude', 'per_person_cost',
-    'province', 'city', 'district', 'rating_count', 'rating_average', 'rating_negative_count'
+    'province', 'city', 'district', 'rating_count', 'rating_average', 'rating_negative_count', 'checkin_count'
 ]);
 
 const brotli = promisify(zlib.brotliCompress);

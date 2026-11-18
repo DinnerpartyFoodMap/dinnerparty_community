@@ -31,3 +31,23 @@ export function redeemSkinCode(backendUrl, token, code) {
 export function saveActiveSkin(backendUrl, token, skinId) {
     return request(backendUrl, token, '/api/skins/active', { method: 'PUT', body: { skin_id: skinId } });
 }
+
+export function redeemResourceCode(backendUrl, token, code) {
+    return request(backendUrl, token, '/api/skins/redeem-resource', { method: 'POST', body: { code } });
+}
+
+export function fetchCompanionState(backendUrl, token, options) {
+    return request(backendUrl, token, '/api/skins/companions/me', options);
+}
+
+export function saveActiveCompanion(backendUrl, token, id) {
+    return request(backendUrl, token, '/api/skins/companions/active', { method: 'PUT', body: { companion_id: id } });
+}
+
+export async function fetchPackGrant(backendUrl, token, type, id, options) {
+    const path = `/api/skins/packs/${encodeURIComponent(type)}/${encodeURIComponent(id)}`;
+    const grant = await request(backendUrl, token, path, options);
+    const base = new URL(`${backendUrl}${grant.base}`, window.location.href).href;
+    const url = (file) => `${base}${file.split('/').map(encodeURIComponent).join('/')}`;
+    return { ...grant, entryUrl: url(grant.entry), url };
+}

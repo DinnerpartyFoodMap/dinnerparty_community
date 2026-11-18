@@ -1,5 +1,9 @@
 # QQ Bot
 
+## 公开日记推送
+
+`diaryNotifications.js` 在首次公开事务中按公开 ID 和群写入 `QQBotDiaryNotification`。目标沿用 `QQ_BOT_NOTIFY_GROUP_IDS`，稳定链接要求 `QQ_BOT_PUBLIC_WEB_URL` 或 `FRONTEND_BASE_URL` 指向公网 HTTPS。worker 每篇发一条独立图文转发，正文分段并使用公开站点摘录，附前六张可用公开图与完整日记链接。关联已有地点的日记也会推送。私密保存、编辑公开内容及重新公开均不入队，撤回跳过待发任务。如果 QQ 未确认发送结果，保留 `unknown` 供核对。
+
 `runtime/index.js` 导出 startQQBot/getQQBotStatus，由后端入口启动。runtime 内按协议与交互职责拆分：onebotClient 传输；config 配置；messageParser / qqIdentity 解析；commands 分派；commandInterpreter AI 解释；placeConversation 草稿；memberSync 白名单；notificationWorker 新地点推送（每半小时把这半小时新增的地点打成一条合并转发 `send_group_forward_msg`，每个地点一个节点，国内地点带「地区：省市」，取自 places 的 PlaceRegion，推送前用 `ensurePlaceRegions` 补查刚加的地点）；mealReminder 每天早午晚三次吃饭提醒（`QQ_BOT_MEAL_REMINDER_TIMES`，北京时间，文案在 mealReminderCopy.js 按天轮换，表 QQBotMealReminder 保证每群每顿只发一次）；directMessage 私信；randomPick 推荐；randomCenter 每群随机中心（`!随机中心`，表 QQBotGroupRandomCenter，群主 / 管理员或网站管理员设置；有群中心时该群的 !随机 一律以它为中心）；placeCard / tuwenArk 卡片。services/qqBotSchema.js 负责表结构。
 
 ```mermaid

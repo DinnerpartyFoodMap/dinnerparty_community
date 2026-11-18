@@ -6,6 +6,8 @@ const router=express.Router();
 router.use(requireAuth,(_req,res,next)=>{res.set('Cache-Control','no-store');next();});
 const run=fn=>(req,res,next)=>Promise.resolve().then(()=>fn(req,res)).catch(next);
 const {consent,neighbors}=require('../services/communityPreferences');
+const {getFavoriteVisibility}=require('../../preferences/services/favoriteCollection');
+const {isBlocked,notBlockedSql}=require('../../accounts/services/userRelations');
 router.get('/consent',run((req,res)=>res.json(consent(req.user.id))));
 router.put('/consent',run((req,res)=>{
     const old=consent(req.user.id);
@@ -27,8 +29,11 @@ router.put('/consent',run((req,res)=>{
     res.json(consent(req.user.id));
 }));
 // Places still under moderation appear only to their creator (doc/placeModeration.md in places).
-function collection(row,viewerId=null) {
-    return {...row,is_public:!!row.is_public,places:sql.prepare(`SELECT p.id,p.name,p.category,p.per_person_cost FROM PublicCollectionItem i JOIN Place p ON p.id=i.place_id WHERE i.collection_id=? AND (p.moderation_status='visible' OR p.creator_id=?)`).all(row.id,viewerId)};
+function collection(row,viewerId=null,onlyPublic=false) {
+    return {...row,is_public:!!row.is_public,places:sql.prepare(`SELECT p.id,p.name,p.category,p.per_person_cost
+        FROM PublicCollectionItem i JOIN Place p ON p.id=i.place_id
+        WHERE i.collection_id=? AND (p.moderation_status='visible' OR p.creator_id=?) AND ${notBlockedSql('p.creator_id')}`)
+        .all(row.id,onlyPublic?null:viewerId,viewerId)};
 }
 router.get('/collections',run((req,res)=>res.json(sql.prepare('SELECT * FROM PublicCollection WHERE user_id=? ORDER BY updated_at DESC').all(req.user.id).map(row=>collection(row,req.user.id)))));
 router.post('/collections',run((req,res)=>{
@@ -54,8 +59,9 @@ router.get('/neighbors',run(async(req,res)=>res.json(await neighbors(req.user.id
 router.get('/users/:id/collections',run((req,res)=>{
     if(!consent(req.params.id).discovery) fail('用户未开启同好发现',404);
     const user=sql.prepare('SELECT id,username FROM User WHERE id=? AND COALESCE(is_banned,0)=0').get(req.params.id);
-    if(!user) fail('用户不存在',404);
-    res.json({user,collections:sql.prepare('SELECT id,title,is_public,updated_at FROM PublicCollection WHERE user_id=? AND is_public=1').all(user.id).map(row=>collection(row,req.user?.id??null))});
+    if(!user||isBlocked(req.user?.id,user.id)) fail('用户不存在',404);
+    if(!getFavoriteVisibility(user.id)){res.json({user,collections:[]});return;}
+    res.json({user,collections:sql.prepare('SELECT id,title,is_public,updated_at FROM PublicCollection WHERE user_id=? AND is_public=1').all(user.id).map(row=>collection(row,req.user?.id??null,true))});
 }));
 const kinds=new Set(['search','exposure','click','correction','next']);
 const surfaces=new Set(['search','map','random','favorites','journey']);

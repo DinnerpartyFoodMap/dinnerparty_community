@@ -14,11 +14,15 @@ const PUBLIC_BASE = 'https://img.example.cc';
 const quietEnv = { LOG_TO_FILE: 'false', LOG_TO_CONSOLE: 'false', SILICONFLOW_API_KEY: '', DEEPSEEK_API_KEY: '' };
 Object.assign(process.env, quietEnv, { UPLOADS_DIR: uploadsDir, DB_FILE: path.join(temp, 'test.sqlite') });
 
-/** 只实现 PUT / HEAD / GET 的假 OSS，按请求路径（对象键）存内容 */
+/** 假 OSS 按请求路径（对象键）存内容。 */
 function startFakeOss() {
     const objects = new Map();
     const server = http.createServer((req, res) => {
         const key = decodeURIComponent(req.url.split('?')[0].slice(1));
+        if (req.method === 'DELETE') {
+            objects.delete(key);
+            return res.writeHead(204).end();
+        }
         if (req.method === 'PUT') {
             const chunks = [];
             req.on('data', (c) => chunks.push(c));
@@ -246,6 +250,38 @@ async function main() {
         assert.match(again, /OSS 已有 3；新上传 0/);
         assert.match(again, /已改写：地点 0 个、修改申请 0 条、图片地址 0 个/);
         assert.equal(fs.readdirSync(temp).filter((n) => n.includes('.pre-oss-') && n.endsWith('.bak')).length, 1, '无改动时不再备份');
+
+        const avatarScript = path.join(__dirname, '../../scripts/accounts/migrate_avatars_to_oss.js');
+        const avatarDb = new Database(process.env.DB_FILE);
+        try {
+            const webp = await sharp(png).webp().toBuffer();
+            avatarDb.prepare('INSERT INTO User(id, username, avatar_blob) VALUES (?, ?, ?)').run('legacy-avatar', '老头像', webp);
+            const avatar = avatarDb.prepare('SELECT avatar_url, avatar_blob FROM User WHERE id = ?');
+            const previousObjectCount = oss.objects.size;
+
+            const preview = await runNode([avatarScript], { IMAGE_STORAGE: 'local' });
+            assert.match(preview, /待迁移 1 个/);
+            assert.equal(oss.objects.size, previousObjectCount);
+            assert.deepEqual(avatar.get('legacy-avatar'), { avatar_url: null, avatar_blob: webp });
+
+            avatarDb.exec("CREATE TRIGGER reject_avatar_update BEFORE UPDATE OF avatar_url ON User BEGIN SELECT RAISE(ABORT, 'test failure'); END");
+            await assert.rejects(runNode([avatarScript, '--apply'], ossEnv(oss.port)), /失败 1 个/);
+            assert.deepEqual(avatar.get('legacy-avatar'), { avatar_url: null, avatar_blob: webp }, '写库失败时仍可读取旧头像');
+            assert.equal(oss.objects.size, previousObjectCount, '写库失败时清理刚上传的对象');
+            avatarDb.exec('DROP TRIGGER reject_avatar_update');
+
+            assert.match(await runNode([avatarScript, '--apply'], ossEnv(oss.port)), /已迁移 1 个/);
+            const migrated = avatar.get('legacy-avatar');
+            assert.equal(migrated.avatar_blob, null);
+            assert.match(migrated.avatar_url, /^https:\/\/img\.example\.cc\/food\/avatars\/[a-f0-9-]+\.webp$/);
+            const migratedObject = oss.objects.get(new URL(migrated.avatar_url).pathname.slice(1));
+            assert.deepEqual(migratedObject.body, webp);
+            assert.equal(migratedObject.type, 'image/webp');
+            assert.match(await runNode([avatarScript, '--apply'], ossEnv(oss.port)), /待迁移 0 个/);
+            assert.equal(oss.objects.size, previousObjectCount + 1, '重复迁移不再上传');
+        } finally {
+            avatarDb.close();
+        }
     } finally {
         oss.server.close();
     }

@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import PageTemplate from "../components/layout/PageTemplate";
 import Button from "../components/primitives/Button";
-import TextInput from "../components/forms/TextInput";
 import { useTips } from "../components/feedback/Tips";
 import { DEFAULT_SKIN_ID, getSkin } from "../skins/registry";
 import { activateSkin } from "../skins/skinStore";
 import { useActiveSkin } from "../skins/useSkin";
 import { rememberSkin } from "../skins/useSkinSession";
-import { fetchSkinState, redeemSkinCode, saveActiveSkin } from "../skins/skinApi";
+import { fetchSkinState, saveActiveSkin } from "../skins/skinApi";
+import { loadRemoteSkin } from '../skins/remoteSkin';
+import ResourceRedeemForm from '../skins/ResourceRedeemForm';
 import { getPlatform } from "../platform/env";
 import { t } from '../i18n/index.js';
 import StateMessage from "../components/feedback/StateMessage";
@@ -23,8 +24,6 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [reload, setReload] = useState(0);
-    const [code, setCode] = useState('');
-    const [redeemError, setRedeemError] = useState('');
     const [busy, setBusy] = useState(false);
     useActiveSkin();
 
@@ -46,34 +45,11 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
         return () => controller.abort();
     }, [backendUrl, token, reload]);
 
-    const redeem = async (event) => {
-        event.preventDefault();
-        if (busy) return;
-        if (!code.trim()) {
-            setRedeemError(t('settings:skins.codeRequired'));
-            return;
-        }
-        setBusy(true);
-        setRedeemError('');
-        try {
-            const next = await redeemSkinCode(backendUrl, token, code);
-            apply(next);
-            setCode('');
-            const name = next.unlocked ? next.unlocked.name : '';
-            if (next.already_owned) showTip(t('settings:skins.alreadyOwned', { name }));
-            else if (next.unlocked && !getSkin(next.unlocked.id)) showTip(t('settings:skins.unlockedNeedsUpdate', { name }));
-            else showTip(t('settings:skins.unlocked', { name }));
-        } catch (error) {
-            setRedeemError(error.message || String(error));
-        } finally {
-            setBusy(false);
-        }
-    };
-
     const choose = async (skinId, name) => {
         if (busy) return;
         setBusy(true);
         try {
+            if (state?.owned.some((item) => item.id === skinId && item.remote)) await loadRemoteSkin(backendUrl, token, skinId);
             apply(await saveActiveSkin(backendUrl, token, skinId));
             showTip(skinId === DEFAULT_SKIN_ID ? t('settings:skins.switchedDefault') : t('settings:skins.switched', { name }));
         } catch (error) {
@@ -91,10 +67,11 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
             return {
                 id: item.id,
                 name: item.name,
-                description: pack ? pack.description : t('settings:skins.needsUpdate'),
+                description: pack ? pack.description : (item.remote ? t('companion:remoteSkin') : t('settings:skins.needsUpdate')),
                 preview: pack ? pack.preview : '',
                 unlockedTime: item.unlocked_time,
-                available: !!pack
+                available: !!pack || item.remote,
+                needsDownload: !!item.remote && !pack
             };
         })
     ];
@@ -140,7 +117,7 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                                         {tile.description && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2, lineHeight: 1.45 }}>{tile.description}</div>}
                                         {tile.unlockedTime && <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>{t('settings:skins.unlockedAt', { date: new Date(tile.unlockedTime).toLocaleDateString() })}</div>}
                                     </div>
-                                    {selected ? (
+                                    {selected && !tile.needsDownload ? (
                                         <div style={{ marginTop: 'auto', fontSize: 13, fontWeight: 700, color: 'var(--theme-primary)' }}>{t('settings:skins.inUse')}</div>
                                     ) : (
                                         <Button disabled={busy || !tile.available} onClick={() => choose(tile.id, tile.name)} style={{ marginTop: 'auto' }}>
@@ -154,29 +131,9 @@ export default function SkinSettings({ user, onBack, backendUrl, token }) {
                 )}
             </div>
 
-            {REDEEM_AVAILABLE && <form onSubmit={redeem} style={{ marginTop: 24 }}>
-                <label htmlFor="skin-code" style={sectionTitle}>{t('settings:skins.redeemTitle')}</label>
-                <div style={hintStyle}>{t('settings:skins.redeemHint')}</div>
-                <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <TextInput
-                        id="skin-code"
-                        aria-label={t('settings:skins.codeLabel')}
-                        value={code}
-                        onChange={(event) => { setCode(event.target.value); setRedeemError(''); }}
-                        placeholder={t('settings:skins.codePlaceholder')}
-                        autoComplete="off"
-                        autoCapitalize="characters"
-                        spellCheck={false}
-                        maxLength={40}
-                        disabled={busy}
-                        style={{ flex: '1 1 220px', minWidth: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: 1 }}
-                    />
-                    <Button type="submit" disabled={busy || !token}>
-                        {busy ? t('settings:skins.redeeming') : t('settings:skins.redeem')}
-                    </Button>
-                </div>
-                {redeemError && <div role="alert" style={{ marginTop: 8, color: 'var(--color-danger)', fontSize: 13 }}>{redeemError}</div>}
-            </form>}
+            {REDEEM_AVAILABLE && <ResourceRedeemForm backendUrl={backendUrl} token={token} onRedeemed={(result) => {
+                if (result.type === 'skin') apply(result.state);
+            }} />}
         </PageTemplate>
     );
 }

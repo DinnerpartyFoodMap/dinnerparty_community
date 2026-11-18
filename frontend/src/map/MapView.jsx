@@ -24,6 +24,7 @@ import FullScreenMapContent from "../components/layout/FullScreenMapContent";
 const JourneyWorkspace = React.lazy(() => import("../journey/JourneyWorkspace"));
 import { useMapFeedback } from "../journey/feedback";
 import CommentPanel from "../places/components/CommentPanel";
+import { buildManagePayload } from "../places/managePlacePayload";
 import { useTips } from "../components/feedback/Tips";
 import { useConfirm } from "../components/feedback/Confirm";
 import Tooltip from "../components/primitives/Tooltip";
@@ -112,7 +113,9 @@ export default function MapView({
     initialCenter = null,
     mapPageActive = false,
     mapPreviewActive = false,
-    onOpenJourney = null
+    onOpenJourney = null,
+    onOpenCompanion,
+    companion = null
 }) {
     const containerRef = useRef(null);
     const journeyRef = useRef(null);
@@ -214,6 +217,7 @@ export default function MapView({
     const [manageOpen, setManageOpen] = useState(false);
     const [managePositionOpen, setManagePositionOpen] = useState(false);
     const [manageEdit, setManageEdit] = useState({ name: "", category: "", description: "", per_person_cost: null });
+    const manageOriginal = useRef(null);
     const [manageSubmitting, setManageSubmitting] = useState(false);
     const [manageMessage, setManageMessage] = useState("");
     // 新增地点的请求是否在途（见 submitPlace）
@@ -1011,10 +1015,15 @@ export default function MapView({
     ]).then(() => publishNearbyFromCache());
     refreshNearbyRef.current = refreshNearby;
 
+    // 恢复会话时 token 先于账号校验就绪，校验完成后才为明细瓦片申请票据。
+    const markerTileToken = isAuthenticated ? token : null;
+    useEffect(() => {
+        markerTileSource(backendUrl).setToken(markerTileToken);
+    }, [backendUrl, markerTileToken]);
+
     // 登录 / 退出 / 换账号：个人叠加、本地修改和补全过的详情都随身份变化
     const markerTokenRef = useRef(token);
     useEffect(() => {
-        markerTileSource(backendUrl).setToken(isAuthenticated ? token : null);
         if (markerTokenRef.current !== token) {
             markerTokenRef.current = token;
             placeDetailsRef.current.cache.clear();
@@ -2180,7 +2189,7 @@ export default function MapView({
         if (place.marker_only === true) { showTip(t('map:main.markerLoadFailed')); return; }
         const mine = context?.mine ?? null;
         if(String(selectedPlaceRef.current?.id)!==String(place.id))return;
-        setManageEdit({
+        const draft = {
             name: place.name || "",
             category: place.category || "",
             description: place.description || "",
@@ -2190,7 +2199,11 @@ export default function MapView({
             exterior_images: MapUtils.parseImageList(place.exterior_images),
             menu_images: MapUtils.parseImageList(place.menu_images),
             has_rating:!!mine,rating:null,no_experience:false
-        });
+        };
+        manageOriginal.current = {
+            ...draft, exterior_images: [...draft.exterior_images], menu_images: [...draft.menu_images]
+        };
+        setManageEdit(draft);
         setManageMessage("");
         setManagePositionOpen(false);
         setManageOpen(true);
@@ -2204,19 +2217,6 @@ export default function MapView({
         setManageEdit(edit => ({ ...edit, longitude, latitude }));
         setManagePositionOpen(false);
     };
-
-    const buildManagePayload = (edit = manageEdit) => ({
-        name: (edit.name || "").trim(),
-        category: (edit.category || "").trim(),
-        description: (edit.description || "").trim(),
-        per_person_cost: edit.per_person_cost,
-        exterior_images: (edit.exterior_images || []).filter(Boolean),
-        menu_images: (edit.menu_images || []).filter(Boolean),
-        // 未调整位置时不提交旧坐标，避免覆盖其他人刚修正的位置。
-        ...(Number(edit.longitude) !== Number(selectedPlace.longitude)
-            || Number(edit.latitude) !== Number(selectedPlace.latitude)
-            ? { longitude: edit.longitude, latitude: edit.latitude } : {})
-    });
 
     // 判断当前用户是否可直接管理
     const canDirectManage = () => {
@@ -2261,7 +2261,7 @@ export default function MapView({
         if (isBanned) { showTip(t('map:main.updateBanned')); return { ok: false, message: t('map:main.updateBanned') }; }
         setManageSubmitting(true);
         try {
-            const payload = buildManagePayload(edit);
+            const payload = buildManagePayload(edit, manageOriginal.current);
             Object.assign(payload,edit.no_experience?{no_experience:true}:Number.isInteger(edit.rating)?{rating:edit.rating}:{});
             const result = await Api.putPlace(backendUrl, token, selectedPlace.id, payload);
             // 改出了明显不合规的内容：这次修改转成修改申请等管理员审核，地点保持原样（backend placeModeration.md）
@@ -2298,7 +2298,7 @@ export default function MapView({
         try {
             const payload = {
                 place_id: selectedPlace.id,
-                proposed: buildManagePayload(edit),
+                proposed: buildManagePayload(edit, manageOriginal.current),
                 ...(edit.no_experience?{no_experience:true}:Number.isInteger(edit.rating)?{rating:edit.rating}:{}),
                 note: t('map:main.requestNote')
             };
@@ -2467,6 +2467,8 @@ export default function MapView({
                 alongRouteRequestId={alongRouteRequestId}
                 onOpenPlaceList={onOpenPlaceList}
                 onOpenProfile={onOpenProfile}
+                onOpenCompanion={onOpenCompanion}
+                companion={companion}
                 myPlacesRequestId={myPlacesRequestId}
                 onShowExhibitionVenue={showExhibitionVenue}
                 locatedCenter={locatedCenter}

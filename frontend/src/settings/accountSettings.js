@@ -2,8 +2,9 @@
 // 原生只把用户输入交过来，通行凭证与请求始终留在网页层。
 // 所有函数返回 { ok, message, ... }，由调用方决定如何提示；网络异常照常抛出。
 import { t } from '../i18n/index.js';
-import { storedMapSettings } from './mapSettings';
-import { normalizeCountryCode, normalizePhoneNumber } from '../components/forms/phoneRegions';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
+import { storedMapSettings } from './mapSettings.js';
+import { normalizeCountryCode, normalizePhoneNumber } from '../components/forms/phoneRegions.js';
 
 async function readResponse(res) {
     const text = await res.text();
@@ -119,7 +120,12 @@ export async function uploadAvatar({ backendUrl, token, blob }) {
     const { data } = await readResponse(res);
     if (!res.ok) return { ok: false, message: data && data.error ? data.error : t('settings:editAvatar.uploadFailedStatus', { status: res.status }) };
     if (!data || !data.success || !data.user) return { ok: false, message: t('settings:editAvatar.badData') };
-    return { ok: true, message: t('settings:editAvatar.updated'), user: data.user };
+    const user = data.user;
+    // 旧版服务端仍会缓存固定头像地址，上传成功后只生成一次新的地址。
+    if (user.id != null && user.has_avatar && user.avatar_url === undefined) {
+        user.avatar_url = `${resolveAvatarUrl(user, '')}?t=${Date.now()}`;
+    }
+    return { ok: true, message: t('settings:editAvatar.updated'), user };
 }
 
 /**

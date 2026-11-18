@@ -14,7 +14,6 @@ import JourneyCalendar from './JourneyCalendar';
 import JourneyDetail from './JourneyDetail';
 import JourneyUnfinished,{JourneyMedia} from './JourneyUnfinished';
 import JourneyShare from './JourneyShare';
-import JourneyCommunity from './JourneyCommunity';
 import PublicJourneyView from './PublicJourneyView';
 import {invalidatePlaceDiaries} from './PlaceDiaryList';
 import {loadUnfinished} from './JourneyUnfinished';
@@ -23,8 +22,8 @@ import { t, tx } from '../i18n/index.js';
 import { isNativeMap, NativeMarkerOverlay, NativePolylineOverlay } from '../map/nativeMapView.js';
 
 const PAGES={composer:JourneyComposer,generation:JourneyGeneration,review:JourneyReview,calendar:JourneyCalendar,detail:JourneyDetail,
-    unfinished:JourneyUnfinished,media:JourneyMedia,share:JourneyShare,community:JourneyCommunity,public:PublicJourneyView};
-const LABELS={composer:t('journey:common.feature.generate'),generation:t('journey:common.action.generateDraft'),review:t('journey:workspace.label.review'),calendar:t('journey:common.feature.calendar'),detail:t('journey:workspace.label.detail'),unfinished:t('journey:workspace.label.unfinished'),media:t('journey:common.feature.privateImages'),share:t('journey:common.action.generateShare'),community:t('journey:common.feature.community'),public:t('journey:workspace.label.publicDiary')};
+    unfinished:JourneyUnfinished,media:JourneyMedia,share:JourneyShare,public:PublicJourneyView};
+const LABELS={composer:t('journey:common.feature.generate'),generation:t('journey:common.action.generateDraft'),review:t('journey:workspace.label.review'),calendar:t('journey:common.feature.calendar'),detail:t('journey:workspace.label.detail'),unfinished:t('journey:workspace.label.unfinished'),media:t('journey:common.feature.privateImages'),share:t('journey:common.action.generateShare'),public:t('journey:workspace.label.publicDiary')};
 // 公开日记无需登录即可阅读；其余页面属于个人内容
 const PUBLIC_PAGES=new Set(['public']);
 let pageSeq=0;
@@ -35,7 +34,7 @@ function readPalette(){
 }
 
 /**
- * 日记导航协调层：入口操作弹窗 → 三个独立的全屏页面（图文生成、日历、同好）及其下级页面。
+ * 日记导航协调层：入口操作弹窗、快速创建、日历及其下级页面。
  * 页面栈与系统返回 / Esc / 页面返回按钮共用：先关闭最上层浮层，再逐页返回，最后回到地图。
  * 下层页面保持挂载（隐藏且不可交互），返回时保留月份、选中日期与滚动位置。
  */
@@ -199,7 +198,6 @@ export default React.forwardRef(function JourneyWorkspace({backendUrl:base,token
     useOverlayEntry(mapView?{onClose:()=>setMapView(null),modal:false,kind:'journey-map-view',label:t('journey:workspace.mapViewLabel'),suspendNative:false}:false);
 
     return <>
-        {!entryOpen&&(!stack.length||placeView)&&!mapView&&<button type="button" className="journey-launch" data-tour="journey" onClick={openEntry}>{t('journey:workspace.launcher')}</button>}
         {mapView&&<button type="button" className="journey-launch journey-launch--visible" onClick={()=>setMapView(null)}>{tx('journey:workspace.backToDiary', { title: mapView.document.title })}</button>}
         <JourneyEntrySheet open={entryOpen} counts={counts} onSelect={selectEntry} onClose={()=>setEntryOpen(false)}/>
         <ResponsivePanel open={stack.length>0&&!mapView&&!placeView} onClose={onPanelClose} label={top?LABELS[top.page]:t('journey:common.feature.diary')} kind="journey" desktop="full" mobile="full"

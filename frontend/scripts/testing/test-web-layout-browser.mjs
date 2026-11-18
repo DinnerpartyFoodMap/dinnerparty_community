@@ -14,7 +14,8 @@ const browser = process.env.CHROME_BIN || (process.platform === 'win32' ? 'C:/Pr
 const theme = (readFileSync(join(root, 'index.html'), 'utf8').match(/:root(?:\[data-theme='dark'\])?\s*\{[^}]*\}/g) || []).join('\n');
 const requests = [];
 const searchResults = Array.from({ length: 12 }, (_, index) => ({ id: index + 1, name: '搜索结果面馆 ' + (index + 1), category: '面食', description: '供搜索结果交叠布局验证', longitude: 120 + index / 10000, latitude: 30, rating_count: 2, rating_average: 3.5 }));
-const focusPlace = { id: 99, name: '列表定位回归面馆', category: '面食', description: '首次点击就应正确定位', longitude: 120.025, latitude: 30.02, rating_count: 0, rating_average: null };
+const prediction = { active: true, status: 'ready', average: 3.6 };
+const focusPlace = { id: 99, name: '列表定位回归面馆', category: '面食', description: '首次点击就应正确定位', longitude: 120.025, latitude: 30.02, rating_count: 0, rating_average: null, predicted_rating: prediction };
 let listHasPlace = false;
 let longList = false;
 const longListPlaces = Array.from({ length: 20 }, (_, index) => ({ ...focusPlace, id: 100 + index, name: '安全区滚动测试面馆 ' + (index + 1) }));
@@ -25,10 +26,11 @@ localStorage.setItem('foodmap.privacy-consent', JSON.stringify({version:'2026-10
 localStorage.setItem('foodmap.onboarding', JSON.stringify({version:3}));
 localStorage.setItem('yuyuko.motion.v1', JSON.stringify({webMotion:false,clusterMotion:false}));
 </script><script type="module" src="/tests/integration/web-layout-harness.jsx"></script></body></html>`;
-const server = await createServer({ root, configFile: resolve(root, 'vite.config.js'), server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'web-layout-regression', configureServer(server) {
+const server = await createServer({ root, configFile: resolve(root, 'vite.config.js'), server: { host: '127.0.0.1', port: 0, hmr: false, watch: null }, plugins: [{ name: 'web-layout-regression', configureServer(server) {
     server.middlewares.use((req, res, next) => {
         const url = new URL(req.url, 'http://localhost');
         if (url.pathname === '/__web-layout' || url.pathname === '/p/99') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); return; }
+        if (/^\/fixture-avatar\/(first|second)\.png$/.test(url.pathname)) { res.setHeader('Content-Type', 'image/png'); res.end(readFileSync(join(root, 'src/img/default.png'))); return; }
         const responses = {
             '/users/me': { user: { id: 'web-layout-user', username: '布局测试住民', is_banned: false } },
             '/places/tiles/manifest': { v: 1, version: 'empty', generated_at: 1, count: 0, dict: '000000000000', levels: [{ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }, { tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }, { tile: 8, cell: 14, minZoom: 11, maxZoom: 12 }], leaf: { tile: 12, minZoom: 13 }, tiles: { 2: {}, 5: {}, 8: {}, 12: {} } }, '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': ['面食'],
@@ -37,7 +39,7 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
             '/api/places/search/fast': searchResults,
             '/places/list': { items: longList ? longListPlaces : listHasPlace ? [focusPlace] : [], total: longList ? 20 : listHasPlace ? 1 : 0, personalized: false },
             '/places/99': focusPlace,
-            '/api/ratings/places/99': { summary: { count: 0, average: null }, mine: null }
+            '/api/ratings/places/99': { summary: { count: 0, average: null }, prediction, mine: null }
         };
         if (!Object.hasOwn(responses, url.pathname)) return next();
         requests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
@@ -106,7 +108,11 @@ try {
         await waitFor(`document.readyState === 'complete'`);
     };
 
-    await navigate('map', 390, 844);
+    await navigate('map&avatar=1', 390, 844);
+    const accountAvatar = `document.querySelector('[data-tour="account"] img')`;
+    await waitFor(`${accountAvatar}?.src.endsWith('/fixture-avatar/first.png') && ${accountAvatar}.naturalWidth > 0`);
+    await evaluate(`window.dispatchEvent(new Event('fixture-avatar-updated'))`);
+    await waitFor(`${accountAvatar}?.src.endsWith('/fixture-avatar/second.png') && ${accountAvatar}.naturalWidth > 0`);
     await waitFor(`!!document.querySelector('.fm-map-search__input:not([disabled])')`);
     await evaluate(`document.documentElement.dataset.theme = 'dark'`);
     await click('.fm-map-search__input');
@@ -243,6 +249,17 @@ try {
         await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(dark ? 'dark' : 'light')}`);
         await waitFor(`!!document.querySelector('[aria-labelledby="random-food-title"] .fm-map-list__scope:not([disabled])')`);
         const panel = '[aria-labelledby="random-food-title"]';
+        const primaryButton = await evaluate(`(() => {
+            const style = getComputedStyle(document.querySelector('${panel} .fm-button--primary'));
+            const color = document.createElement('canvas').getContext('2d');
+            color.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim();
+            const theme = color.fillStyle;
+            color.fillStyle = style.backgroundColor;
+            return { text: style.color, background: color.fillStyle, theme };
+        })()`);
+        assert.equal(primaryButton.text, 'rgb(255, 255, 255)', 'the pink web primary button uses white text in both themes');
+        assert.ok(['#e2789f', '#ff8fb1'].includes(primaryButton.theme), 'the real page uses one of the original default pinks');
+        assert.equal(primaryButton.background, primaryButton.theme, 'the web primary button keeps the original default pink background');
         const layout = await evaluate(`(() => {
             const panel = document.querySelector('${panel}'), choice = panel.querySelector('.fm-map-list__scope').getBoundingClientRect();
             const close = panel.querySelector('[aria-label="关闭随机美食"]') || panel.querySelector('.fm-icon-button');
@@ -342,6 +359,11 @@ try {
         assert.equal(shared.cameras, 1, 'a share link focuses exactly once');
         assert.ok(shared.pans.every(pan => !pan.duringCameraMove), 'card positioning cannot interrupt share navigation');
         assert.ok(shared.point.x >= 12 && shared.point.x <= width - 12 && shared.point.y >= 12 && shared.point.y <= height - 12, 'shared marker stays on screen');
+        if (width >= 640) {
+            const rating = ':is(.fm-card-host, .fm-skin-card) button[aria-label^="评价："]';
+            await waitFor(`document.querySelector(${JSON.stringify(rating)})?.textContent.includes('预计你会给')`);
+            assert.equal(await evaluate(`document.querySelector(${JSON.stringify(`${rating} strong:last-of-type`)})?.textContent`), '3.6', 'the place card emphasizes the predicted digits');
+        }
         await screenshot(`share-link-card-${width}`);
         await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }, sessionId);
         await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' }, sessionId);
@@ -349,6 +371,10 @@ try {
         assert.equal(await evaluate('window.__WEB_LAYOUT_MAP.cameraMoves.length'), 1, 'closing a shared card does not reopen it');
         assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'share links have no browser errors');
     }
+
+    await navigate('rating', 1280, 900);
+    await waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('预计你会给')`);
+    assert.ok(await evaluate(`[...document.querySelectorAll('[role="dialog"] strong')].some(element => element.textContent === '3.6')`), 'the rating panel emphasizes the predicted digits');
 
     // Exercise the real list -> MapView -> card flow, including AMap's default deferred camera move.
     listHasPlace = true;
@@ -359,6 +385,7 @@ try {
         await click('[data-tour="listView"]');
         for (let selection = 1; selection <= 2; selection += 1) {
             await waitFor(`document.querySelector('.fm-place-card__title')?.textContent === '列表定位回归面馆'`);
+            assert.equal(await evaluate(`document.querySelector('.fm-place-card__personal strong')?.textContent ?? null`), '3.6', 'the place list emphasizes the predicted digits');
             await click('.fm-place-card__title');
             await waitFor(`getComputedStyle(document.querySelector('.fm-map-list')).visibility === 'hidden' && !!document.querySelector('.fm-card-host,.fm-skin-card') && window.__WEB_LAYOUT_MAP.cameraMoves.length === ${selection} && !window.__WEB_LAYOUT_MAP.pendingCamera`);
             await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);

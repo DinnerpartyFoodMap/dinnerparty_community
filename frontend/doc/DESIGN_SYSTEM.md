@@ -190,7 +190,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 
 | 变体 | 网页 | iOS |
 |---|---|---|
-| primary | 主色底、`--theme-on-primary` 字、无描边 | `.borderedProminent` + tint |
+| primary | 默认粉色底配白字，自定义主色底配 `--theme-on-primary`，无描边 | `.borderedProminent` + tint |
 | secondary | `bg-overlay` 底、`text-primary` 字 | `.bordered` |
 | plain | 透明、`--theme-primary-text` 字 | `.borderless` |
 | destructive | `danger` 字；需要底时 danger 14% 底 | `role: .destructive` |
@@ -201,6 +201,7 @@ iOS 一律 `RoundedRectangle(cornerRadius:style: .continuous)`。
 - iOS：工具栏上的文字按钮（提交、保存、存草稿、管理）`.tint` 用加深的主色（`primaryText`），主色实心圆钮里的符号用 `onPrimary`。
 - 住民设置的一级返回图标与二级系统返回统一使用 `primaryText`，由同一个 NavigationStack 继承。开关、滑杆的填充仍使用原始主色，不能随导航文字一起加深。
 - 网页实现：`components/primitives/Button.jsx` + `button.css`（`variant`、`size`、`full`；另有 `menu` 变体给菜单行）。调用方用 `style` 自定义了底色时自动按 secondary 的基础样式（正文色文字、细边框），避免主色上的文字色落到别的底色上。日记模块的裸 `<button>` 由 `journey.css` 给同一规格（胶囊、44 高），整行 / 列表式按钮单独用矩形圆角。
+- 浏览器默认粉色主按钮的白字由 `--web-primary-action-text` 控制，使用原有浅色 `#E2789F`、深色 `#FF8FB1` 及原来的悬停和按压样式。独立下载页的推荐入口同样使用白字。`npm run test:web-layout-browser` 检查主按钮在默认主题下的实际文字色和底色。
 
 ### 7.2 图标按钮
 

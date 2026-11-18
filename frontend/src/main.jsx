@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import PrivacyConsent from './app/PrivacyConsent.jsx';
 import "./styles/tokens.css";
 import { getRuntimeConfig } from "./platform/runtimeConfig";
+import { getPlatform } from './platform/env.js';
 import { t } from './i18n/index.js';
 
 /**
@@ -47,6 +48,7 @@ function ConfigErrorScreen({ errors }) {
     );
 }
 
+document.documentElement.dataset.platform = getPlatform();
 const root = createRoot(document.getElementById("root"));
 
 async function startApplication() {

@@ -28,6 +28,7 @@ middleware/rateLimit.js（防爬）：路由在识别观看者之后挂 `rateLim
 - 计数放在 Redis（SET / INCR，键 `rl:<策略>:<主体>:<x|n>:<窗>`），Redis 不可用时退回进程内计数；计数出错一律放行，限流不能变成新的故障点。
 - 客户端 IP 取 `req.ip`，前提是 `TRUST_PROXY`（index.js）配对：不设时保持旧行为 `true`（取 `X-Forwarded-For` 最左边，客户端能伪造）；源站 Caddy 按 [CDN 缓存](../../doc/CDN_CACHE.md#源站-caddy) 覆盖写 `X-Forwarded-For` 后设 `loopback`。先 observe 跑一周、确认日志里的 IP 是真实客户端，再切 enforce。
 - 排查：`npm run scrape:report -- --since 14d [--top 20] [--json]`（scripts/diagnostics/scrape_report.js，只读请求日志，保留六个月）按主体列出单日去重详情、分享页、明细瓦片、列表、搜索、住民地点、nearby 次数、撞线记录和 `GET /places` 根路径的调用方；`--user-id <UUID>` 或 `--subject ip:1.2.3.0/24` 按天列出一个主体的用量、用过的 IP 与 UA。住民按日志里的 `userId` 归类（请求日志会记可选登录与瓦片票据认出的用户，见 [日志文档](../../infrastructure/doc/LOGGING.md#记录内容)）；日志里的坐标打码，看不出 nearby 的范围大小。
+- 验证明细瓦片时，用支持瓦片的网页或 App 登录，放大到地图缩放级别 13 以上，移动到有标记且本机未缓存的区域。确认网络请求里先成功取得 `/places/tiles/ticket`，随后带票据请求明细瓦片，再用 `--since 15m --user-id <UUID>` 查报表。服务器只统计回源请求，缺少有效票据的回源请求按 IP 段归类。
 
 测试：`npm run test:rate-limit`（中间件本身），`npm run test:place-tiles`（接到路由上的效果）。
 

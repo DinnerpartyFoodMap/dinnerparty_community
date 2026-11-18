@@ -1,4 +1,20 @@
 {
+  "checkIn": {
+    "title": "地点打卡",
+    "submit": "打卡",
+    "submitting": "正在核验位置…",
+    "distance": "距离地点小于 50 米时可以打卡。",
+    "description": "补充描述（选填）",
+    "rating": "评分（选填）",
+    "photos": "添加照片（{{count}} / 3）",
+    "gallery": "打卡照片",
+    "count": "打卡 {{count}} 次",
+    "review": "补充描述和照片审核后会显示在地点卡片中。",
+    "success": "打卡成功，已投喂小伙伴。",
+    "done": "完成",
+    "failed": "打卡失败，请重试。",
+    "retryRating": "重试保存评分"
+  },
   "exhibition": {
     "count": "有 {{count}} 个活动",
     "all": "全部活动",
@@ -246,7 +262,8 @@
       "cardScanHint": "扫码查看地点"
     },
     "favorites": "收藏",
-    "diaryCommunity": "日记 · 同好",
+    "diary": "日记",
+    "openDiary": "打开日记入口",
     "cancelAdd": "取消添加",
     "addPlaceHint": "点击地图或搜索添加地点",
     "add": "添加",
@@ -603,15 +620,15 @@
       "bodyIos": "点底部工具栏的「更多」，打开顺路吃等功能。想再看这份指引，也从这里打开。",
       "practice": "现在把工具栏往上滑试试，展开后自动进入下一步。"
     },
-    "favorites": {
-      "title": "导航 / 收藏",
-      "body": "店卡上点「导航」直接出发；点爱心收藏，以后在「收藏」里找回。"
+    "journey": {
+      "title": "日记与收藏",
+      "body": "用「日记」快速创建或查看日记。店卡上点爱心收藏，可在自己的住民主页查看。"
     },
     "where": {
       "native": {
         "search": "底部工具栏右数第二个「搜索」；定位在右上方按钮组最下面",
         "more": "按住底部工具栏，往上滑",
-        "favorites": "底部工具栏最左边的「收藏」"
+        "journey": "底部工具栏最左边的「日记」"
       }
     }
   },

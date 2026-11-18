@@ -402,7 +402,7 @@ export function prefetchMarkerTiles(backendUrl) {
 // ---- 每个地图实例一份：按视野拼出要画的点 ----
 
 function sameFields(a, b) {
-    for (const field of ['name', 'longitude', 'latitude', 'category', 'per_person_cost', 'rating_count', 'rating_average', 'rating_negative_count']) {
+    for (const field of ['name', 'longitude', 'latitude', 'category', 'per_person_cost', 'rating_count', 'rating_average', 'rating_negative_count', 'checkin_count']) {
         if ((a?.[field] ?? null) !== (b?.[field] ?? null)) return false;
     }
     return true;

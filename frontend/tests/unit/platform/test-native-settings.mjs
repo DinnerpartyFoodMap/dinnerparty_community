@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { uploadAvatar } from '../../../src/settings/accountSettings.js';
 import { createNativeSettingsSession } from "../../../src/platform/nativeSettings.js";
 
 function harness(open) {
@@ -103,8 +104,8 @@ for (const response of [{ id: 'old', action: 'deleteAccount' }, { action: 'eval'
     });
     const started = session.start();
     while (!openedId) await new Promise(resolve => setTimeout(resolve, 1));
-    await emit({ id: openedId, type: 'saveMap', requestId: 'r1', values: { style: 'standard', lat: '23.1', lng: '113.3', zoom: '15', token: 'leak', extra: 1 } });
-    await emit({ id: openedId, type: 'saveMap', requestId: 'r2', values: { zoom: 'x' } });
+    await emit({ id: openedId, type: 'saveMap', requestId: 'r1', values: { style: 'standard', lat: '23.1', lng: '113.3', zoom: '15', companionRoaming: false, token: 'leak', extra: 1 } });
+    await emit({ id: openedId, type: 'saveMap', requestId: 'r2', values: { zoom: 'x', companionRoaming: 'false' } });
     await emit({ id: openedId, type: 'saveMap', values: {} });                      // 缺 requestId
     await emit({ id: openedId, type: 'motion', key: 'webMotion', value: false });
     await emit({ id: openedId, type: 'motion', key: 'clusterGlass', value: true });
@@ -112,7 +113,8 @@ for (const response of [{ id: 'old', action: 'deleteAccount' }, { action: 'eval'
     await emit({ id: openedId, type: 'motion', key: 'clusterMotion', value: 'yes' }); // 非布尔
     await emit({ id: openedId, type: 'eval', code: '1' });
     assert.deepEqual(events.map(e => e.type), ['saveMap', 'saveMap', 'motion', 'motion']);
-    assert.deepEqual(events[0].values, { style: 'standard', lat: '23.1', lng: '113.3', zoom: '15' }, '只保留四个表单字段');
+    assert.deepEqual(events[0].values, { style: 'standard', lat: '23.1', lng: '113.3', zoom: '15', companionRoaming: false }, '只保留地图表单字段');
+    assert.equal(Object.hasOwn(events[1].values, 'companionRoaming'), false, '不接受字符串形式的小伙伴开关');
     assert.deepEqual(events[2], { type: 'motion', key: 'webMotion', value: false });
     assert.deepEqual(events[3], { type: 'motion', key: 'clusterGlass', value: true });
     assert.deepEqual(responses, [
@@ -167,4 +169,21 @@ for (const response of [{ id: 'old', action: 'deleteAccount' }, { action: 'eval'
     finishOpen();
     await started;
 }
+{
+    const originalFetch = globalThis.fetch;
+    const options = { backendUrl: 'https://api.example.com/backend', token: 'token', blob: new Blob(['image']) };
+    try {
+        globalThis.fetch = async () => Response.json({ success: true, user: { id: 9, has_avatar: true } });
+        const legacy = await uploadAvatar(options);
+        assert.match(legacy.user.avatar_url, /^\/users\/9\/avatar\?t=\d+$/);
+
+        const avatarUrl = 'https://oss.example.com/avatars/9-new.webp';
+        globalThis.fetch = async () => Response.json({ success: true, user: { id: 9, has_avatar: true, avatar_url: avatarUrl } });
+        const uploaded = await uploadAvatar(options);
+        assert.equal(uploaded.user.avatar_url, avatarUrl);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+}
+
 console.log('native settings tests passed');

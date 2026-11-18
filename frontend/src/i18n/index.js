@@ -15,11 +15,12 @@ import feedback from './locales/zh-CN/feedback.json';
 import places from './locales/zh-CN/places.json';
 import profile from './locales/zh-CN/profile.json';
 import home from './locales/zh-CN/home.json';
+import companion from './locales/zh-CN/companion.json';
 
 export const DEFAULT_LANGUAGE = 'zh-CN';
 
 const RESOURCES = {
-    'zh-CN': { common, auth, map, journey, dinner, poster, settings, admin, platform, feedback, places, profile, home }
+    'zh-CN': { common, auth, map, journey, dinner, poster, settings, admin, platform, feedback, places, profile, home, companion }
 };
 
 export const SUPPORTED_LANGUAGES = Object.keys(RESOURCES);

@@ -48,19 +48,22 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(pickNativeProfileValues('saveWidgets', { widgets: [] }), null);
     assert.deepEqual(pickNativeProfileValues('setBlocked', { blocked: true }), { blocked: true });
     assert.equal(pickNativeProfileValues('setBlocked', { blocked: 'yes' }), null);
+    assert.deepEqual(pickNativeProfileValues('setCollectionVisibility', { isPublic: false }), { isPublic: false });
+    assert.equal(pickNativeProfileValues('setCollectionVisibility', { isPublic: 'false' }), null);
     assert.equal(pickNativeProfileValues('other', {}), null);
 }
 
 // 视图模型：六轴按固定顺序补齐、小组件行带评价文案、自己填的选项
 {
     assert.equal(profileSelfLevels().length, 4);
-    assert.equal(profileWidgetOptions().length, 3);
+    assert.deepEqual(profileWidgetOptions().map((option) => option.id), ['recent', 'favorite']);
 
     const profile = {
-        user: { id: 9, username: '幽幽子', has_avatar: true },
+        user: { id: 9, username: '幽幽子', has_avatar: true, avatar_url: 'https://oss.example.com/avatars/9-new.webp' },
         relation: { self: true, can_block: false, blocked: false },
         city: '上海',
-        widgets: ['recent', 'favorite', 'collection'],
+        widgets: ['collection', 'recent'],
+        collection_visibility: false,
         content: {
             recent: [{ id: 1, name: '小面馆', image: null, category: '小吃', rating_average: 3.8 }],
             favorite: [{ id: 2, name: '火锅店', image: 'https://cdn.example.com/a.jpg', own_score: 4 }],
@@ -80,10 +83,10 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     const view = buildProfileViewModel(profile, {
         currentUser: { id: 9 },
         tokenPresent: true,
-        avatarURL: 'https://api.example.com/users/9/avatar'
+        backendUrl: 'https://api.example.com/backend/'
     });
     assert.equal(view.name, '幽幽子');
-    assert.equal(view.avatarURL, 'https://api.example.com/users/9/avatar');
+    assert.equal(view.avatarURL, 'https://oss.example.com/avatars/9-new.webp');
     assert.ok(view.city.includes('上海'));
     assert.equal(view.self, true);
     assert.equal(view.canEditTaste, true);
@@ -98,13 +101,21 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(view.axes[2].value, null);
     assert.equal(view.axes[2].label.length > 0, true);
     assert.equal(view.axes[4].selfLevel, 3);
-    assert.equal(view.sections.length, 3);
-    assert.equal(view.sections[0].kind, 'recent');
-    assert.equal(view.sections[0].groups[0].rows[0].name, '小面馆');
+    assert.equal(view.sections.length, 2);
+    assert.equal(view.sections[0].kind, 'collection');
+    assert.equal(view.sections[1].kind, 'recent');
+    assert.equal(view.sections[0].groups[0].rows[0].name, '烧烤');
+    assert.equal(view.sections[1].groups[0].rows[0].name, '小面馆');
     assert.ok(view.sections[0].groups[0].rows[0].meta.length > 0);
     assert.ok(view.sections[1].groups[0].rows[0].meta.length > 0);
-    assert.ok(view.sections[2].groups[0].title.includes('夜宵'));
-    assert.equal(view.widgetSlotLabels.length, 3);
+    assert.equal(view.canOpenCommunity, true);
+    assert.equal(view.canOpenFavorites, true);
+    assert.equal(view.collectionVisibility, false);
+    assert.deepEqual(view.widgets, ['recent']);
+    assert.equal(view.widgetSlotLabels.length, 1);
+    const visitor = buildProfileViewModel({ ...profile, relation: {}, content: { ...profile.content, collection: [] } });
+    assert.deepEqual(visitor.sections.map((section) => section.kind), ['recent']);
+    assert.equal(visitor.collectionVisibility, null);
     assert.ok(view.labels.blockConfirm.includes('幽幽子'));
     assert.ok(view.labels.blockedNote.length > 0);
 }

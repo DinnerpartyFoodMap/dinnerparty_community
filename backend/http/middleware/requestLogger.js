@@ -63,7 +63,8 @@ function sanitizeUrl(rawUrl) {
         for (const key of parsed.searchParams.keys()) {
             if (SENSITIVE_QUERY_KEY.test(key)) parsed.searchParams.set(key, '[REDACTED]');
         }
-        return `${parsed.pathname}${parsed.search}`;
+        const pathname = parsed.pathname.replace(/^(\/api\/skins\/packs\/access\/)[^/]+(?=\/)/, '$1[REDACTED]');
+        return `${pathname}${parsed.search}`;
     } catch (error) {
         return String(rawUrl || '/').slice(0, 2000);
     }

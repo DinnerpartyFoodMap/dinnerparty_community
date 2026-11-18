@@ -1,5 +1,7 @@
 # 住民设置
 
+网页版与 iOS 原生「个性化地图」均可开关底栏小伙伴。`mapSettings.js` 保存 `companion_roaming`，缺省显示。大多数旧客户端没提交此字段时，保留账号当前值。角色选择及饱食度在 [角色观察屋](../../companion/doc/README.md) 管理。
+
 Settings.jsx 为主页和原生设置驱动入口；EditAvatar/Username/Password/Phone、PersonalizeMap、CustomThemes、MotionSettings 是页面；EditPhone（`/settings/phone`）绑定或换绑手机号：区号选择 + 短信验证码，只验证新号码，当前号码以 `/users/me` 的 `phone_masked` 为准。iOS 原生设置首页的“绑定手机号”行以 `phone` 白名单动作交回这一网页页面（同主题皮肤），行尾显示快照里的打码号码（`phone`，未知时不显示）；网页包没下发 `phoneTitle` 时原生不显示这一行。App 的 handleLoginSuccess 在同一住民的后续响应缺 `phone_masked` 时沿用已知值；accountSettings/mapSettings/themeOptions 共享网页与原生业务；useNativeSettings 建立桥接会话；media/cropImage 是裁图工具。
 
 iOS 原生设置首页的交互返回起点为左侧 80pt，网页设置页也上报普通内容档。原生二级页保留 `NavigationStack` 的系统跟手返回（系统决定边缘宽度）；进入二级页时停用整页返回，取消拖动保留编辑内容。两档协议和真机验收边界见 [平台文档](../../platform/doc/README.md#ios-返回手势热区2026-11-05)。

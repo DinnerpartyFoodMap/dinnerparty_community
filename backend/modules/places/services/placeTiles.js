@@ -26,7 +26,7 @@ const AGGREGATE_LEVELS = Object.freeze([
 const LEAF_LEVEL = Object.freeze({ tile: 12, minZoom: 13 });
 const LEAF_FIELDS = Object.freeze([
     'id', 'name', 'category', 'longitude', 'latitude', 'per_person_cost',
-    'province', 'city', 'district', 'rating_count', 'rating_average', 'rating_negative_count'
+    'province', 'city', 'district', 'rating_count', 'rating_average', 'rating_negative_count', 'checkin_count'
 ]);
 // 聚合行的图标类型：0 普通、1 避雷、2 待探索（与前端 map/markerContent.js 的 placeGlyphKind 对应）
 const GLYPH = Object.freeze({ place: 0, avoid: 1, unexplored: 2 });

@@ -5,6 +5,7 @@ const {classifyRatingEvidence}=require('./ratingSourcePolicy');
 const {createFeatures}=require('./bootstrapFeatures');
 const profiles=require('./modelProfiles');
 const {buildFullFeatures,covisitGraph}=require('./fullModelFeatures');
+const {checkInWeights,checkInMultiplier}=require('./checkInRatingWeights');
 const CONFIG=Object.freeze({config_version:'neutral-shadow-v1',source_policy_version:'retained-ratings-v2',estimator_config:{method:'equal_weight_shrinkage',m:3,config_hash:'neutral-shadow-m3-v1'}});
 const CALIBRATION_POLICY='local-negative-guard-v1';
 const {hasAvoidTag}=require('./ratingWarning');
@@ -20,11 +21,15 @@ async function configuration(){const model=await client.capabilities();if(!model
  return {config_version:model.model_id,source_policy_version:'retained-ratings-v2',estimator_config:{method:model.method,config_hash:model.model_hash},...(model.method==='research_full_nonchain'?{calibration_policy:CALIBRATION_POLICY}:{}),model,contract,featureOrders};}
 function qualified(ids,database=db._raw){
  const result=[];
+ const weights=checkInWeights(database);
  for(let offset=0;offset<ids.length;offset+=200){const batch=ids.slice(offset,offset+200),marks=batch.map(()=>'?').join(',');
   const rows=database.prepare(`SELECT r.*,u.is_banned FROM PlaceRating r JOIN User u ON u.id=r.user_id WHERE r.place_id IN (${marks})`).all(...batch);
   const revisions=database.prepare(`SELECT user_id,place_id,action,origin,revision,previous_revision FROM RatingRevision WHERE place_id IN (${marks}) ORDER BY revision`).all(...batch);
   const chains=new Map();for(const r of revisions){const key=JSON.stringify([r.place_id,r.user_id]);if(!chains.has(key))chains.set(key,[]);chains.get(key).push(r);}
-  for(const row of rows)if(classifyRatingEvidence(row,chains.get(JSON.stringify([row.place_id,row.user_id]))||[]).eligible)result.push({place_id:row.place_id,user_id:row.user_id,score:row.score,created_at:row.created_at,updated_at:row.updated_at});
+  for(const row of rows)if(classifyRatingEvidence(row,chains.get(JSON.stringify([row.place_id,row.user_id]))||[]).eligible){
+   const checkin_weight=checkInMultiplier(weights,row.place_id,row.user_id);
+   result.push({place_id:row.place_id,user_id:row.user_id,score:row.score,created_at:row.created_at,updated_at:row.updated_at,...(checkin_weight>1?{checkin_weight}:{})});
+  }
  }return result;
 }
 function features(viewerId,now=Date.now(),database=db._raw){const places=database.prepare("SELECT id,name,category,latitude,longitude FROM Place WHERE moderation_status='visible'").all(),ratings=qualified(places.map(p=>p.id),database);return createFeatures(places,ratings,viewerId,now);}
@@ -64,7 +69,7 @@ async function estimate(ids,ratings,context,config,active,viewerId=null,excludeV
  const full=config.model?.method==='research_full_nonchain',builder=full?fullFeatures(viewerId,context,config):null,qualities=full?await quality(context,config,excludeViewer):null;
  const rows=[];for(let offset=0;offset<ids.length;offset+=200){const batch=ids.slice(offset,offset+200),allowed=new Set(batch),bootstrap=['research_bootstrap','research_full_nonchain'].includes(config.estimator_config.method);
   const {model,contract,featureOrders,...wire}=config;
-  const r=await client.compute('ratingestimate',{...context,...wire,place_ids:batch,ratings:ratings.filter(r=>allowed.has(r.place_id)).map(({place_id,user_id,score})=>({place_id,user_id,score})),...(bootstrap?{place_features:await featureRows(batch,full?builder:null,{excludeViewer:excludeViewer!==null,scope:estimateScope(config)},qualities)}:{priors:batch.map(place_id=>({place_id,average:2.5,prior_version:'frozen-neutral-v1'}))})});
+  const r=await client.compute('ratingestimate',{...context,...wire,place_ids:batch,ratings:ratings.filter(r=>allowed.has(r.place_id)).map(({place_id,user_id,score,checkin_weight})=>({place_id,user_id,score,...(checkin_weight>1?{checkin_weight}:{})})),...(bootstrap?{place_features:await featureRows(batch,full?builder:null,{excludeViewer:excludeViewer!==null,scope:estimateScope(config)},qualities)}:{priors:batch.map(place_id=>({place_id,average:2.5,prior_version:'frozen-neutral-v1'}))})});
   rows.push(...r.estimates.map(row=>({...row,active,risk:row.risk?{...row.risk,active}:undefined})));}return rows;
 }
 async function ratingViews(placeIds,viewerId=null){
@@ -82,7 +87,10 @@ async function ratingViews(placeIds,viewerId=null){
    const history=ratings.filter(r=>r.user_id===viewerId&&(byId.get(r.place_id)?.average??byId.get(r.place_id)?.prior_average)!=null).map(r=>({place_id:r.place_id,score:r.score,baseline:byId.get(r.place_id).average??byId.get(r.place_id).prior_average}));
    const full=config.model?.method==='research_full_nonchain',builder=full?fullFeatures(viewerId,context,config):null;
    const publicById=new Map(estimates.map(row=>[row.place_id,row]));
-   for(let offset=0;offset<ids.length;offset+=200){const batch=ids.slice(offset,offset+200);const result=await client.compute('ratingpredict',{...context,config_version:config.config_version,...(configured?{model_hash:configured.model.model_hash,model_method:configured.model.method}:{}),...(full?{calibration_policy:config.calibration_policy,place_features:await featureRows(batch,builder,{excludeViewer:true,scope:estimateScope(config)})}:{}),estimates:batch.map(id=>{const base=byId.get(id),visible=publicById.get(id);return full?{...base,public_evidence:{count:visible.evidence_count,negative_count:visible.distribution[1]+visible.distribution[2],average:visible.average,avoid:builder.isAvoidPlace(id)}}:base;}),viewer_history:history,bias_strength:5});predictions.push(...result.predictions.map(r=>({...r,active:!!configured&&mode.prediction==='active'})));}
+   for(let offset=0;offset<ids.length;offset+=200){const batch=ids.slice(offset,offset+200);const result=await client.compute('ratingpredict',{...context,config_version:config.config_version,...(configured?{model_hash:configured.model.model_hash,model_method:configured.model.method}:{}),...(full?{calibration_policy:config.calibration_policy,place_features:await featureRows(batch,builder,{excludeViewer:true,scope:estimateScope(config)})}:{}),estimates:batch.map(id=>{const base=byId.get(id),visible=publicById.get(id);
+       const average=visible.average===null?null:Math.max(1,Math.min(4,visible.average-(visible.checkin_adjustment??0)+(base.checkin_adjustment??0)));
+       return full?{...base,public_evidence:{count:visible.evidence_count,negative_count:visible.distribution[1]+visible.distribution[2],average,avoid:builder.isAvoidPlace(id)}}:base;
+   }),viewer_history:history,bias_strength:5});predictions.push(...result.predictions.map(r=>({...r,active:!!configured&&mode.prediction==='active'})));}
   }
   if(snapshot.same(context.input_revision)&&configKey===JSON.stringify(modes()))return {input_revision:context.input_revision,model:configured?.model??null,estimates:mode.estimate!=='off'?estimates:[],predictions};
  }throw client.failure(409,'stale_input');

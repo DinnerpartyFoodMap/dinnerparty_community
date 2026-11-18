@@ -2,6 +2,8 @@
 
 地点列表（`PlaceListView.jsx`，`GET /places/list`）：店名、简介（Markdown，CSS 只显示前三行）、第一张图与评价，按综合评价（评价少时向均线收缩）排序，登录后再结合口味相近的人的评价。条目不带坐标、地址和距离，只链接 `/p/:id`，点开在地图上打开。地图上的列表模式（`map/MapListMode.jsx`）与可直接打开的 `/places` 页（`PlaceListPage.jsx`）共用它。
 
+“预计你会给”的分数数字在网页地点列表、地点卡和评价面板使用 `RatingPredictionValue` 加粗放大，保留现有的一位小数。iOS 原生地点卡通过可选的 `subtitleEmphasis` 字段强调同一个数值，字幕仍可按普通文本读取。
+
 筛选（`placeFilter.js` + `components/PlaceFilterPanel.jsx`，规则与后端 `placeList.js` 的 `matchesFilter` 一致）：标签三态，点一下变绿（`tags`，包含，多个绿色命中任一即可），再点变红（`excludeTags`，排除，命中任一就不显示），再点取消，即（绿 OR 绿）−（红 OR 红）；列表接口参数为 `tags` / `excludeTags`。人均用双滑块拉杆（`components/forms/RangeSlider.jsx`，0–200 元，拉到最右为不限），设了人均范围时没填人均的地点不显示。地图筛选与列表模式共用 MapView 里的同一份筛选，只由筛选面板设置；iOS 原生控件接管时筛选面板是协议 v14 的原生玻璃面板（`filterChromeSheet.js`：标签为 chips，人均为几档常用范围）。AI 搜索读出的筛选（后端 `discovery/services/searchFilter.js`，含排除标签）只在后端套用到 AI 推荐的候选上，前端在推荐上方用一句话说明（`describePlaceFilter`），不改地图筛选。常用标签由 `backend/seeds/categories.json` 的 `is_common` 决定（启动时同步到 Category 表）。分类目录由 `categoryDirectory.js` 整页只读一次。
 
 地区筛选（2026-11-11）：筛选面板有省 / 市 / 区三级联动下拉（`placeRegions.js` 整页只读一次 `GET /places/regions`，失败后下次再请求；筛选值 `province` / `city` / `district` 在 `placeFilter.js` 里规整，下层要有上层），选中后 MapView 把地图移到该地区的范围（`regionBounds`），列表接口带同名参数。iOS 原生筛选面板用协议 v16 的 `menu` 分组画成下拉菜单（`filterChromeSheet.js`）。地图上点开地点时，交互反馈附带 `placeFilterSnapshot(filter)`（规整后的筛选，没有生效的条件时为 null），后端 `community.js` 的 `mapClickFilter` 按同样规则校验。

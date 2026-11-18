@@ -11,7 +11,7 @@ import { copyText } from '../platform/share';
 import { t } from '../i18n/index.js';
 import StateMessage from '../components/feedback/StateMessage';
 
-const EMPTY_FORM = { skin_id: '', count: '10', max_uses: '1', expires_days: '', note: '' };
+const EMPTY_FORM = { target: '', count: '10', max_uses: '1', expires_days: '', note: '' };
 const STATUS_LABELS = {
     active: t('admin:skinCodes.status.active'),
     exhausted: t('admin:skinCodes.status.exhausted'),
@@ -25,6 +25,7 @@ export default function AdminSkinCodes({ backendUrl }) {
     const showTip = useTips();
     const confirm = useConfirm();
     const [catalog, setCatalog] = useState([]);
+    const [companions, setCompanions] = useState([]);
     const [codes, setCodes] = useState([]);
     const [form, setForm] = useState(EMPTY_FORM);
     const [created, setCreated] = useState([]);
@@ -54,8 +55,10 @@ export default function AdminSkinCodes({ backendUrl }) {
         request('/admin/skin-codes', { signal: controller.signal }).then((data) => {
             if (controller.signal.aborted) return;
             setCatalog(data.catalog || []);
+            setCompanions(data.companions || []);
             setCodes(data.codes || []);
-            setForm((prev) => (prev.skin_id || !data.catalog?.length ? prev : { ...prev, skin_id: data.catalog[0].id }));
+            const first = data.catalog?.[0] ? `skin:${data.catalog[0].id}` : data.companions?.[0] ? `companion:${data.companions[0].id}` : '';
+            setForm((prev) => prev.target ? prev : { ...prev, target: first });
         }).catch((e) => {
             if (!controller.signal.aborted) setLoadError(e.message);
         }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -63,18 +66,19 @@ export default function AdminSkinCodes({ backendUrl }) {
     }, [backendUrl, token, reload]);
 
     const change = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
-    const skinLabel = (skin) => (getSkin(skin.id) ? skin.name : t('admin:skinCodes.notInBuild', { name: skin.name }));
+    const skinLabel = (skin) => (skin.remote || getSkin(skin.id) ? skin.name : t('admin:skinCodes.notInBuild', { name: skin.name }));
 
     async function generate(event) {
         event.preventDefault();
-        if (busy || !form.skin_id) return;
+        if (busy || !form.target) return;
+        const [type, id] = form.target.split(':');
         setBusy(true);
         setError('');
         try {
             const data = await request('/admin/skin-codes', {
                 method: 'POST',
                 body: JSON.stringify({
-                    skin_id: form.skin_id,
+                    [type === 'companion' ? 'companion_id' : 'skin_id']: id,
                     count: Number(form.count),
                     max_uses: Number(form.max_uses),
                     expires_days: form.expires_days.trim() ? Number(form.expires_days) : null,
@@ -112,7 +116,8 @@ export default function AdminSkinCodes({ backendUrl }) {
         }
     }
 
-    const disabled = loading || busy || !!loadError || !catalog.length;
+    const empty = !catalog.length && !companions.length;
+    const disabled = loading || busy || !!loadError || empty;
     const cell = { textAlign: 'left', padding: 8 };
 
     return <section aria-labelledby="skin-codes-title">
@@ -124,14 +129,19 @@ export default function AdminSkinCodes({ backendUrl }) {
             <StateMessage kind="error" onRetry={() => setReload((value) => value + 1)} retryLabel={t('admin:skinCodes.retry')}>
                 {t('admin:skinCodes.loadFailed', { message: loadError })}
             </StateMessage>
-        ) : !catalog.length ? (
+        ) : empty ? (
             <StateMessage>{t('admin:skinCodes.emptyCatalog')}</StateMessage>
         ) : (
             <form onSubmit={generate} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, alignItems: 'end' }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                    <span>{t('admin:skinCodes.skin')}</span>
-                    <SelectInput value={form.skin_id} onChange={change('skin_id')} disabled={disabled} style={{ width: '100%' }}>
-                        {catalog.map((skin) => <option key={skin.id} value={skin.id}>{skinLabel(skin)}</option>)}
+                    <span>{t('companion:redeemTarget')}</span>
+                    <SelectInput value={form.target} onChange={change('target')} disabled={disabled} style={{ width: '100%' }}>
+                        {!!catalog.length && <optgroup label={t('admin:skinCodes.skin')}>
+                            {catalog.map((skin) => <option key={skin.id} value={`skin:${skin.id}`}>{skinLabel(skin)}</option>)}
+                        </optgroup>}
+                        {!!companions.length && <optgroup label={t('companion:role')}>
+                            {companions.map((role) => <option key={role.id} value={`companion:${role.id}`}>{role.name}</option>)}
+                        </optgroup>}
                     </SelectInput>
                 </label>
                 <label style={{ display: 'grid', gap: 6 }}>
@@ -179,7 +189,7 @@ export default function AdminSkinCodes({ backendUrl }) {
                         <thead>
                             <tr>
                                 <th style={cell}>{t('admin:skinCodes.column.code')}</th>
-                                <th style={cell}>{t('admin:skinCodes.column.skin')}</th>
+                                <th style={cell}>{t('companion:redeemTarget')}</th>
                                 <th style={cell}>{t('admin:skinCodes.column.uses')}</th>
                                 <th style={cell}>{t('admin:skinCodes.column.expires')}</th>
                                 <th style={cell}>{t('admin:skinCodes.column.status')}</th>
@@ -191,7 +201,7 @@ export default function AdminSkinCodes({ backendUrl }) {
                             {codes.map((item, index) => (
                                 <tr key={item.id} style={{ background: index % 2 === 0 ? 'var(--color-bg-overlay)' : undefined }}>
                                     <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', whiteSpace: 'nowrap' }}>{item.code}</td>
-                                    <td>{item.skin_name}</td>
+                                    <td>{item.companion_name || item.skin_name}</td>
                                     <td>{t('admin:skinCodes.usage', { used: item.current_uses, max: item.max_uses })}</td>
                                     <td>{item.expires_time ? new Date(item.expires_time).toLocaleString() : t('admin:skinCodes.never')}</td>
                                     <td style={{ color: item.status === 'active' ? 'var(--color-success)' : 'var(--color-text-secondary)' }}>{STATUS_LABELS[item.status] || item.status}</td>

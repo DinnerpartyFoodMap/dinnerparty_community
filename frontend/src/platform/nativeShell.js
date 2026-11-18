@@ -8,7 +8,7 @@ import { initLifecycle } from './lifecycle.js';
 import { getRuntimeConfig } from './runtimeConfig.js';
 import { startGlassRefraction } from './glassRefraction.js';
 import { createIosBackGesture, iosBackGestureRegion } from './iosBackGesture.js';
-import { subscribeOverlays } from '../components/overlay/overlayStack.js';
+import { getOverlayEntries, subscribeOverlays } from '../components/overlay/overlayStack.js';
 
 function setKeyboardInset(height) {
     const root = document.documentElement;
@@ -39,14 +39,22 @@ export function toInAppPath(rawUrl, base = getRuntimeConfig().publicWebBaseUrl) 
 }
 
 // iOS 左边缘返回：新壳派发进度事件，拖动/取消保持真实页面与输入；完成后走 dispatchBack。
-// 旧壳继续派发 foodmap:edge-back。只在有东西可返回时让原生接管左边缘，
-// 根页面不拦截，地图从左边缘开始的拖动不受影响。
+// 旧壳继续派发 foodmap:edge-back。裸地图将左边缘交给地图拖动，只有上方的浮层可以接管。
 export function setupIosEdgeBack() {
     const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.foodMapEdgeBack;
     if (!handler) return;
     let last = null;
+    const getState = () => {
+        const path = getCurrentPath();
+        const overlays = getOverlayEntries();
+        return {
+            enabled: hasBackTarget() && (path !== '/' || overlays.some(entry => entry.consumeBack !== false)),
+            interactive: true,
+            region: iosBackGestureRegion(path, overlays)
+        };
+    };
     const report = () => {
-        const state = { enabled: hasBackTarget(), interactive: true, region: iosBackGestureRegion(getCurrentPath()) };
+        const state = getState();
         const key = JSON.stringify(state);
         if (key === last) return;
         last = key;
@@ -56,11 +64,12 @@ export function setupIosEdgeBack() {
     // 选点器 → 表单/确认框时 enabled 可能不变，仍要同步热区档位。
     const unsubscribeOverlays = subscribeOverlays(report);
     report();
-    const legacyBack = () => { dispatchBack(); };
+    const legacyBack = () => { if (getState().enabled) dispatchBack(); };
     window.addEventListener('foodmap:edge-back', legacyBack);
     const gesture = createIosBackGesture();
     const progress = event => {
-        Promise.resolve(gesture.handle(event.detail)).catch(error => console.warn('侧滑返回失败', error));
+        const detail = getState().enabled ? event.detail : { phase: 'cancel', progress: 0 };
+        Promise.resolve(gesture.handle(detail)).catch(error => console.warn('侧滑返回失败', error));
     };
     window.addEventListener('foodmap:edge-back-progress', progress);
     return () => {
@@ -105,7 +114,6 @@ export async function initPlatform() {
     initNavigationState();
     initLifecycle();
     if (typeof document !== 'undefined') {
-        document.documentElement.dataset.platform = getPlatform();
         // 安卓 WebView（Chromium）支持 backdrop-filter 里的 SVG 滤镜：玻璃边缘真正折射背后的地图
         if (getPlatform() === 'android') startGlassRefraction();
         setKeyboardInset(0);

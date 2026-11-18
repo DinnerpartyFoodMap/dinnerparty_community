@@ -11,6 +11,7 @@ import { saveUsername, savePassword, uploadAvatar, patchMapSettings } from './ac
 import { readThemeForm, styleOptionsFor, notifyMapStyleChange } from './themeOptions';
 import { MOTION_ITEMS, describeNativeChrome, visibleMotionItems } from './MotionSettings';
 import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { t } from '../i18n/index.js';
 
 // “个性化地图”原生页：初值、动效开关与全部文案都由网页提供（文案走 i18n），原生只负责展示与输入
@@ -27,6 +28,7 @@ function buildMapPage(user) {
             centerLat: t('settings:personalizeMap.centerLat'),
             centerLng: t('settings:personalizeMap.centerLng'),
             zoom: t('settings:personalizeMap.zoom'),
+            companionRoaming: t('companion:roaming'),
             save: t('common:action.save'),
             saving: t('settings:common.status.saving'),
             motionTitle: t('settings:motion.title'),
@@ -123,11 +125,7 @@ export default function useNativeSettings({ user, backendUrl, token, onUpdateUse
         if (!supported || !present) return undefined;
         let cancelled = false, session;
         // 没有上传头像时用服务器的默认头像（与网页 img/default.png 相同；原生页只加载 https 图片）
-        const avatarURLOf = (u, bust) => {
-            if (!u?.id) return undefined;
-            if (!u.has_avatar) return `${backendUrl}/users/${encodeURIComponent(u.id)}/avatar?fallback=default`;
-            return `${backendUrl}/users/${encodeURIComponent(u.id)}/avatar${bust ? `?t=${Date.now()}` : ''}`;
-        };
+        const avatarURLOf = (u) => resolveAvatarUrl(u, backendUrl, { serverFallback: true });
 
         // 原生子页面的请求：账号请求留在网页层，成功后更新应用状态并回传原生需要刷新的字段
         const handleEvent = async (event) => {
@@ -160,7 +158,7 @@ export default function useNativeSettings({ user, backendUrl, token, onUpdateUse
                 case 'uploadAvatar': {
                     const result = await uploadAvatar({ backendUrl, token: currentToken, blob: base64ToBlob(values.image, 'image/jpeg') });
                     if (result.ok) commit(result.user);
-                    return { ...result, state: result.ok ? { avatarURL: avatarURLOf(result.user, true) } : undefined };
+                    return { ...result, state: result.ok ? { avatarURL: avatarURLOf(result.user) } : undefined };
                 }
                 case 'setDarkMode': {
                     // 与网页主题页一致：先立即切换，再保存
@@ -201,7 +199,7 @@ export default function useNativeSettings({ user, backendUrl, token, onUpdateUse
                 username: current?.username || '', dark: latest.current.dark,
                 // 绑定的手机号（打码）；还不知道时不下发，原生行只显示标题
                 ...(current && current.phone_masked !== undefined ? { phone: current.phone_masked || '' } : {}),
-                avatarURL: avatarURLOf(current, false),
+                avatarURL: avatarURLOf(current),
                 mapPage: buildMapPage(current),
                 themes: buildThemes(current),
                 links: buildLinks(),

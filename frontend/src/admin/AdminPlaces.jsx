@@ -315,6 +315,8 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                                                         <>
                                                             {request.moderation && <div style={{ marginBottom: 8 }}>{renderModerationReasons(request)}</div>}
                                                             <JsonTable value={request.proposed} />
+                                                            {request.photo_previews?.map((url, index) => <img key={url} src={base + url}
+                                                                alt={t('map:checkIn.photos', { count: index + 1 })} loading="lazy" style={{ maxWidth: 160 }} />)}
                                                             {request.note && <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{tx('admin:places.requestNote', { note: request.note })}</div>}
                                                         </>
                                                     )}
@@ -358,6 +360,8 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                                                             <>
                                                                 {r.moderation && <div style={{ marginBottom: 6 }}>{renderModerationReasons(r)}</div>}
                                                                 <JsonTable value={r.proposed} />
+                                                                {r.photo_previews?.map((url, index) => <img key={url} src={base + url}
+                                                                    alt={t('map:checkIn.photos', { count: index + 1 })} loading="lazy" style={{ maxWidth: 160 }} />)}
                                                                 {r.note ? <div style={{ color: 'var(--color-text-secondary)', marginTop: 6 }}>{tx('admin:places.note', { note: r.note })}</div> : null}
                                                             </>
                                                         )}

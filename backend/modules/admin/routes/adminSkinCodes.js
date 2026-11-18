@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const requireAdmin = require('../middleware/adminAuth');
+const { listPacks } = require('../../skins/services/resourcePacks');
 const skins = require('../../skins/services/skinService');
 
 // 兑换码独立授权，仅 YUYUKO 可管理；QQ 白名单和 Bot 仍用 manage_invites。
@@ -13,7 +14,8 @@ function sendError(res, error, fallback) {
 
 router.get('/', (req, res) => {
     try {
-        return res.json({ catalog: skins.listCatalog(), codes: skins.listCodes({ skinId: req.query.skin_id || null }) });
+        const companions = listPacks('companion').map(({ id, name }) => ({ id, name }));
+        return res.json({ catalog: skins.listCatalog(), companions, codes: skins.listCodes({ skinId: req.query.skin_id || null }) });
     } catch (error) {
         return sendError(res, error, '读取兑换码失败');
     }

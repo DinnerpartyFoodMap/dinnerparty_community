@@ -10,7 +10,6 @@
     --home-text: var(--color-text-primary);
     --home-muted: var(--color-text-secondary);
     --home-primary: var(--theme-primary);
-    --home-on-primary: var(--theme-on-primary);
     --home-soft: color-mix(in srgb, var(--theme-primary) 8%, var(--color-bg-surface));
 }
 
@@ -119,7 +118,7 @@ body {
 .home__button--primary {
     background: var(--home-primary);
     border-color: var(--home-primary);
-    color: var(--home-on-primary);
+    color: white;
 }
 
 .home__button--disabled {

@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { db } = require('../../../infrastructure/database');
 const { insertAdminAction } = require('../../admin/services/adminAudit');
+const { listPacks, findPack } = require('./resourcePacks');
+const { DEFAULT_COMPANION_ID, getCompanionState, setActiveCompanion } = require('./companionState');
 
 // 可兑换的皮肤登记在 catalog.json；前端 src/skins/packs/<id>/skin.json 是同一套皮肤的素材（npm run test:skins 核对两边一致）。
 // 默认样式 'default' 人人可用，不登记、不发兑换码。
@@ -47,11 +49,13 @@ const readCatalog = () => parseCatalog(JSON.parse(fs.readFileSync(CATALOG_FILE, 
 let catalog = readCatalog();
 
 function listCatalog() {
-    return catalog.slice();
+    const items = new Map(catalog.map((skin) => [skin.id, skin]));
+    for (const { id, name } of listPacks('skin')) items.set(id, { id, name, remote: true });
+    return [...items.values()];
 }
 
 function findSkin(id) {
-    return catalog.find((skin) => skin.id === id) || null;
+    return listCatalog().find((skin) => skin.id === id) || null;
 }
 
 /** 测试用：替换皮肤目录（传入 null 恢复 catalog.json） */
@@ -85,14 +89,41 @@ function codeStatus(row, now = new Date()) {
 // ---- 住民 ----
 
 function getSkinState(userId) {
+    const skins = new Map(listCatalog().map((skin) => [skin.id, skin]));
     const rows = db._raw.prepare('SELECT skin_id, unlocked_time FROM UserSkin WHERE user_id = ? ORDER BY unlocked_time, skin_id').all(userId);
     const owned = rows
-        .map((row) => ({ skin: findSkin(row.skin_id), unlocked_time: row.unlocked_time }))
+        .map((row) => ({ skin: skins.get(row.skin_id), unlocked_time: row.unlocked_time }))
         .filter((item) => item.skin)
-        .map((item) => ({ id: item.skin.id, name: item.skin.name, unlocked_time: item.unlocked_time }));
+        .map((item) => ({ ...item.skin, unlocked_time: item.unlocked_time }));
     const user = db._raw.prepare('SELECT active_skin FROM User WHERE id = ?').get(userId);
     const active = user && user.active_skin && owned.some((item) => item.id === user.active_skin) ? user.active_skin : DEFAULT_SKIN_ID;
     return { active, owned };
+}
+
+const ENTITLEMENTS = new Map([
+    ['skin', { table: 'UserSkin', column: 'skin_id', lookup: findSkin }],
+    ['companion', { table: 'UserCompanion', column: 'companion_id', lookup: (id) => findPack('companion', id) }]
+]);
+
+function ownsResource(userId, type, id) {
+    const target = ENTITLEMENTS.get(type);
+    return !!target && !!db._raw.prepare(`SELECT 1 FROM ${target.table} WHERE user_id = ? AND ${target.column} = ?`).get(userId, id);
+}
+
+function getUserCompanions(userId) {
+    const packs = new Map(listPacks('companion').map((pack) => [pack.id, pack]));
+    const owned = db._raw.prepare('SELECT companion_id, unlocked_time FROM UserCompanion WHERE user_id = ? ORDER BY unlocked_time, companion_id').all(userId)
+        .filter((row) => packs.has(row.companion_id)).map((row) => ({ id: row.companion_id,
+            name: packs.get(row.companion_id).name, unlocked_time: row.unlocked_time }));
+    return { ...getCompanionState(userId), owned };
+}
+
+function selectCompanion(userId, id) {
+    if (id !== DEFAULT_COMPANION_ID && (!findPack('companion', id) || !ownsResource(userId, 'companion', id))) {
+        throw new SkinError(403, 'not_owned', '还没有解锁这个角色');
+    }
+    setActiveCompanion(userId, id);
+    return getUserCompanions(userId);
 }
 
 const failures = new Map();
@@ -122,41 +153,41 @@ function resetFailuresForTesting() {
     failures.clear();
 }
 
-const redeemTransaction = db._raw.transaction(({ userId, code, activate, now }) => {
-    const row = db._raw.prepare(`SELECT id, skin_id, max_uses, current_uses, expires_time, revoked
-        FROM InviteCode WHERE code = ? AND skin_id IS NOT NULL`).get(code);
+const redeemTransaction = db._raw.transaction(({ userId, code, activate, now, allowCompanion }) => {
+    const row = db._raw.prepare(`SELECT id, skin_id, companion_id, max_uses, current_uses, expires_time, revoked
+        FROM InviteCode WHERE code = ? AND (skin_id IS NOT NULL OR (? AND companion_id IS NOT NULL))`).get(code, Number(allowCompanion));
     if (!row) throw new SkinError(404, 'not_found', '兑换码不存在，请检查后重新输入');
-    const skin = findSkin(row.skin_id);
+    const type = row.companion_id ? 'companion' : 'skin';
+    const target = ENTITLEMENTS.get(type);
+    const resource = target.lookup(row.companion_id || row.skin_id);
     const status = codeStatus(row, now);
     if (status === 'revoked') throw new SkinError(410, 'revoked', '这个兑换码已作废');
     if (status === 'expired') throw new SkinError(410, 'expired', '这个兑换码已过期');
-    if (!skin) throw new SkinError(410, 'unavailable', '这套皮肤已下架，暂时无法兑换');
-    const owned = db._raw.prepare('SELECT 1 FROM UserSkin WHERE user_id = ? AND skin_id = ?').get(userId, skin.id);
-    if (owned) {
-        // 已经拥有：不消耗兑换码的次数
-        if (activate) db._raw.prepare('UPDATE User SET active_skin = ? WHERE id = ?').run(skin.id, userId);
-        return { skin, alreadyOwned: true, codeId: row.id };
+    if (!resource) throw new SkinError(410, 'unavailable', '这个资源已下架，暂时无法兑换');
+    const alreadyOwned = ownsResource(userId, type, resource.id);
+    if (!alreadyOwned) {
+        if (status === 'exhausted') throw new SkinError(410, 'exhausted', '这个兑换码的次数已经用完');
+        const consumed = db._raw.prepare('UPDATE InviteCode SET current_uses = current_uses + 1 WHERE id = ? AND current_uses < max_uses').run(row.id);
+        if (consumed.changes !== 1) throw new SkinError(410, 'exhausted', '这个兑换码的次数已经用完');
+        db._raw.prepare(`INSERT INTO ${target.table} (user_id, ${target.column}, invite_code_id, unlocked_time) VALUES (?, ?, ?, ?)`)
+            .run(userId, resource.id, row.id, now.toISOString());
     }
-    if (status === 'exhausted') throw new SkinError(410, 'exhausted', '这个兑换码的次数已经用完');
-    const consumed = db._raw.prepare('UPDATE InviteCode SET current_uses = current_uses + 1 WHERE id = ? AND current_uses < max_uses').run(row.id);
-    if (consumed.changes !== 1) throw new SkinError(410, 'exhausted', '这个兑换码的次数已经用完');
-    db._raw.prepare('INSERT INTO UserSkin (user_id, skin_id, invite_code_id, unlocked_time) VALUES (?, ?, ?, ?)')
-        .run(userId, skin.id, row.id, now.toISOString());
-    if (activate) db._raw.prepare('UPDATE User SET active_skin = ? WHERE id = ?').run(skin.id, userId);
-    return { skin, alreadyOwned: false, codeId: row.id };
+    if (activate && type === 'skin') db._raw.prepare('UPDATE User SET active_skin = ? WHERE id = ?').run(resource.id, userId);
+    const unlocked = { id: resource.id, name: resource.name };
+    return { type, unlocked, skin: type === 'skin' ? unlocked : null, alreadyOwned, codeId: row.id };
 });
 
 /**
  * 兑换：成功解锁（并默认立即使用）；已经拥有时不消耗次数。
  * @returns {{ skin: {id, name}, alreadyOwned: boolean, codeId: number, state: object }}
  */
-function redeemCode(userId, input, { activate = true, now = new Date() } = {}) {
+function redeemCode(userId, input, { activate = true, allowCompanion = false, now = new Date() } = {}) {
     assertRedeemAllowed(userId, now.getTime());
     const code = normalizeCode(input);
     try {
         if (!code) throw new SkinError(400, 'invalid_format', '兑换码格式不正确');
-        const result = redeemTransaction.immediate({ userId, code, activate: !!activate, now });
-        return { ...result, state: getSkinState(userId) };
+        const result = redeemTransaction.immediate({ userId, code, activate: !!activate, allowCompanion, now });
+        return { ...result, state: result.type === 'skin' ? getSkinState(userId) : getUserCompanions(userId) };
     } catch (error) {
         if (error instanceof SkinError) recordFailure(userId, now.getTime());
         throw error;
@@ -184,8 +215,11 @@ function integerInRange(value, min, max) {
 }
 
 function parseCreateRequest(body = {}) {
-    const skinId = String(body.skin_id || '');
-    if (!findSkin(skinId)) throw new SkinError(400, 'unknown_skin', '请选择已登记的皮肤');
+    const skinId = String(body.skin_id || '') || null;
+    const companionId = String(body.companion_id || '') || null;
+    if (skinId && companionId) throw new SkinError(400, 'invalid_resource', '每个兑换码请选择一个角色或皮肤');
+    if (companionId && !findPack('companion', companionId)) throw new SkinError(400, 'unknown_companion', '请选择已登记的角色');
+    if (!companionId && !findSkin(skinId)) throw new SkinError(400, 'unknown_skin', '请选择已登记的皮肤');
     const count = integerInRange(body.count == null ? 1 : body.count, 1, MAX_BATCH);
     if (count === null) throw new SkinError(400, 'invalid_count', `每次生成 1 到 ${MAX_BATCH} 个兑换码`);
     const maxUses = integerInRange(body.max_uses == null ? 1 : body.max_uses, 1, MAX_USES);
@@ -195,22 +229,22 @@ function parseCreateRequest(body = {}) {
     if (!blank && expiresDays === null) throw new SkinError(400, 'invalid_expiry', `有效期为 1 到 ${MAX_EXPIRES_DAYS} 天，或留空表示长期有效`);
     const note = typeof body.note === 'string' ? body.note.trim() : '';
     if (note.length > MAX_NOTE_LENGTH) throw new SkinError(400, 'invalid_note', `备注最多 ${MAX_NOTE_LENGTH} 字`);
-    return { skinId, count, maxUses, expiresDays, note };
+    return { skinId, companionId, count, maxUses, expiresDays, note };
 }
 
-const createTransaction = db._raw.transaction(({ adminId, skinId, count, maxUses, expiresTime, note }) => {
+const createTransaction = db._raw.transaction(({ adminId, skinId, companionId, count, maxUses, expiresTime, note }) => {
     const exists = db._raw.prepare('SELECT 1 FROM InviteCode WHERE code = ?');
-    const insert = db._raw.prepare(`INSERT INTO InviteCode (code, max_uses, current_uses, skin_id, note, created_by, expires_time)
-        VALUES (?, ?, 0, ?, ?, ?, ?)`);
+    const insert = db._raw.prepare(`INSERT INTO InviteCode (code, max_uses, current_uses, skin_id, companion_id, note, created_by, expires_time)
+        VALUES (?, ?, 0, ?, ?, ?, ?, ?)`);
     const created = [];
     while (created.length < count) {
         const code = generateCode();
         // 与旧邀请码也不重复，避免同一串码对应两种含义
         if (exists.get(code)) continue;
-        const result = insert.run(code, maxUses, skinId, note || null, adminId, expiresTime);
+        const result = insert.run(code, maxUses, skinId, companionId, note || null, adminId, expiresTime);
         created.push(Number(result.lastInsertRowid));
     }
-    insertAdminAction(adminId, 'create-skin-codes', null, JSON.stringify({ skin_id: skinId, count, max_uses: maxUses, expires_time: expiresTime }));
+    insertAdminAction(adminId, 'create-skin-codes', null, JSON.stringify({ skin_id: skinId, companion_id: companionId, count, max_uses: maxUses, expires_time: expiresTime }));
     return created;
 });
 
@@ -221,13 +255,14 @@ function createCodes(adminId, body, { now = new Date() } = {}) {
     return listCodes({ ids, now });
 }
 
-function toCodeView(row, now) {
-    const skin = findSkin(row.skin_id);
+function toCodeView(row, now, names) {
     return {
         id: row.id,
         code: formatCode(row.code),
         skin_id: row.skin_id,
-        skin_name: skin ? skin.name : row.skin_id,
+        skin_name: names.skin.get(row.skin_id) || row.skin_id,
+        companion_id: row.companion_id,
+        companion_name: names.companion.get(row.companion_id) || row.companion_id,
         max_uses: row.max_uses,
         current_uses: row.current_uses,
         expires_time: row.expires_time || null,
@@ -239,7 +274,7 @@ function toCodeView(row, now) {
 }
 
 function listCodes({ skinId = null, ids = null, limit = 200, now = new Date() } = {}) {
-    const where = ['c.skin_id IS NOT NULL'];
+    const where = ['(c.skin_id IS NOT NULL OR c.companion_id IS NOT NULL)'];
     const params = [];
     if (skinId) {
         where.push('c.skin_id = ?');
@@ -250,19 +285,21 @@ function listCodes({ skinId = null, ids = null, limit = 200, now = new Date() } 
         where.push(`c.id IN (${ids.map(() => '?').join(', ')})`);
         params.push(...ids);
     }
-    const rows = db._raw.prepare(`SELECT c.id, c.code, c.skin_id, c.max_uses, c.current_uses, c.expires_time, c.revoked, c.note,
+    const rows = db._raw.prepare(`SELECT c.id, c.code, c.skin_id, c.companion_id, c.max_uses, c.current_uses, c.expires_time, c.revoked, c.note,
             c.created_by, u.username AS created_by_name, c.created_time
         FROM InviteCode c LEFT JOIN User u ON u.id = c.created_by
         WHERE ${where.join(' AND ')} ORDER BY c.id DESC LIMIT ?`).all(...params, Math.max(1, Math.min(1000, Number(limit) || 200)));
-    return rows.map((row) => toCodeView(row, now));
+    const names = { skin: new Map(listCatalog().map(({ id, name }) => [id, name])),
+        companion: new Map(listPacks('companion').map(({ id, name }) => [id, name])) };
+    return rows.map((row) => toCodeView(row, now, names));
 }
 
 const revokeTransaction = db._raw.transaction(({ adminId, id }) => {
-    const row = db._raw.prepare('SELECT id, skin_id, revoked FROM InviteCode WHERE id = ? AND skin_id IS NOT NULL').get(id);
+    const row = db._raw.prepare('SELECT id, skin_id, companion_id, revoked FROM InviteCode WHERE id = ? AND (skin_id IS NOT NULL OR companion_id IS NOT NULL)').get(id);
     if (!row) return false;
     if (!row.revoked) {
         db._raw.prepare('UPDATE InviteCode SET revoked = 1 WHERE id = ?').run(id);
-        insertAdminAction(adminId, 'revoke-skin-code', null, JSON.stringify({ code_id: id, skin_id: row.skin_id }));
+        insertAdminAction(adminId, 'revoke-skin-code', null, JSON.stringify({ code_id: id, skin_id: row.skin_id, companion_id: row.companion_id }));
     }
     return true;
 });
@@ -282,6 +319,9 @@ module.exports = {
     normalizeCode,
     formatCode,
     getSkinState,
+    ownsResource,
+    getUserCompanions,
+    selectCompanion,
     redeemCode,
     setActiveSkin,
     createCodes,

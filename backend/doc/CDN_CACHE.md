@@ -32,7 +32,7 @@ z12 明细瓦片（`/places/tiles/<哈希>/12/<x>/<y>`）不在其中：回 `pri
 - `GET /places/markers`（`modules/places/services/placeMarkers.js`）：全部公开地点的精简字段，按列存（`fields` + `rows`），约 3700 个地点时原始约 290 KB、br 约 120 KB。进程内缓存 15 秒（`MARKER_SNAPSHOT_TTL_MS`），预先压缩好 br / gzip，带弱 ETag，内容不变时回 304。
 - `GET /places/overlay`（`no-store`，要登录）：自己审核中 / 未通过的地点（完整行）和屏蔽的住民创建的公开地点 id。
 - 前端（`frontend/src/map/markerSnapshot.js`）启动时与高德 SDK 并行读取快照，上一份存在 IndexedDB 先用；平移缩放不再发请求，快照超过 5 分钟才在地图移动时后台刷新。打开卡片时读 `GET /places/:id` 补全描述、图片、创建者。新增、修改、删除、评价在本地立即生效，直到快照追上（最多 10 分钟）。
-- `GET /places/nearby` 保持原样，给旧版 App 用；新版前端不再调用。
+- v2.2.4 的 `GET /places/nearby` 返回所查范围内的所有可见地点及详情。按观看者返回，使用 `no-store`，并受 `legacy` 请求频次限制。
 
 ## 源站 Caddy
 
@@ -42,7 +42,7 @@ Caddy 不能覆盖后端的 `Cache-Control`。`/backend` 那段原来写的是 `
 @backend path /backend /backend/*
 handle @backend {
 	uri strip_prefix /backend
-	# 后端自己设了 Cache-Control 的照用（公共缓存接口、头像、上传图片等），没设的仍是 no-store
+	# 后端自己设了 Cache-Control 的照用（公共缓存接口、上传图片等），没设的仍是 no-store
 	header ?Cache-Control "no-store"
 	reverse_proxy localhost:7000 {
 		header_up X-Forwarded-Prefix /backend
@@ -67,7 +67,7 @@ reverse_proxy localhost:7000 {
 
 nginx（apex）那条：`proxy_set_header X-Forwarded-For $remote_addr;`（覆盖，不追加）。改好后在后端 `.env` 设 `TRUST_PROXY=loopback`，用 `npm run logs -- --since 1h` 确认 `ip` 是真实客户端地址。
 
-后端自己设了公共缓存的还有头像、上传的图片（`/uploads`，一年 immutable）、静态地图、逆地理结果、饭局分享图，都是公开内容；其他接口不设 `Cache-Control`，仍由这一行补成 `no-store`。
+后端自己设了公共缓存的还有上传的图片（`/uploads`，一年 immutable）、静态地图、逆地理结果和饭局分享图。用户信息直接给出可长期缓存的 OSS 头像对象地址，固定头像入口 `/users/:id/avatar` 使用 `no-store`。其他未设置 `Cache-Control` 的接口由 Caddy 补成 `no-store`。
 
 ## ESA 规则
 
@@ -107,4 +107,4 @@ curl --noproxy '*' -sI -H 'Accept-Encoding: br' https://www.dinnerparty.cc/backe
 
 ## 旧版 App
 
-不需要强制更新：旧版仍调用 `/places/nearby`（行为不变）；公告、展会、高德 key、地区这几个接口旧版也是不带凭据的普通 GET，`Access-Control-Allow-Origin: *` 对它们同样有效。旧版仍每 30 秒轮询公告和展会，但规则生效后这些请求由 CDN 回答，不再回源。
+旧版通过 `/places/nearby` 或 `/places/markers` 加载地点。公告、展会、高德 key、地区接口也是不带凭据的普通 GET，`Access-Control-Allow-Origin: *` 对旧版同样有效。旧版仍每 30 秒轮询公告和展会，规则生效后这些请求由 CDN 回答。

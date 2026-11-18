@@ -6,6 +6,7 @@ import {PageHeader,Notice,PublicPhoto,PhotoViewer,Badge,MarkdownText,formatRange
 import {diaryReportPrefill} from '../feedback/feedbackTypes';
 import { t, tx } from '../i18n/index.js';
 import defaultAvatar from '../img/default.png';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { AiTag } from '../components/primitives/AiLabel';
 
 /**
@@ -51,7 +52,7 @@ export default function PublicJourneyView({ctx,nav,params,active}) {
             {journey&&<>
                 <header className="jw-detail-head">
                     <div className="jw-author">
-                        <img src={author.has_avatar?`${base}/users/${encodeURIComponent(author.id)}/avatar`:defaultAvatar} alt="" className="jw-avatar" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src=defaultAvatar;}}/>
+                        <img src={resolveAvatarUrl(author, base, { defaultUrl: defaultAvatar })} alt="" className="jw-avatar" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src=defaultAvatar;}}/>
                         <span>{author.username}</span>
                     </div>
                     <h3>{journey.title}

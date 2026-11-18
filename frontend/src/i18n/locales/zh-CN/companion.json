@@ -1,0 +1,15 @@
+{
+  "title": "角色观察屋",
+  "defaultName": "小火柴人",
+  "role": "角色",
+  "redeemTarget": "兑换内容",
+  "satiety": "饱食度 {{count}}",
+  "roaming": "在底部功能栏显示小伙伴",
+  "fed": "吃饱了一点！",
+  "loadingPack": "正在加载角色",
+  "packError": "角色资源加载失败，可以重试。",
+  "unlockHint": "打卡成功后，小伙伴会自动吃到这家店。",
+  "switchFailed": "切换角色失败，请重试",
+  "remoteSkin": "使用时下载皮肤包",
+  "skinDownloadError": "皮肤包下载失败，请重试"
+}

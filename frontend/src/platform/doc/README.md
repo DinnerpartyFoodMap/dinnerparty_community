@@ -43,11 +43,13 @@ flowchart TD
 
 ## iOS 返回手势热区（2026-11-05）
 
-`nativeShell.js` 通过 `foodMapEdgeBack` 上报 `{ enabled, interactive: true, region: 'map' | 'content' }`。地图首页、地图选点器（聚餐、海报、日记、地点位置、列表中心等）和日记地图预览用左侧 **24pt**；普通网页内容页及其表单、确认框用 **80pt**。按最上层消费返回的浮层判断，选点器底下的页面路径不参与覆盖；浮层打开/关闭、路径改变时，即使 `enabled` 未变也重新上报档位。无返回目标时手势关闭。
+`nativeShell.js` 通过 `foodMapEdgeBack` 上报 `{ enabled, interactive: true, region: 'map' | 'content' }`。裸地图的左边缘始终用来拖动地图。地图选点器（聚餐、海报、日记、地点位置、列表中心等）和日记地图预览用左侧 **24pt**。普通网页内容页及其表单、确认框用 **80pt**。档位按最上层消费返回的浮层判断，浮层和路径变动都会重新计算可用状态。
 
 Swift 的 `NativeBackGestureRegion` 统一两档，`UIPanGestureRecognizer` 在 delegate 的 `shouldReceive touch` 按触摸按下位置过滤，限制单指，并只接受水平向右移动。热区之外直接交还地图/滚动；纵向移动不触发返回。完成阈值与进度协议保持原值，取消保留输入。旧网页缺少/传入未知 `region` 时新壳采用 24pt；旧壳忽略新字段，仍使用它已有的系统边缘宽度。调整原生热区需要重新构建安装 iOS App。
 
 原生住民设置首页与 `NativeScreenPresenter` 共用整页（住民主页、管理后台等）也使用 80pt。**设置二级页仍由 SwiftUI `NavigationStack` 的系统交互返回管理，宽度随系统，不属于这次 80pt 自定义热区**；二级页打开时关闭整页手势，避免一次拖动同时退出两层。没有使用私有导航 selector 扩展系统手势。
+
+住民主页在拖动期间预览位移，手势确认后才关闭原生页。取消时主页和已有会话继续可用，实际关闭完成时清理会话，可以立即再次打开。
 
 验证入口：`npm run test:platform` 检查实际档位和桥接状态切换，`node tests/unit/platform/test-native-edge-back.mjs` 检查 Swift 源码契约，`npm run test:ios-back-browser` 检查跟手、取消、草稿与确认保护。Windows 上这些验证不编译 Swift。真机需检查地图选点从 x=24pt 内外开始右拖、地图双指缩放、设置首页及共用整页从 x=24–80pt 右拖、80pt 外拖动、纵向滚动、取消回弹，以及设置子页仍只返回上一级。
 
@@ -56,13 +58,13 @@ Swift 的 `NativeBackGestureRegion` 统一两档，`UIPanGestureRecognizer` 在 
 `NativeAlongRoutePlugin.swift` 与 `NativeProfilePlugin.swift` 沿用“网页执行业务、原生只显示白名单快照”的模式：
 
 - 顺路吃：网页解析高德行程、规划路线、在地图上画线并查询沿途地点；原生 SwiftUI 面板只收集条件、显示网页格式化好的路线与地点。编排在 `src/discovery/alongRouteController.js`，会话与字段白名单在 `src/platform/nativeAlongRoute.js`，入口 `useNativeAlongRoute.js`。
-- 住民主页：网页取 profile、执行屏蔽 / 偏好 / 小组件请求；原生显示六轴雷达、小组件与关系状态。视图模型在 `src/profile/profileViewModel.js`，会话在 `src/platform/nativeProfile.js`，入口 `useNativeProfile.js`。
+- 住民主页由原生显示头像、六轴雷达、收藏和第二栏小组件。网页执行屏蔽、偏好、小组件和收藏公开状态请求。同好列表和完整收藏使用共用网页页，返回保留对应主页或同好页码。 [视图模型](../../profile/profileViewModel.js) · [会话](../nativeProfile.js)
 - 两者在 iOS 26+ 使用系统 Liquid Glass；更早系统退回 `regularMaterial`。插件不可用、打开失败或请求失败时回到网页顺路面板 / `UserProfilePage`，不静默成功。真机检查见 native/doc。
 
-## 2026-10-30：管理后台与日记 · 同好原生页
+## 管理后台与日记原生页
 
 `NativePageEngine.swift` 是声明式页面引擎：网页下发 rows / form / calendar / images / tabs / search，SwiftUI 渲染玻璃页面并回传 `action` / `filter` / `submit` / `back` / `loadImage`。
 
 - 管理后台：`NativeAdminPlugin.swift` 与 `src/admin/nativeAdminController.js`。按管理员等级列出面板，用户 / 普通用户 / 地点申请 / 口味分类 / QQ 白名单 / 公告 / 展会 / 兑换码 / 反馈 / 审计均为原生页面；请求、权限与表单校验仍在网页。会话见 `src/platform/nativeAdmin.js`，失败回退网页后台。
-- 日记 · 同好：`NativeJourneyPlugin.swift` 与 `src/journey/nativeJourneyController.js`。入口、素材、生成、核对、日历、详情、未完成、私人图片、公开页、同好与分享设置均为原生页面；草稿、生成、公开、同好请求仍在网页。会话见 `src/platform/nativeJourney.js`，生成进度通过 `update` 主动推送。地图选点与分享画布属于工具流程，交回现有网页界面；原生打开失败回退网页工作区。
+- 原生日记提供快速创建、日历、详情、生成、核对、未完成、私人图片、公开页与分享设置。网页处理草稿、生成和公开请求，使用 `update` 推送生成进度。地图选点和分享画布使用网页工具页，原生打不开时使用网页工作区。 [原生日记控制器](../../journey/nativeJourneyController.js)
 - 两者共用 `NativePageModel` / `NativePageView` 与 `NativeGlassComponents.swift`，真机检查见 native/doc。

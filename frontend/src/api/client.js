@@ -380,6 +380,24 @@ export async function fetchUserProfile(backendUrl, userId, { token, signal } = {
     return data;
 }
 
+export async function fetchProfileFavorites(backendUrl, userId, { token, signal } = {}) {
+    const res = await fetch(`${backendUrl}/users/${encodeURIComponent(userId)}/favorites`, { signal, cache: 'no-store', ...authHeaders(token) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('profile:widgets.collection.loadFailed')), { status: res.status });
+    return data;
+}
+
+export async function saveFavoriteVisibility(backendUrl, token, isPublic) {
+    const res = await fetch(`${backendUrl}/api/favorites/visibility`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ is_public: isPublic })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || t('profile:widgets.collection.saveVisibilityFailed'));
+    return data;
+}
+
 export async function saveProfileWidgets(backendUrl, token, widgets) {
     const res = await fetch(`${backendUrl}/users/me/profile`, {
         method: 'PUT',

@@ -3,7 +3,7 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// 本地 Capacitor 插件：iOS 原生日记 · 同好（NativeJourneyPlugin.swift）。
+/// 本地 Capacitor 插件：iOS 原生日记（NativeJourneyPlugin.swift）。
 ///
 /// open({ id, page, theme }) -> { id, action: close }
 /// respond({ id, requestId, ok, message, error, page?, form?, imageId?, imageData? }) -> {}
@@ -13,8 +13,8 @@ import UIKit
 ///
 /// 网页负责草稿、生成、公开与同好请求；原生只渲染页面模型、收集输入并回传动作。
 /// 地图选点与分享画布仍由网页工具页完成。
-/// 呈现：从下方弹出的系统面板，入口（图文生成 / 日历 / 同好）停在半屏；进入子功能时展开到全屏，回到入口时收回半屏。
-/// 图文生成与日历是自绘页面（NativeJourneyScreens，按网页同名页面的操作逻辑），其余页面用通用列表。
+/// 呈现：从下方弹出的系统面板，入口（快速创建 / 日历）停在半屏；进入子功能时展开到全屏，回到入口时收回半屏。
+/// 快速创建与日历是自绘页面（NativeJourneyScreens，按网页同名页面的操作逻辑），其余页面用通用列表。
 @objc(NativeJourneyPlugin)
 public class NativeJourneyPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeJourneyPlugin"
@@ -744,7 +744,7 @@ private struct NativeJourneyCalendarView: View {
             } else {
                 Section {
                     JourneyFooter(note: "", buttons: [
-                        JourneyData(raw: ["id": "composer", "title": data.label("generate", "图文生成"), "style": "primary"]),
+                        JourneyData(raw: ["id": "composer", "title": data.label("generate", "快速创建"), "style": "primary"]),
                         JourneyData(raw: ["id": "manual", "title": data.label("createManually", "手动新建"), "style": "secondary"])
                     ], enabled: { _ in true }, busy: model.loading) { button in
                         let id = button.string("id")

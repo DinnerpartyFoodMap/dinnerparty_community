@@ -5,7 +5,8 @@ import { fetchPlaceList } from '../api/client';
 import { EMPTY_PLACE_FILTER, isPlaceFilterActive, placeFilterKey, placeListQuery } from './placeFilter';
 import { formatAverage, tierForAverage, tierLabel, ratingDisplay } from './rating';
 import { imageThumbnailUrl } from '../platform/runtimeConfig';
-import { t } from '../i18n/index.js';
+import { t, tx } from '../i18n/index.js';
+import RatingPredictionValue from './components/RatingPredictionValue';
 import './placeList.css';
 
 const PAGE_SIZE = 20;
@@ -156,7 +157,9 @@ function PlaceListItem({ place, onOpen }) {
                                 </span>
                             )
                             : <span>{t('map:rating.summary.none')}</span>}
-                        {personalTier && <span className="fm-place-card__personal">{personal.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personal.average) }) : t('places:list.personalRating', { tier: tierLabel(personalTier) })}</span>}
+                        {personalTier && <span className="fm-place-card__personal">{personal.kind === 'prediction'
+                            ? tx('map:rating.card.prediction', { average: <RatingPredictionValue average={personal.average} /> })
+                            : t('places:list.personalRating', { tier: tierLabel(personalTier) })}</span>}
                         {myTier && <span className="fm-place-card__personal">{t('map:rating.card.mine', { tier: tierLabel(myTier) })}</span>}
                         {risk && <span style={{ color: 'var(--color-warning)', fontSize: 12 }}>{t('map:rating.riskLabel')}</span>}
                     </span>

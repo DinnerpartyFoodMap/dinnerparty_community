@@ -12,10 +12,11 @@ import { t, tx } from "../../i18n/index.js";
 import { tierForAverage, tierLabel, formatAverage, summaryText } from "../rating";
 
 /** 地点的外观 / 菜单图片字段（JSON 字符串或数组）→ 完整地址列表 */
-export function parseImages(value) {
+export function parseImages(value, backendUrl) {
     try {
         const images = Array.isArray(value) ? value : (value ? JSON.parse(value) : []);
-        return Array.isArray(images) ? images.map(normalizeImageUrl) : [];
+        return Array.isArray(images) ? images.map(url => backendUrl && typeof url === 'string' && url.startsWith('/places/check-in-photos/')
+            ? backendUrl + url : normalizeImageUrl(url)) : [];
     } catch (e) {
         return [];
     }
@@ -55,13 +56,15 @@ export function PlaceCardDetails({ place, backendUrl }) {
     const [preview, setPreview] = useState(null);
     const exteriorImages = parseImages(place.exterior_images);
     const menuImages = parseImages(place.menu_images);
+    const checkInImages = parseImages(place.checkin_images, backendUrl);
     return (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
             {place.address && <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--color-text-secondary)' }}>{place.address}</div>}
             <PlaceDiaryList place={place} base={backendUrl} />
             <ImageGroup title={t('map:placeDetail.exteriorImages')} images={exteriorImages} onPreview={setPreview} />
             <ImageGroup title={t('common:label.menu')} images={menuImages} onPreview={setPreview} />
-            {exteriorImages.length === 0 && menuImages.length === 0 && (
+            <ImageGroup title={t('map:checkIn.gallery')} images={checkInImages} onPreview={setPreview} />
+            {exteriorImages.length === 0 && menuImages.length === 0 && checkInImages.length === 0 && (
                 <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 13, margin: '8px 0', textAlign: 'center' }}>{t('map:placeDetail.noImages')}</div>
             )}
             <ImagePreview preview={preview} onClose={() => setPreview(null)} />
@@ -102,6 +105,7 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
     }, [focus, place && place.id]);
     const exteriorImages = parseImages(place.exterior_images);
     const menuImages = parseImages(place.menu_images);
+    const checkInImages = parseImages(place.checkin_images, backendUrl);
 
     const renderImageGroup = (title, images) => <ImageGroup title={title} images={images} onPreview={setPreview} />;
 
@@ -134,7 +138,8 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
                 <PlaceDiaryList place={place} sectionRef={diariesRef} base={backendUrl} />
                 {renderImageGroup(t('map:placeDetail.exteriorImages'), exteriorImages)}
                 {renderImageGroup(t('common:label.menu'), menuImages)}
-                {exteriorImages.length === 0 && menuImages.length === 0 && (
+                {renderImageGroup(t('map:checkIn.gallery'), checkInImages)}
+                {exteriorImages.length === 0 && menuImages.length === 0 && checkInImages.length === 0 && (
                     <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 13, marginTop: 24, textAlign: 'center' }}>{t('map:placeDetail.noImages')}</div>
                 )}
             </div>

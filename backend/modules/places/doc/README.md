@@ -1,8 +1,18 @@
 # 地点与修改申请
 
+## 地点打卡
+
+已登录住民可在公开地点卡片提交打卡。 `POST /places/:id/check-ins` 接收 JSON，带照片时改用 multipart 表单，`payload` 是同一份 JSON，`photos` 最多 3 张，每张最多 3 MB。首次提交必填 `request_id` 与 `fix`，描述和四档评分均选填。服务端用当前店铺坐标和同一坐标系的设备定位计算距离，要求距离严格小于 50 米、报告精度不大于 25 米、定位不超过 15 秒。打卡响应与数据库不保存设备经纬度。按北京时间每日最多 5 家，同店每日一次。
+
+同一账号及请求编号可安全重试。已提交的请求可省略 `fix` 取回回执，只有服务端需要新定位时才重新获取。打卡、额度、默认火柴人或当前所选小伙伴的投喂和待审核内容一次提交，饱食度加 1。选填评分沿用原有单票和配额，评分与打卡关联一并写入。评分保存暂时失败时，可从打卡回执重试，打卡和投喂已经生效。期间用其他设备修改或撤回了评分时，以当前评分为准。
+
+补充描述和照片分别进入现有地点申请队列，管理员在同一审核页面批准或驳回。批准时以最新地点内容为准追加，描述仍受 1000 字限制，重复段落和照片只采纳一次。待审核照片通过有时效的链接供管理员预览，批准后加入地点卡片的「打卡照片」。地点详情、快照和明细瓦片提供 `checkin_count`。打卡与审核内容的评分作用见 [地点评价](../../ratings/doc/placeRatings.md)。
+
 地点列表 `GET /places/list`（`services/placeList.js`，可选登录）：只给公开地点，可按 `tags`（逗号分隔，命中任一）、`minCost` / `maxCost`（设了范围时没填人均的不显示）与距离（`lat`、`lng`、`radiusKm`，半径只接受 0.5/1/3/5/10 公里）筛选；按综合评价排序：公开平均分以 2 份中性分（2.5）收缩，登录且有口味画像时与口味加权平均（`ratings/services/placeRatings.js` 的 `personalizedAverages`，按观看者缓存 2 分钟）各占一半。返回 `{ items, total, offset, limit, personalized }`，条目只有 id、店名、简介、分类、人均、第一张图和评价，不带经纬度、地址和距离（距离只用来筛选，防止整页抓取拿到坐标）。
 
-地图标记用分层瓦片（见下文“分层瓦片”），没有哪个请求能一次拿到全部店名和坐标；`GET /places/overlay`（`no-store`，可选登录）给出自己审核中 / 未通过的地点与屏蔽的住民创建的公开地点 id，描述、图片等在打开卡片时读 `GET /places/:id`。旧接口（防爬，[数据访问限流](../../../http/doc/README.md#数据访问限流)）：`GET /places`（一次列出全部地点和创建者用户名）停用，回 410；`GET /places/nearby` 只给旧版 App，范围大于 `NEARBY_MAX_FULL_AREA`（默认 0.25 平方度）时只给评价人数最多的 `NEARBY_LARGE_AREA_ROWS`（默认 200）家；整份快照 `GET /places/markers`（`services/placeMarkers.js`，公共缓存）留给 11-15 之后、瓦片之前的 App，旧版 App 更新完后设 `LEGACY_MARKER_SNAPSHOT=off` 回 410，并在 ESA 上刷新这个路径的缓存。`/places/:id`、`/places/:id/diaries`、`/p/:id`、`/places/list`、`/users/:id/places` 与搜索都按观看者限流。
+新版地图用分层瓦片（见下文“分层瓦片”）绘制标记。`GET /places/overlay`（`no-store`，可选登录）给出自己审核中或未通过的地点，以及屏蔽的住民创建的公开地点 ID。打开卡片时从 `GET /places/:id` 读取描述、图片等详情。
+
+旧版 App 的 `GET /places/nearby` 返回查询范围内所有对观看者可见的地点及详情。v2.2.4 用该响应更新整个范围的缓存，并直接用地点行打开卡片。2026-11-15 切换快照后、分层瓦片前的构建用 `GET /places/markers`（`services/placeMarkers.js`，公共缓存）。两条兼容路由使用 `legacy` [数据访问限流](../../../http/doc/README.md#数据访问限流)。使用快照的旧版 App 更新完之后，可将 `LEGACY_MARKER_SNAPSHOT` 设为 `off` 并刷新 ESA 上该路径的缓存。`GET /places` 回 410。`/places/:id`、`/places/:id/diaries`、`/p/:id`、`/places/list`、`/users/:id/places` 与搜索都按观看者限流。
 
 ## 分层瓦片
 

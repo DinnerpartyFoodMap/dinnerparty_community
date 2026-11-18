@@ -14,6 +14,7 @@ export default function PersonalizeMap({ user, onBack, backendUrl, token, onUpda
     const [lat, setLat] = useState('');
     const [lng, setLng] = useState('');
     const [zoom, setZoom] = useState('');
+    const [companionRoaming, setCompanionRoaming] = useState(true);
     const [loading, setLoading] = useState(false);
 
     const showTip = useTips();
@@ -25,11 +26,12 @@ export default function PersonalizeMap({ user, onBack, backendUrl, token, onUpda
         setLat(form.lat);
         setLng(form.lng);
         setZoom(form.zoom);
+        setCompanionRoaming(form.companionRoaming);
     }, [user]);
 
     const handleSave = async () => {
         // 支持部分填写：若填写了经纬度需要同时填写经度和纬度；缩放等级可选
-        const built = buildMapSettings(user, { style, lat, lng, zoom });
+        const built = buildMapSettings(user, { style, lat, lng, zoom, companionRoaming });
         if (built.error) {
             showTip(built.error);
             return;
@@ -76,6 +78,11 @@ export default function PersonalizeMap({ user, onBack, backendUrl, token, onUpda
                 <label style={{ display: 'block', marginBottom: 8 }}>
                     <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6 }}>{t('settings:personalizeMap.zoom')}</div>
                     <TextInput value={zoom} onChange={(e) => setZoom(e.target.value)} placeholder="24" style={{ width: '100%' }} />
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBlock: 12 }}>
+                    <input type="checkbox" checked={companionRoaming} onChange={(event) => setCompanionRoaming(event.target.checked)} />
+                    {t('companion:roaming')}
                 </label>
 
                 <div style={{ display: 'flex', gap: 8 }}>

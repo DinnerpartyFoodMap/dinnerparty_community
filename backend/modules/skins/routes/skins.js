@@ -2,12 +2,25 @@ const router = require('express').Router();
 const { requireAuth } = require('../../accounts/middleware/auth');
 const skins = require('../services/skinService');
 const logger = require('../../../infrastructure/logger');
+const { findPack, packFile, grantPack, readGrant } = require('../services/resourcePacks');
 
 function sendError(res, error, fallback) {
     if (error instanceof skins.SkinError) return res.status(error.status).json({ error: error.message, reason: error.reason });
     res.locals.unhandledError = error;
     return res.status(500).json({ error: fallback });
 }
+
+router.get(/^\/packs\/access\/([^/]+)\/(.+)$/, (req, res) => {
+    const grant = readGrant(req.params[0]);
+    if (!grant || !skins.ownsResource(grant.sub, grant.type, grant.id)) return res.status(403).json({ error: '下载授权已失效' });
+    const pack = findPack(grant.type, grant.id);
+    const file = pack?.version === grant.version ? packFile(pack, req.params[1]) : null;
+    if (!file) return res.status(404).json({ error: '找不到资源文件' });
+    const age = Math.max(0, grant.exp - Math.ceil(Date.now() / 1000));
+    res.set('Cache-Control', `private, max-age=${age}`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    return res.sendFile(file, { cacheControl: false });
+});
 
 router.use(requireAuth);
 router.use((req, res, next) => {
@@ -40,6 +53,40 @@ router.post('/redeem', (req, res) => {
             logger.warn('Skin code rejected', { event: 'skins.code.rejected', reason: error.reason });
         }
         return sendError(res, error, '兑换失败，请稍后重试');
+    }
+});
+
+router.post('/redeem-resource', (req, res) => {
+    try {
+        const { type, state, unlocked, alreadyOwned } = skins.redeemCode(req.user.id, req.body?.code, {
+            allowCompanion: true, activate: req.body?.activate === true
+        });
+        return res.json({ type, state, unlocked, already_owned: alreadyOwned });
+    } catch (error) {
+        return sendError(res, error, '兑换失败，请稍后重试');
+    }
+});
+
+router.get('/companions/me', (req, res) => {
+    try { return res.json(skins.getUserCompanions(req.user.id)); }
+    catch (error) { return sendError(res, error, '读取角色失败，请稍后重试'); }
+});
+
+router.put('/companions/active', (req, res) => {
+    try { return res.json(skins.selectCompanion(req.user.id, req.body?.companion_id)); }
+    catch (error) { return sendError(res, error, '切换角色失败，请稍后重试'); }
+});
+
+router.get('/packs/:type/:id', (req, res) => {
+    try {
+        const { type, id } = req.params;
+        const pack = findPack(type, id);
+        if (!pack) return res.status(404).json({ error: '找不到资源包' });
+        if (!skins.ownsResource(req.user.id, type, id)) return res.status(403).json({ error: '请先解锁这个资源' });
+        if (!packFile(pack, pack.entry)) return res.status(404).json({ error: '资源文件暂时不可用' });
+        return res.json(grantPack(pack, req.user.id));
+    } catch (error) {
+        return sendError(res, error, '读取资源包失败，请稍后重试');
     }
 });
 

@@ -1,5 +1,9 @@
 # 日记文字测试案例库
 
+### 首次公开的独立 QQ 推送
+
+首次公开后每群有一条日记任务，地点通知单独计数。验证只关联旧地点也发送、提交重试不增加任务、撤回跳过待发、重新公开不再推送。使用 `test:journey-publication` 的假 QQ 客户端检查公开图、正文、直达链接和私密字段隔离。实际群消息卡片需用测试群验收。
+
 遵循 [执行协议](../../../doc/TESTING.md)。使用临时库、假模型/地图边界，保留真实服务与事务。已有入口：test:journeys、test:journey-resolution、test:journey-publication、test:journey-ui。
 
 2026-10-16 起，公开测试在私有算法 API 边界使用独立协议桩，算法内部断言移入私有服务。`test:journey-algorithms` 覆盖传输、回调、生命周期和配置工具；可选的 `test:journey-private-service` 通过真实服务验证完整链路，见 [接入说明](ALGORITHM_SERVICE.md)。

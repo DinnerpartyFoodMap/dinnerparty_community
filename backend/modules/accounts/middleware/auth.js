@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const { db } = require("../../../infrastructure/database");
 const { getDefaultSessionStore } = require('../services/sessions');
 const { refreshBanState } = require('../services/userAccess');
+const { avatarColumns, withAvatarFields } = require('../services/userAvatar');
 const logger = require('../../../infrastructure/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || "yuyuko_secret_key";
@@ -19,7 +20,7 @@ function extractBearerToken(req) {
 
 function loadUserById(userId) {
     return new Promise((resolve, reject) => {
-        db.get("SELECT id, username, admin_level, is_banned, ban_reason, ban_expires, map_settings, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?", [userId], (err, row) => {
+        db.get(`SELECT id, username, admin_level, is_banned, ban_reason, ban_expires, map_settings, ${avatarColumns()} FROM User WHERE id = ?`, [userId], (err, row) => {
             if (err) return reject(err);
             if (row && row.map_settings) {
                 try {
@@ -28,10 +29,7 @@ function loadUserById(userId) {
                     // ignore parse errors and keep raw string
                 }
             }
-            if (row) {
-                row.has_avatar = !!row.has_avatar;
-            }
-            resolve(row || null);
+            resolve(withAvatarFields(row) || null);
         });
     });
 }

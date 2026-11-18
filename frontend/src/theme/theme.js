@@ -191,6 +191,8 @@ export function applyThemeColor(color) {
     try {
         const root = document.documentElement;
         const val = (color || '').trim();
+        const custom = !!val && ![DEFAULT_PRIMARY, DEFAULT_DARK_PRIMARY].includes(val.toUpperCase());
+        root.toggleAttribute('data-custom-primary', custom);
         if (val) {
             root.style.setProperty('--theme-primary', val);
             root.style.setProperty('--theme-primary-0-2', hexToRgba(val, 0.2));

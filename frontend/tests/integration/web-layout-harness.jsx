@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import MapView from '../../src/map/MapView';
 import AuthPanel from '../../src/app/components/AuthPanel';
 import MapListMode from '../../src/map/MapListMode';
 import TasteRadar from '../../src/profile/TasteRadar';
 import AuthPage from '../../src/auth/AuthPage';
+import { AuthProvider } from '../../src/auth/AuthContext';
 import AddForm from '../../src/places/components/AddPlaceForm';
+import PlaceRatingPanel from '../../src/places/components/PlaceRatingPanel';
+import usePlaceRating from '../../src/places/hooks/usePlaceRating';
 import { worldPixel, unprojectWorldPixel } from '../../src/map/viewport';
 import { MotionProvider } from '../../src/motion/MotionProvider';
 import { OverlayHost, useOverlayContentRef } from '../../src/components/overlay/OverlayHost';
@@ -120,16 +123,25 @@ window.AMap = { Map: TestMap, Marker, LngLat, Pixel: class {}, plugin: (_name, c
 const user = { id: 'web-layout-user', username: '布局测试住民', is_banned: false };
 function MapHarness() {
     const contentRef = useOverlayContentRef();
+    const [sessionUser, setSessionUser] = useState(() => fixtureParams.has('avatar') ? { ...user, avatar_url: '/fixture-avatar/first.png' } : null);
+    useEffect(() => {
+        if (!fixtureParams.has('avatar')) return undefined;
+        const refreshAvatar = () => setSessionUser(previous => ({ ...previous, avatar_url: '/fixture-avatar/second.png' }));
+        window.addEventListener('fixture-avatar-updated', refreshAvatar);
+        return () => window.removeEventListener('fixture-avatar-updated', refreshAvatar);
+    }, []);
     const [alongRouteRequestId, setAlongRouteRequestId] = useState(0);
     const [desktopHeaderMenu, setDesktopHeaderMenu] = useState(null);
     const [exhibitionOpen, setExhibitionOpen] = useState(new URLSearchParams(location.search).has('exhibition'));
     const exhibition = { id: 7, name: '远距离展会', location_name: '广州展会场馆', longitude: 113.36, latitude: 23.1, description: '展会简介', information: '展会信息' };
     return <main ref={contentRef} className="fm-app-root" style={{ position: 'fixed', left: 0, right: 0, top: 'var(--safe-top, 0px)', height: 'calc(100vh - var(--safe-top, 0px))', overflow: 'hidden' }}>
-        <MapView backendUrl={location.origin} token="synthetic-web-layout" isAuthenticated mapPageActive
-            randomFoodRequestId={new URLSearchParams(location.search).has('random') ? 1 : 0}
-            initialCenter={{ lng: 120, lat: 30 }} alongRouteRequestId={alongRouteRequestId} desktopHeaderMenu={desktopHeaderMenu}
-            exhibition={exhibition} exhibitionOpen={exhibitionOpen} onCloseExhibition={() => setExhibitionOpen(false)}
-            onRequireAuth={() => { throw new Error('Unexpected auth request'); }} />
+        <AuthProvider value={{ user: sessionUser }}>
+            <MapView backendUrl={location.origin} token="synthetic-web-layout" isAuthenticated mapPageActive
+                randomFoodRequestId={new URLSearchParams(location.search).has('random') ? 1 : 0}
+                initialCenter={{ lng: 120, lat: 30 }} alongRouteRequestId={alongRouteRequestId} desktopHeaderMenu={desktopHeaderMenu}
+                exhibition={exhibition} exhibitionOpen={exhibitionOpen} onCloseExhibition={() => setExhibitionOpen(false)}
+                onRequireAuth={() => { throw new Error('Unexpected auth request'); }} />
+        </AuthProvider>
         <AuthPanel user={user} isAuth pathname="/" backendUrl={location.origin}
             onMenuOpenChange={setDesktopHeaderMenu}
             onOpenAlongRoute={() => setAlongRouteRequestId(id => id + 1)} />
@@ -163,8 +175,12 @@ function AddFormHarness() {
             onCancel={() => {}} onSubmit={(payload) => window.__WEB_LAYOUT_SUBMITS.push(payload)} />
     </main>;
 }
+function RatingHarness() {
+    const rating = usePlaceRating({ backendUrl: location.origin, token: 'synthetic-web-layout', placeId: 99 });
+    return <PlaceRatingPanel open onClose={() => {}} place={{ id: 99, name: '列表定位回归面馆' }} rating={rating} isAuthenticated />;
+}
 const mode = new URLSearchParams(location.search).get('mode');
-const HARNESS = { list: ListHarness, radar: RadarHarness, auth: AuthHarness, add: AddFormHarness };
+const HARNESS = { list: ListHarness, radar: RadarHarness, auth: AuthHarness, add: AddFormHarness, rating: RatingHarness };
 const Harness = HARNESS[mode] || MapHarness;
 createRoot(document.getElementById('root')).render(
     <MotionProvider><OverlayHost><TipsProvider><ConfirmProvider>

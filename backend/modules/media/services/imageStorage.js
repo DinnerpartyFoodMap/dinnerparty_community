@@ -29,6 +29,8 @@ const LOCAL_UPLOAD_ORIGIN = /(?:https?:\/\/(?:[a-z0-9-]+\.)*(?:dinnerparty\.cc|l
 const LOCAL_UPLOAD_URL = new RegExp(`^${LOCAL_UPLOAD_ORIGIN}?/?uploads/([^?#]+)$`, 'i');
 // 文件名唯一且内容不变，可永久缓存
 const CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const AVATAR_CACHE_CONTROL = 'public, max-age=86400, immutable';
+const AVATAR_NAME = /^avatars\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/;
 
 function trimSlashes(value) {
     return String(value || '').trim().replace(/^\/+|\/+$/g, '');
@@ -188,10 +190,11 @@ function newFilename(ext) {
     return `${Date.now()}-${crypto.randomInt(1e9)}.${ext}`;
 }
 
-async function putObject(filename, body, contentType) {
+async function putObject(filename, body, contentType, { cacheControl = CACHE_CONTROL, timeout } = {}) {
     await getClient().put(objectKey(filename), body, {
         mime: contentType,
-        headers: { 'Content-Type': contentType, 'Cache-Control': CACHE_CONTROL }
+        timeout,
+        headers: { 'Content-Type': contentType, 'Cache-Control': cacheControl }
     });
 }
 
@@ -221,6 +224,30 @@ async function saveImage(buffer, format) {
     return `/uploads/${filename}`;
 }
 
+/** 保存已处理的 WebP 头像，每次上传使用新的 OSS 对象键。 */
+async function saveAvatarImage(buffer) {
+    const errors = configErrors();
+    if (!config.enabled || errors.length) {
+        const detail = config.enabled ? errors.join('；') : 'IMAGE_STORAGE 必须设为 oss';
+        throw Object.assign(new Error(`头像存储配置错误：${detail}`), { code: 'AVATAR_STORAGE_UNAVAILABLE' });
+    }
+    const filename = `avatars/${crypto.randomUUID()}.webp`;
+    // 为原生头像设置的 40 秒请求期限留出图像处理和旧对象删除的时间。
+    await putObject(filename, buffer, 'image/webp', { cacheControl: AVATAR_CACHE_CONTROL, timeout: 25000 });
+    return publicUrlFor(filename);
+}
+
+/** 只删除当前配置管理的头像对象。 */
+async function removeAvatarImage(url) {
+    if (!config.enabled || !config.publicBaseUrl || typeof url !== 'string') return false;
+    const prefix = publicUrlFor('');
+    if (!url.startsWith(prefix)) return false;
+    const filename = url.slice(prefix.length);
+    if (!AVATAR_NAME.test(filename)) return false;
+    await getClient().delete(objectKey(filename), { timeout: 5000 });
+    return true;
+}
+
 /** 本地已没有的历史 /uploads/<相对路径>：OSS 模式下跳转到 OSS 上的同名文件。 */
 function legacyRedirectUrl(name) {
     if (!config.enabled || !config.publicBaseUrl || !isSafeName(name)) return null;
@@ -240,6 +267,8 @@ module.exports = {
     prepareImage,
     stripJpegMetadata,
     saveImage,
+    saveAvatarImage,
+    removeAvatarImage,
     putObject,
     headObject,
     publicUrlFor,

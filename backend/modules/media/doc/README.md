@@ -1,6 +1,6 @@
 # 图片存储
 
-入口：`routes/upload.js`（`/upload`，认证由 index.js 挂载）、services/imageStorage.js、imageUrls.js。地点图片保存为公开 URL；账号头像、日记私图分别由 accounts / journeys 管理 BLOB，不经过本模块迁移。分享缩略图生成逻辑在 places/placeCard。
+入口：`routes/upload.js`（`/upload`，认证由 index.js 挂载）、services/imageStorage.js、imageUrls.js。地点图片保存为公开 URL。账号头像使用 `imageStorage.js` 的 OSS 存储，并通过 [账号头像迁移](../../accounts/doc/README.md#头像) 处理旧 BLOB。日记私图仍由 journeys 管理。分享缩略图生成逻辑在 places/placeCard。
 
 ```mermaid
 flowchart TD

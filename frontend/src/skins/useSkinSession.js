@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { DEFAULT_SKIN_ID } from './registry.js';
 import { activateSkin } from './skinStore.js';
 import { fetchSkinState } from './skinApi.js';
+import { loadRemoteSkin } from './remoteSkin.js';
 
 // 本机记住“哪位住民用哪套皮肤”：冷启动时先按通行凭证里的住民换上，不等接口返回；换账号不会沿用上一位的皮肤
 const CACHE_KEY = 'foodmap.skin';
@@ -38,8 +39,12 @@ export default function useSkinSession({ backendUrl, token, userId, pendingUserI
         activateSkin(cached && cached.userId === id ? cached.skinId : DEFAULT_SKIN_ID);
         if (!userId || !token || !backendUrl) return undefined;
         const controller = new AbortController();
-        fetchSkinState(backendUrl, token, { signal: controller.signal }).then((state) => {
+        fetchSkinState(backendUrl, token, { signal: controller.signal }).then(async (state) => {
             if (controller.signal.aborted || !state) return;
+            if (state.owned?.some((item) => item.id === state.active && item.remote)) {
+                await loadRemoteSkin(backendUrl, token, state.active, { signal: controller.signal });
+            }
+            if (controller.signal.aborted) return;
             activateSkin(state.active);
             rememberSkin(userId, state.active);
         }).catch(() => { /* 离线时保持缓存的皮肤 */ });

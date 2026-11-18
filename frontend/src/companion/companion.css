@@ -1,0 +1,19 @@
+.fm-companion__stage { position: relative; width: 112px; height: 132px; margin-inline: auto; }
+.fm-companion__drawing, .fm-companion__canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.fm-companion__canvas canvas { display: block; }
+.fm-companion__heart { position: absolute; right: 9%; top: 5%; color: var(--theme-primary-text); animation: fm-companion-heart 1.2s ease-out both; }
+.fm-companion__retry { color: var(--theme-primary-text); background: none; border: 0; text-decoration: underline; cursor: pointer; }
+.fm-companion-room { padding: 20px 12px; text-align: center; border-radius: var(--radius-lg); background: var(--color-bg-overlay); }
+.fm-companion-room > p { margin: 8px 0 0; color: var(--color-text-secondary); }
+.fm-companion-room .fm-companion-room__satiety { font-weight: 700; color: var(--theme-primary-text); }
+.fm-companion-room__choices { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.fm-companion-roam { display: none; position: absolute; z-index: 1990; left: 9%; width: 46px; height: 55px; pointer-events: none; }
+.fm-companion-roam .fm-companion__stage { transform-origin: top left; transform: scale(.4); }
+@media (max-width: 768px) {
+    .fm-companion-roam { display: block; animation: fm-companion-walk 24s ease-in-out infinite alternate; }
+}
+@keyframes fm-companion-walk { 0%, 12% { left: 9%; } 75%, 100% { left: 62%; } }
+@keyframes fm-companion-heart { from { transform: translateY(8px); opacity: 1; } to { transform: translateY(-18px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+    .fm-companion-roam, .fm-companion__heart { animation: none; }
+}

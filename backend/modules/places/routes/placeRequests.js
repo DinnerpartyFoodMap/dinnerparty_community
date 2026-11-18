@@ -46,6 +46,7 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
     }
     // AI 初筛拦下的新地点（doc/placeModeration.md）：通过即公开，驳回后只留给创建者
     if (reqRow.request_type === 'create') return reviewCreationRequestSync(reqRow, action, adminId);
+    if (reqRow.request_type === 'check_in') return require('../services/placeCheckIns').applyCheckInReview(reqRow, action, adminId);
 
     if (action === 'reject') {
         const reviewed = db._raw.prepare(
@@ -141,6 +142,9 @@ router.get("/", requireAuth, requireAdmin("manage_places"), require('../../ratin
         const parsed = rows.map(r => {
             const row = { ...r, request_type: r.request_type || 'modify', proposed: tryParseJSON(r.proposed), moderation: r.moderation ? tryParseJSON(r.moderation) : null };
             if (row.request_type === 'create' && row.status === 'pending') row.place = selectPlace.get(r.place_id) || null;
+            if (row.request_type === 'check_in' && row.status === 'pending' && Array.isArray(row.proposed?.checkin_images)) {
+                row.photo_previews = row.proposed.checkin_images.map(url => require('../services/placeCheckIns').photoPreviewUrl(url)).filter(Boolean);
+            }
             return row;
         });
         res.json(parsed);

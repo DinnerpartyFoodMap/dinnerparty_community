@@ -94,4 +94,13 @@ for (const source of [settingsGesture, between(presentation, '@objc private func
     assert.doesNotMatch(source, /min\(1, distance \//, 'raw 0…1 progress must not reach the interactive transition');
 }
 
+// The profile preview must leave the bridge session untouched until the user commits the swipe.
+const profile = read('NativeProfilePlugin');
+assert.match(profile, /screenPresenter\.previewsEdgeBack = true/);
+const preview = between(presentation, 'private func handleEdgePreview(', '\n    }\n}');
+assert.doesNotMatch(between(preview, 'case .began:', 'case .ended:'), /onEdgeBack|dismiss\(/);
+assert.match(preview, /case \.ended:[\s\S]*commitsEdgeBack[\s\S]*onEdgeBack\?\(\)/);
+assert.match(preview, /case \.cancelled, \.failed:[\s\S]*restoreEdgePreview/);
+assert.match(profile, /screenPresenter\.onDismissed = [\s\S]*?completeDismissal\(host\)/, 'UIKit dismissal also ends the pending bridge session');
+
 console.log('Native edge-back source contracts passed (static only; Swift not compiled).');

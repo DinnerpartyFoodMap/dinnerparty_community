@@ -7,6 +7,7 @@ import useMediaQuery from "../hooks/useMediaQuery";
 import { useTips } from "../components/feedback/Tips";
 import { useConfirm } from "../components/feedback/Confirm";
 import defaultAvatar from '../img/default.png';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
@@ -221,7 +222,7 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                             {filteredUsers.map((target) => (
                                 <article key={target.id} style={{ padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-surface)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                        <img src={target.has_avatar ? `${backendUrl}/users/${target.id}/avatar?t=${Date.now()}` : defaultAvatar} alt={t('common:label.avatar')} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} />
+                                        <img src={resolveAvatarUrl(target, base, { defaultUrl: defaultAvatar })} alt={t('common:label.avatar')} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} />
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ fontWeight: 700 }}>{target.username}</div>
                                             <div style={{ marginTop: 3, fontSize: 12, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{tx('admin:generalUsers.idLine', { id: target.id })}</div>
@@ -252,11 +253,7 @@ export default function AdminGeneralUsers({ backendUrl = null }) {
                                         <td>{u.username}</td>
                                         <td>{u.qq || '-'}</td>
                                         <td>
-                                            {u.has_avatar ? (
-                                                <img src={`${backendUrl}/users/${u.id}/avatar?t=${Date.now()}`} alt="avatar" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                                            ) : (
-                                                <img src={defaultAvatar} alt="default avatar" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                                            )}
+                                            <img src={resolveAvatarUrl(u, base, { defaultUrl: defaultAvatar })} alt={t('common:label.avatar')} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
                                         </td>
                                         <td>{renderStatus(u)}</td>
                                         <td style={{ minWidth: 100 }}>

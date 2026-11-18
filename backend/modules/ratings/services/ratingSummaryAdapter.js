@@ -1,12 +1,17 @@
 const {db}=require('../../../infrastructure/database');
 const client=require('../../../infrastructure/numericAlgorithmClient');
 const {context,same,revision}=require('./ratingSnapshot');
+const { CHECK_IN_COUNT_SQL, checkInWeights, checkInMultiplier } = require('./checkInRatingWeights');
 const RATING_COLUMNS_SQL=`
     COALESCE((SELECT s.count FROM PlaceRatingSummary s WHERE s.place_id=p.id),0) AS rating_count,
     (SELECT s.average FROM PlaceRatingSummary s WHERE s.place_id=p.id) AS rating_average,
-    COALESCE((SELECT json_extract(s.distribution,'$."1"')+json_extract(s.distribution,'$."2"') FROM PlaceRatingSummary s WHERE s.place_id=p.id),0) AS rating_negative_count`;
+    COALESCE((SELECT json_extract(s.distribution,'$."1"')+json_extract(s.distribution,'$."2"') FROM PlaceRatingSummary s WHERE s.place_id=p.id),0) AS rating_negative_count,
+    ${CHECK_IN_COUNT_SQL}`;
 let pending=null;
-function readRatings(){return db._raw.prepare(`SELECT r.*,COALESCE(u.is_banned,0) AS is_banned FROM PlaceRating r JOIN User u ON u.id=r.user_id`).all();}
+function readRatings(weights = checkInWeights()) {
+    return db._raw.prepare(`SELECT r.*,COALESCE(u.is_banned,0) AS is_banned FROM PlaceRating r JOIN User u ON u.id=r.user_id`)
+        .all().map(row => ({ ...row, weight: row.weight * checkInMultiplier(weights, row.place_id, row.user_id) }));
+}
 function readSummary(id){const r=db._raw.prepare('SELECT * FROM PlaceRatingSummary WHERE place_id=?').get(id);return r?{count:r.count,average:r.average,tier:r.tier,distribution:JSON.parse(r.distribution)}:{count:0,average:null,tier:null,distribution:{1:0,2:0,3:0,4:0}};}
 function writeSummary(id,r){db._raw.prepare(`INSERT INTO PlaceRatingSummary(place_id,count,average,tier,distribution) VALUES(?,?,?,?,?) ON CONFLICT(place_id) DO UPDATE SET count=excluded.count,average=excluded.average,tier=excluded.tier,distribution=excluded.distribution`).run(id,r.count,r.average,r.tier,JSON.stringify(r.distribution));}
 async function rebuild(){for(let attempt=0;attempt<2;attempt++){

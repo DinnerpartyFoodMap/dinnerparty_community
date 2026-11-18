@@ -367,6 +367,7 @@ final class NativeSettingsStore: ObservableObject {
     @Published var lat: String
     @Published var lng: String
     @Published var zoom: String
+    @Published var companionRoaming: Bool
     @Published private(set) var motion: [String: Bool]
     // 请求与提示
     /// 正在等待网页回执的请求类型（对应页面显示进度、禁用输入）
@@ -427,6 +428,7 @@ final class NativeSettingsStore: ObservableObject {
         lat = String((values["lat"] as? String ?? "").prefix(32))
         lng = String((values["lng"] as? String ?? "").prefix(32))
         zoom = String((values["zoom"] as? String ?? "").prefix(32))
+        companionRoaming = values["companionRoaming"] as? Bool ?? true
         var motion: [String: Bool] = [:]
         for (key, value) in mapPage?["motion"] as? JSObject ?? [:] {
             if let flag = value as? Bool { motion[key] = flag }
@@ -549,7 +551,7 @@ final class NativeSettingsStore: ObservableObject {
     }
 
     func saveMap(completion: @escaping (Bool) -> Void) {
-        request("saveMap", ["style": mapStyle, "lat": lat, "lng": lng, "zoom": zoom], completion: completion)
+        request("saveMap", ["style": mapStyle, "lat": lat, "lng": lng, "zoom": zoom, "companionRoaming": companionRoaming], completion: completion)
     }
 
     func saveUsername(_ name: String, completion: @escaping (Bool) -> Void) {
@@ -1266,6 +1268,7 @@ private struct NativeMapSettingsView: View {
                     TextField("24", text: $store.zoom)
                         .keyboardType(.numberPad)
                 }
+                Toggle(store.mapText("companionRoaming", "在底部功能栏显示小伙伴"), isOn: $store.companionRoaming)
             }
             if !store.motionItems.isEmpty {
                 Section {

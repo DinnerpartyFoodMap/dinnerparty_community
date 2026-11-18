@@ -15,8 +15,8 @@ assert.equal(parseOnboardingSeen('{broken'), false);
 for (const variant of ['desktop', 'mobile', 'ios', 'native']) {
     const steps = buildOnboardingSteps({ variant });
     const expectedOrder = variant === 'ios' || variant === 'native'
-        ? ['search', 'card', 'more', 'favorites']
-        : ['search', 'card', 'favorites'];
+        ? ['search', 'card', 'more', 'journey']
+        : ['search', 'card', 'journey'];
     assert.deepEqual(steps.map((step) => step.id), expectedOrder, `${variant} order`);
     for (const step of steps) {
         assert.ok(step.title && step.body && step.icon, `${variant}/${step.id} has copy and icon`);
@@ -34,7 +34,7 @@ const nativeSteps = Object.fromEntries(buildOnboardingSteps({ variant: 'native' 
 assert.deepEqual(nativeSteps.search.native, { target: 'search', drawer: false });
 assert.deepEqual(nativeSteps.card.native, { target: null, drawer: false });
 assert.deepEqual(nativeSteps.more.native, { target: 'drawer', drawer: false }, 'more starts with the drawer closed so users can practise opening it');
-assert.deepEqual(nativeSteps.favorites.native, { target: 'favorites', drawer: false });
+assert.deepEqual(nativeSteps.journey.native, { target: 'journey', drawer: false });
 assert.equal(nativeSteps.more.where.icon, 'swipe_up');
 assert.equal(nativeSteps.more.body, localeText('map:onboarding.more.bodyNative'), 'native copy explains the available drawer gesture');
 assert.equal(nativeSteps.more.hint, localeText('map:onboarding.more.practice'), 'native swipe practice explains automatic advancement');
@@ -83,7 +83,7 @@ try {
 // 原生回传的位置只属于它报上来的那一步
 const rect = { left: 12, top: 700, right: 378, bottom: 772 };
 assert.equal(nativeTourRect(nativeSteps.search, { step: 'search', rect }), rect);
-assert.equal(nativeTourRect(nativeSteps.search, { step: 'favorites', rect }), null, 'stale position from another step');
+assert.equal(nativeTourRect(nativeSteps.search, { step: 'journey', rect }), null, 'stale position from another step');
 assert.equal(nativeTourRect(nativeSteps.search, null), null);
 assert.equal(nativeTourRect(buildOnboardingSteps({ variant: 'ios' })[0], { step: 'search', rect }), null, 'web steps use data-tour');
 assert.deepEqual(unionBox({ left: 300, top: 600, width: 50, height: 50 }, { left: 12, top: 640, width: 366, height: 80 }), { left: 12, top: 600, width: 366, height: 120 });

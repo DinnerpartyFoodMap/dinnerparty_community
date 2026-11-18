@@ -117,7 +117,7 @@ console.log('Native admin session tests passed.');
         if (path === '/admin/users') {
             return json([
                 { id: 1, username: '幽幽子', admin_level: '', is_banned: 0, has_avatar: 0, qq: '' },
-                { id: 2, username: '妖梦', admin_level: 'YOUMU', is_banned: 1, ban_reason: '刷屏', has_avatar: 1, qq: '12345' }
+                { id: 2, username: '妖梦', admin_level: 'YOUMU', is_banned: 1, ban_reason: '刷屏', has_avatar: 1, avatar_url: '/users/2/avatar?v=second', qq: '12345' }
             ]);
         }
         if (path === '/admin/qq-whitelist') return json([{ id: 1, qq: '12345', created_time: '2026-10-30' }]);
@@ -130,12 +130,12 @@ console.log('Native admin session tests passed.');
     };
     try {
         const controller = createNativeAdminController({
-            backendUrl: 'https://api.example.com', token: 't', user: { id: 9, username: '紫', admin_level: 'YUYUKO' }
+            backendUrl: 'https://api.example.com', token: 't', user: { id: 9, username: '紫', admin_level: 'YUYUKO', avatar_url: 'https://oss.example.com/avatars/9-new.webp' }
         });
-        // 首页：个人信息框（服务器默认头像兜底），带图标的管理项，没有皮肤兑换码
+        // 首页使用账号响应里的头像地址，管理项保留各自的图标。
         const dashboard = controller.dashboard();
         assert.equal(dashboard.header.title, '紫');
-        assert.match(dashboard.header.image, /\/users\/9\/avatar\?fallback=default$/);
+        assert.equal(dashboard.header.image, 'https://oss.example.com/avatars/9-new.webp');
         assert.match(dashboard.header.subtitle, /YUYUKO/);
         assert.equal(dashboard.sections[0].rows.length, 8);
         assert.ok(!dashboard.sections[0].rows.some((row) => row.id === 'skinCodes'));
@@ -154,6 +154,7 @@ console.log('Native admin session tests passed.');
         assert.equal(first.detail, undefined);
         assert.ok(first.actions.length >= 5);
         assert.equal(second.badgeTone, 'danger');
+        assert.equal(second.image, 'https://api.example.com/users/2/avatar?v=second');
         assert.ok(second.fields.some((field) => field.value === '刷屏'));
         assert.ok(second.fields.some((field) => field.value === 'YOUMU'));
 

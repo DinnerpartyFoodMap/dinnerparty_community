@@ -1,8 +1,18 @@
 # 账号与访问
 
-住民主页 `GET /users/:id/profile`（`services/userProfile.js`，可选登录）：住民名、是否有头像、`relation`、上次定位所在的城市（`UserLastLocation.city`：`PUT /users/me/location` 保存后在后台用 `maps/services/amapRegeo.js` 逆地理编码，位置又变了就不写旧结果）、六类餐饮偏好 `taste`（[六类餐饮偏好](../../preferences/doc/TASTE_AXES.md)），以及住民选的两个小组件 `widgets`（`collection` 公开收藏夹 / `recent` 最近创建的 5 个 / `favorite` 自己评“均线之上”及以上的 5 个）与其内容 `content`；屏蔽了 Ta 时不返回小组件内容。`PUT /users/me/profile { widgets }` 保存小组件（存在 `User.profile_widgets`），`PUT /users/me/taste { axis, level }` 自己填某一类的喜好（1–4，null 回到自动推断）。`GET /users/me` 另带 `rejected_place_count`（自己被驳回的地点数，前端头像小红点）。
+`GET /users/:id/profile` 支持匿名访问，返回住民名、头像 URL、观看者关系、城市、六类餐饮偏好和两栏小组件。第一栏固定为 `collection`，预览最多 5 个收藏地点，本人收到 `collection_visibility`。第二栏默认 `recent`，可切换成 `favorite`，展示本人评为「均线之上」及以上的 5 个地点。`PUT /users/me/profile { widgets }` 保存第二栏并兼容旧版两栏参数。`PUT /users/me/taste { axis, level }` 保存自己的偏好等级，`null` 恢复自动推断。访客的偏好数据不含收藏明细。屏蔽对象的主页不返回小组件。`GET /users/me` 的 `rejected_place_count` 用于头像提示。 [六类餐饮偏好](../../preferences/doc/TASTE_AXES.md)
+
+`GET /users/:id/favorites` 读取完整清单，支持匿名查看公开收藏。`GET` 和 `PUT /api/favorites/visibility` 读取与更新本人的 `{ is_public }`。`User.favorites_public` 默认为公开，对既有和新增账户生效。收藏条目来自 `Favorite`，同好匹配开关独立。服务端应用本人身份、屏蔽、封禁和地点审核规则。
 
 入口：`routes/users.js`（挂载 `/users`）、`middleware/auth.js`。服务包括 sessions、qqVerification、phoneVerification（两者共用 `verificationCodeStore.js` 的哈希、冷却、配额、错误次数与消费逻辑）、qqWhitelist、userAccess、userLocation、userRelations。`GET /users/:id/places`（可选登录）返回住民名、观看者与这位住民的关系 `relation`（`self`、`blocked`、`can_block`）和这位住民创建的地点（places 模块的 `creatorPlaces.js`），供地图按住民筛选；已屏蔽时不列出地点。`POST` / `DELETE /users/:id/block`（需登录，不能屏蔽自己）屏蔽 / 解除屏蔽并返回新的 `relation`，数据在 `UserBlock`（任一方注销时级联删除）。屏蔽只影响屏蔽者自己看到的内容：`services/userRelations.js` 的 `notBlockedSql` 用在全部地点 / 附近地点（places）、快速搜索（discovery）、地点下的公开日记（journeys）和同好匹配（community）；AI 搜索、随机推荐、顺路和单个地点 / 分享链接不过滤。数据：User（含 `phone`）、QQWhitelist、QQVerificationCode、PhoneVerificationCode、UserLastLocation；Redis 保存设备会话。依赖数据库、日志、Redis、qqbot 的私信边界，以及 `infrastructure/aliyunSms.js` 的短信边界。
+
+## 头像
+
+登录、`GET /users/me`、住民主页和更新账号资料的 `user` 对象包含 `avatar_url` 和 `has_avatar`。没有自定义头像时 `avatar_url` 为 `null`。上传通过 `PUT /users/me/avatar`，服务端将图片裁成 200×200 的 WebP，使用已有 `IMAGE_STORAGE=oss` 配置写入 `OSS_PREFIX/avatars/` 下的新对象，再把自有域名 URL 写入 `User.avatar_url`。换图后 URL 随之变化，对象可长期缓存。固定的 `/users/:id/avatar` 为旧客户端解析当前头像，使用 `no-store`。
+
+更换头像和注销账号后，后端会尝试清理旧 OSS 对象，失败时记录 `account.avatar.cleanup_failed`。对应 RAM 子账号需要 `acs:oss:*:*:<bucket>/<OSS_PREFIX>/avatars/*` 上的 `oss:DeleteObject` 权限。旧地址的分发缓存可能保留至过期。 [OSS 对象删除](https://help.aliyun.com/zh/oss/developer-reference/delete-object)
+
+已有 SQLite 头像在迁移前通过 `avatar_url` 指向的 `/users/:id/avatar/legacy` 读取。部署新版后端后，在相同 `.env` 和数据库配置下运行 `npm run avatars:migrate-oss` 只读统计，再用 `npm run avatars:migrate-oss -- --apply` 上传。每次上传成功后，只有原头像仍是当前版本才会写入 URL 并清空该行的旧 BLOB。中途失败可重跑。
 
 ## 手机号
 

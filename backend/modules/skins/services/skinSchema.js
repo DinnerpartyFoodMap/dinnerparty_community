@@ -11,6 +11,7 @@ function addMissingColumns(database, table, definitions) {
 function initSkinSchema(database) {
     addMissingColumns(database, 'InviteCode', [
         'skin_id TEXT',
+        'companion_id TEXT',
         'note TEXT',
         'created_by TEXT',
         'expires_time TEXT',
@@ -20,12 +21,20 @@ function initSkinSchema(database) {
     database.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_invitecode_skin_code ON InviteCode(code) WHERE skin_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_invitecode_skin_id ON InviteCode(skin_id, id DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_invitecode_resource_code ON InviteCode(code) WHERE skin_id IS NOT NULL OR companion_id IS NOT NULL;
       CREATE TABLE IF NOT EXISTS UserSkin (
         user_id TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
         skin_id TEXT NOT NULL,
         invite_code_id INTEGER REFERENCES InviteCode(id) ON DELETE SET NULL,
         unlocked_time TEXT NOT NULL,
         PRIMARY KEY (user_id, skin_id)
+      );
+      CREATE TABLE IF NOT EXISTS UserCompanion (
+        user_id TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+        companion_id TEXT NOT NULL,
+        invite_code_id INTEGER REFERENCES InviteCode(id) ON DELETE SET NULL,
+        unlocked_time TEXT NOT NULL,
+        PRIMARY KEY (user_id, companion_id)
       );
     `);
 }

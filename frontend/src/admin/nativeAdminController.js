@@ -7,6 +7,7 @@ import { TASTE_AXES, axisLabel } from '../profile/tasteAxes.js';
 import { nativePageLabels } from '../platform/nativePageLabels.js';
 import { sfSymbol } from '../platform/iconRegistry.js';
 import { announcePublicUpdate } from '../platform/polling.js';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 
 const PAGE_SIZE = 10;
 const QQ_PATTERN = /^\d{5,15}$/;
@@ -61,11 +62,6 @@ function searchMatch(query, ...values) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return true;
   return values.some((value) => String(value ?? '').toLowerCase().includes(q));
-}
-
-/** 住民头像：没有上传头像时服务器返回默认头像 */
-function avatarUrl(backendUrl, userId) {
-  return `${backendUrl}/users/${encodeURIComponent(userId)}/avatar?fallback=default`;
 }
 
 function storedImages(value) {
@@ -183,7 +179,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
       title: t('admin:dashboard.title'),
       // 与住民主页的个人信息框相同：头像、住民名、管理员等级
       header: user?.id ? {
-        image: avatarUrl(backendUrl, user.id),
+        image: resolveAvatarUrl(user, backendUrl, { serverFallback: true }),
         title: user.username || String(user.id),
         subtitle: `${t('admin:dashboard.adminLevel')}${level || t('admin:dashboard.regularUser')}`,
         symbol: sfSymbol('adminBadge')
@@ -342,7 +338,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
       id: String(u.id),
       title: u.username || String(u.id),
       subtitle: t('admin:generalUsers.qqLine', { qq: u.qq || '-' }),
-      image: avatarUrl(backendUrl, u.id),
+      image: resolveAvatarUrl(u, backendUrl, { serverFallback: true }),
       imageShape: 'circle',
       badge: statusLabel(u.is_banned),
       badgeTone: u.is_banned ? 'danger' : 'success'
@@ -453,7 +449,7 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
         review('reject', rejectLabel, isCreate ? t('admin:places.createRejectImpact') : t('admin:places.rejectImpact')),
         onOpenPlace && r.place_id ? action(t('admin:places.openOnMap'), async () => { onOpenPlace(r.place_id); return { close: true }; }) : null
       ].filter(Boolean);
-      const gallery = [...storedImages(content.exterior_images), ...storedImages(content.menu_images)]
+      const gallery = [...storedImages(content.exterior_images), ...storedImages(content.menu_images), ...(r.photo_previews || [])]
         .map((url) => absoluteImage(url, backendUrl)).filter(Boolean);
       return {
         id: String(r.id),

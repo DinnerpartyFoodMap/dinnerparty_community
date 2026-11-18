@@ -2,13 +2,12 @@ import React from 'react';
 import ResponsivePanel from '../components/overlay/ResponsivePanel';
 import { t } from '../i18n/index.js';
 
-/** 「日记 · 同好」入口：纵向大点击区，依次为图文生成、日历、同好，底部独立取消。 */
+/** 日记入口：快速创建、日历与取消。 */
 export default function JourneyEntrySheet({open,counts,onSelect,onClose}) {
     const material=counts?.material||0,unfinished=counts?.count||0;
     const items=[
         {id:'composer',icon:'✦',title:t('journey:common.feature.generate'),hint:material?t('journey:entry.composerHintUnfinished', { material }):t('journey:entry.composerHint')},
-        {id:'calendar',icon:'▦',title:t('journey:common.feature.calendar'),hint:t('journey:entry.calendarHint'),badge:unfinished?t('journey:entry.calendarBadge', { unfinished }):''},
-        {id:'community',icon:'◎',title:t('journey:common.feature.community'),hint:t('journey:entry.communityHint')}
+        {id:'calendar',icon:'▦',title:t('journey:common.feature.calendar'),hint:t('journey:entry.calendarHint'),badge:unfinished?t('journey:entry.calendarBadge', { unfinished }):''}
     ];
     return <ResponsivePanel open={open} onClose={onClose} label={t('journey:entry.title')} kind="journey-entry" desktop="center" mobile="sheet" showClose={false}
         width="min(380px, calc(100vw - 24px))" bodyStyle={{padding:0}}>

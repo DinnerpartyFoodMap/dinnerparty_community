@@ -3,9 +3,19 @@ const router = express.Router();
 const { db } = require('../../../infrastructure/database');
 const { requireAuth } = require('../../accounts/middleware/auth');
 const { changeFavorite } = require('../services/userPreferenceService');
+const { getFavoriteVisibility, setFavoriteVisibility } = require('../services/favoriteCollection');
 
 // All favorites routes require authentication
 router.use(requireAuth);
+
+router.get('/visibility', (req, res) => {
+    res.set('Cache-Control', 'no-store').json({ is_public: getFavoriteVisibility(req.user.id) });
+});
+
+router.put('/visibility', (req, res) => {
+    if (typeof req.body?.is_public !== 'boolean') return res.status(400).json({ error: '收藏公开设置无效' });
+    res.set('Cache-Control', 'no-store').json({ is_public: setFavoriteVisibility(req.user.id, req.body.is_public) });
+});
 
 // GET /api/favorites - return list of favorited places (with full place details) for the current user
 router.get('/', (req, res) => {

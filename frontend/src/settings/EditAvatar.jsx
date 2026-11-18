@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Button from "../components/primitives/Button";
 import useDarkMode from "../theme/useDarkMode";
 import defaultAvatar from '../img/default.png';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { TipsContext } from "../components/feedback/Tips";
 import Cropper from 'react-easy-crop';
 import getCroppedImg from "./media/cropImage";
@@ -97,11 +98,7 @@ export default function EditAvatar({ user, onBack, backendUrl, token, onUpdateUs
                         display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
                         border: '1px solid var(--color-border)'
                     }}>
-                        {user && user.has_avatar ? (
-                            <img src={`${backendUrl}/users/${user.id}/avatar?t=${Date.now()}`} alt="Current Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                            <img src={defaultAvatar} alt="Default Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        )}
+                        <img src={resolveAvatarUrl(user, backendUrl, { defaultUrl: defaultAvatar })} alt={t('common:label.avatar')} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                 )}
 

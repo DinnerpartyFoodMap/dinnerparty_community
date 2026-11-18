@@ -95,10 +95,10 @@ async function main() {
     assert.equal((first.headers['content-encoding'] ?? null), 'br');
     const body = decode(first, raw);
     assert.equal(typeof body.version, 'string');
-    assert.deepEqual(body.fields, ['id', 'name', 'category', 'longitude', 'latitude', 'per_person_cost', 'province', 'city', 'district', 'rating_count', 'rating_average', 'rating_negative_count']);
+    assert.deepEqual(body.fields, ['id', 'name', 'category', 'longitude', 'latitude', 'per_person_cost', 'province', 'city', 'district', 'rating_count', 'rating_average', 'rating_negative_count', 'checkin_count']);
     assert.deepEqual(body.rows.map((row) => row[0]), [1, 2], '审核中、未通过的地点不进公共快照');
     const place1 = Object.fromEntries(body.fields.map((field, index) => [field, body.rows[0][index]]));
-    assert.deepEqual(place1, { id: 1, name: '鱼粥', category: '粥, 避雷', longitude: 113.1, latitude: 23.1, per_person_cost: 30, province: '广东省', city: '广州市', district: '番禺区', rating_count: 1, rating_average: 1, rating_negative_count: 1 });
+    assert.deepEqual(place1, { id: 1, name: '鱼粥', category: '粥, 避雷', longitude: 113.1, latitude: 23.1, per_person_cost: 30, province: '广东省', city: '广州市', district: '番禺区', rating_count: 1, rating_average: 1, rating_negative_count: 1, checkin_count: 0 });
     assert.ok(!raw.includes('很长的描述') && !JSON.stringify(body).includes('很长的描述'), '描述等详情不在快照里');
 
     // gzip、不压缩与 br 内容相同；ETag 对得上时 304

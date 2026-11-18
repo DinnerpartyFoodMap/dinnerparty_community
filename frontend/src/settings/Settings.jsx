@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Button from "../components/primitives/Button";
 import Tooltip from "../components/primitives/Tooltip";
 import defaultAvatar from "../img/default.png";
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { TipsContext } from "../components/feedback/Tips";
 import { useConfirm } from "../components/feedback/Confirm";
 import { clearLocalDraftsForUser } from "../platform/localDraftStore";
@@ -107,11 +108,7 @@ export default function Settings({ user, onBack, onOpenEditAvatar, onOpenEditUse
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             <strong>{t('settings:main.avatar')}</strong>
-                            {user && user.has_avatar ? (
-                                <img src={`${backendUrl}/users/${user.id}/avatar?t=${Date.now()}`} alt="Avatar" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
-                            ) : (
-                                <img src={defaultAvatar} alt="Default Avatar" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
-                            )}
+                            <img src={resolveAvatarUrl(user, backendUrl, { defaultUrl: defaultAvatar })} alt={t('common:label.avatar')} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
                         </div>
                         <div>
                             <Tooltip text={t('common:nav.editAvatar')} placement="top">

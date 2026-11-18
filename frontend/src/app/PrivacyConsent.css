@@ -53,7 +53,7 @@
     font-weight: 600;
     cursor: pointer;
 }
-.fm-consent-accept { background: var(--theme-primary); border-color: var(--theme-primary); color: var(--theme-on-primary); }
+.fm-consent-accept { background: var(--theme-primary); border-color: var(--theme-primary); color: var(--web-primary-action-text, var(--theme-on-primary)); }
 .fm-consent-button:hover { filter: brightness(0.94); }
 .fm-consent-shell :focus-visible { outline: 2px solid var(--consent-accent); outline-offset: 2px; }
 .fm-consent-dialog h1:focus { outline: none; }

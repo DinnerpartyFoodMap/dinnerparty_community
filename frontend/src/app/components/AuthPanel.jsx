@@ -8,9 +8,10 @@ import { APP_VERSION, getPlatform } from "../../platform/env";
 import AnchoredPopover from "../../components/overlay/AnchoredPopover";
 import { t } from "../../i18n/index.js";
 import LegalLinks from '../../auth/components/LegalLinks.jsx';
+import { resolveAvatarUrl } from '../../auth/avatarUrl.js';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
 
-const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenAlongRoute, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onOpenMyPlaces, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
+const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogout, onOpenAuth, onOpenAdmin, onOpenSettings, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenAlongRoute, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onOpenCompanion, onOpenMyPlaces, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
     // 自己有被驳回的地点：头像与“我创建的地点”上的小红点
     const rejectedCount = Number(user?.rejected_place_count) || 0;
     const [userOpen, setUserOpen] = useState(false);
@@ -192,7 +193,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                         >
                             <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
                                 <SkinAvatarFrame size={32}>
-                                    <img src={user.has_avatar ? `${backendUrl}/users/${user.id}/avatar?t=${Date.now()}` : (user.avatar || accountDefaultAvatar)} alt={user.username || t('common:label.avatar')} style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', objectFit: 'cover' }} />
+                                    <img src={resolveAvatarUrl(user, backendUrl, { defaultUrl: user.avatar || accountDefaultAvatar })} alt={user.username || t('common:label.avatar')} style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', objectFit: 'cover' }} />
                                 </SkinAvatarFrame>
                                 {rejectedCount > 0 && <span aria-hidden="true" className="fm-red-dot fm-red-dot--corner" />}
                             </span>
@@ -224,6 +225,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onLogou
                                 {onOpenProfile && (
                                     <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenProfile(); }}>{t('map:ui.myProfile')}</Button>
                                 )}
+                                {onOpenCompanion && <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onOpenCompanion(); }}>{t('companion:title')}</Button>}
                                 <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); isOnSettings ? onGoHome?.() : onOpenSettings?.(); }}>{isOnSettings ? t('common:action.backToMap') : t('auth:panel.settings')}</Button>
                                 {divider}
                                 <Button variant="menu" full {...itemProps} onClick={() => { setUserOpen(false); onLogout?.(); }} style={{ color: 'var(--color-danger)' }}>{t('auth:panel.logout')}</Button>

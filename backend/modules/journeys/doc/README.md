@@ -3,6 +3,8 @@
 入口：routes/journeys.js（`/api/journeys`）、publicJourneys.js（`/api/public/journeys`）。服务按生命周期分工：Store/Schema 数据与规范化；Compose 素材；AI 持久任务与抽取；Drafts 草稿修订；Resolution 位置澄清；MapLinks 地图关联；Publication 预览与唯一公开提交；Merge/Corrections 合并与修正。跨模块调用 places 创建规则和数据库，当前 Store 也被 community 复用，见待办 JRN-02。
 算法与提示词通过 journeyAlgorithmClient 调用私有服务；本项目保留任务、权限与落库，不包含算法实现。接入、启动及独立测试见 [私有算法服务](ALGORITHM_SERVICE.md)。
 
+首次生成 active publication 时按群写入独立的公开日记 QQ 通知任务，和公开快照一起提交。更新及重新公开不生成新任务；撤回时跳过待发任务。机器人只从当前公开快照读取标题、正文、公开站点和照片。详见 [QQ Bot](../../qqbot/doc/README.md#公开日记推送)。
+
 ```mermaid
 flowchart TD
     Material[私有图文素材] --> Autosave[保存 compose draft 与 revision]

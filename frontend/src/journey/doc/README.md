@@ -1,10 +1,10 @@
-# 日记与同好工作区
+# 日记工作区
 
-JourneyWorkspace 维护单个 overlay 内页面栈；EntrySheet 提供图文生成/日历/同好；Composer 与 useComposeDraft 处理素材；Generation 管理任务；Review 与 useJourneyDraft 编辑草稿；Resolution/地图选择解决位置；Detail/PublicJourneyView/PlaceDiaryList 展示私有与公开；Share/cover 生成分享；Community 与 feedback 处理同好及同意反馈。
+地图功能栏的「日记」进入快速创建或日历。JourneyWorkspace 维护单个浮层内的页面栈。Composer 与 useComposeDraft 处理素材，Generation 管理任务，Review 与 useJourneyDraft 编辑草稿。Resolution 处理位置选择，Detail、PublicJourneyView 和 PlaceDiaryList 展示日记，Share 生成分享内容。同好与收藏从住民主页进入。 [住民主页](../../profile/doc/README.md)
 
 ```mermaid
 flowchart TD
-    Entry[入口 sheet] --> Mode{图文 / 日历 / 同好}
+    Entry[日记入口] --> Mode{快速创建 / 日历}
     Mode -->|图文| Compose[本机素材 + 服务端素材草稿]
     Compose --> Sync[上传照片与版本同步]
     Sync --> Job[提交生成任务 可离开再恢复]
@@ -19,7 +19,6 @@ flowchart TD
     Commit --> Unknown[确认丢失时保留相同请求供重试]
     Saved --> Public[公开读取只走 publication 接口]
     Leave[返回或离开] --> Protect[未同步则保护 / 等待 / 明确选择]
-    Mode -->|同好| Consent[同意设置 → 兼容画像 → 同好/公开收藏]
 ```
 
 | 选择 | 对照与约束 |
@@ -34,12 +33,12 @@ flowchart TD
 
 案例见 [TEST_CASES.md](TEST_CASES.md)；已有 test:journey-text、后端日记测试与完整浏览器 harness。历史 `01e11a4`、`cc11a4f`；待办 JRN-F01 及已记录的 UI 稳定性问题见 [清单](../../../doc/HISTORY_AND_TODO.md)。
 
-## iOS 原生日记 · 同好（2026-10-30）
+## iOS 原生日记
 
-iOS App 的日记 · 同好由 SwiftUI 呈现（[NativeJourneyPlugin.swift](../../../ios/App/App/NativeJourneyPlugin.swift)），共用 `NativePageEngine.swift`。网页构建声明式页面模型并执行草稿、生成、公开、同好请求（[nativeJourneyController.js](../nativeJourneyController.js)、[nativeJourney.js](../../platform/nativeJourney.js)）：
+iOS 的日记使用 SwiftUI 与 `NativePageEngine.swift`。网页构建页面模型并执行草稿、生成及公开请求。 [原生日记](../../../ios/App/App/NativeJourneyPlugin.swift) · [控制器](../nativeJourneyController.js) · [桥接](../../platform/nativeJourney.js)
 
-- 原生页面：入口、素材（文字/日期/可见性/照片上传）、生成状态、核对（基本信息、站点、照片、私密/公开保存）、日历（月份/日期/搜索/删除）、详情（历史版本、另存、公开链接、删除）、未完成、私人图片、公开日记、同好（同好列表、收藏夹、设置）与分享设置。
+- 原生页面包括入口、素材、生成状态、核对、日历、详情、未完成、私人图片、公开日记与分享设置。
 - 生成进度由网页通过 `update` 主动推送；核对页返回时尽力同步草稿，失败时写入本机草稿。
 - 地图选点与分享画布仍由现有网页工具页完成：原生详情页的“在地图中查看”和分享页的“在网页分享编辑器中继续”把流程交回网页工作区；原生打开失败也会回退网页工作区。
-- 2026-11-01：入口改为从下方弹出的半屏面板（进入子功能展开到全屏）；图文生成与日历改为原生自绘页面（页面模型 `custom`，按 `JourneyComposer` / `JourneyCalendar` 的操作逻辑，含地址页与合并预览）；同好列表带头像，收藏夹有详情页与“编辑收藏夹”，发现设置在页面内直接编辑。
-- 未在原生中实现的细节：同好星图视图、私人图片草稿（本机未上传照片）、逐站照片选择与地图选点；这些仍可在网页工作区完成。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。
+- 入口使用半屏面板。快速创建与日历用原生 `custom` 页面，沿用 `JourneyComposer` 与 `JourneyCalendar` 的操作逻辑，包含地址页和合并预览。
+- 私人图片草稿、逐站照片选择和地图选点由网页工作区完成。桥接测试纳入 `test:native-panels`。 [真机验收](../../../native/doc/README.md)

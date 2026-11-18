@@ -203,7 +203,8 @@ function migrateUserTableToUuidIfNeeded() {
         `${hasCol('ban_expires') ? 'ban_expires' : 'NULL'} AS ban_expires`,
         `${hasCol('map_settings') ? 'map_settings' : 'NULL'} AS map_settings`,
         `${hasCol('qq') ? 'qq' : 'NULL'} AS qq`,
-        `${hasCol('avatar_blob') ? 'avatar_blob' : 'NULL'} AS avatar_blob`
+        `${hasCol('avatar_blob') ? 'avatar_blob' : 'NULL'} AS avatar_blob`,
+        `${hasCol('avatar_url') ? 'avatar_url' : 'NULL'} AS avatar_url`
     ].join(', ');
 
     console.log('Migrating User.id to TEXT UUID primary key...');
@@ -231,10 +232,11 @@ function migrateUserTableToUuidIfNeeded() {
             ban_expires DATETIME,
             map_settings TEXT,
             qq TEXT,
-            avatar_blob BLOB
+            avatar_blob BLOB,
+            avatar_url TEXT
         );`);
 
-        rawDb.exec(`INSERT INTO "__User_uuid_migration" (id, username, password, avatar, admin_level, created_time, is_banned, ban_reason, ban_expires, map_settings, qq, avatar_blob)
+        rawDb.exec(`INSERT INTO "__User_uuid_migration" (id, username, password, avatar, admin_level, created_time, is_banned, ban_reason, ban_expires, map_settings, qq, avatar_blob, avatar_url)
                     SELECT ${selectExpr}
                     FROM User
                     JOIN "__User_id_map" AS id_map ON id_map.old_id = CAST(User.id AS TEXT);`);
@@ -481,8 +483,10 @@ function init() {
         addIfMissing('map_settings TEXT');
         addIfMissing('qq TEXT');
         addIfMissing('avatar_blob BLOB');
+        addIfMissing('avatar_url TEXT');
         // 住民主页的两个小组件（accounts/services/userProfile.js），JSON 数组
         addIfMissing('profile_widgets TEXT');
+        addIfMissing('favorites_public INTEGER NOT NULL DEFAULT 1 CHECK (favorites_public IN (0, 1))');
         // 绑定的手机号（11 位，大陆号码；accounts/services/phoneVerification.js）。注册时必填，老住民可以为空
         addIfMissing('phone TEXT');
 
@@ -748,6 +752,8 @@ function init() {
         // rows, explicit indexes, triggers and AUTOINCREMENT values.
         migrateUserReferenceColumnsToText();
         require('../modules/ratings/services/placeRatingSchema').initPlaceRatingSchema(rawDb);
+        require('../modules/places/services/placeCheckInSchema').initPlaceCheckInSchema(rawDb);
+        require('../modules/skins/services/companionState').initCompanionStateSchema(rawDb);
         require('../modules/preferences/services/userPreferenceSchema').initUserPreferenceSchema(rawDb);
         require('../modules/journeys/services/journeySchema').initJourneySchema(rawDb);
         require('../modules/ratings/services/algorithmSchema').initAlgorithmSchema(rawDb);

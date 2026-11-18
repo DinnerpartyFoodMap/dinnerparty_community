@@ -32,7 +32,8 @@ import { registerOverlay } from '../../../src/components/overlay/overlayStack.js
         addEventListener: (name, handler) => events.set(name, handler),
         removeEventListener: name => events.delete(name)
     };
-    const removePage = pushBackHandler(() => true, BACK_PRIORITY.PAGE);
+    let pageReturns = 0;
+    const removePage = pushBackHandler(() => { pageReturns += 1; return true; }, BACK_PRIORITY.PAGE);
     const stop = setupIosEdgeBack();
     let picker, dialog;
     try {
@@ -52,7 +53,20 @@ import { registerOverlay } from '../../../src/components/overlay/overlayStack.js
         assert.equal(messages.at(-1).region, 'content');
         window.location.pathname = '/';
         refreshBackTarget(); await Promise.resolve();
-        assert.equal(messages.at(-1).region, 'map', 'route changes report region even when enabled remains true');
+        assert.deepEqual(messages.at(-1), { enabled: false, interactive: true, region: 'map' }, 'map root does not offer iOS edge-back even with an earlier history entry');
+        events.get('foodmap:edge-back')();
+        events.get('foodmap:edge-back-progress')({ detail: { phase: 'begin', progress: 0.3 } });
+        assert.equal(pageReturns, 0, 'a late legacy event does not navigate away from the bare map');
+        dialog = registerOverlay({ kind: 'native', consumeBack: false });
+        await Promise.resolve();
+        assert.equal(messages.at(-1).enabled, false, 'a pass-through overlay does not take over the map gesture');
+        dialog.unregister(); dialog = null;
+        picker = registerOverlay({ kind: 'journey-map-picker', onClose: () => {} });
+        await Promise.resolve();
+        assert.deepEqual(messages.at(-1), { enabled: true, interactive: true, region: 'map' }, 'a picker on the map still owns its edge-back');
+        picker.unregister(); picker = null;
+        await Promise.resolve();
+        assert.equal(messages.at(-1).enabled, false, 'closing the picker releases the map edge again');
         const count = messages.length;
         refreshBackTarget(); await Promise.resolve();
         assert.equal(messages.length, count, 'unchanged state does not flood the bridge');

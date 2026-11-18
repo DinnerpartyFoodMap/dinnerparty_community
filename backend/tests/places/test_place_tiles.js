@@ -1,16 +1,19 @@
 // 地图标记分层瓦片（services/placeTiles.js、routes/placeTiles.js）与防爬第 1 阶段的路由改动：
 // 聚合瓦片不带 id / 店名 / 单店坐标且各级店数守恒；只含公开地点；字典与匿名行能还原筛选字段；
-// 清单与聚合瓦片的公共缓存头、内容哈希跳转、404；明细瓦片 private、按 IP / 票据限流；
-// 改一家店只换它所在的几块瓦片；GET /places 停用、/places/nearby 大范围只给少量、旧快照开关。
+// 清单与聚合瓦片的公共缓存头、内容哈希跳转、404；明细瓦片 private、按 IP / 票据限流及日志归属；
+// 改一家店只换它所在的几块瓦片；GET /places 停用、旧版地图的完整地点范围与快照开关。
 // 临时 SQLite + 本地 express；评价汇总的外部计算换成本地实现（同 test_place_markers.js）。npm run test:place-tiles
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'yuyuko-place-tiles-'));
 Object.assign(process.env, {
-    DB_FILE: path.join(temp, 'test.sqlite'), LOG_TO_FILE: 'false', LOG_TO_CONSOLE: 'false',
+    DB_FILE: path.join(temp, 'test.sqlite'),
+    LOG_DIR: path.join(temp, 'logs'), LOG_LEVEL: 'info', LOG_TO_FILE: 'true', LOG_TO_CONSOLE: 'false',
+    LOG_NOISY_PATH_PREFIXES: '/unused-test-prefix',
     TILE_SNAPSHOT_TTL_MS: '60000', ANTI_SCRAPE_MODE: 'observe'
 });
 delete process.env.ANTI_SCRAPE_LIMITS;
@@ -37,9 +40,11 @@ require('../../modules/ratings/services/ratingEstimateAdapter').ratingViews = as
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const logger = require('../../infrastructure/logger');
 const { db, init } = require('../../infrastructure/database');
 const { publicCache, skipForPublic } = require('../../http/middleware/publicCache');
 const { jsonCompression } = require('../../http/middleware/jsonCompression');
+const { requestLogger } = require('../../http/middleware/requestLogger');
 const placeTiles = require('../../modules/places/services/placeTiles');
 const { resetForTesting } = require('../../http/middleware/rateLimit');
 const sql = db._raw;
@@ -66,6 +71,7 @@ async function main() {
 
     const app = express();
     app.set('trust proxy', 'loopback');
+    app.use(requestLogger);
     app.use(publicCache());
     app.use(skipForPublic(cors({ origin: true, credentials: true, maxAge: 3600 })));
     app.use(jsonCompression());
@@ -208,13 +214,44 @@ async function main() {
     const { ticket, expires_at } = await ticketResponse.json();
     assert.ok(expires_at > Date.now());
     assert.equal((await get('/places/tiles/ticket')).status, 401, '票据要登录');
-    assert.equal((await get(leafUrl(keyB, `?t=${encodeURIComponent(ticket)}`), guestHeaders)).status, 200, '票据按账号计额度');
+    const ticketQuery = `?t=${encodeURIComponent(ticket)}`;
+    assert.equal((await get(leafUrl(keyB, ticketQuery), guestHeaders)).status, 200, '票据按账号计额度');
+    assert.equal((await get(leafUrl(keyB, ticketQuery), guestHeaders)).status, 200);
     assert.equal((await get(leafUrl(keyB, `?t=${encodeURIComponent(ticket)}x`), guestHeaders)).status, 429, '票据被改过按游客');
     assert.equal(placeTiles.verifyTicket(ticket).id, 'viewer');
     assert.equal(placeTiles.verifyTicket(ticket, expires_at + 1), null, '过期的票据无效');
     // 聚合瓦片不限流
     for (let i = 0; i < 3; i += 1) assert.equal((await get(`/places/tiles/${manifest.tiles[8][Object.keys(manifest.tiles[8])[0]]}/8/${Object.keys(manifest.tiles[8])[0]}`, guestHeaders)).status, 200);
+
+    // 观察模式记录撞线，两个明细瓦片请求都成功。
     process.env.ANTI_SCRAPE_MODE = 'observe';
+    resetForTesting();
+    const observingHeaders = { 'X-Forwarded-For': '198.51.100.5' };
+    assert.equal((await get(leafUrl(keyA), observingHeaders)).status, 200);
+    assert.equal((await get(leafUrl(keyB), observingHeaders)).status, 200);
+
+    // 读取实际请求日志，核对票据归属、瓦片去重、撞线和按用户查询。
+    await logger.flush();
+    const reportScript = path.join(__dirname, '../../scripts/diagnostics/scrape_report.js');
+    const runReport = (...subjectArgs) => JSON.parse(execFileSync(process.execPath,
+        [reportScript, '--since', '1h', '--json', ...subjectArgs],
+        { encoding: 'utf8', env: { ...process.env, LOG_TO_FILE: 'false' } }));
+    const { topTiles } = runReport();
+    for (const [subject, expected] of [
+        ['u:viewer', { requests: 2, tiles: 1, limited: 0, wouldLimit: 0 }],
+        ['ip:192.0.2.0/24', { requests: 4, tiles: 2, limited: 1, wouldLimit: 0 }],
+        ['ip:198.51.100.0/24', { requests: 2, tiles: 2, limited: 0, wouldLimit: 1 }]
+    ]) {
+        const row = topTiles.find((entry) => entry.subject === subject);
+        assert.ok(row, `报表缺少主体 ${subject}`);
+        const { requests, tiles, limited, wouldLimit } = row;
+        assert.deepEqual({ requests, tiles, limited, wouldLimit }, expected, subject);
+    }
+    const viewerReport = runReport('--user-id', 'viewer');
+    assert.deepEqual(viewerReport.ips, ['192.0.2.5']);
+    assert.equal(viewerReport.days.reduce((total, day) => total + day.requests, 0), 2);
+    assert.ok(viewerReport.days.every((day) => day.tiles === 1), '同一账户同一天重复读取同一块只记一块');
+
     delete process.env.ANTI_SCRAPE_LIMITS;
     resetForTesting();
 
@@ -232,12 +269,18 @@ async function main() {
     placeTiles.invalidateTileSnapshot();
     assert.equal((await (await get('/places/tiles/manifest')).json()).generated_at, next.generated_at, '内容不变时清单不变');
 
-    // ---- 第 1 阶段：GET /places 停用；/nearby 大范围只给评价最多的几家；旧快照可关 ----
+    // ---- GET /places 停用；旧版地图的大 / 小范围查询和快照继续可用 ----
     const root = await get('/places');
     assert.equal(root.status, 410);
     process.env.NEARBY_LARGE_AREA_ROWS = '2';
-    const large = await (await get('/places/nearby?minLng=100&minLat=20&maxLng=120&maxLat=40')).json();
-    assert.equal(large.length, 2, '大范围只给少量');
+    const wideUrl = '/places/nearby?minLng=100&minLat=20&maxLng=120&maxLat=40&viewMinLng=113&viewMinLat=22.8&viewMaxLng=113.8&viewMaxLat=23.5';
+    const wide = await get(wideUrl);
+    assert.equal(wide.status, 200);
+    assert.equal(wide.headers.get('cache-control'), 'no-store');
+    const large = await wide.json();
+    assert.deepEqual(large.map((place) => place.id).sort((a, b) => a - b), [1, 2, 3, 7, 1048577], '旧版客户端把成功响应视为整个请求范围内的完整地点集合');
+    assert.equal(large.find((place) => place.id === 3).description, '很长的描述', '旧版点位卡片直接使用附近响应里的详情');
+    assert.equal(large.find((place) => place.id === 3).creator_name, 'other');
     const small = await (await get('/places/nearby?minLng=113.2&minLat=23.1&maxLng=113.3&maxLat=23.2')).json();
     assert.deepEqual(small.map((place) => place.id).sort((a, b) => a - b), [1, 2, 3, 7], '小范围照旧给完整行');
     assert.equal(small.find((place) => place.id === 1).description, '很长的描述');
@@ -259,12 +302,21 @@ async function main() {
     assert.equal((await get('/places/2', detailHeaders)).status, 429);
     assert.equal((await get('/places/2', { ...detailHeaders, Authorization: bearer('viewer') })).status, 200, '登录后按账号');
 
-    console.log('Place tiles passed: aggregate tiles without ids/names, counts per level, dictionary and anonymous rows, public/private cache headers, hash redirects and 404, leaf limits with tickets, content-addressed changes, /places 410, nearby cap, legacy snapshot switch, detail limit.');
+    process.env.ANTI_SCRAPE_LIMITS = JSON.stringify({ legacy: { guest: [{ limit: 1, per: 3600 }] } });
+    resetForTesting();
+    assert.equal((await get(wideUrl, detailHeaders)).status, 200);
+    const limitedNearby = await get(wideUrl, detailHeaders);
+    assert.equal(limitedNearby.status, 429, '旧版附近接口在 enforce 模式下仍限流');
+    assert.equal(limitedNearby.headers.get('cache-control'), 'no-store');
+    assert.ok(Number(limitedNearby.headers.get('retry-after')) > 0);
+
+    console.log('Place tiles passed: aggregate tiles without ids/names, counts per level, dictionary and anonymous rows, public/private cache headers, hash redirects and 404, leaf limits with tickets, content-addressed changes, /places 410, complete legacy nearby responses, legacy snapshot switch, legacy and detail limits.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
     delete process.env.ANTI_SCRAPE_LIMITS;
     if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+    await logger.flush();
     db._raw.close();
     fs.rmSync(temp, { recursive: true, force: true });
 });

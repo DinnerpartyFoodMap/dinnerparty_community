@@ -74,6 +74,14 @@ async function ratingState(placeId,viewer=null){
     throw client.failure(409,'stale_input');
 }
 function priorCommand(userId,requestId,hash){if(!requestId)return null;const r=db._raw.prepare('SELECT * FROM RatingCommand WHERE user_id=? AND request_id=?').get(userId,requestId);if(r&&r.input_hash!==hash)fail(409,'请求编号已用于其他评价');return r;}
+function requireRatingRevision(userId, placeId, expected) {
+    if (expected === undefined) return;
+    const revision = db._raw.prepare('SELECT revision FROM RatingStream WHERE user_id=? AND place_id=?').get(userId, placeId)?.revision || 0;
+    if (revision !== expected) {
+        const message = '评价已在其他操作中变更，本次打卡保留当前评价';
+        throw Object.assign(new Error(message), { status: 409, code: 'CHECK_IN_RATING_STALE', publicMessage: message });
+    }
+}
 async function replay(user,id,command){
     try{return await ratingState(id,user);}catch(e){if(e.status===404)throw e;throw Object.assign(new Error('评价已保存，最新汇总暂不可用，请刷新'),{status:503,publicMessage:'评价已保存，最新汇总暂不可用，请刷新',committed:true,request_id:command.request_id});}
 }
@@ -82,24 +90,47 @@ async function mutate(user,placeId,score,options={}){
     if(!withdraw&&!isValidScore(score))fail(400,'请选择一个评价');
     const requestId=options.requestId;if(requestId!==undefined&&(typeof requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(requestId)))fail(400,'请求编号无效');
     if(options.confirm&&!requestId)fail(400,'确认评价需要请求编号');
-    const hash=commandHash(id,score,withdraw?'withdraw':'rate',!withdraw&&options.confirm===true),oldCommand=priorCommand(user.id,requestId,hash);if(oldCommand)return replay(user,id,oldCommand);
+    const checkInId = options.checkInId;
+    const checkIns = checkInId ? require('../../places/services/placeCheckIns') : null;
+    if (checkIns && (withdraw || requestId !== checkIns.ratingRequestId(checkInId))) fail(409,'打卡评价请求不匹配');
+    const linkCheckIn = () => {
+        if (checkIns && !checkIns.persistCheckInRating(user.id,checkInId,id,score)) fail(409,'打卡评价请求不匹配');
+    };
+    const hash=commandHash(id,score,withdraw?'withdraw':'rate',!withdraw&&options.confirm===true),oldCommand=priorCommand(user.id,requestId,hash);
+    if(oldCommand) {
+        if (!checkIns) return replay(user,id,oldCommand);
+        db._raw.transaction(() => {
+            require('../../accounts/services/userAccess').requireWritableUser(user.id);
+            linkCheckIn();
+        }).immediate();
+        return { place_id:id };
+    }
     for(let attempt=0;attempt<2;attempt++){
         const now=Date.now();let mean=null;if(isVectorSearchAvailable())mean=encodeMean(await placeMeanVector(now));
         const input=db._raw.transaction(()=>{
             require('../../accounts/services/userAccess').requireWritableUser(user.id);
+            requireRatingRevision(user.id,id,options.expectedRevision);
             requirePlace(id,user.id);const before=db._raw.prepare('SELECT * FROM PlaceRating WHERE user_id=? AND place_id=?').get(user.id,id)||null;
             const changed=withdraw?!!before:!before||before.score!==score;
             if(changed&&!withdraw){const q=ratingQuota(user.id,id,now);if(!q.place_counted&&q.used>=q.limit)fail(429,`今天已经评价了 ${q.limit} 家店，明天再来吧`);}
             const after=withdraw?null:changed?{place_id:id,user_id:user.id,score,source:'user',created_at:before?.created_at??now,updated_at:now,weight:userRatingWeight(user.id)}:before;
-            const ratings=summaryAdapter.readRatings().filter(r=>r.place_id===id&&r.user_id!==user.id);if(after)ratings.push({...after,is_banned:0});
+            const { checkInWeights, checkInMultiplier } = require('./checkInRatingWeights');
+            const weights = checkInWeights();
+            const ratings=summaryAdapter.readRatings(weights).filter(r=>r.place_id===id&&r.user_id!==user.id);
+            if(after)ratings.push({...after,weight:after.weight*checkInMultiplier(weights,id,user.id,!changed&&!options.confirm),is_banned:0});
             const stored=db._raw.prepare('SELECT * FROM UserPreference WHERE user_id=?').get(user.id);
             const viewer= !changed&&vectorAdapter.isFreshPreference(stored,now)?vectorAdapter.publicPreference(stored):null;
             return {...context(now),place_id:id,viewer_id:user.id,model:EMBEDDING_MODEL,mean,ratings,profiles:profileRows(),...(viewer?{viewer}:{viewer_input:vectorAdapter.collectPreferenceInput(user.id,now,changed?{place_id:id,score}:null)}),before,after,changed};
         })();
         const result=await client.compute('ratingview',input);
         const committed=db._raw.transaction(()=>{
-            const already=priorCommand(user.id,requestId,hash);if(already)return {already};
+            const already=priorCommand(user.id,requestId,hash);
             require('../../accounts/services/userAccess').requireWritableUser(user.id);
+            if(already){
+                linkCheckIn();
+                return {already};
+            }
+            requireRatingRevision(user.id,id,options.expectedRevision);
             if(!same(input.input_revision))return null;requirePlace(id,user.id);
             const q=ratingQuota(user.id,id,now);if(input.changed&&!withdraw&&!q.place_counted&&q.used>=q.limit)fail(429,`今天已经评价了 ${q.limit} 家店，明天再来吧`);
             if(input.changed){
@@ -115,10 +146,12 @@ async function mutate(user,placeId,score,options={}){
             }
             summaryAdapter.writeSummary(id,result.summary);
             if(requestId)db._raw.prepare('INSERT INTO RatingCommand(user_id,request_id,input_hash,place_id,action,committed_revision,committed_at) VALUES(?,?,?,?,?,?,?)').run(user.id,requestId,hash,id,withdraw?'withdraw':'rate',revision,now);
+            linkCheckIn();
             return {state:{place_id:id,summary:result.summary,mine:ownRating(id,user.id),personalized:result.personalized,quota:ratingQuota(user.id,id,now)}};
         }).immediate();
-        if(committed?.already)return replay(user,id,committed.already);
+        if(committed?.already)return checkIns ? { place_id:id } : replay(user,id,committed.already);
         if(committed){
+            if (checkIns) return committed.state;
             const migration=require('./ratingEstimateAdapter'),modes=migration.modes();
             // Mutation responses feed the open panel and map cache directly.
             // Return the same active fields as GET after the committed revision.

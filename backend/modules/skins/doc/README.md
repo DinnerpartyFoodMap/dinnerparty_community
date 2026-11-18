@@ -31,6 +31,16 @@ flowchart TD
 
 新增一套皮肤：在 `catalog.json` 的 `skins` 里登记 `{ "id": "小写字母数字与连字符", "name": "显示名" }`，同时在前端 `src/skins/packs/<id>/` 放素材（见前端 [皮肤模块](../../../../frontend/src/skins/doc/README.md)）。前端 `npm run test:skins` 核对两边 id 一致。素材随前端构建发布：已登记但当前 App 版本还没有素材的皮肤也能兑换，界面显示默认样式并提示更新。
 
+## 角色与远程皮肤兑换
+
+管理页发码时选择一个角色或一套皮肤，账号权益仍在兑换事务中与次数一起写入。`InviteCode.companion_id` 及 `UserCompanion` 保存角色的码和持有状态，`CompanionSelection` 与 `CompanionSatiety` 保存当前角色和饱食度。历史皮肤码、`UserSkin` 和原皮肤接口仍可用。共同的 `POST /api/skins/redeem-resource` 返回 `type`、`unlocked`、`already_owned` 及对应资源状态。`GET /api/skins/companions/me` 读取持有、当前角色及饱食度，`PUT /api/skins/companions/active` 接受 `companion_id`。内置 `stick-figure` 可直接选用。
+
+## 远程资源包
+
+在资源服务器用 `RESOURCE_PACK_DIR` 指定私有目录，默认是仓库根目录的 `.private/resource-packs`。`catalog.json` 的 `companions` 和 `skins` 接受 `{ "id": "fox", "name": "小狐狸", "version": "1", "entry": "fox.model3.json" }` 结构。角色文件放在 `companion/<id>/<version>/`，包含 `.model3.json`、`.moc3`、纹理和动作。远程主题皮肤放在 `skin/<id>/<version>/`，入口填 `skin.json`，沿用现有皮肤清单格式和位图。修改同一资源时递增 `version`，目录和清单应一起部署。额外角色和皮肤不入公开库。
+
+`GET /api/skins/packs/:type/:id` 先检查登录及账号权益，再签发五分钟有效的资源路径。文件路由再次校验授权、版本、数据文件扩展名和实际目录。签发和读取由同一服务处理，多进程部署使用相同的 `JWT_SECRET`。随包火柴人不通过此接口下载。后端 `test:skins` 覆盖旧码、账号权限、单次扣减及签名下载。
+
 | 选择 | 当前实现 | 替代与代价 |
 | --- | --- | --- |
 | 兑换码存储 | 明文，与旧邀请码相同，管理员需要能再次查看分发 | 只存哈希更安全，但生成后无法补发 |

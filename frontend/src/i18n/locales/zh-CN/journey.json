@@ -76,7 +76,7 @@
   "common": {
     "feature": {
       "calendar": "日历",
-      "generate": "图文生成",
+      "generate": "快速创建",
       "privateImages": "私人图片空间",
       "community": "同好",
       "diary": "日记"
@@ -152,7 +152,7 @@
     "tagsLabel": "兴趣标签（逗号分隔，最多 20 个）",
     "tagSeparator": "，",
     "consent": {
-      "discovery": "允许按我的口味匹配同好，并向其他用户展示我的用户名、兴趣标签和公开收藏夹",
+      "discovery": "允许使用我的用户向量匹配同好，并向其他住民展示住民名和共同标签",
       "feedback": "记录搜索、可见结果、点选、收藏、纠错及定位推断的到访；定位采样仅在前台进行",
       "research": "允许将这些交互记录用于改进用户体验"
     },
@@ -280,8 +280,7 @@
     "composerHint": "用照片和一句话整理一顿饭或一天",
     "calendarHint": "查看、修改历史日记",
     "calendarBadge": "未完成 · {{unfinished}}",
-    "communityHint": "口味相近的人与公开收藏夹",
-    "title": "日记 · 同好"
+    "title": "日记"
   },
   "generation": {
     "step": {
@@ -672,7 +671,7 @@
     "editingNew": " · 新日记",
     "continueEditing": "继续编辑",
     "emptyTitle": "没有未完成的内容",
-    "emptyHint": "新的图文生成、待核对与编辑草稿都会出现在这里。",
+    "emptyHint": "通过快速创建保存的素材、待核对的日记和编辑草稿都会显示在这里。",
     "media": {
       "usage": "{{summary}}正在使用的图片不能删除。",
       "summary": "{{count}} / 200 张 · {{used}} / 100 MB。",
@@ -691,7 +690,7 @@
     "mapPickerUnavailable": "地图选点暂时不可用",
     "unsyncedBlocked": "草稿还没同步，请重试同步或处理冲突后再离开。",
     "mapViewLabel": "在地图中查看日记",
-    "launcher": "✦ 日记 · 同好",
+    "launcher": "日记",
     "backToDiary": "「{{title}}」· 返回日记"
   },
   "mergePreview": {

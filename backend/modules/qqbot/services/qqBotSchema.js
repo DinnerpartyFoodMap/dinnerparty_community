@@ -47,6 +47,19 @@ function initQQBotSchema(db) {
       );
       CREATE INDEX IF NOT EXISTS idx_qqbot_notification_due ON QQBotNotification(status, next_attempt_at);
 
+      CREATE TABLE IF NOT EXISTS QQBotDiaryNotification (
+        publication_id TEXT NOT NULL REFERENCES JourneyPublication(id) ON DELETE CASCADE,
+        group_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        attempted_at TEXT,
+        message_id TEXT,
+        last_error TEXT,
+        PRIMARY KEY(publication_id, group_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_qqbot_diary_notification_due ON QQBotDiaryNotification(status, next_attempt_at);
+
       CREATE TABLE IF NOT EXISTS QQBotSyncState (
         group_id TEXT PRIMARY KEY,
         mode TEXT,

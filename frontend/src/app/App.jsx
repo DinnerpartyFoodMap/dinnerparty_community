@@ -14,6 +14,8 @@ import PersonalizeMap from "../settings/PersonalizeMap";
 import CustomThemes from "../settings/CustomThemes";
 import EditAvatar from "../settings/EditAvatar";
 import SkinSettings from "../settings/SkinSettings";
+import CompanionSettings from '../companion/CompanionSettings';
+import { useCompanion } from '../companion/useCompanion';
 import "../skins/packs";
 import "../skins/skin.css";
 import useSkinSession from "../skins/useSkinSession";
@@ -30,6 +32,8 @@ import { DinnerCreatePage, DinnerDetailPage, DinnerListPage, isDinnerPath, parse
 import PosterExportPage from "../poster/PosterExportPage";
 import PlaceListPage from "../places/PlaceListPage";
 import UserProfilePage from "../profile/UserProfilePage";
+import ProfileCommunityPage from "../profile/ProfileCommunityPage";
+import ProfileFavoritesPage from "../profile/ProfileFavoritesPage";
 import NativeProfileHost from "../profile/NativeProfileHost";
 import { supportsNativeProfile } from "../profile/useNativeProfile";
 import NativeAdminHost from "../admin/NativeAdminHost";
@@ -170,10 +174,15 @@ export default function App() {
         });
         reportAuthStage(BACKEND_URL, requestId, 'state_commit_started');
         flushSync(() => {
-            // 改住民名 / 密码 / 头像的响应不带 phone_masked（只有登录、注册与 /users/me 带）：同一住民时沿用已知的值
-            setUser((prev) => (u && prev && prev.id === u.id && u.phone_masked === undefined && prev.phone_masked !== undefined
-                ? { ...u, phone_masked: prev.phone_masked }
-                : u));
+            setUser((prev) => {
+                if (!u || !prev || prev.id !== u.id) return u;
+                return {
+                    ...u,
+                    // 部分资料更新响应没有手机号，旧版服务端的响应也没有头像 URL。
+                    ...(u.phone_masked === undefined && prev.phone_masked !== undefined ? { phone_masked: prev.phone_masked } : {}),
+                    ...(u.has_avatar && u.avatar_url === undefined && prev.avatar_url ? { avatar_url: prev.avatar_url } : {})
+                };
+            });
             setToken(t);
             setAuthCheckFailed(false);
             setCredentialsRestoring(false);
@@ -565,6 +574,7 @@ export default function App() {
     const closeFeedback = useCallback(() => setFeedbackOpen(false), []);
     // 主题皮肤：随住民切换；冷启动时按通行凭证里的住民先换上本机记住的皮肤
     useSkinSession({ backendUrl: BACKEND_URL, token, userId: user ? user.id : null, pendingUserId: token && !user ? (decodeTokenPayload(token)?.id || null) : null });
+    const companion = useCompanion(BACKEND_URL, token);
     const showAdminPage = pathname === "/admin" && !!token;
     // iOS 原生管理后台：网页不渲染 AdminDashboard，地图保持挂载，原生页从地图上弹出
     const nativeAdminActive = showAdminPage && !!user?.admin_level && !nativeAdminFailed && supportsNativeAdmin();
@@ -586,6 +596,7 @@ export default function App() {
     const showSettingsPersonalize = pathname === "/settings/personalize";
     const showSettingsThemes = pathname === "/settings/themes";
     const showSettingsSkins = pathname === "/settings/skins";
+    const showSettingsCompanion = pathname === '/settings/companions';
     const showSettingsAny = typeof pathname === 'string' && pathname.startsWith("/settings");
     const showSettingsAvatar = pathname === "/settings/avatar";
     const showDinnerList = pathname === "/dinners";
@@ -597,13 +608,35 @@ export default function App() {
     // 地点列表与住民主页
     const showPlaceList = pathname === '/places';
     const profileUserId = parseProfileIdFromPath(pathname);
+    const profileSearch = new URLSearchParams(routeSearch);
+    const profileTab = profileSearch.get('tab');
+    const selfProfile = !!user && String(user.id) === profileUserId;
+    const showProfileCommunity = selfProfile && !!token && profileTab === 'community';
+    const showProfileFavorites = !!profileUserId && profileTab === 'favorites';
+    const profileCommunityPage = Number.parseInt(profileSearch.get('page'), 10) || 1;
     // iOS 原生住民主页：网页不渲染 UserProfilePage，地图保持挂载，原生页以系统面板从地图上弹出
     const nativeProfileFailed = nativeProfileFailedId != null && String(nativeProfileFailedId) === String(profileUserId);
-    const nativeProfileActive = !!profileUserId && !nativeProfileFailed && supportsNativeProfile();
+    const nativeProfileActive = !!profileUserId && !showProfileCommunity && !showProfileFavorites && !nativeProfileFailed && supportsNativeProfile();
     const showMapPage = (!showAdminPage || nativeAdminActive) && !showSettingsAny && !showAnyDinnerPage && !showPosterExport && !showPlaceList
         && (!profileUserId || nativeProfileActive);
     const openPlaceOnMap = useCallback((placeId) => goPath(`/?place=${encodeURIComponent(placeId)}`), [goPath]);
     const openProfile = useCallback((userId) => { if (userId) goPath(`/users/${encodeURIComponent(userId)}`); }, [goPath]);
+    const openCompanion = useCallback(() => goPath('/settings/companions'), [goPath]);
+    const openProfileCommunity = useCallback(() => {
+        if (user?.id) goPath(`/users/${encodeURIComponent(user.id)}?tab=community`);
+    }, [goPath, user?.id]);
+    const openProfileFavorites = useCallback((userId) => {
+        if (userId) goPath(`/users/${encodeURIComponent(userId)}?tab=favorites`);
+    }, [goPath]);
+    const changeProfileCommunityPage = (page) => goPath(`/users/${encodeURIComponent(profileUserId)}?tab=community&page=${page}`, { replace: true });
+    const backFromProfile = useCallback(() => {
+        if (canGoBack()) window.history.back();
+        else goPath('/');
+    }, [goPath]);
+    const backFromProfileTab = () => {
+        if (canGoBack()) window.history.back();
+        else goPath(`/users/${encodeURIComponent(profileUserId)}`, { replace: true });
+    };
     const siteNoticeVisible = !!(siteNotice && String(siteNotice.id) !== String(dismissedNoticeId || ''));
     // 展会：入口在这里（避让公告），面板由地图渲染（iOS 原生控件接管时为原生面板，随机美食以展会地点为中心）
     const { exhibitions, exhibition: stackExhibition } = useExhibitions(BACKEND_URL, showMapPage);
@@ -781,6 +814,14 @@ export default function App() {
             <PlaceListPage backendUrl={BACKEND_URL} token={token} onOpenPlace={openPlaceOnMap} onBack={() => goPath('/')} />
         );
 
+        if (showProfileCommunity) return (
+            <ProfileCommunityPage key={`community-${profileUserId}`} backendUrl={BACKEND_URL} token={token}
+                onOpenProfile={openProfile} onBack={backFromProfileTab} page={profileCommunityPage} onPageChange={changeProfileCommunityPage} />
+        );
+        if (showProfileFavorites) return (
+            <ProfileFavoritesPage key={`favorites-${profileUserId}`} backendUrl={BACKEND_URL} token={token} userId={profileUserId}
+                currentUser={user} onOpenPlace={openPlaceOnMap} onBack={backFromProfileTab} />
+        );
         if (profileUserId) return nativeProfileActive ? null : (
             <UserProfilePage
                 key={profileUserId}
@@ -791,7 +832,9 @@ export default function App() {
                 onOpenPlace={openPlaceOnMap}
                 onOpenFeedback={openFeedback}
                 onRequireAuth={() => setShowAuth(true)}
-                onBack={() => goPath('/')}
+                onOpenCommunity={openProfileCommunity}
+                onOpenFavorites={openProfileFavorites}
+                onBack={backFromProfile}
             />
         );
 
@@ -933,6 +976,10 @@ export default function App() {
             )
         );
 
+        if (showSettingsCompanion) return user ? <CompanionSettings backendUrl={BACKEND_URL} token={token}
+            companion={companion.state} update={companion.update} onBack={() => canGoBack() ? window.history.back() : goPath('/')} />
+            : <div style={placeholderStyle}>{t('common:app.verifyingSession')}</div>;
+
         if (showSettingsEdit) return (
             user ? (
                 <EditUsername
@@ -1026,6 +1073,8 @@ export default function App() {
                                 onRequireAuth={() => setShowAuth(true)}
                                 onOpenDinners={() => goPath('/dinners')}
                                 onOpenJourney={openJourney}
+                                onOpenCompanion={isAuth ? openCompanion : undefined}
+                                companion={showMapPage && !profileUserId && user?.map_settings?.companion_roaming !== false ? companion.state : null}
                                 onOpenAdmin={() => goPath('/admin')}
                                 onOpenPosterExport={() => {
                                     if (!isAuth) {
@@ -1093,8 +1142,10 @@ export default function App() {
                                 currentUser={user}
                                 dark={dark}
                                 themeColor={getThemeColor()}
-                                onBack={() => goPath("/")}
+                                onBack={backFromProfile}
                                 onOpenPlace={openPlaceOnMap}
+                                onOpenCommunity={openProfileCommunity}
+                                onOpenFavorites={openProfileFavorites}
                                 onOpenFeedback={openFeedback}
                                 onRequireAuth={() => setShowAuth(true)}
                                 onUnavailable={() => setNativeProfileFailedId(profileUserId)}
@@ -1163,6 +1214,7 @@ export default function App() {
                             onOpenFeedback={openFeedback}
                             onOpenPlaceList={() => goPath('/places')}
                             onOpenProfile={user ? () => openProfile(user.id) : undefined}
+                            onOpenCompanion={isAuth ? openCompanion : undefined}
                             onOpenMyPlaces={user ? () => { if (!showMapPage) goPath('/'); setMyPlacesRequestId((id) => id + 1); } : undefined}
                             pathname={pathname}
                             backendUrl={BACKEND_URL}

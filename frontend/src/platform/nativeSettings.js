@@ -10,7 +10,8 @@ const strings = (fields) => (values) => Object.fromEntries(Object.entries(fields
 // 设置页打开期间，原生子页面发出的请求（编辑在原生里完成，账号请求仍由网页发出）。
 // 每类事件只取白名单字段；返回 null 表示字段不合法，直接丢弃。
 const REQUESTS = {
-    saveMap: strings({ style: 32, lat: 32, lng: 32, zoom: 32 }),
+    saveMap: (values) => ({ ...strings({ style: 32, lat: 32, lng: 32, zoom: 32 })(values),
+        ...(typeof values.companionRoaming === 'boolean' ? { companionRoaming: values.companionRoaming } : {}) }),
     saveUsername: strings({ username: 64 }),
     savePassword: strings({ current: 128, next: 128, confirm: 128 }),
     // 原生裁剪好的 JPEG（base64），约 4MB 以内

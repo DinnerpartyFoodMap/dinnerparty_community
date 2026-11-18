@@ -1,8 +1,8 @@
 const {db}=require('../../../infrastructure/database');
 const {randomUUID}=require('node:crypto');
-const FIELDS=['name','description','category','per_person_cost','address','latitude','longitude','exterior_images','menu_images'];
+const FIELDS=['name','description','category','per_person_cost','address','latitude','longitude','exterior_images','menu_images','checkin_images'];
 function state(row){return Object.fromEntries(FIELDS.map(key=>[key,row?.[key]??null]));}
-const EDIT_PATHS=['owner_edit','admin_edit','request_approved'];
+const EDIT_PATHS=['owner_edit','admin_edit','request_approved','check_in_approved'];
 // The comment is only the text added to the description (see placeEditDiff);
 // an edit that adds none leaves no comment.
 function revisionCommentText(row){return require('./placeEditDiff').editCommentText(JSON.parse(row.before_state),JSON.parse(row.after_state));}
@@ -14,7 +14,7 @@ function publishRevisionComment(row,{noExperience=false,backfill=false}={}){
     const rating=historical?.after_state?JSON.parse(historical.after_state):null,revision=historical?.revision??null;
     const inserted=db._raw.prepare('INSERT OR IGNORE INTO Comment(place_id,user_id,content,rating,place_revision_id,rating_revision,time) VALUES(?,?,?,?,?,?,?)').run(row.place_id,row.author_id,text,rating?.score??null,row.id,revision,new Date(row.available_at_ms).toISOString());
     // Historical edits establish authorship, not a fresh dining experience or renewed retention.
-    if(inserted.changes&&!noExperience&&!backfill)require('../../ratings/services/ratingTextEvidence').queueComment({commentId:Number(inserted.lastInsertRowid),userId:row.author_id,placeId:row.place_id,placeRevisionId:row.id,text,now:row.available_at_ms,ratingRevision:revision});
+    if(inserted.changes&&!noExperience&&!backfill&&row.path!=='check_in_approved')require('../../ratings/services/ratingTextEvidence').queueComment({commentId:Number(inserted.lastInsertRowid),userId:row.author_id,placeId:row.place_id,placeRevisionId:row.id,text,now:row.available_at_ms,ratingRevision:revision});
     return !!inserted.changes;
 }
 function recordPlaceRevision({placeId,authorId,executorId=authorId,path,before=null,after=null,requestId=null,now=Date.now(),recordedAt=now,researchConsentId,noExperience=false}){

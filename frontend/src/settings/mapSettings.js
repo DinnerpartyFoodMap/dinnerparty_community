@@ -20,7 +20,8 @@ export function readMapSettingsForm(user) {
         style: settings.style || 'standard',
         lat: typeof center.lat !== 'undefined' ? String(center.lat) : '',
         lng: typeof center.lng !== 'undefined' ? String(center.lng) : '',
-        zoom: typeof settings.zoom !== 'undefined' ? String(settings.zoom) : ''
+        zoom: typeof settings.zoom !== 'undefined' ? String(settings.zoom) : '',
+        companionRoaming: settings.companion_roaming !== false
     };
 }
 
@@ -56,6 +57,7 @@ export function buildMapSettings(user, form) {
     else delete mapSettings.center;
     if (zoom !== null) mapSettings.zoom = zoom;
     else delete mapSettings.zoom;
+    if (typeof form.companionRoaming === 'boolean') mapSettings.companion_roaming = form.companionRoaming;
     return { mapSettings };
 }
 

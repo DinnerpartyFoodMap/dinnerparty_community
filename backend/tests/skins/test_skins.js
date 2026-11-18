@@ -10,9 +10,11 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'foodmap-skins-'));
 process.env.DB_FILE = path.join(temp, 'test.sqlite');
 process.env.LOG_TO_FILE = 'false';
 process.env.LOG_TO_CONSOLE = 'false';
+process.env.RESOURCE_PACK_DIR = path.join(temp, 'packs');
 require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
 const { db, init } = require('../../infrastructure/database');
 const skins = require('../../modules/skins/services/skinService');
+const { feedCompanionSync } = require('../../modules/skins/services/companionState');
 let server;
 
 async function main() {
@@ -135,6 +137,53 @@ async function main() {
     assert.equal(skins.getSkinState(ids.carol).active, 'night');
 
     // 输错次数限制（只算失败）
+    skins.resetFailuresForTesting();
+
+    const companionFolder = path.join(process.env.RESOURCE_PACK_DIR, 'companion', 'fox', '1');
+    fs.mkdirSync(companionFolder, { recursive: true });
+    const companionCatalogPath = path.join(process.env.RESOURCE_PACK_DIR, 'catalog.json');
+    const companionCatalog = JSON.stringify({ companions: [{ id: 'fox', name: '小狐狸', version: '1', entry: 'fox.model3.json' }] });
+    fs.writeFileSync(companionCatalogPath, companionCatalog);
+    fs.writeFileSync(path.join(companionFolder, 'fox.model3.json'), '{"Version":3}');
+    const initialCompanion = await request('/api/skins/companions/me', 'GET', null, 'alice');
+    assert.equal(initialCompanion.status, 200);
+    assert.equal(initialCompanion.body.active, 'stick-figure');
+    assert.equal((await request('/api/skins/packs/companion/fox', 'GET', null, 'alice')).status, 403);
+    const roleCode = await request('/admin/skin-codes', 'POST', { companion_id: 'fox' }, 'YUYUKO');
+    assert.equal(roleCode.status, 200);
+    assert.equal(roleCode.body.codes[0].companion_id, 'fox');
+    const code = roleCode.body.codes[0].code;
+    assert.equal((await request('/api/skins/redeem', 'POST', { code }, 'alice')).status, 404);
+    const role = await request('/api/skins/redeem-resource', 'POST', { code }, 'alice');
+    assert.deepEqual([role.status, role.body.type, role.body.unlocked.id], [200, 'companion', 'fox']);
+    assert.equal((await request('/api/skins/redeem-resource', 'POST', { code }, 'alice')).body.already_owned, true);
+    assert.equal((await request('/api/skins/redeem-resource', 'POST', { code }, 'bob')).body.reason, 'exhausted');
+    assert.equal((await request('/api/skins/companions/active', 'PUT', { companion_id: 'fox' }, 'alice')).body.active, 'fox');
+    const grant = await request('/api/skins/packs/companion/fox', 'GET', null, 'alice');
+    assert.equal(grant.status, 200);
+    assert.equal(grant.body.version, '1');
+    assert.match(require('../../http/middleware/requestLogger').sanitizeUrl(`${grant.body.base}fox.model3.json`),
+        /^\/api\/skins\/packs\/access\/\[REDACTED\]\/fox\.model3\.json$/);
+    assert.equal((await request(`${grant.body.base}fox.model3.json`)).body.Version, 3);
+    assert.equal((await request(`${grant.body.base}missing.model3.json`)).status, 404);
+    assert.equal((await request('/api/skins/packs/access/bogus/fox.model3.json')).status, 403);
+
+    assert.deepEqual(feedCompanionSync(ids.alice), { active: 'fox', satiety: 1 });
+    fs.writeFileSync(companionCatalogPath, JSON.stringify({ companions: [] }));
+    const retired = await request('/api/skins/companions/me', 'GET', null, 'alice');
+    assert.equal(retired.status, 200);
+    assert.deepEqual(retired.body, { active: 'stick-figure', satiety: 0, owned: [] });
+    assert.deepEqual(feedCompanionSync(ids.alice), { active: 'stick-figure', satiety: 1 });
+    fs.writeFileSync(companionCatalogPath, companionCatalog);
+    const restored = await request('/api/skins/companions/me', 'GET', null, 'alice');
+    assert.equal(restored.body.active, 'fox');
+    assert.equal(restored.body.satiety, 1);
+    assert.deepEqual(feedCompanionSync(ids.alice), { active: 'fox', satiety: 2 });
+    db._raw.prepare('DELETE FROM UserCompanion WHERE user_id=? AND companion_id=?').run(ids.alice, 'fox');
+    const unowned = await request('/api/skins/companions/me', 'GET', null, 'alice');
+    assert.deepEqual(unowned.body, { active: 'stick-figure', satiety: 1, owned: [] });
+    assert.deepEqual(feedCompanionSync(ids.alice), { active: 'stick-figure', satiety: 2 });
+
     skins.resetFailuresForTesting();
     for (let i = 0; i < 10; i++) assert.equal((await request('/api/skins/redeem', 'POST', { code: 'WRONGCODE' + i }, 'bob')).status, 404);
     const limited = await request('/api/skins/redeem', 'POST', { code: single.code }, 'bob');

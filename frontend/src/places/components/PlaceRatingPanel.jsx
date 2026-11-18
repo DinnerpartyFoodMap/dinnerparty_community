@@ -1,6 +1,7 @@
 import React from 'react';
 import ResponsivePanel from "../../components/overlay/ResponsivePanel";
 import SkinIcon from "../../skins/SkinIcon";
+import RatingPredictionValue from './RatingPredictionValue';
 import { t, tx } from "../../i18n/index.js";
 import {
     RATING_TIERS, FEW_RATINGS, ratingTierFor, tierForAverage, tierLabel, tierHint, formatAverage, ratingDisplay
@@ -113,10 +114,10 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
             {personal && (
                 <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--theme-secondary-0-12)', border: '1px solid var(--color-border)' }}>
                     <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{(personal.kind === 'prediction' ? t('map:rating.panel.predictionTitle') : t('map:rating.panel.personalizedTitle'))}</div>
-                    <div style={{ marginTop: 2, fontSize: 16, fontWeight: 700 }}>
+                    <div style={{ marginTop: 2, fontSize: 16, fontWeight: personal.kind === 'prediction' ? 500 : 700 }}>
                         {tx('map:rating.panel.personalizedText', {
                             tier: <span style={{ color: tierForAverage(personal.average).tone }}>{tierLabel(tierForAverage(personal.average))}</span>,
-                            average: formatAverage(personal.average)
+                            average: personal.kind === 'prediction' ? <RatingPredictionValue average={personal.average} /> : formatAverage(personal.average)
                         })}
                     </div>
                     <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>

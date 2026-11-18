@@ -13,6 +13,7 @@ process.env.DB_FILE=path.join(temp,'test.sqlite');
 process.env.LOG_TO_FILE='false';process.env.LOG_TO_CONSOLE='false';
 process.env.DEEPSEEK_API_KEY='';process.env.JOURNEY_LLM_API_KEY='';process.env.SILICONFLOW_API_KEY='';process.env.JOURNEY_LLM_VISION='false';
 process.env.QQ_BOT_ENABLED='true';process.env.QQ_BOT_NOTIFY_ENABLED='true';process.env.QQ_BOT_NOTIFY_GROUP_IDS='20001,20002';
+process.env.QQ_BOT_PUBLIC_WEB_URL='https://food.example.com';
 process.env.AMAP_WEB_SERVICE_KEY='';process.env.AMAP_JOURNAL_STORAGE_ALLOWED='false';process.env.AMAP_EXPORT_ALLOWED='false';
 require.cache[require.resolve('../../infrastructure/redis')]={exports:{isReady:()=>false}};
 const {db,init}=require('../../infrastructure/database');
@@ -127,6 +128,24 @@ async function main(){
     assert.deepEqual(notified(teaShop),['20001','20002'],'a marker created by a public diary notifies every group once');
     assert.deepEqual(notified(noodle),[],'linking an existing marker does not notify');
     assert.equal(notifications(),2,'the replayed commit queued nothing more');
+    const diaryPushes=publicId=>sql.prepare('SELECT group_id,status FROM QQBotDiaryNotification WHERE publication_id=? ORDER BY group_id').all(publicId);
+    const groupStatuses=status=>[{group_id:'20001',status},{group_id:'20002',status}];
+    assert.deepEqual(diaryPushes(committed.public_id),groupStatuses('pending'),'the diary has independent group tasks');
+    const {sendDueDiaryNotifications}=require('../../modules/qqbot/runtime/diaryNotifications');
+    const messages=[];
+    const client={connected:true,selfId:'10001',call:async(action,params)=>{messages.push({action,params});return {message_id:messages.length};}};
+    const log={info(){},warn(){}};
+    await sendDueDiaryNotifications({client,groupIds:['20001','20002'],logger:log});
+    assert.deepEqual(diaryPushes(committed.public_id),groupStatuses('sent'));
+    assert.equal(messages.length,2);
+    for(const {action,params} of messages){
+        assert.equal(action,'send_group_forward_msg');
+        const segments=params.messages.flatMap(node=>node.data.content);
+        assert.equal(segments.filter(segment=>segment.type==='image').length,2);
+        const body=segments.filter(segment=>segment.type==='text').map(segment=>segment.data.text).join('\n');
+        assert.match(body,/大学城的一天/);assert.match(body,/吃面，喝茶/);assert.doesNotMatch(body,/私人备注/);
+        assert.ok(body.includes(`https://food.example.com/?diary=${committed.public_id}`));
+    }
     assert.equal(sql.prepare('SELECT name,creator_id FROM Place WHERE id=?').get(teaShop).name,'巷口茶铺');
     const savedJourney=await call('GET',`/api/journeys/${committed.journey_id}`);
     assert.equal(savedJourney.visibility,'public');assert.equal(savedJourney.document.stops[1].place_id,teaShop,'the saved diary points at the created marker');
@@ -135,16 +154,20 @@ async function main(){
     assert.equal((await call('GET','/api/journeys/unfinished')).count,0);
 
     // --- Public reading: whitelist only, photos gated by the active snapshot. ---
+    sql.prepare('UPDATE User SET avatar_blob=? WHERE id=?').run(Buffer.from('legacy avatar'),a);
     const pub=await call('GET',`/api/public/journeys/${committed.public_id}`,undefined,null);
     const pubText=JSON.stringify(pub);
     assert.equal(pub.title,'大学城的一天');assert.equal(pub.stops.length,2);assert.equal(pub.stops[0].excerpt[0].kind,'quote');
     assert.equal(pub.ai_assisted,true,'the AI-assisted label survives review edits into the public diary');
+    assert.equal(pub.author.has_avatar,true);
+    assert.ok(pub.author.avatar_url?.startsWith(`/users/${a}/avatar`));
     for(const secret of ['私人备注','大学城"','source_input','expenses','想去的甜品店','"center"'])assert.ok(!pubText.includes(secret),`public payload leaks ${secret}`);
     assert.ok(!pub.media_ids.includes(extra),'unselected entry photos stay private');
     const media=async(id,status)=>{const r=await nativeFetch(`${base}/api/public/journeys/${committed.public_id}/media/${id}`);assert.equal(r.status,status);};
     await media(dish,200);await media(extra,404);
     let diaries=await call('GET',`/places/${noodle}/diaries`,undefined,null);
     assert.equal(diaries.total,1);assert.equal(diaries.items[0].public_id,committed.public_id);assert.equal(diaries.items[0].stops[0].excerpt[0].text,'中午在阿明牛肉面吃了牛肉面，汤比较清淡。');
+    assert.equal(diaries.items[0].author.avatar_url,pub.author.avatar_url);
     assert.equal((await call('GET',`/places/${teaShop}/diaries`,undefined,null)).total,1);
     // A viewer who blocked the author no longer sees the diary under the place; everyone else still does.
     sql.prepare('INSERT INTO UserBlock(user_id,blocked_id) VALUES(?,?)').run(b,a);
@@ -173,6 +196,8 @@ async function main(){
     assert.deepEqual(notified(eastShop),['20001','20002']);assert.equal(notifications(),4,'two stops of one new shop notify once');
     diaries=await call('GET',`/places/${eastShop}/diaries`,undefined,null);
     assert.equal(diaries.total,1,'counts distinct diaries');assert.equal(diaries.items[0].stops.length,2);assert.equal(diaries.items[0].stops[0].excerpt[0].kind,'edited');
+    await call('DELETE',`/api/journeys/${second2.journey_id}/publication`,{version:1});
+    assert.deepEqual(diaryPushes(second2.public_id),groupStatuses('skipped'),'withdrawal cancels pending delivery');
 
     // --- Private save: no public object and no marker creation; existing places stay a private association. ---
     const privateDoc={title:'私密的一餐',start_date:'2026-10-06',end_date:'2026-10-06',summary:'',intended_visibility:'private',stops:[
@@ -184,6 +209,7 @@ async function main(){
     const privateSaved=await call('POST',`/api/journeys/drafts/${draft3.id}/commit`,{draft_revision:draft3.revision,visibility:'private',preview_hash:preview.preview_hash,request_id:randomUUID()});
     assert.equal(privateSaved.public_id,null);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n,before3);
     assert.equal(notifications(),4,'private diaries never notify');
+    assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM QQBotDiaryNotification').get().n,4,'only public diaries queue diary tasks');
     assert.equal((await call('GET',`/places/${noodle}/diaries`,undefined,null)).total,1,'private associations never reach public counts');
     assert.equal((await call('GET',`/api/journeys/places/${noodle}/mine`)).length,2);
     assert.equal((await call('GET',`/api/journeys/places/${noodle}/mine`,undefined,b)).length,0);
@@ -198,6 +224,7 @@ async function main(){
         poiResults.push(await call('POST',`/api/journeys/drafts/${d.id}/commit`,{draft_revision:d.revision,visibility:'public',preview_hash:p.preview_hash,request_id:randomUUID()},who));
     }
     assert.equal(poiResults[0].created_place_ids.length,1);assert.equal(poiResults[1].created_place_ids.length,0);
+    assert.deepEqual(diaryPushes(poiResults[1].public_id),groupStatuses('pending'),'linked-only diary still notifies');
     assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM Place WHERE name='高德上的面馆'").get().n,1);
     assert.equal((await call('GET',`/places/${poiResults[0].created_place_ids[0]}/diaries`,undefined,null)).total,2);
     process.env.AMAP_JOURNAL_STORAGE_ALLOWED='false';
@@ -233,6 +260,7 @@ async function main(){
     const freshPreview=await call('POST',`/api/journeys/drafts/${editDraftId}/map-preview`,{draft_revision:editDraft.revision,visibility:'public'});
     const republished=await call('POST',`/api/journeys/drafts/${editDraftId}/commit`,{draft_revision:editDraft.revision,visibility:'public',preview_hash:freshPreview.preview_hash,request_id:randomUUID()});
     assert.equal(republished.public_id,committed.public_id,'the public link stays stable');assert.equal(republished.publication_version,3);
+    assert.deepEqual(diaryPushes(republished.public_id),groupStatuses('sent'),'republication does not enqueue another push');
     assert.equal((await call('GET',`/api/public/journeys/${committed.public_id}`,undefined,null)).title,'旧接口改了标题');
 
     // --- Deleting a marker keeps diaries; deleting a diary removes its public excerpts. ---

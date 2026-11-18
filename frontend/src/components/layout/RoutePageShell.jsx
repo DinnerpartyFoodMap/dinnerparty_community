@@ -11,10 +11,10 @@ const TITLES = {
 };
 
 export default function RoutePageShell({ path, onNavigate, children }) {
-    if (getPlatform() !== 'ios') return children;
+    if (getPlatform() !== 'ios' || path.startsWith('/users/')) return children;
     const parent = path.startsWith('/settings/') ? '/settings' : /^\/dinners\/\d+/.test(path) ? '/dinners' : '/';
     return <section className="fm-full-page fm-route-page">
-        <FullPageHeader title={TITLES[path] || (path.startsWith('/users/') ? t('profile:title') : t('common:routePageShell.dinnerDetail'))} onBack={() => onNavigate(parent)} />
+        <FullPageHeader title={TITLES[path] || t('common:routePageShell.dinnerDetail')} onBack={() => onNavigate(parent)} />
         <div className="fm-route-page__content">{children}</div>
     </section>;
 }

@@ -6,26 +6,24 @@ import { useTips } from '../components/feedback/Tips';
 import { useConfirm } from '../components/feedback/Confirm';
 import TasteRadar from './TasteRadar';
 import { axisLabel, normalizeTaste, SELF_LEVELS, selfLevelLabel, axisValueWord } from './tasteAxes';
-import { fetchUserProfile, saveProfileWidgets, saveTasteLevel, setUserBlocked } from '../api/client';
+import { fetchUserProfile, saveFavoriteVisibility, saveProfileWidgets, saveTasteLevel, setUserBlocked } from '../api/client';
 import { userReportPrefill } from '../feedback/feedbackTypes';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating';
 import { imageThumbnailUrl } from '../platform/runtimeConfig';
 import { getThemeColor, DEFAULT_PRIMARY } from '../theme/theme';
 import defaultAvatar from '../img/default.png';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { t } from '../i18n/index.js';
 import './profile.css';
 
-const WIDGETS = ['collection', 'recent', 'favorite'];
+const WIDGETS = ['recent', 'favorite'];
 // 文案键写成字面量，i18n 检查才能覆盖
 const WIDGET_TEXT = {
-    collection: { title: () => t('profile:widgets.collection.title'), empty: () => t('profile:widgets.collection.empty') },
     recent: { title: () => t('profile:widgets.recent.title'), empty: () => t('profile:widgets.recent.empty') },
     favorite: { title: () => t('profile:widgets.favorite.title'), empty: () => t('profile:widgets.favorite.empty') }
 };
 
-// 住民主页（/users/:id）：左上圆形头像、右上六类餐饮偏好雷达、上次定位的城市，下面两个住民自己选的小组件
-// （公开收藏夹 / 最近创建的 5 个地点 / 最喜欢的 5 个地点）。屏蔽与举报在这里（App Store 1.2）；自己的主页可以改小组件、自己填喜好。
-export default function UserProfilePage({ backendUrl, token, userId, currentUser, onOpenPlace, onOpenFeedback, onRequireAuth, onBack }) {
+export default function UserProfilePage({ backendUrl, token, userId, currentUser, onOpenPlace, onOpenFeedback, onRequireAuth, onOpenCommunity, onOpenFavorites, onBack }) {
     const showTip = useTips();
     const confirm = useConfirm();
     const accent = getThemeColor() || DEFAULT_PRIMARY;
@@ -64,9 +62,11 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
 
     const { user, relation = {}, city, widgets = [], content = {} } = profile;
     const self = !!relation.self || (currentUser && String(currentUser.id) === String(user.id));
+    const collection = content.collection?.[0];
+    const secondWidget = widgets.findLast((item) => WIDGETS.includes(item)) || WIDGETS[0];
     const axes = normalizeTaste(profile.taste);
     const axis = axes.find((item) => item.key === selectedAxis) || null;
-    const avatar = user.has_avatar ? `${backendUrl}/users/${encodeURIComponent(user.id)}/avatar` : defaultAvatar;
+    const avatar = resolveAvatarUrl(user, backendUrl, { defaultUrl: defaultAvatar });
 
     const setBlocked = async (blocked) => {
         if (!token) { onRequireAuth?.(); return; }
@@ -100,11 +100,23 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
     const saveWidgets = async () => {
         setBusy(true);
         try {
-            await saveProfileWidgets(backendUrl, token, editingWidgets);
+            await saveProfileWidgets(backendUrl, token, ['collection', editingWidgets]);
             setEditingWidgets(null);
             await load();
         } catch (e) {
             showTip(e.message || t('profile:widgets.saveFailed'));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const setCollectionVisibility = async (isPublic) => {
+        setBusy(true);
+        try {
+            const data = await saveFavoriteVisibility(backendUrl, token, isPublic);
+            setProfile((current) => ({ ...current, collection_visibility: data.is_public }));
+        } catch (e) {
+            showTip(e.message || t('profile:widgets.collection.saveVisibilityFailed'));
         } finally {
             setBusy(false);
         }
@@ -115,7 +127,10 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
             <header className="fm-profile__header">
                 <div className="fm-profile__identity">
                     <img className="fm-profile__avatar" src={avatar} alt="" onError={(event) => { event.currentTarget.src = defaultAvatar; }} />
-                    <h2 className="fm-profile__name">{user.username || t('profile:anonymous')}</h2>
+                    <div className="fm-profile__name-row">
+                        <h2 className="fm-profile__name">{user.username || t('profile:anonymous')}</h2>
+                        {self && token && onOpenCommunity && <Button variant="secondary" onClick={onOpenCommunity}>{t('journey:common.feature.community')}</Button>}
+                    </div>
                     <div className="fm-profile__city">
                         <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
                         {city ? t('profile:city', { city }) : t('profile:cityUnknown')}
@@ -162,40 +177,49 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                 <div className="fm-profile__message">{t('profile:blockedNote')}</div>
             ) : (
                 <>
+                    {collection && <section className="fm-profile__widget">
+                        <div className="fm-profile__widget-heading">
+                            <h3>{self ? t('profile:widgets.collection.mine') : t('profile:widgets.collection.title')}</h3>
+                            {self && token && typeof profile.collection_visibility === 'boolean' && <label className="fm-profile__visibility">
+                                <input type="checkbox" role="switch" checked={profile.collection_visibility} disabled={busy}
+                                    onChange={(event) => setCollectionVisibility(event.target.checked)} />
+                                {t('profile:widgets.collection.public')}
+                            </label>}
+                            {onOpenFavorites && <Button variant="secondary" onClick={() => onOpenFavorites(user.id)}>{t('profile:widgets.collection.viewAll')}</Button>}
+                        </div>
+                        {collection.places?.length ? <PlaceRow places={collection.places} onOpenPlace={onOpenPlace} />
+                            : <div className="fm-profile__empty">{t('profile:widgets.collection.empty')}</div>}
+                    </section>}
+                    <ProfileWidget widget={secondWidget} data={content[secondWidget]} onOpenPlace={onOpenPlace} />
                     {self && token && (
                         <div className="fm-profile__widgets-bar">
                             {editingWidgets ? (
                                 <>
-                                    {editingWidgets.map((widget, index) => (
-                                        <label key={index} className="fm-profile__widget-select">
-                                            {t('profile:widgets.slot', { index: index + 1 })}
-                                            <select value={widget} onChange={(event) => setEditingWidgets((current) => current.map((item, i) => (i === index ? event.target.value : item)))}>
-                                                {WIDGETS.map((option) => <option key={option} value={option}>{WIDGET_TEXT[option].title()}</option>)}
-                                            </select>
-                                        </label>
-                                    ))}
+                                    <label className="fm-profile__widget-select">
+                                        {t('profile:widgets.slot', { index: 2 })}
+                                        <select value={editingWidgets} onChange={(event) => setEditingWidgets(event.target.value)}>
+                                            {WIDGETS.map((option) => <option key={option} value={option}>{WIDGET_TEXT[option].title()}</option>)}
+                                        </select>
+                                    </label>
                                     <Button onClick={() => setEditingWidgets(null)} disabled={busy}>{t('common:action.cancel')}</Button>
                                     <Button onClick={saveWidgets} disabled={busy}>{t('common:action.save')}</Button>
                                 </>
                             ) : (
-                                <Button onClick={() => setEditingWidgets([...widgets])}>{t('profile:widgets.edit')}</Button>
+                                <Button onClick={() => setEditingWidgets(secondWidget)}>{t('profile:widgets.edit')}</Button>
                             )}
                         </div>
                     )}
-                    {widgets.map((widget, index) => (
-                        <ProfileWidget key={`${widget}-${index}`} widget={widget} data={content[widget]} onOpenPlace={onOpenPlace} />
-                    ))}
                 </>
             )}
         </ProfileShell>
     );
 }
 
-function ProfileShell({ onBack, children }) {
+export function ProfileShell({ onBack, title = t('profile:title'), children }) {
     return (
         <ScrollableView as="main" className="fm-profile-page">
             <div className="fm-profile">
-                <PageHeading title={t('profile:title')} onBack={onBack} style={{ marginBottom: 0 }} />
+                <PageHeading title={title} onBack={onBack} backLabel={t('common:action.back')} style={{ marginBottom: 0 }} />
                 {children}
             </div>
         </ScrollableView>
@@ -205,21 +229,6 @@ function ProfileShell({ onBack, children }) {
 function ProfileWidget({ widget, data, onOpenPlace }) {
     const text = WIDGET_TEXT[widget] || WIDGET_TEXT.recent;
     const title = text.title();
-    if (widget === 'collection') {
-        const collections = Array.isArray(data) ? data : [];
-        return (
-            <section className="fm-profile__widget">
-                <h3>{title}</h3>
-                {!collections.length && <div className="fm-profile__empty">{t('profile:widgets.collection.empty')}</div>}
-                {collections.map((collection) => (
-                    <div key={collection.id} className="fm-profile__collection">
-                        <div className="fm-profile__collection-title">{t('profile:widgets.collection.item', { title: collection.title, count: collection.total })}</div>
-                        <PlaceRow places={collection.places} onOpenPlace={onOpenPlace} />
-                    </div>
-                ))}
-            </section>
-        );
-    }
     const places = Array.isArray(data) ? data : [];
     return (
         <section className="fm-profile__widget">
@@ -229,9 +238,9 @@ function ProfileWidget({ widget, data, onOpenPlace }) {
     );
 }
 
-function PlaceRow({ places, onOpenPlace, showOwnScore = false }) {
+export function PlaceRow({ places, onOpenPlace, showOwnScore = false, grid = false }) {
     return (
-        <ul className="fm-profile__places">
+        <ul className={grid ? 'fm-profile__places fm-profile__places--grid' : 'fm-profile__places'}>
             {places.map((place) => {
                 const tier = showOwnScore ? ratingTierFor(place.own_score) : tierForAverage(place.rating_average);
                 return (

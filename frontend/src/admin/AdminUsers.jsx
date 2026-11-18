@@ -10,6 +10,7 @@ import useMediaQuery from "../hooks/useMediaQuery";
 import { useTips } from "../components/feedback/Tips";
 import { useConfirm } from "../components/feedback/Confirm";
 import defaultAvatar from '../img/default.png';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { getApiBaseUrl } from '../platform/runtimeConfig';
 import { peekToken } from '../platform/credentialStore';
 import { t, tx } from '../i18n/index.js';
@@ -323,7 +324,7 @@ export default function AdminUsers({ backendUrl = null }) {
     const pageItems = (filtered || []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
     const renderAvatar = (target) => (
         <img
-            src={target.has_avatar ? `${backendUrl}/users/${target.id}/avatar?t=${Date.now()}` : defaultAvatar}
+            src={resolveAvatarUrl(target, base, { defaultUrl: defaultAvatar })}
             alt={t('common:label.avatar')}
             style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--color-border)' }}
         />

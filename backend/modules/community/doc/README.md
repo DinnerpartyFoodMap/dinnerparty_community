@@ -11,7 +11,7 @@ routes：community（`/api/community`）、comments、dinners、notices；挂载
 ```mermaid
 flowchart TD
     Request[已认证社区请求] --> Consent[读取 MapConsent 与 version]
-    Consent --> Mode{同好 / 行为反馈 / 公开收藏?}
+    Consent --> Mode{同好 / 行为反馈?}
     Mode -->|同好| Enabled{开启 discovery?}
     Enabled -->|否| Empty[返回 disabled 状态]
     Enabled -->|是| Profile[检查自身画像 ready]
@@ -21,7 +21,6 @@ flowchart TD
     Mode -->|反馈| Version[核对当前同意版本与请求幂等 ID]
     Version --> Log[保存展示或抽取快照]
     Log --> Event[核对候选与行为类型后记录事件]
-    Mode -->|收藏| Public[仅列 is_public 的集合]
     Export[离线反馈导出] --> Research[只纳入有效研究同意与符合条件记录]
     Research --> Dataset[使用导出密钥去标识]
 ```
@@ -33,12 +32,14 @@ flowchart TD
 | 搜索曝光记录 propensity=null | 观察日志不能当已知随机策略概率；离线评估必须区分 |
 | 公告/评论/聚餐沿用现有路由 | 当前规模无需增加空抽象；业务增长后再提取服务 |
 
-文字案例（已有自动化：`npm run test:community`，含同好、90 天保留与随机抽取决策链三个文件；`test:journeys`）：
+同好入口位于本人住民主页。Web 与 App 共用每页 5 人的同好列表，点按进入对方主页。公开收藏从住民主页读取，与 `discovery` 独立。旧 `/api/community/collections` 仅供旧版客户端兼容。关闭收藏公开后，旧公开读取接口也不再返回内容。 [主页接口](../../accounts/doc/README.md)
+
+`npm run test:community` 覆盖收藏可见性、同好、90 天保留与随机抽取决策链。
 
 - COM-01：两人有兼容画像，关闭其中一人 discovery 后重查；预期其不出现在同好中，关闭方返回 disabled。核对数据库开关与响应，不只看 UI。
 - COM-02：两人画像模型或算法版本不同；预期不计算混合语义的相似度；私有来源地点不进入解释字段。
 - COM-03：持旧 consent_version 提交观察；预期不新增有效快照；同 ID 不同参数重试得到冲突，不能覆盖他人记录。
-- COM-04：用户只有私有收藏或对方关闭发现；预期公共列表不泄露收藏。现有公开集合测试在 test:journeys。
+- COM-04（`test_favorite_collection.js`）存量账号迁移后可匿名读取公开收藏。关闭公开后，主页、完整清单、偏好举例及旧接口均不披露收藏。公开清单遵循屏蔽、封禁和地点审核状态。关闭发现仅影响同好匹配。
 - COM-06（已有自动化，test_random_decision_chain）：同一 `draw_id` 重试、换范围重放、他人接续与分叉、非法范围；点开未被抽中的地点、surface 不符的反馈；地图点击带合法 / 越界 `viewport`、合法 / 非法 `map_mode` 与 `map_filter`。预期：重试结果不变，冲突 409、非法范围 400；不符的反馈不计入；只保存校验通过的上下文，模式与筛选成对出现。
 - COM-05（待自动化）：为评论、聚餐、公告补独立权限与边界矩阵，见 COM-T01；不把 test:community 的向量测试当作这三个路由的覆盖证明。
 

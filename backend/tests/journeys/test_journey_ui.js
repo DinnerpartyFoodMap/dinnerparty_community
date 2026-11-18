@@ -57,7 +57,7 @@ async function main(){
         const wide=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth?[...document.querySelectorAll('body *')].filter(el=>!el.closest('.jw-layer:not(.is-top)')).filter(el=>el.getBoundingClientRect().right>window.innerWidth+1).slice(0,5).map(el=>`${el.tagName}.${el.className} ${Math.round(el.getBoundingClientRect().right)}`):[]);
         assert.deepEqual(wide,[],'no horizontal overflow at phone width');
     };
-    const openEntry=async()=>{await page.getByRole('button',{name:'打开日记入口'}).click();await page.getByRole('menu',{name:'日记 · 同好'}).waitFor();await page.waitForTimeout(300);};
+    const openEntry=async()=>{await page.getByRole('button',{name:'打开日记入口'}).click();await page.getByRole('menu',{name:'日记'}).waitFor();await page.waitForTimeout(300);};
     const picker=page.getByTestId('fake-map-picker');
     const stopNames=()=>top.locator('.jw-stop').evaluateAll(list=>list.map(el=>el.getAttribute('aria-label').replace(/^第 \d+ 站 /,'')));
     const closeAll=async()=>{for(let i=0;i<6&&await page.locator('.jw-layer').count();i++){await page.keyboard.press('Escape');await page.waitForTimeout(250);}};
@@ -65,12 +65,12 @@ async function main(){
     // A cold Vite instance may reload once after optimizing dependencies.
     await page.waitForLoadState('networkidle');await page.waitForTimeout(800);await page.waitForLoadState('networkidle');
 
-    // --- Entry sheet: three destinations in order, independent cancel. ---
+    // --- Entry sheet: quick creation and calendar, independent cancel. ---
     await openEntry();
-    assert.deepEqual(await page.locator('.jw-entry-sheet__text strong').allInnerTexts(),['图文生成','日历','同好']);
+    assert.deepEqual(await page.locator('.jw-entry-sheet__text strong').allInnerTexts(),['快速创建','日历']);
     await snap('entry-sheet-desktop');
     await page.getByRole('button',{name:'取消',exact:true}).click();
-    await page.getByRole('button',{name:'✦ 日记 · 同好'}).waitFor();
+    await page.getByRole('button',{name:'打开日记入口'}).waitFor();
 
     // --- Manual diary: edit, autosave, restore from 未完成. ---
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();
@@ -138,7 +138,7 @@ async function main(){
     assert.equal(await top.getByRole('button',{name:'复制贴文'}).isDisabled(),false);
     // Narrowing the scope after generating stops every export of the old post and images.
     await top.getByRole('checkbox',{name:'测试面馆'}).uncheck();
-    await top.getByText('你缩小了分享范围',{exact:false}).waitFor();
+    await top.getByText('分享范围已修改',{exact:false}).waitFor();
     assert.equal(await top.getByRole('button',{name:'复制贴文'}).isDisabled(),true);
     assert.equal(await top.getByRole('button',{name:/^保存全部图片/}).isDisabled(),true);
     await top.getByRole('checkbox',{name:'测试面馆'}).check();
@@ -215,7 +215,7 @@ async function main(){
     await closeAll();
 
     // --- Review #8: a lost material-save response is replayed, not reported as a conflict. ---
-    await openEntry();await page.getByRole('menuitem',{name:/图文生成/}).click();
+    await openEntry();await page.getByRole('menuitem',{name:/快速创建/}).click();
     const composeUrl='**/api/journeys/compose-drafts/*';
     let composeAckLost=false;
     await page.route(composeUrl,async route=>{if(route.request().method()==='PUT'&&!composeAckLost){composeAckLost=true;await route.fetch();await route.abort('failed');}else await route.continue();});
@@ -241,7 +241,7 @@ async function main(){
     await top.getByRole('button',{name:'返回',exact:true}).click();
 
     // --- Review #2: material saved only on this device stays reachable, even when the server list fails. ---
-    await openEntry();await page.getByRole('menuitem',{name:/图文生成/}).click();
+    await openEntry();await page.getByRole('menuitem',{name:/快速创建/}).click();
     await page.route(composeUrl,route=>route.request().method()==='PUT'?route.abort('failed'):route.continue());
     await top.getByLabel('说说这顿饭或这一天').fill('只在本机保存的奶茶记录');
     await top.getByText('同步失败',{exact:false}).waitFor();
@@ -261,7 +261,7 @@ async function main(){
 
     // --- Composer: photo queue, explicit text-only generation, one review draft, public save. ---
     const photos=await Promise.all(['#e07050','#70a0e0'].map(async(c,i)=>({name:`food${i}.jpg`,mimeType:'image/jpeg',buffer:await sharp({create:{width:480,height:320,channels:3,background:c}}).jpeg().toBuffer()})));
-    await openEntry();await page.getByRole('menuitem',{name:/图文生成/}).click();
+    await openEntry();await page.getByRole('menuitem',{name:/快速创建/}).click();
     const chooser=page.waitForEvent('filechooser');
     await top.getByRole('button',{name:'添加图片'}).click();
     await page.getByRole('menuitem',{name:'从相册选择'}).click();
@@ -299,7 +299,7 @@ async function main(){
     assert.equal(await top.getByText('待归属的原文',{exact:false}).count(),0);
     assert.deepEqual(await stopNames(),['测试面馆'],'the review shows the finished service response');
     // The remote sample requires explicit place confirmation before publication.
-    assert.equal(await top.getByText('尚未定位',{exact:false}).count(),1);
+    assert.equal(await top.getByText('待定位',{exact:true}).count(),1);
     await top.getByRole('button',{name:'选择店铺',exact:true}).click();
     await page.getByRole('list',{name:'候选店铺'}).getByRole('button',{name:/测试面馆/}).click();
     await top.locator('.jw-stop').first().getByText('已核对',{exact:true}).waitFor();
@@ -353,7 +353,7 @@ async function main(){
     await added.getByText('测试省测试市测试区大学城路 1 号').waitFor();
     await added.getByLabel('店名 / 地点名称').fill('路边糖水摊');
     assert.deepEqual(await stopNames(),['测试面馆','固定锚点','路边糖水摊']);
-    await added.getByRole('button',{name:'往前一站'}).click();
+    await added.getByRole('button',{name:'前移一站'}).click();
     assert.deepEqual(await stopNames(),['测试面馆','路边糖水摊','固定锚点']);
     await top.locator('.jw-stop').nth(1).getByRole('button',{name:'移除此站'}).click();
     await page.getByRole('alertdialog').getByRole('button').last().click();
@@ -372,49 +372,27 @@ async function main(){
     assert.equal(resolved.stops[1].lng,120.01);
     await closeAll();
 
-    // --- 同好: collections and discovery settings as in-page sections. ---
-    await openEntry();await page.getByRole('menuitem',{name:/同好/}).click();
-    await top.getByRole('tab',{name:'我的公开收藏夹'}).click();
-    await top.getByRole('button',{name:'＋ 新建收藏夹'}).click();
-    await top.getByLabel('收藏夹名称').fill('我的面食地图');
-    await top.getByLabel('测试面馆',{exact:true}).check();
-    await top.getByLabel('公开此收藏夹').check();
-    await top.getByRole('button',{name:'保存收藏夹'}).click();
-    await top.getByText('收藏夹已保存').waitFor();
-    await top.getByRole('tab',{name:'发现设置'}).click();
-    await top.getByLabel('记录搜索操作',{exact:false}).check();
-    await top.getByRole('button',{name:'保存设置'}).click();
-    await top.getByText('设置已保存').waitFor();
-    assert.equal(sql.prepare('SELECT feedback FROM MapConsent WHERE user_id=?').get(id).feedback,1);
-    // Feedback collection is independent of the diary pages: exposure needs 800 ms of real visibility.
+    // Feedback remains independent of the diary pages. Enable it through its API.
+    const consent = await page.evaluate(async () => {
+        const response = await fetch('/api/community/consent', {
+            method: 'PUT', headers: { Authorization: `Bearer ${window.__TEST_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ version: 1, feedback: true, research: false, discovery: false })
+        });
+        const consent = await response.json();
+        if (response.ok) window.__TEST_FEEDBACK.updateConsent(consent);
+        return consent;
+    });
+    assert.equal(consent.feedback, true);
     await closeAll();
     for(let i=0;i<24;i++){if(count('MapInteraction',"user_id=? AND kind='exposure'"))break;await page.waitForTimeout(250);}
     assert.equal(count('MapInteraction',"user_id=? AND kind='exposure' AND place_id=1"),1);
     assert.equal(count('MapInteraction',"user_id=? AND kind='exposure' AND place_id=2"),0);
-    // Vector-only neighbours are listed first; the star map is a separate view.
-    const peer=randomUUID();sql.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)').run(peer,'只有向量的同好','unused');
-    const {EMBEDDING_MODEL,EMBEDDING_DIMENSIONS}=require('../../infrastructure/aiClients');
-    const {ALGORITHM_VERSION}=require('../../modules/preferences/services/userPreferenceService');
-    const embedding=new Float32Array(EMBEDDING_DIMENSIONS);embedding[0]=1;
-    for(const userId of [id,peer])sql.prepare(`INSERT OR REPLACE INTO UserPreference
-        (user_id,vector,model,dimensions,algorithm_version,status,source_place_count,vector_place_count,total_weight,updated_at,dirty)
-        VALUES(?,?,?,?,?,'ready',1,1,5,?,0)`).run(userId,Buffer.from(embedding.buffer),EMBEDDING_MODEL,EMBEDDING_DIMENSIONS,ALGORITHM_VERSION,Date.now());
-    await openEntry();await page.getByRole('menuitem',{name:/同好/}).click();
-    await top.getByText('同好发现已关闭').waitFor();
-    await top.getByRole('button',{name:'前往发现设置'}).click();
-    await top.getByLabel('允许使用我的用户向量匹配同好',{exact:false}).check();
-    await top.getByRole('button',{name:'保存设置'}).click();
-    await top.getByRole('tab',{name:'同好'}).click();
-    await top.getByRole('button',{name:/只有向量的同好.*向量相似度 100%/}).click();
-    await top.getByText('对方还没有公开收藏夹。').waitFor();
-    await top.getByRole('radio',{name:'星图'}).click();
-    await top.getByRole('img',{name:'以我为中心的偏好星图'}).waitFor();
 
     // --- Phone width: full-screen pages without horizontal overflow, dark theme included. ---
     await closeAll();
     await page.setViewportSize({width:390,height:844});
     await openEntry();await noOverflow();await snap('entry-sheet-mobile');
-    await page.getByRole('menuitem',{name:/图文生成/}).click();await noOverflow();await snap('composer-mobile');
+    await page.getByRole('menuitem',{name:/快速创建/}).click();await noOverflow();await snap('composer-mobile');
     await top.getByRole('button',{name:'返回'}).click();
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();await noOverflow();
     await page.evaluate(()=>window.__TEST_THEME(true));await snap('calendar-dark-mobile');await page.evaluate(()=>window.__TEST_THEME(false));

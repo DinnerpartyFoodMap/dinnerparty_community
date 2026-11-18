@@ -59,6 +59,8 @@ struct MapChromeSheetRow: Identifiable, Equatable {
     var imageTemplate = false
     /// v12：行尾的小红点（"dot"）或小标签（如“未通过”）
     var badge: String? = nil
+    /// 地点卡片副标题内单独强调的预测分。
+    var subtitleEmphasis: String? = nil
 }
 
 struct MapChromeSheetSection: Identifiable, Equatable {

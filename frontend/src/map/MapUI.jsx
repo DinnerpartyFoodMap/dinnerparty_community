@@ -7,6 +7,9 @@ import AddForm from "../places/components/AddPlaceForm";
 import PlaceDetailPanel, { PlaceCardDetails, parseImages as parsePlaceImages } from "../places/components/PlaceDetailPanel";
 import Markdown from "../components/markdown/Markdown";
 import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
+import PlaceCheckInPanel from "../places/components/PlaceCheckInPanel";
+import RatingPredictionValue from "../places/components/RatingPredictionValue";
+import CompanionFigure from '../companion/CompanionFigure';
 import usePlaceRating from "../places/hooks/usePlaceRating";
 import useVisitEvidence from '../places/useVisitEvidence';
 import useDetailInterest from '../places/useDetailInterest';
@@ -17,7 +20,6 @@ import { useExternalSearch } from '../discovery/hooks/useExternalSearch';
 import { currentMapCenter, unmarkedExternalPlaces } from '../discovery/externalSearch';
 import ScrollableView from "../components/layout/ScrollableView";
 import Notice from "../components/feedback/Notice";
-import { fetchFavorites } from "../api/client";
 import { getThemeColor, pickContrastTextColor } from "../theme/theme";
 import defaultAvatar from '../img/default.png';
 import AlongRoutePanel from "../discovery/components/AlongRoutePanel";
@@ -67,6 +69,8 @@ import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../skins/na
 import { markdownToNativeInline, markdownToPlainText } from '../components/markdown/markdownText';
 import { placeReportPrefill } from '../feedback/feedbackTypes';
 import LegalLinks from '../auth/components/LegalLinks.jsx';
+import { useAuth } from '../auth/AuthContext';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { LEGAL_PAGE_IDS, legalPageSymbol, legalPageTitle, legalPageUrl } from '../auth/legalPages';
 import { t, tx } from '../i18n/index.js';
 import PlaceFilterPanel from '../places/components/PlaceFilterPanel';
@@ -212,15 +216,6 @@ function ShareOptionButton({ icon, label, description, onClick, dark }) {
             )
         )
     );
-}
-
-// 列表所在的滚动容器（面板正文）：记下 / 恢复列表位置用
-function scrollParentOf(node) {
-    for (let el = node?.parentElement; el; el = el.parentElement) {
-        const overflow = window.getComputedStyle(el).overflowY;
-        if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el;
-    }
-    return null;
 }
 
 // 原生图集：方块（148pt，3 倍屏约 450px）用 OSS 缩略图，点开的大图用原图
@@ -405,7 +400,20 @@ export default function MapUI(props) {
     const ratingPlaceId = selectedPlace && selectedPlace.isMarked !== false && !pickerMode ? selectedPlace.id : null;
     const placeRating = usePlaceRating({ backendUrl, token: isAuthenticated ? token : null, placeId: ratingPlaceId, onSummary: onRatingSummary });
     const [ratingOpen, setRatingOpen] = useState(false);
-    const visitEvidence = useVisitEvidence({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!nativeOverlayActive&&!pickerMode&&!currentUser?.is_banned,onVisited:()=>setRatingOpen(true)});
+    const [checkInTarget, setCheckInTarget] = useState(null);
+    const [checkInResult, setCheckInResult] = useState(null);
+    const canCheckIn = ratingPlaceId != null && !!selectedPlace && !selectedPlace.marker_only
+        && (!selectedPlace.moderation_status || selectedPlace.moderation_status === 'visible') && !currentUser?.is_banned;
+    const checkInOpen = canCheckIn && !!checkInTarget && checkInTarget.placeId === ratingPlaceId && checkInTarget.token === token;
+    const markerCheckInCount = Number(selectedPlace?.checkin_count) || 0;
+    const checkInCount = checkInResult?.place_id === ratingPlaceId && checkInResult.previousCount === markerCheckInCount
+        ? checkInResult.checkin_count : markerCheckInCount;
+    const openCheckIn = () => {
+        if (!canCheckIn) return;
+        if (!isAuthenticated) { onRequireAuth?.(); return; }
+        setCheckInTarget({ placeId: ratingPlaceId, token });
+    };
+    const visitEvidence = useVisitEvidence({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!nativeOverlayActive&&!pickerMode&&!currentUser?.is_banned&&!checkInOpen,onVisited:()=>setRatingOpen(true)});
     useDetailInterest({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!pickerMode&&!currentUser?.is_banned});
     const openRating = () => setRatingOpen(true);
     // 举报：打开预填好的意见反馈表（类型“不良信息举报”、地点名、编号与链接），住民接着写原因；高德临时地点没有收录，不能举报
@@ -427,7 +435,6 @@ export default function MapUI(props) {
     const [userPlacesOpen, setUserPlacesOpen] = useState(false);
     const openUserPlacesFor = (user) => {
         if (!user?.clickable || !onOpenUserPlaces) return;
-        setFavPageOpen(false);
         setUserPlacesOpen(true);
         onOpenUserPlaces({ id: user.id, name: user.name });
     };
@@ -440,7 +447,6 @@ export default function MapUI(props) {
     }, [props.myPlacesRequestId, currentUser]);
     const toggleFilter = () => {
         if (!filterOpen) {
-            setFavPageOpen(false);
             setUserPlacesOpen(false);
             setAlongRouteOpen(false);
         }
@@ -465,16 +471,7 @@ export default function MapUI(props) {
     const { summary: ratingSummary, personal: personalizedRating, risk: ratingRisk, mine: ownRating } = ratingDisplay(placeRating.data, preloadedRatingPlace);
     const myRatingTier = ratingTierFor(ownRating?.score);
 
-    const [favPageOpen, setFavPageOpen] = useState(false);
     const [pickedPageOpen, setPickedPageOpen] = useState(false);
-    const [favItems, setFavItems] = useState([]);
-    const [favLoading, setFavLoading] = useState(false);
-    const [favError, setFavError] = useState('');
-    // 收藏里点开的地点：窄屏与原生面板先让位给店卡，卡片关掉后回到收藏列表原来的位置（宽屏列表不挡卡片，一直开着）。
-    // shown：卡片已打开（之后在地图上换看别的地点，关掉时也回到收藏）
-    const [favReturn, setFavReturn] = useState(null);
-    const favScrollRef = useRef(null);
-    const [favFocusRow, setFavFocusRow] = useState(null);
     const [navPickerOpen, setNavPickerOpen] = useState(false);
     const [shareOpen, setShareOpen] = useState(false);
     // 图片卡片：横竖版在预览里切换，生成一次后缓存同一地点的两版
@@ -528,8 +525,8 @@ export default function MapUI(props) {
     }, [chromeOwner]);
     // 筛选面板与收藏、住民地点列表、顺路吃在同一侧：一个打开时另一个让位，不叠在一起
     useEffect(() => {
-        if (favPageOpen || userPlacesOpen || alongRouteOpen) setFilterOpen(false);
-    }, [favPageOpen, userPlacesOpen, alongRouteOpen]);
+        if (userPlacesOpen || alongRouteOpen) setFilterOpen(false);
+    }, [userPlacesOpen, alongRouteOpen]);
     const filterActive = isPlaceFilterActive(placeFilter);
     // iOS 原生筛选面板（协议 v14）的标签目录与“展开全部”；网页面板自己读目录
     const [filterDirectory, setFilterDirectory] = useState({ list: [], loading: false, error: '' });
@@ -617,9 +614,11 @@ export default function MapUI(props) {
     const openMyPlaces = () => {
         if (currentUser?.id) openUserPlacesFor({ id: currentUser.id, name: currentUser.username || '', clickable: true });
     };
-    const accountAvatarSrc = isAuthenticated && currentUser
-        ? (currentUser.has_avatar ? `${backendUrl}/users/${currentUser.id}/avatar` : (currentUser.avatar || accountDefaultAvatar))
-        : accountDefaultAvatar;
+    const { user: sessionUser } = useAuth();
+    const accountUser = sessionUser || currentUser;
+    const accountAvatarSrc = resolveAvatarUrl(isAuthenticated ? accountUser : null, backendUrl, {
+        defaultUrl: (isAuthenticated && accountUser?.avatar) || accountDefaultAvatar
+    });
     const hideNonSearchButtons = false;
     const isPosterPicker = pickerMode && pickerContext === 'poster';
     // 日记选点：除了标记与搜索结果，还可以用地图中心的图钉选择任意位置
@@ -671,24 +670,8 @@ export default function MapUI(props) {
         touchAction: 'manipulation'
     };
 
-    const toggleFavorites = () => {
-        if (!isAuthenticated) {
-            onRequireAuth?.();
-            return;
-        }
-        setFavPageOpen((open) => !open);
-        setFavReturn(null);
-        setUserPlacesOpen(false);
-        setPickedPageOpen(false);
-        setMobileMoreOpen(false);
-        setMobileAccountOpen(false);
-        setAlongRouteOpen(false);
-        setRandomFoodOpen(false);
-    };
-
     const openAlongRoute = () => {
         setRandomFoodOpen(false);
-        setFavPageOpen(false);
         setUserPlacesOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
@@ -737,7 +720,6 @@ export default function MapUI(props) {
 
     const openRandomFoodAt = (origin) => {
         setAlongRouteOpen(false);
-        setFavPageOpen(false);
         setPickedPageOpen(false);
         setMobileMoreOpen(false);
         setMobileAccountOpen(false);
@@ -772,7 +754,6 @@ export default function MapUI(props) {
         if (!exhibitionOpen) return;
         setMobileMoreOpen(false);
         setMobileAccountOpen(false);
-        setFavPageOpen(false);
     }, [exhibitionOpen]);
 
     useEffect(() => {
@@ -792,7 +773,6 @@ export default function MapUI(props) {
         setRandomFoodOpen(false);
         setMobileMoreOpen((open) => !open);
         setMobileAccountOpen(false);
-        setFavPageOpen(false);
     };
 
     const runMobileMoreAction = (action) => {
@@ -815,7 +795,6 @@ export default function MapUI(props) {
     const openOnboarding = () => {
         setMobileMoreOpen(false);
         setMobileAccountOpen(false);
-        setFavPageOpen(false);
         if (addMode) handleToggleAddMode();
         showOnboarding();
     };
@@ -832,7 +811,6 @@ export default function MapUI(props) {
         }
         setMobileAccountOpen((open) => !open);
         setMobileMoreOpen(false);
-        setFavPageOpen(false);
     };
 
     const runMobileAccountAction = (action) => {
@@ -1055,8 +1033,8 @@ export default function MapUI(props) {
     }) && !!nativeFormSpec;
 
     const chromeItems = [
-        { id: 'favorites', title: t('map:ui.favorites'), symbol: favPageOpen ? sfSymbol('favoriteFill') : sfSymbol('favorite'), ...nativeIcon('toolbar.icons.favorites'), selected: favPageOpen, opensOverlay: true, sheetWhenNative: isAuthenticated },
-        // iOS：随机美食在工具栏，日记 · 同好收进上滑的更多功能（二者互换了位置）
+        { id: 'journey', title: t('map:ui.diary'), symbol: sfSymbol('journey'), ...nativeIcon('toolbar.icons.journey'), disabled: authPending, opensOverlay: true },
+        // iOS 的随机美食也在工具栏。
         { id: 'random', title: t('map:ui.randomFood'), symbol: sfSymbol('random'), ...nativeIcon('expanded.panel.icons.random'), disabled: !mapReady, selected: randomFoodOpen, opensOverlay: true, sheetWhenNative: true },
         {
             id: 'add',
@@ -1089,13 +1067,10 @@ export default function MapUI(props) {
     const handleChromeAction = (actionId) => {
         switch (actionId) {
             case 'more': toggleMobileMore(); return true;
-            case 'favorites': toggleFavorites(); return true;
             case 'journey':
-                setFavPageOpen(false);
                 runMobileMoreAction(props.onOpenJourney);
                 return true;
             case 'random':
-                setFavPageOpen(false);
                 runMobileMoreAction(openRandomFood);
                 return true;
             case 'add':
@@ -1105,7 +1080,6 @@ export default function MapUI(props) {
                 }
                 handleToggleAddMode();
                 setMobileMoreOpen(false);
-                setFavPageOpen(false);
                 return true;
             case 'alongRoute':
                 if (nativeAlongRouteEnabled) {
@@ -1139,8 +1113,6 @@ export default function MapUI(props) {
     // ---- 原生面板（iOS 26 系统 sheet）：与网页面板同一组操作。原生只拿到展示字段，点按回传行 id，这里查表执行 ----
     const moreMenuEntries = [
         iosApp && { id: 'alongRoute', title: t('map:ui.alongRoute'), symbol: sfSymbol('alongRoute'), ...nativeIcon('expanded.panel.icons.alongRoute'), disabled: !mapReady, run: openAlongRoute },
-        // 随机美食在原生工具栏上，这里放日记 · 同好；iOS 不提供聚餐活动与导出海报
-        { id: 'journey', title: t('map:ui.diaryCommunity'), symbol: sfSymbol('journey'), ...nativeIcon('expanded.panel.icons.journey'), run: props.onOpenJourney },
         isAdmin && { id: 'admin', title: t('map:ui.admin'), symbol: sfSymbol('admin'), ...nativeIcon('expanded.panel.icons.admin'), run: onOpenAdmin },
         { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: sfSymbol('guide'), ...nativeIcon('expanded.panel.icons.guide'), run: openOnboarding },
         onOpenFeedback && { id: 'feedback', title: t('feedback:menuEntry'), symbol: sfSymbol('feedback'), ...nativeIcon('expanded.panel.icons.feedback'), run: onOpenFeedback }
@@ -1155,14 +1127,13 @@ export default function MapUI(props) {
         // 我创建的地点：地图只显示自己的地点（含审核中、未通过的）；有被驳回的地点时右侧小红点
         { id: 'myPlaces', title: t('map:ui.myPlaces'), symbol: sfSymbol('place'), badge: rejectedCount ? 'dot' : undefined, run: openMyPlaces },
         props.onOpenProfile && { id: 'profile', title: t('map:ui.myProfile'), symbol: sfSymbol('profile'), run: () => props.onOpenProfile(currentUser?.id) },
+        props.onOpenCompanion && { id: 'companions', title: t('companion:title'), symbol: sfSymbol('companion'), run: props.onOpenCompanion },
         { id: 'settings', title: t('map:ui.accountSettings'), symbol: sfSymbol('account'), run: onOpenMine },
         { id: 'logout', title: t('map:ui.logout'), symbol: sfSymbol('logout'), tone: 'danger', run: onLogout }
     ].filter(Boolean);
     const toSheetRows = (entries) => entries.map(({ run, url, ...row }) => row);
-    const favoriteRowId = (item) => `place-${item.place_id}`;
 
     const openSheetId = (isAuthenticated && mobileAccountOpen) ? 'account'
-        : (isAuthenticated && favPageOpen) ? 'favorites'
         : (randomFoodOpen && !pickerMode) ? 'random'
         // 地图筛选（原生控件接管时）：从右侧按钮组展开，改动立即作用到地图
         : (filterOpen && !pickerMode) ? 'filter'
@@ -1170,7 +1141,7 @@ export default function MapUI(props) {
         : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
         // 聚合成员列表（“此处有 N 家店”）：选中其中一家后关闭，让位给地点卡片
         : (clusterMembers && !pickerMode) ? 'clusterMembers'
-        : (selectedPlace && !pickerMode) ? 'place'
+        : (selectedPlace && !pickerMode && !checkInOpen) ? 'place'
         // 住民的地点列表：选中其中一个地点后让位给地点卡片
         : (userFilter && userPlacesOpen && !pickerMode) ? 'userPlaces'
         : null;
@@ -1185,32 +1156,6 @@ export default function MapUI(props) {
             subtitle: t('map:ui.verified'),
             size: 'fit',
             sections: [{ id: 'account', rows: toSheetRows(accountMenuEntries) }]
-        };
-    } else if (openSheetId === 'favorites') {
-        chromeSheet = {
-            id: 'favorites',
-            title: t('map:ui.myFavorites'),
-            size: 'list',
-            message: favLoading && !favItems.length ? t('common:status.loading') : favError || (favItems.length === 0 && !favLoading ? t('map:ui.noFavorites') : undefined),
-            messageTone: favLoading && !favItems.length ? 'loading' : (favError ? 'danger' : undefined),
-            // 从店卡回来时滚到刚才点开的那一行
-            focusRow: favFocusRow || undefined,
-            sections: (favLoading && !favItems.length) || favError ? [] : [{
-                id: 'places',
-                rows: favItems.map((item) => {
-                    const located = !!(item.longitude && item.latitude);
-                    return {
-                        id: favoriteRowId(item),
-                        title: item.name || t('map:ui.deletedPlace', { place_id: item.place_id }),
-                        subtitle: item.name && !located
-                            ? t('map:ui.missingCoordinates', { prefix: item.category ? `${item.category} · ` : '' })
-                            : (item.category || undefined),
-                        symbol: sfSymbol('placeRow'),
-                        tone: !item.name ? 'muted' : (!located ? 'warning' : undefined),
-                        disabled: !located
-                    };
-                })
-            }]
         };
     } else if (openSheetId === 'random') {
         chromeSheet = randomFoodChromeSheet(randomFood, { centerOptions: randomCenterOptions });
@@ -1239,14 +1184,18 @@ export default function MapUI(props) {
             costText
         ].filter(Boolean).join(subtitleSeparator);
         const subtitlePrefix = [moderationShort, ratingRisk ? t('map:rating.riskLabel') : null].filter(Boolean);
+        const predictedScore = personalizedRating?.kind === 'prediction' ? formatAverage(personalizedRating.average) : null;
         const ratingRow = !unmarked && {
             id: 'rating',
             title: summaryText(ratingSummary),
             subtitle: [
-                personalizedRating ? (personalizedRating.kind === 'prediction' ? t('map:rating.native.rowSubtitlePrediction', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) }) : t('map:rating.native.rowSubtitlePersonalized', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) })) : null,
+                personalizedRating ? (predictedScore
+                    ? t('map:rating.native.rowSubtitlePrediction', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: predictedScore })
+                    : t('map:rating.native.rowSubtitlePersonalized', { tier: tierLabel(tierForAverage(personalizedRating.average)), average: formatAverage(personalizedRating.average) })) : null,
                 ratingRisk ? t('map:rating.riskLabel') : null,
                 myRatingTier ? t('map:rating.native.rowSubtitleMine', { tier: tierLabel(myRatingTier) }) : t('map:rating.native.rowSubtitleRate')
             ].filter(Boolean).join(' · '),
+            subtitleEmphasis: predictedScore,
             symbol: ratingTier ? ratingTier.symbol : sfSymbol('thumbUp'),
             ...nativeIcon(ratingTier ? `rating.${ratingTier.key}` : 'rating.none'),
             keepsOpen: true
@@ -1282,6 +1231,7 @@ export default function MapUI(props) {
                     ...nativeIcon(myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none'),
                     keepsOpen: true
                 },
+                canCheckIn && { id: 'checkIn', title: t('map:checkIn.submit'), symbol: sfSymbol('centerLocation'), keepsOpen: true },
                 unmarked
                     ? (venueCard ? null : { id: 'create', title: t('map:ui.createPlace'), symbol: sfSymbol('create'), ...nativeIcon('cardActions.create'), keepsOpen: true })
                     : { id: 'edit', title: t('map:ui.edit'), symbol: sfSymbol('edit'), ...nativeIcon('cardActions.edit'), keepsOpen: true },
@@ -1295,6 +1245,7 @@ export default function MapUI(props) {
                     // 能打开住民的地点时“最近修改”是一行（点按后卡片收起、显示住民的地点列表），否则仍是脚注
                     footer: lastModifier && !lastModifier.clickable ? t('map:ui.lastModified', { modifier: lastModifierText(lastModifier) }) : undefined,
                     rows: [
+                        checkInCount > 0 && { id: 'checkInCount', title: t('map:checkIn.count', { count: checkInCount }), symbol: sfSymbol('centerLocation'), disabled: true },
                         moderationStatus && { id: 'moderation', title: moderationShort, subtitle: moderationNote, symbol: sfSymbol('hidden'), tone: 'warning', disabled: true },
                         diaryCount > 0 && { id: 'diaries', title: t('map:ui.diaryCount', { diaryCount }), symbol: sfSymbol('diaries'), keepsOpen: true },
                         !unmarked && isAdmin && { id: 'comments', title: t('map:editEvidence.history'), symbol: sfSymbol('comments'), keepsOpen: true },
@@ -1309,7 +1260,8 @@ export default function MapUI(props) {
             ].filter(Boolean),
             gallery: unmarked ? [] : [
                 nativeGalleryGroup('exterior', t('map:ui.exteriorImages'), selectedPlace.exterior_images),
-                nativeGalleryGroup('menu', t('common:label.menu'), selectedPlace.menu_images)
+                nativeGalleryGroup('menu', t('common:label.menu'), selectedPlace.menu_images),
+                nativeGalleryGroup('checkin', t('map:checkIn.gallery'), parsePlaceImages(selectedPlace.checkin_images, backendUrl))
             ]
         };
         const closeIcon = nativeIcon('cardActions.close');
@@ -1391,10 +1343,6 @@ export default function MapUI(props) {
             const entry = type === 'select' && accountMenuEntries.find((item) => item.id === rowId);
             if (entry) runMobileAccountAction(entry.run);
             else setMobileAccountOpen(false);
-        } else if (sheetId === 'favorites') {
-            const item = type === 'select' && favItems.find((fav) => favoriteRowId(fav) === rowId);
-            if (item) openFavorite(item, { native: true });
-            else setFavPageOpen(false);
         } else if (sheetId === 'random') {
             if (type === 'dismiss') setRandomFoodOpen(false);
             else if (rowId === 'view') randomFood.selectPlace();
@@ -1427,6 +1375,7 @@ export default function MapUI(props) {
                 case 'edit': openManagePanel?.(); break;
                 case 'comments': if (isAdmin) openCommentPanel?.(); break;
                 case 'diaries': openDiaries(); break;
+                case 'checkIn': openCheckIn(); break;
                 case 'rate':
                 case 'rating': openRating(); break;
                 case 'report': reportPlace(); break;
@@ -1493,7 +1442,7 @@ export default function MapUI(props) {
         [onboardingVariant]
     );
     const canAutoOnboard = chromeOwner && mapReady && !pickerMode && !chrome.connecting && !onboardingOpen
-        && !selectedPlace && !addMode && !searchFocused && !searchExpanded && !favPageOpen && !mobileAccountOpen && !mobileMoreOpen;
+        && !selectedPlace && !addMode && !searchFocused && !searchExpanded && !mobileAccountOpen && !mobileMoreOpen;
     useEffect(() => {
         if (!canAutoOnboard || readOnboardingSeen()) return undefined;
         let timer = 0;
@@ -1612,6 +1561,9 @@ export default function MapUI(props) {
 
     // 按地点身份计时：同一地点的字段更新（例如评价汇总刷新）不重新触发防误触
     const selectedPlaceKey = selectedPlace ? placeKey(selectedPlace) : null;
+    useEffect(() => { setCheckInTarget(null); }, [selectedPlaceKey, token]);
+    useEffect(() => { setCheckInResult(null); }, [selectedPlaceKey, markerCheckInCount]);
+    useEffect(() => { if (!chromeOwner) setCheckInTarget(null); }, [chromeOwner]);
     useLayoutEffect(() => {
         if (!selectedPlaceKey) {
             popupOpenedAtRef.current = 0;
@@ -1650,77 +1602,13 @@ export default function MapUI(props) {
 
     // search bar stays open by default — collapse behaviors removed
 
-    useEffect(() => { setFavItems([]); }, [token]);
-    // Load favorites when panel opens（刷新期间保留旧列表，回到列表时位置不跳）
-    useEffect(() => {
-        if (!favPageOpen) return;
-        if (!isAuthenticated || !token) return;
-        let active = true;
-        setFavLoading(true);
-        setFavError('');
-        (async () => {
-            try {
-                const rows = await fetchFavorites(backendUrl, token);
-                if (active) setFavItems(rows || []);
-            } catch (e) {
-                if (active) setFavError(t('map:ui.loadFavoritesFailed', { message: e.message || e }));
-            } finally {
-                if (active) setFavLoading(false);
-            }
-        })();
-        return () => { active = false; };
-    }, [favPageOpen, isAuthenticated, token, backendUrl]);
-
-    const FAVORITE_LOCATION_ZOOM_LEVEL = 16;
-
-    // 收藏里的一项：选中地点并打开店卡（与列表模式相同，退出搜索、沿途与住民筛选）
-    const openFavorite = (item, { native = false, scroller = null } = {}) => {
-        if (!item?.name || !item.longitude || !item.latitude) return;
-        const yields = native || layout.sheet;
-        if (yields) {
-            favScrollRef.current = scroller ? scroller.scrollTop : null;
-            setFavFocusRow(favoriteRowId(item));
-            setFavReturn({ placeId: String(item.place_id), shown: false });
-            setFavPageOpen(false);
-        }
-        Promise.resolve(props.onFocusPlaceFromList?.(item.place_id)).then((opened) => {
-            if (opened || !yields) return;
-            setFavReturn(null);
-            setFavPageOpen(true);
-        });
-    };
-    useEffect(() => {
-        if (!favReturn) return;
-        if (selectedPlace) {
-            if (!favReturn.shown && String(selectedPlace.id) === favReturn.placeId) setFavReturn({ ...favReturn, shown: true });
-            return;
-        }
-        if (favReturn.shown) {
-            setFavReturn(null);
-            setFavPageOpen(true);
-        }
-    }, [selectedPlace, favReturn]);
-    useEffect(() => {
-        if (favPageOpen || favReturn) return;
-        favScrollRef.current = null;
-        setFavFocusRow(null);
-    }, [favPageOpen, favReturn]);
-    const restoreFavScroll = (node) => {
-        if (!node || favScrollRef.current == null) return;
-        const top = favScrollRef.current;
-        favScrollRef.current = null;
-        const apply = () => { const scroller = scrollParentOf(node); if (scroller) scroller.scrollTop = top; };
-        apply();
-        window.requestAnimationFrame(apply);
-    };
-
     const navigateToPlace = (longitude, latitude) => {
         if (!longitude || !latitude || !mapRef?.current) return;
         if (typeof onProgrammaticMapMove === 'function') {
             onProgrammaticMapMove();
         }
         mapRef.current.setCenter([longitude, latitude]);
-        mapRef.current.setZoom(FAVORITE_LOCATION_ZOOM_LEVEL);
+        mapRef.current.setZoom(16);
     };
 
     const hexToRgba = (hex, a = 1) => {
@@ -1971,7 +1859,9 @@ export default function MapUI(props) {
                     </span>
                     {personalizedRating && (
                         <span style={{ whiteSpace: 'nowrap', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                            {(personalizedRating.kind === 'prediction' ? t('map:rating.card.prediction', { average: formatAverage(personalizedRating.average) }) : t('map:rating.card.personalized', { average: formatAverage(personalizedRating.average) }))}
+                            {personalizedRating.kind === 'prediction'
+                                ? tx('map:rating.card.prediction', { average: <RatingPredictionValue average={personalizedRating.average} /> })
+                                : t('map:rating.card.personalized', { average: formatAverage(personalizedRating.average) })}
                         </span>
                     )}
                     {myRatingTier && <span style={{ whiteSpace: 'nowrap', fontSize: 12, color: myRatingTier.tone }}>{t('map:rating.card.mine', { tier: tierLabel(myRatingTier) })}</span>}
@@ -2059,6 +1949,12 @@ export default function MapUI(props) {
                 })()}
             </div>
             {ratingPlaceId != null && renderRatingRow()}
+            {canCheckIn && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                    <Button variant="secondary" size="sm" onClick={openCheckIn}>{t('map:checkIn.submit')}</Button>
+                    {checkInCount > 0 && <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:checkIn.count', { count: checkInCount })}</span>}
+                </div>
+            )}
 
             {moderationNote && (
                 <div role="note" style={{ marginTop: 6, display: 'flex', alignItems: 'flex-start', gap: 4, fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-secondary)' }}>
@@ -2411,6 +2307,12 @@ export default function MapUI(props) {
             <div ref={containerRef} id="map" className="fm-map-canvas" style={{ width: "100%", height: "100%", position: "relative" }}></div>
             {/* 状态栏区域登记为遮挡：地图居中、聚合展开时避开它（网页中高度为 0，不生效） */}
             <div className="fm-statusbar-occluder" data-map-occluder="" aria-hidden="true" />
+            {isNarrow && props.companion && !pickerMode && !selectedPlace && !addMode && !openSheetId && !mobileMoreOpen && !nativeOverlayActive && (
+                <div className="fm-companion-roam" aria-hidden="true" style={{ bottom: nativeChrome
+                    ? chrome.bottomOccupied + 4 : 'calc(52px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))' }}>
+                    <CompanionFigure backendUrl={backendUrl} token={token} companion={props.companion} />
+                </div>
+            )}
 
             {addMode && !pickerMode && <Notice title={t('map:ui.addPlaceHint')} tone="warning"
                 style={isNarrow ? undefined : { top: 64, width: 'min(560px, calc(100% - 140px))' }} />}
@@ -2772,13 +2674,13 @@ export default function MapUI(props) {
                             </div>
                         )}
 
-                        <Tooltip text={authPending ? t('map:ui.authPending') : (favPageOpen ? t('map:ui.closeFavorites') : t('map:ui.openFavorites'))}>
+                        <Tooltip text={authPending ? t('map:ui.authPending') : t('map:ui.openDiary')}>
                             <div style={{ display: "inline-block" }}>
                                 <Button
-                                    data-tour="favorites"
-                                    onClick={toggleFavorites}
-                                    disabled={!mapReady}
-                                    aria-label={favPageOpen ? t('map:ui.closeFavorites') : t('map:ui.openFavorites')}
+                                    data-tour="journey"
+                                    onClick={props.onOpenJourney}
+                                    disabled={authPending}
+                                    aria-label={t('map:ui.openDiary')}
                                     style={{
                                         width: 44,
                                         height: 44,
@@ -2787,15 +2689,17 @@ export default function MapUI(props) {
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        background: favPageOpen ? 'var(--color-primary-active)' : customThemeColor,
-                                        color: favPageOpen ? 'var(--color-on-emphasis)' : 'var(--theme-on-primary)',
+                                        background: customThemeColor,
+                                        color: 'var(--theme-on-primary)',
                                         border: 'none',
                                         transition: 'background 180ms ease, transform 220ms ease',
-                                        cursor: (!mapReady || authPending) ? 'not-allowed' : 'pointer',
-                                        opacity: (!mapReady || authPending) ? 0.6 : 1
+                                        cursor: authPending ? 'not-allowed' : 'pointer',
+                                        opacity: authPending ? 0.6 : 1
                                     }}
                                 >
-                                    <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 28 }}>favorite</span>
+                                    <SkinIcon slot="toolbar.icons.journey" size={24}>
+                                        <span className="material-symbols-outlined" style={{ fontSize: 28 }}>book_2</span>
+                                    </SkinIcon>
                                 </Button>
                             </div>
                         </Tooltip>
@@ -2806,7 +2710,6 @@ export default function MapUI(props) {
                                     <Button
                                         onClick={() => {
                                             setPickedPageOpen((open) => !open);
-                                            setFavPageOpen(false);
                                         }}
                                         disabled={!mapReady}
                                         aria-label={pickedPageOpen ? t('map:ui.closePicked') : t('map:ui.viewPicked')}
@@ -2915,10 +2818,6 @@ export default function MapUI(props) {
                                 <SkinIcon slot="expanded.panel.icons.random" size={22} style={panelIconStyle} />
                                 {t('map:ui.randomFood')}
                             </Button>
-                            <Button variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(props.onOpenJourney)}>
-                                <SkinIcon slot="expanded.panel.icons.journey" size={22} style={panelIconStyle} />
-                                {t('map:ui.diaryCommunity')}
-                            </Button>
                             {/* iOS 不提供聚餐活动与导出海报 */}
                             {isAuthenticated && !iosApp && (
                                 <Button variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenDinners)}>
@@ -3004,6 +2903,8 @@ export default function MapUI(props) {
                                     {t('map:ui.myProfile')}
                                 </Button>
                             )}
+                            {props.onOpenCompanion && <Button variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }}
+                                onClick={() => runMobileAccountAction(props.onOpenCompanion)}>{t('companion:title')}</Button>}
                             <Button variant="menu" full role="menuitem" style={{ minHeight: 48, padding: '8px 16px' }} onClick={() => runMobileAccountAction(onOpenMine)}>
                                 {t('map:ui.accountSettings')}
                             </Button>
@@ -3047,18 +2948,17 @@ export default function MapUI(props) {
                             </SkinIcon>
                             <span>{t('common:action.more')}</span>
                         </Button>
-                        <Button data-tour="favorites" onClick={toggleFavorites} aria-pressed={favPageOpen} style={{ ...mobileNavButtonStyle, color: favPageOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}>
-                            <SkinIcon slot="toolbar.icons.favorites" size={24}>
-                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>favorite</span>
+                        <Button data-tour="journey" onClick={() => runMobileMoreAction(props.onOpenJourney)} disabled={authPending} aria-label={t('map:ui.openDiary')} style={mobileNavButtonStyle}>
+                            <SkinIcon slot="toolbar.icons.journey" size={24}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>book_2</span>
                             </SkinIcon>
-                            <span>{t('map:ui.favorites')}</span>
+                            <span>{t('map:ui.diary')}</span>
                         </Button>
                         <Button
                             data-tour="add"
                             onClick={() => {
                                 handleToggleAddMode();
                                 setMobileMoreOpen(false);
-                                setFavPageOpen(false);
                             }}
                             disabled={!mapReady || authPending}
                             aria-pressed={addMode}
@@ -3096,17 +2996,17 @@ export default function MapUI(props) {
                         {!iosApp && <Button
                             data-tour="account"
                             onClick={toggleMobileAccount}
-                            aria-label={isAuthenticated ? t('map:ui.openUserMenuNamed', { username: currentUser?.username || '' }) : t('map:ui.openLoginEntry')}
+                            aria-label={isAuthenticated ? t('map:ui.openUserMenuNamed', { username: accountUser?.username || '' }) : t('map:ui.openLoginEntry')}
                             aria-haspopup={isAuthenticated ? 'menu' : undefined}
                             aria-expanded={isAuthenticated ? mobileAccountOpen : undefined}
                             style={{ ...mobileNavButtonStyle, color: mobileAccountOpen ? toolbarSelectedColor : mobileNavButtonStyle.color }}
                         >
-                            {isAuthenticated && currentUser ? (
+                            {isAuthenticated && accountUser ? (
                                 <span style={{ position: 'relative', display: 'inline-flex' }}>
                                     <SkinAvatarFrame size={25}>
                                         <img
                                             src={accountAvatarSrc}
-                                            alt={currentUser.username || t('map:ui.avatarAlt')}
+                                            alt={accountUser.username || t('map:ui.avatarAlt')}
                                             style={{ width: 25, height: 25, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${customThemeColor}` }}
                                         />
                                     </SkinAvatarFrame>
@@ -3120,7 +3020,7 @@ export default function MapUI(props) {
                                 </SkinIcon>
                             )}
                             <span style={{ maxWidth: '64px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {isAuthenticated ? (currentUser?.username || t('map:ui.resident')) : t('map:ui.login')}
+                                {isAuthenticated ? (accountUser?.username || t('map:ui.resident')) : t('map:ui.login')}
                             </span>
                         </Button>}
                     </nav>}
@@ -3509,6 +3409,11 @@ export default function MapUI(props) {
                         onRequireAuth={onRequireAuth}
                         showTip={showTip}
                     />
+                    {checkInOpen && <PlaceCheckInPanel place={selectedPlace} token={token} backendUrl={backendUrl}
+                        onClose={() => setCheckInTarget(null)} onSuccess={result => {
+                            setCheckInResult({ ...result, previousCount: markerCheckInCount });
+                            placeRating.reload();
+                        }} />}
                 </>
             )}
 
@@ -3546,66 +3451,6 @@ export default function MapUI(props) {
                     </div>
                 )}
             </ResponsivePanel>
-
-            <MapPanel
-                open={!hideNonSearchButtons && favPageOpen && !nativeChrome}
-                onClose={() => setFavPageOpen(false)}
-                title={t('map:ui.myFavorites')}
-                kind="favorites"
-                desktopStyle={{ right: 60, top: 72, width: 300, maxHeight: '60vh' }}
-            >
-                {!isAuthenticated ? (
-                    <div style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                        {t('map:ui.loginToViewFavorites')}
-                    </div>
-                ) : favLoading && favItems.length === 0 ? (
-                    <div style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                        {t('map:ui.search.loading')}
-                    </div>
-                ) : favError ? (
-                    <div style={{ padding: 16, textAlign: 'center', color: 'var(--color-danger)', fontSize: 13 }}>
-                        {favError}
-                    </div>
-                ) : favItems.length === 0 ? (
-                    <div style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                        {t('map:ui.noFavorites')}
-                    </div>
-                ) : (
-                    <div role="list" ref={restoreFavScroll}>
-                        {favItems.map((item) => {
-                            const located = !!(item.name && item.longitude && item.latitude);
-                            const current = !!selectedPlace && String(selectedPlace.id) === String(item.place_id);
-                            return (
-                                <button
-                                    key={item.place_id}
-                                    type="button"
-                                    role="listitem"
-                                    className="fm-pressable"
-                                    disabled={!located}
-                                    aria-current={current ? 'true' : undefined}
-                                    onClick={(event) => openFavorite(item, { scroller: scrollParentOf(event.currentTarget) })}
-                                    style={{
-                                        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%', minHeight: 48,
-                                        padding: '10px 16px', border: 0, borderBottom: '1px solid var(--color-border)',
-                                        background: current ? 'var(--color-bg-overlay)' : 'transparent',
-                                        color: 'var(--color-text-primary)', textAlign: 'left', cursor: located ? 'pointer' : 'default'
-                                    }}
-                                >
-                                    <span style={{ maxWidth: '100%', fontSize: 15, color: item.name ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {item.name || t('map:ui.deletedPlace', { place_id: item.place_id })}
-                                    </span>
-                                    {item.category && (
-                                        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>{item.category}</span>
-                                    )}
-                                    {item.name && (!item.longitude || !item.latitude) && (
-                                        <span style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 2 }}>{t('map:ui.missingCoordinatesShort')}</span>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-            </MapPanel>
 
             {/* 住民的地点列表（iOS 原生控件接管时为原生面板）：宽屏与收藏同一位置、地图可操作；窄屏为底部面板，选中地点后让位给卡片 */}
             <MapPanel

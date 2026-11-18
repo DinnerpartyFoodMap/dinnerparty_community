@@ -74,6 +74,13 @@ function initAlgorithmSchema(db){
     db.exec(`CREATE TRIGGER IF NOT EXISTS place_list_clock_User_UPDATE AFTER UPDATE OF is_banned ON User WHEN OLD.is_banned IS NOT NEW.is_banned BEGIN UPDATE PlaceListClock SET revision=revision+1 WHERE id=1; END;
         CREATE TRIGGER IF NOT EXISTS place_list_clock_User_DELETE AFTER DELETE ON User BEGIN UPDATE PlaceListClock SET revision=revision+1 WHERE id=1; END;`);
     for(const table of ['User','Place','PlaceRating','Favorite','PlaceRequest','UserPreference'])for(const action of ['INSERT','UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS numeric_clock_${table}_${action} AFTER ${action} ON ${table} BEGIN UPDATE AlgorithmClock SET revision=revision+1 WHERE id=1; END;`);
+    for (const action of ['INSERT', 'UPDATE', 'DELETE']) db.exec(`
+        CREATE TRIGGER IF NOT EXISTS numeric_clock_PlaceCheckIn_${action} AFTER ${action} ON PlaceCheckIn
+        BEGIN
+            UPDATE AlgorithmClock SET revision=revision+1 WHERE id=1;
+            UPDATE PlaceListClock SET revision=revision+1 WHERE id=1;
+        END;
+    `);
     for(const [table,field,membership] of [['User','user_id','ResearchBundleMember'],['Place','place_id','ResearchBundlePlace']])db.exec(`CREATE TRIGGER IF NOT EXISTS numeric_bundle_delete_${table} BEFORE DELETE ON ${table} BEGIN
         UPDATE ResearchBundle SET status='invalid' WHERE id IN(SELECT bundle_id FROM ${membership} WHERE ${field}=OLD.id);
         INSERT OR IGNORE INTO ResearchBundlePurge(bundle_id) SELECT bundle_id FROM ${membership} WHERE ${field}=OLD.id;

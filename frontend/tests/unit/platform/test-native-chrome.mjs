@@ -368,6 +368,12 @@ function makeSession(plugin, extra = {}) {
     assert.equal(skinCard.actions[0].image, 'capacitor://localhost/assets/nav.png');
     assert.equal('image' in skinCard.actions[1], false);
     assert.equal(skinCard.sections[0].rows[0].image, png);
+    const predictions = sanitizeSheet({ id: 'place', sections: [{ rows: [
+        { id: 'valid', subtitle: '预计你会给 3.6 · 去评价', subtitleEmphasis: '3.6' },
+        { id: 'unmatched', subtitle: '暂无预测', subtitleEmphasis: '3.6' }
+    ] }] }).sections[0].rows;
+    assert.equal(predictions[0].subtitleEmphasis, '3.6', 'the native card receives the predicted value separately');
+    assert.equal(predictions[1].subtitleEmphasis, undefined, 'an emphasis not present in the subtitle is discarded');
     assert.equal('closeImage' in sanitizeSheet({ id: 'place', closeImage: 'nope' }), false);
     assert.deepEqual(sanitizeSkin(null), {});
     assert.deepEqual(sanitizeSkin({

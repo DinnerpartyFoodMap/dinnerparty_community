@@ -3,8 +3,10 @@ const {sql,fail,now,getJourney,saveJourney}=require('./journeyStore');
 const {draftRow,closeDraft}=require('./journeyDrafts');
 const links=require('./journeyMapLinks');
 const {enqueuePlaceCreatedNotifications}=require('../../places/services/placeNotifications');
+const {enqueueDiaryNotifications,cancelDiaryNotifications}=require('../../qqbot/runtime/diaryNotifications');
 const {afterPlacesCreated}=require('../../places/services/placeService');
 const {notBlockedSql}=require('../../accounts/services/userRelations');
+const {avatarColumns,avatarFields}=require('../../accounts/services/userAvatar');
 
 // Public diary content is an independent snapshot of exactly what the author previewed.
 // Private editing, autosave, restore and merge never touch it; only commit and withdraw do.
@@ -99,6 +101,7 @@ function withdrawPublication(journeyId) {
     if(publication.status==='active'){
         sql.prepare("UPDATE JourneyPublication SET status='withdrawn',snapshot='{}',version=version+1,updated_at=? WHERE id=?").run(now(),publication.id);
         sql.prepare('DELETE FROM PlaceDiaryExcerpt WHERE publication_id=?').run(publication.id);
+        cancelDiaryNotifications(publication.id);
     }
     const row=sql.prepare('SELECT id,status,version FROM JourneyPublication WHERE id=?').get(publication.id);
     return {public_id:row.id,status:row.status,version:row.version};
@@ -152,6 +155,7 @@ function commit(userId,draftId,body) {
             created_place_ids:created,public_id:publication?.status==='active'?publication.public_id:null,publication_version:publication?.version||0};
         // Only markers that survived external-POI de-duplication are announced; a rollback drops these rows too.
         enqueuePlaceCreatedNotifications(created,{source:'diary'});
+        if(visibility==='public'&&publication.version===1)enqueueDiaryNotifications(publication.public_id);
         sql.prepare('INSERT INTO JourneyCommitRequest(user_id,request_id,payload_hash,journey_id,result,created_at) VALUES(?,?,?,?,?,?)').run(userId,requestId,payloadHash,saved.id,JSON.stringify(outcome),now());
         return {...outcome,journey:saved,publication};
     }).immediate();
@@ -176,9 +180,9 @@ function publicationSummary(journey) {
     return {visibility:active?'public':'private',publication:{public_id:publication.id,status:publication.status,version:publication.version,
         source_revision:publication.source_revision,outdated:active&&publication.source_revision!==journey.revision,linked_places:linked}};
 }
-function author(row) {return {id:row.user_id,username:row.username,has_avatar:!!row.has_avatar};}
+function author(row) {return {id:row.user_id,username:row.username,...avatarFields(row,row.user_id)};}
 function publicJourney(publicId) {
-    const row=sql.prepare("SELECT p.*,u.username,(u.avatar_blob IS NOT NULL) AS has_avatar FROM JourneyPublication p JOIN User u ON u.id=p.user_id WHERE p.id=? AND p.status='active'").get(String(publicId));
+    const row=sql.prepare(`SELECT p.*,u.username,${avatarColumns('u')} FROM JourneyPublication p JOIN User u ON u.id=p.user_id WHERE p.id=? AND p.status='active'`).get(String(publicId));
     if(!row)fail('这篇日记不存在，或作者已设为私密',404);
     const body=JSON.parse(row.snapshot);
     // A marker deleted after publication keeps the stop text but loses its map link.
@@ -214,7 +218,7 @@ function placeDiaries(placeId,{cursor,limit,viewerId=null}={}) {
         ${after?'HAVING (MAX(e.record_date),e.publication_id)<(?,?)':''} ORDER BY record_date DESC,publication_id DESC LIMIT ?`).all(...(after?[id,viewer,...after,size+1]:[id,viewer,size+1]));
     const page=groups.slice(0,size);
     const items=page.map(g=>{
-        const pub=sql.prepare('SELECT p.id,p.user_id,p.snapshot,u.username,(u.avatar_blob IS NOT NULL) AS has_avatar FROM JourneyPublication p JOIN User u ON u.id=p.user_id WHERE p.id=?').get(g.publication_id);
+        const pub=sql.prepare(`SELECT p.id,p.user_id,p.snapshot,u.username,${avatarColumns('u')} FROM JourneyPublication p JOIN User u ON u.id=p.user_id WHERE p.id=?`).get(g.publication_id);
         const snapshot=JSON.parse(pub.snapshot);
         // record_date falls back to the first day for ordering. A multi-day diary whose stop has no date reports '' so
         // readers see the whole range instead of a made-up first-day visit.

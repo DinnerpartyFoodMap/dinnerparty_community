@@ -3,6 +3,7 @@ const botConfig = require('./config');
 const { onNotificationWake } = require('../../places/services/placeNotifications');
 const { markdownToPlainText } = require('../../places/services/markdownText');
 const { ensurePlaceRegions } = require('../../places/services/placeRegions');
+const { recoverDiaryNotifications, sendDueDiaryNotifications } = require('./diaryNotifications');
 
 // Delivers queued new-place notifications to QQ groups every half hour: the places
 // queued during one half hour go out together right after it ends (:00 and :30,
@@ -120,6 +121,7 @@ class NotificationWorker {
     start() {
         // A crash between "sending" and the reply leaves the outcome unknown.
         const stuck = sql.prepare("UPDATE QQBotNotification SET status = 'unknown', last_error = '进程重启时发送结果未确认', updated_at = ? WHERE status = 'sending'").run(iso(this.now()));
+        recoverDiaryNotifications();
         if (stuck.changes) this.logger.warn('QQ notifications with unconfirmed delivery after restart', { event: 'qqbot.notify.unknown_after_restart', count: stuck.changes });
         // New places wait for the end of their half hour; the wake-up only matters for admin retries.
         this.unsubscribe = onNotificationWake(() => this.wake());
@@ -171,6 +173,7 @@ class NotificationWorker {
                 await this.sendBatch(groupId, tasks.slice(i, i + MAX_PER_FORWARD));
             }
         }
+        await sendDueDiaryNotifications({ client: this.client, groupIds, logger: this.logger, now: this.now });
     }
 
     async sendBatch(groupId, tasks) {
@@ -262,8 +265,12 @@ class NotificationWorker {
             for (const task of tasks) {
                 const marker = `?place=${task.place_id}`;
                 const attemptedAt = task.attempted_at ? Date.parse(task.attempted_at) : NaN;
+                const diaryInWindow = Number.isFinite(attemptedAt) && sql.prepare(`SELECT 1 FROM QQBotDiaryNotification
+                    WHERE group_id = ? AND attempted_at BETWEEN ? AND ?`).get(groupId,
+                    iso(new Date(attemptedAt - HISTORY_MATCH_MS - SEND_TIMEOUT_MS)),
+                    iso(new Date(attemptedAt + SEND_TIMEOUT_MS + HISTORY_MATCH_MS)));
                 const found = own.find((m) => JSON.stringify(m.message || m.raw_message || '').includes(marker))
-                    || (Number.isFinite(attemptedAt) && own.find((m) => isForwardMessage(m) && Number.isFinite(Number(m.time))
+                    || (!diaryInWindow && Number.isFinite(attemptedAt) && own.find((m) => isForwardMessage(m) && Number.isFinite(Number(m.time))
                         && Number(m.time) * 1000 >= attemptedAt - HISTORY_MATCH_MS
                         && Number(m.time) * 1000 <= attemptedAt + SEND_TIMEOUT_MS + HISTORY_MATCH_MS));
                 if (found) {

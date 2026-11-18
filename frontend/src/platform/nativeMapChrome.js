@@ -462,10 +462,13 @@ function sanitizeSheetRows(list, budget) {
         seen.add(id);
         budget.rows -= 1;
         const badge = clipText(row.badge, 8);
+        const subtitle = clipText(row.subtitle, 80);
+        const subtitleEmphasis = clipText(row.subtitleEmphasis, 12);
         rows.push({
             id,
             title: clipText(row.title, 60) || id,
-            subtitle: clipText(row.subtitle, 80),
+            subtitle,
+            ...(subtitleEmphasis && subtitle?.includes(subtitleEmphasis) ? { subtitleEmphasis } : null),
             symbol: clipText(row.symbol, 64),
             ...sanitizeSkinIcon(row),
             tone: SHEET_TONES.includes(row.tone) ? row.tone : undefined,

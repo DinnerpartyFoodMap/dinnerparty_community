@@ -5,6 +5,7 @@ const requireAdmin = require("../middleware/adminAuth");
 const { hasPermission } = require('../services/adminPermissions');
 const { insertAdminAction } = require("../services/adminAudit");
 const { WHITELIST_QQ_PATTERN } = require('../../accounts/services/qqWhitelist');
+const { avatarColumns, withAvatarFields, cleanupAvatarImage } = require('../../accounts/services/userAvatar');
 
 const ALLOWED_LEVELS = new Set(["YUYUKO", "YOUMU", "KOMACHI", ""]);
 const SUPER_LEVEL = "YUYUKO";
@@ -82,7 +83,7 @@ const setQqTransaction = db._raw.transaction(({ actingAdminId, userId, qq }) => 
 });
 
 const deleteUserTransaction = db._raw.transaction(({ actingAdminId, targetId }) => {
-    const target = db._raw.prepare('SELECT id, admin_level FROM User WHERE id = ?').get(targetId);
+    const target = db._raw.prepare('SELECT id, admin_level, avatar_url FROM User WHERE id = ?').get(targetId);
     if (!target) throw adminMutationFailure(404, 'USER_NOT_FOUND', '用户不存在');
     if ((target.admin_level || '') === SUPER_LEVEL) {
         const count = db._raw.prepare('SELECT COUNT(*) AS cnt FROM User WHERE admin_level = ?').get(SUPER_LEVEL).cnt;
@@ -91,14 +92,14 @@ const deleteUserTransaction = db._raw.transaction(({ actingAdminId, targetId }) 
     db._raw.prepare('DELETE FROM User WHERE id = ?').run(targetId);
     // Preserve the deleted UUID in the immutable audit row for traceability.
     insertAdminAction(actingAdminId, 'delete-user', targetId, null);
+    return target.avatar_url;
 });
 
 // 获取所有用户（仅Y级管理员）
 router.get("/", requireAdmin("manage_users"), (req, res) => {
-    db.all("SELECT id, username, avatar, admin_level, is_banned, ban_reason, ban_expires, qq, (avatar_blob IS NOT NULL) AS has_avatar FROM User", [], (err, rows) => {
+    db.all(`SELECT id, username, avatar, admin_level, is_banned, ban_reason, ban_expires, qq, ${avatarColumns()} FROM User`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        rows.forEach(r => r.has_avatar = !!r.has_avatar);
-        res.json(rows);
+        res.json(rows.map(withAvatarFields));
     });
 });
 
@@ -179,7 +180,7 @@ router.post('/set-qq', requireAdmin('manage_users'), (req, res) => {
 });
 
 // 删除用户（仅 Y 级管理员）
-router.delete("/:id", requireAdmin("manage_users"), (req, res) => {
+router.delete("/:id", requireAdmin("manage_users"), async (req, res) => {
     const targetId = req.params.id;
     const actingAdminId = req.user && req.user.id;
 
@@ -188,7 +189,8 @@ router.delete("/:id", requireAdmin("manage_users"), (req, res) => {
     }
 
     try {
-        deleteUserTransaction.immediate({ actingAdminId, targetId });
+        const avatarUrl = deleteUserTransaction.immediate({ actingAdminId, targetId });
+        await cleanupAvatarImage(avatarUrl, targetId);
         return res.json({ success: true });
     } catch (error) {
         return sendMutationError(res, error);

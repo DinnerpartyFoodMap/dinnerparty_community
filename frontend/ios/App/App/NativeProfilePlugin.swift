@@ -27,7 +27,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     private var pending: CAPPluginCall?
     private var requestID: String?
     private var model: NativeProfileModel?
-    private var finishing = false
+    private var activeFinish: (action: String, values: [String: Any])?
     private var presenting = false
     private var queuedFinish: (action: String, values: [String: Any], animated: Bool)?
     private var closeCompletions: [() -> Void] = []
@@ -45,28 +45,41 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             guard let id = call.getString("id"), !id.isEmpty else {
                 call.reject("Missing request id", "INVALID_ARGUMENT"); return
             }
+            // 系统先移除旧页面时，也允许本次打开回收已结束的会话。
+            if let previousHost = self.host, !self.presenting {
+                self.completeDismissal(previousHost)
+            }
             guard self.host == nil, let presenter = self.bridge?.viewController,
                   presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else {
                 call.reject("Another screen is being presented", "BUSY"); return
             }
             let model = NativeProfileModel(call: call) { [weak self] payload in
-                guard let self, let id = self.requestID else { return }
+                guard let self, self.requestID == id else { return }
                 var data = payload
                 data["id"] = id
                 self.notifyListeners("profileEvent", data: data)
             }
             model.onFinish = { [weak self] action, values in
-                self?.finish(action: action, values: values)
+                guard let self, self.requestID == id else { return }
+                self.finish(action: action, values: values)
             }
             let host = MapChromeHostingController(rootView: NativeProfileView(model: model), dark: model.dark)
             // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
             host.view.backgroundColor = FM.UI.bgBase
-            // 侧滑拖回取消：页面仍在，恢复为可再次关闭
-            self.screenPresenter.onDismissCancelled = { [weak self] in
-                self?.finishing = false
+            self.screenPresenter.previewsEdgeBack = true
+            self.screenPresenter.onDismissCancelled = { [weak self, weak host] in
+                guard let self, let host, self.host === host else { return }
+                self.activeFinish = nil
+            }
+            self.screenPresenter.onDismissed = { [weak self, weak host] in
+                // 等 UIKit 清除呈现关系后，与主动关闭共用同一收尾。
+                DispatchQueue.main.async {
+                    guard let host else { return }
+                    self?.completeDismissal(host)
+                }
             }
             self.screenPresenter.onEdgeBack = { [weak self] in
-                guard let self, !self.presenting, !self.finishing else { return false }
+                guard let self, !self.presenting, self.activeFinish == nil else { return false }
                 self.finish(action: "back")
                 return true
             }
@@ -75,8 +88,8 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             self.pending = call
             self.requestID = id
             self.presenting = true
-            self.screenPresenter.present(host, from: presenter) { [weak self] in
-                guard let self else { return }
+            self.screenPresenter.present(host, from: presenter) { [weak self, weak host] in
+                guard let self, let host, self.host === host else { return }
                 self.presenting = false
                 if let queued = self.queuedFinish {
                     self.queuedFinish = nil
@@ -121,27 +134,35 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     private func finish(action: String, values: [String: Any] = [:], animated: Bool = true, completion: (() -> Void)? = nil) {
         guard let host else { completion?(); return }
         if let completion { closeCompletions.append(completion) }
-        guard !finishing else { return }
+        guard activeFinish == nil else { return }
         if presenting {
             queuedFinish = (action, values, animated)
             return
         }
-        finishing = true
+        activeFinish = (action, values)
+        screenPresenter.dismiss(host, animated: animated) { [weak self, weak host] in
+            guard let host else { return }
+            self?.completeDismissal(host)
+        }
+    }
+
+    private func completeDismissal(_ host: UIViewController) {
+        guard self.host === host, host.presentingViewController == nil else { return }
+        let result = activeFinish ?? (action: "back", values: [:])
         let call = pending
         let id = requestID
         model?.cancelPending()
-        let complete = { [weak self] in
-            self?.host = nil
-            self?.pending = nil
-            self?.requestID = nil
-            self?.model = nil
-            self?.finishing = false
-            call?.resolve(["id": id ?? "", "action": action, "values": values])
-            let completions = self?.closeCompletions ?? []
-            self?.closeCompletions.removeAll()
-            completions.forEach { $0() }
-        }
-        screenPresenter.dismiss(host, animated: animated, completion: complete)
+        self.host = nil
+        pending = nil
+        requestID = nil
+        model = nil
+        activeFinish = nil
+        presenting = false
+        queuedFinish = nil
+        let completions = closeCompletions
+        closeCompletions.removeAll()
+        call?.resolve(["id": id ?? "", "action": result.action, "values": result.values])
+        completions.forEach { $0() }
     }
 }
 
@@ -195,6 +216,9 @@ final class NativeProfileModel: ObservableObject {
         let city: String
         let canEditTaste: Bool
         let canEditWidgets: Bool
+        let canOpenCommunity: Bool
+        let canOpenFavorites: Bool
+        let collectionVisibility: Bool?
         let canBlock: Bool
         let blocked: Bool
         let widgets: [String]
@@ -332,6 +356,9 @@ final class NativeProfileModel: ObservableObject {
             city: object["city"] as? String ?? "",
             canEditTaste: (object["canEditTaste"] as? Bool) ?? false,
             canEditWidgets: (object["canEditWidgets"] as? Bool) ?? false,
+            canOpenCommunity: (object["canOpenCommunity"] as? Bool) ?? false,
+            canOpenFavorites: (object["canOpenFavorites"] as? Bool) ?? false,
+            collectionVisibility: object["collectionVisibility"] as? Bool,
             canBlock: (object["canBlock"] as? Bool) ?? false,
             blocked: (object["blocked"] as? Bool) ?? false,
             widgets: (object["widgets"] as? JSArray ?? []).compactMap { $0 as? String },
@@ -364,7 +391,7 @@ final class NativeProfileModel: ObservableObject {
     }
 
     func beginEditingWidgets() {
-        editingWidgets = view.widgets.isEmpty ? Array(widgetOptions.prefix(2).map(\.id)) : view.widgets
+        editingWidgets = view.widgets.isEmpty ? Array(widgetOptions.prefix(1).map(\.id)) : view.widgets
     }
 
     // MARK: 请求
@@ -397,6 +424,18 @@ final class NativeProfileModel: ObservableObject {
 
     func setBlocked(_ blocked: Bool) {
         start("setBlocked", values: ["blocked": blocked], blocked: blocked)
+    }
+
+    func setCollectionVisibility(_ isPublic: Bool) {
+        start("setCollectionVisibility", values: ["isPublic": isPublic])
+    }
+
+    func openCommunity() {
+        onFinish?("openCommunity", [:])
+    }
+
+    func openFavorites() {
+        onFinish?("openFavorites", [:])
     }
 
     func openPlace(_ id: String) {
@@ -526,9 +565,18 @@ private struct NativeProfileView: View {
                         .frame(width: 64, height: 64)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(model.view.name)
-                            .font(.title3.weight(.semibold))
-                            .lineLimit(1)
+                        HStack(spacing: 8) {
+                            Text(model.view.name)
+                                .font(.title3.weight(.semibold))
+                                .lineLimit(1)
+                            if model.view.canOpenCommunity {
+                                Button(model.text("community", "同好")) { model.openCommunity() }
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(model.tint)
+                                    .buttonStyle(.plain)
+                                    .fixedSize()
+                            }
+                        }
                         HStack(spacing: 4) {
                             Image(systemName: "location.fill")
                                 .font(.caption2)
@@ -632,9 +680,31 @@ private struct NativeProfileView: View {
         ForEach(model.view.sections) { section in
             NativePageCard(padding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(section.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text(section.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        if section.kind == "collection" {
+                            if let isPublic = model.view.collectionVisibility {
+                                Toggle(model.text("collectionPublic", "公开"), isOn: Binding(
+                                    get: { model.view.collectionVisibility ?? isPublic },
+                                    set: { model.setCollectionVisibility($0) }
+                                ))
+                                .font(.caption)
+                                .tint(model.tint)
+                                .fixedSize()
+                                .disabled(model.busy)
+                            }
+                            if model.view.canOpenFavorites {
+                                Button(model.text("viewAllFavorites", "查看全部")) { model.openFavorites() }
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(model.tint)
+                                    .buttonStyle(.plain)
+                                    .fixedSize()
+                            }
+                        }
+                    }
                     if !section.empty.isEmpty && section.groups.isEmpty {
                         Text(section.empty)
                             .font(.footnote)

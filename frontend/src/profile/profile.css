@@ -1,4 +1,30 @@
 /* 住民主页（UserProfilePage.jsx） */
+.fm-profile__name-row,
+.fm-profile__widget-heading,
+.fm-profile__visibility,
+.fm-profile__pagination {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.fm-profile__name-row,
+.fm-profile__widget-heading {
+    flex-wrap: wrap;
+}
+
+.fm-profile__widget .fm-profile__widget-heading h3 {
+    margin: 0 auto 0 0;
+}
+
+.fm-profile__visibility {
+    font-size: var(--text-footnote-size);
+    color: var(--color-text-secondary);
+}
+
+.fm-profile__pagination {
+    justify-content: center;
+}
 .fm-profile-page {
     height: 100%;
     min-height: 0;
@@ -100,6 +126,8 @@
     }
     .fm-profile__name {
         margin: 0;
+    }
+    .fm-profile__name-row {
         align-self: end;
     }
     .fm-profile__city {
@@ -229,14 +257,6 @@
     font-size: 13px;
     color: var(--color-text-muted);
 }
-.fm-profile__collection + .fm-profile__collection {
-    margin-top: 10px;
-}
-.fm-profile__collection-title {
-    font-size: 13px;
-    margin-bottom: 6px;
-    color: var(--color-text-secondary);
-}
 /* 小组件里的地点横向排开，窄屏可横滑 */
 .fm-profile__places {
     margin: 0;
@@ -246,6 +266,11 @@
     gap: 10px;
     overflow-x: auto;
     scroll-snap-type: x proximity;
+}
+.fm-profile__places--grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 112px), 1fr));
+    overflow: visible;
 }
 .fm-profile__places li {
     flex: 0 0 112px;

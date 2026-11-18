@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../i18n/index.js';
+import { getTokenUserId } from '../platform/credentialStore';
 export const eventId = () => globalThis.crypto?.randomUUID?.() || `event_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+export function publishMapConsent(token, consent) {
+    window.dispatchEvent(new CustomEvent('community:consent-change', { detail: { userId: getTokenUserId(token), consent } }));
+}
 export async function request(base,token,path,options={}) {
     const response=await fetch(`${base}${path}`,{...options,headers:{...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),Authorization:`Bearer ${token}`,...options.headers}});
     if(response.status===204) return null;
@@ -18,6 +22,15 @@ export function useMapFeedback(base,token) {
         return()=>{active=false;reset();};
     },[base,token,reset]);
     const updateConsent=useCallback(c=>{reset();setConsent(c);},[reset]);
+    useEffect(() => {
+        const userId = getTokenUserId(token);
+        if (!userId) return undefined;
+        const apply = (event) => {
+            if (event.detail?.userId === userId) updateConsent(event.detail.consent);
+        };
+        window.addEventListener('community:consent-change', apply);
+        return () => window.removeEventListener('community:consent-change', apply);
+    }, [token, updateConsent]);
     const beginSearch=useCallback(()=>{query.current=eventId();render.current=null;seen.current.clear();setQueryEpoch(n=>n+1);},[]);
     // Read the committed card order synchronously, before click handlers hide it.
     const present=useCallback(()=>{

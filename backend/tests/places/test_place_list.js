@@ -145,13 +145,17 @@ async function main() {
     assert.equal(axis(profile.body, 'drinks').basis, null);
     const makerProfile = await call(`/users/${users.maker}/profile`);
     assert.ok(makerProfile.body.taste.some((item) => item.store_count > 0), 'persisted default ratings continue to inform preferences');
-    assert.deepEqual(profile.body.widgets, ['recent', 'favorite']);
+    assert.deepEqual(profile.body.widgets, ['collection', 'recent']);
+    assert.deepEqual(profile.body.content.collection[0].places.map((item) => item.id), [single]);
+    assert.equal(profile.body.collection_visibility, undefined, 'visitors do not receive the private setting');
     // 最近创建在前（同一时间按 id 倒序），审核中 / 被驳回的不列
     assert.deepEqual(makerProfile.body.content.recent.map((item) => item.id), [unrated, single, disliked, popular]);
     assert.ok(!makerProfile.body.content.recent.some((item) => item.id === hidden || item.id === rejected), 'hidden places stay off the profile');
     assert.ok(!('latitude' in makerProfile.body.content.recent[0]));
     // 最喜欢：自己评“均线之上”及以上的（踩雷店评了强烈拒绝，不算）；同分同时间按 id 倒序
-    assert.deepEqual(profile.body.content.favorite.map((item) => item.id), [single, popular], 'only places rated 3+ by them');
+    await call('/users/me/profile', { who: 'fan', method: 'PUT', body: { widgets: ['collection', 'favorite'] } });
+    const favoriteWidget = await call(`/users/${users.fan}/profile`);
+    assert.deepEqual(favoriteWidget.body.content.favorite.map((item) => item.id), [single, popular], 'only places rated 3+ by them');
     assert.equal(profile.body.city, null);
     assert.equal((await call('/users/nobody/profile')).status, 404);
 

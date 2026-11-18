@@ -36,3 +36,4 @@ AGENTS.md
 /artifacts
 /copyright
 /.private/
+/frontend/src/companion/runtime/live2dcubismcore.min.js

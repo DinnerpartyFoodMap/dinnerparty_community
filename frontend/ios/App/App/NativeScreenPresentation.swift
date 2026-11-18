@@ -96,7 +96,10 @@ final class NativeScreenSlideAnimator: NSObject, UIViewControllerAnimatedTransit
         }
         let container = context.containerView
         let frame = presenting ? context.finalFrame(for: controller) : context.initialFrame(for: controller)
-        movingView.frame = frame.isEmpty ? container.bounds : frame
+        // 已经跟手移动的主页面保持当前中心，从手指松开的位置接着退场。
+        if presenting || movingView.transform.isIdentity {
+            movingView.frame = frame.isEmpty ? container.bounds : frame
+        }
         let offset = CGAffineTransform(translationX: container.bounds.width, y: 0)
         // 手指直接驱动时仍按水平距离跟随；自动动画遵循“减弱动态效果”。
         let reduceMotion = UIAccessibility.isReduceMotionEnabled && !context.isInteractive
@@ -136,6 +139,10 @@ final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
     var onEdgeBack: (() -> Bool)?
     /// 侧滑拖回、退场取消：插件恢复为“未在关闭”
     var onDismissCancelled: (() -> Void)?
+    /// 关闭完成，包括系统发起的退场。
+    var onDismissed: (() -> Void)?
+    /// 主页先预览位移，用户确认侧滑后才发起 UIKit 退场。
+    var previewsEdgeBack = false
 
     /// 只在根页启用：子页的左边缘侧滑是系统导航的跟手返回，两个手势不能同时响应
     var edgeEnabled = true {
@@ -148,7 +155,12 @@ final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
             guard let self else { return }
             self.tracking = false
             self.transition.interaction = nil
-            if !completed { self.onDismissCancelled?() }
+            if completed {
+                self.onDismissed?()
+            } else {
+                if self.previewsEdgeBack, let view = self.host?.viewIfLoaded { self.restoreEdgePreview(view) }
+                self.onDismissCancelled?()
+            }
         }
     }
 
@@ -171,6 +183,7 @@ final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
     /// 关闭整页。侧滑驱动时始终带动画（跟手）；被拖回时不执行 completion。
     func dismiss(_ host: UIViewController, animated: Bool, completion: @escaping () -> Void) {
         guard let presenter = host.presentingViewController else { completion(); return }
+        if previewsEdgeBack { tracking = false }
         let interactive = transition.interaction != nil
         presenter.dismiss(animated: animated && (interactive || !UIAccessibility.isReduceMotionEnabled)) { [weak host] in
             // 交互退场取消时 UIKit 也可能回调：页面仍在就不算关闭
@@ -198,8 +211,9 @@ final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
     }
 
     @objc private func handleEdge(_ gesture: UIPanGestureRecognizer) {
-        guard let view = gesture.view else { return }
+        guard gesture === self.gesture, let view = gesture.view else { return }
         let distance = max(0, gesture.translation(in: view).x)
+        if previewsEdgeBack { handleEdgePreview(gesture, view: view, distance: distance); return }
         let progress = NativeBackGestureRegion.interactiveProgress(distance: distance, width: view.bounds.width)
         switch gesture.state {
         case .began:
@@ -221,13 +235,52 @@ final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
             guard tracking, let interaction = transition.interaction else { return }
             tracking = false
             interaction.update(progress)
-            let velocity = gesture.velocity(in: view).x
-            let committed = (progress >= 0.3 && velocity >= -150) || (distance > 24 && velocity > 600)
-            if committed { interaction.finish() } else { interaction.cancel() }
+            if commitsEdgeBack(distance: distance, width: view.bounds.width, velocity: gesture.velocity(in: view).x) {
+                interaction.finish()
+            } else {
+                interaction.cancel()
+            }
         case .cancelled, .failed:
             guard tracking else { return }
             tracking = false
             transition.interaction?.cancel()
+        default:
+            break
+        }
+    }
+
+    private func commitsEdgeBack(distance: CGFloat, width: CGFloat, velocity: CGFloat) -> Bool {
+        (distance >= max(1, width) * 0.3 && velocity >= -150) || (distance > 24 && velocity > 600)
+    }
+
+    private func restoreEdgePreview(_ view: UIView) {
+        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0.10 : 0.22, delay: 0,
+                       options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
+            view.transform = .identity
+        }
+    }
+
+    private func handleEdgePreview(_ gesture: UIPanGestureRecognizer, view: UIView, distance: CGFloat) {
+        switch gesture.state {
+        case .began:
+            guard canBeginInteraction else { return }
+            tracking = true
+            fallthrough
+        case .changed:
+            guard tracking else { return }
+            view.transform = CGAffineTransform(translationX: min(distance, view.bounds.width), y: 0)
+        case .ended:
+            guard tracking else { return }
+            tracking = false
+            if commitsEdgeBack(distance: distance, width: view.bounds.width, velocity: gesture.velocity(in: view).x) {
+                view.transform = CGAffineTransform(translationX: min(distance, view.bounds.width), y: 0)
+                if onEdgeBack?() == true { return }
+            }
+            restoreEdgePreview(view)
+        case .cancelled, .failed:
+            guard tracking else { return }
+            tracking = false
+            restoreEdgePreview(view)
         default:
             break
         }

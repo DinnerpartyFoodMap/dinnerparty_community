@@ -4,7 +4,7 @@ import { t } from '../../i18n/index.js';
 
 // 网页端整页（地点列表、住民主页）的标题行：标题 + 返回地图，样式同住民设置页。
 // 手机网页没有顶栏，这是回地图的唯一入口；iOS 由 RoutePageShell 的原生页头代替（fm-legacy-page-heading 在那里隐藏）。
-export default function PageHeading({ title, onBack, className = '', style }) {
+export default function PageHeading({ title, onBack, backLabel = t('common:action.backToMap'), className = '', style }) {
     return (
         <div
             className={`fm-legacy-page-heading ${className}`.trim()}
@@ -17,7 +17,7 @@ export default function PageHeading({ title, onBack, className = '', style }) {
                     style={{ minHeight: 40, padding: '7px 11px', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
                 >
                     <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20 }}>arrow_back</span>
-                    {t('common:action.backToMap')}
+                    {backLabel}
                 </Button>
             )}
         </div>

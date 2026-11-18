@@ -3,9 +3,10 @@
 import { axisLabel, normalizeTaste, selfLevelLabel, axisValueWord } from './tasteAxes.js';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating.js';
 import { imageThumbnailUrl } from '../platform/runtimeConfig.js';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { t } from '../i18n/index.js';
 
-export const PROFILE_WIDGET_KINDS = Object.freeze(['collection', 'recent', 'favorite']);
+export const PROFILE_WIDGET_KINDS = Object.freeze(['recent', 'favorite']);
 
 // 文案键写成字面量，i18n 检查才能覆盖
 const WIDGET_TITLE = {
@@ -48,18 +49,15 @@ function placeRow(place, showOwnScore) {
     };
 }
 
-function buildSection(kind, data) {
+function buildSection(kind, data, self) {
     if (kind === 'collection') {
-        const collections = Array.isArray(data) ? data : [];
+        const collection = data?.[0];
+        const places = Array.isArray(collection?.places) ? collection.places : [];
         return {
             kind,
-            title: widgetTitle(kind),
-            empty: collections.length ? '' : widgetEmpty(kind),
-            groups: collections.map((collection) => ({
-                id: String(collection.id),
-                title: t('profile:widgets.collection.item', { title: collection.title, count: collection.total }),
-                rows: (Array.isArray(collection.places) ? collection.places : []).map((place) => placeRow(place, false))
-            }))
+            title: self ? t('profile:widgets.collection.mine') : widgetTitle(kind),
+            empty: places.length ? '' : widgetEmpty(kind),
+            groups: places.length ? [{ id: 'favorites', title: '', rows: places.map((place) => placeRow(place, false)) }] : []
         };
     }
     const places = Array.isArray(data) ? data : [];
@@ -78,13 +76,13 @@ function buildSection(kind, data) {
 }
 
 /** 一次完整的住民主页快照；profile 为 GET /users/:id/profile 的响应。 */
-export function buildProfileViewModel(profile, { currentUser, tokenPresent, avatarURL, labels } = {}) {
+export function buildProfileViewModel(profile, { currentUser, tokenPresent, backendUrl, labels } = {}) {
     const user = profile?.user || {};
     const relation = profile?.relation || {};
-    const self = !!relation.self || (currentUser && String(currentUser.id) === String(user.id));
-    const widgets = (Array.isArray(profile?.widgets) ? profile.widgets : [])
-        .filter((kind) => PROFILE_WIDGET_KINDS.includes(kind));
+    const self = !!relation.self || (!!currentUser && String(currentUser.id) === String(user.id));
+    const widget = profile?.widgets?.findLast((kind) => PROFILE_WIDGET_KINDS.includes(kind)) || 'recent';
     const content = profile?.content || {};
+    const hasCollection = !!content.collection?.length;
     const axes = normalizeTaste(profile?.taste).map((axis) => ({
         key: axis.key,
         label: axisLabel(axis.key),
@@ -96,16 +94,19 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, avat
     const name = user.username || t('profile:anonymous');
     return {
         name: String(name),
-        avatarURL: avatarURL ? String(avatarURL) : '',
+        avatarURL: resolveAvatarUrl(user, backendUrl, { serverFallback: true }),
         city: profile?.city ? t('profile:city', { city: profile.city }) : t('profile:cityUnknown'),
         self,
         canEditTaste: self && !!tokenPresent,
         canEditWidgets: self && !!tokenPresent,
+        canOpenCommunity: self && !!tokenPresent,
+        canOpenFavorites: hasCollection,
+        collectionVisibility: self && !!tokenPresent && typeof profile?.collection_visibility === 'boolean' ? profile.collection_visibility : null,
         canBlock: !!relation.can_block,
         blocked: !!relation.blocked,
-        widgets,
-        widgetSlotLabels: [1, 2, 3].map((index) => t('profile:widgets.slot', { index })),
-        sections: widgets.map((kind) => buildSection(kind, content[kind])),
+        widgets: [widget],
+        widgetSlotLabels: [t('profile:widgets.slot', { index: 2 })],
+        sections: [...(hasCollection ? [buildSection('collection', content.collection, self)] : []), buildSection(widget, content[widget], self)],
         axes,
         labels: {
             ...labels,
@@ -116,6 +117,10 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, avat
             selfTitle: t('profile:taste.self.title'),
             auto: t('profile:taste.self.auto'),
             widgetsEdit: t('profile:widgets.edit'),
+            community: t('journey:common.feature.community'),
+            viewAllFavorites: t('profile:widgets.collection.viewAll'),
+            collectionPublic: t('profile:widgets.collection.public'),
+            collectionVisibilityFailed: t('profile:widgets.collection.saveVisibilityFailed'),
             save: t('common:action.save'),
             cancel: t('common:action.cancel'),
             ok: t('common:action.ok'),

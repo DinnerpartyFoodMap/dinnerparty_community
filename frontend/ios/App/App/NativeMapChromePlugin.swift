@@ -14,7 +14,7 @@ import Capacitor
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
 ///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row, focusRow? }
 ///   drawer: null | { sections: [section] }
-///   row: { id, title, subtitle?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands? }
+///   row: { id, title, subtitle?, subtitleEmphasis?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands? }
 ///   skin: { avatarFrame?: { image, scale }, ornamentStart? / ornamentEnd?: { image, width, height, x, y },
 ///           pedestal?: { image, width, height, y }, selectedColor?: #RRGGBB }
 ///   tour: null | { step, target?, drawer }
@@ -478,7 +478,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 expands: (rawRow["expands"] as? Bool) ?? false,
                 image: skinImage(rawRow["image"]),
                 imageTemplate: (rawRow["imageTemplate"] as? Bool) ?? false,
-                badge: clip(rawRow["badge"], 8)
+                badge: clip(rawRow["badge"], 8),
+                subtitleEmphasis: clip(rawRow["subtitleEmphasis"], 12)
             ))
         }
         return rows

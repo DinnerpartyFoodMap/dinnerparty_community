@@ -1,8 +1,8 @@
 // iOS 原生住民主页（NativeProfilePlugin.swift）的网页侧会话。
 // 网页取 profile、执行屏蔽 / 偏好 / 小组件请求；原生只显示网页整理好的文案与雷达数据。
 // 原生经 profileEvent 发来 setTasteLevel / saveWidgets / setBlocked，网页按 requestId 用 respond 回传最新视图模型。
-export const PROFILE_ACTIONS = Object.freeze(['back', 'openPlace']);
-export const PROFILE_EVENTS = Object.freeze(['setTasteLevel', 'saveWidgets', 'setBlocked', 'reload']);
+export const PROFILE_ACTIONS = Object.freeze(['back', 'openPlace', 'openCommunity', 'openFavorites']);
+export const PROFILE_EVENTS = Object.freeze(['setTasteLevel', 'saveWidgets', 'setBlocked', 'setCollectionVisibility', 'reload']);
 const TASTE_AXES = ['homestyle', 'noodles', 'hotpotBbq', 'dessert', 'drinks', 'foreign'];
 const WIDGET_KINDS = ['collection', 'recent', 'favorite'];
 let sequence = 0;
@@ -30,12 +30,15 @@ export function pickNativeProfileValues(type, values) {
     if (type === 'setBlocked') {
         return typeof values.blocked === 'boolean' ? { blocked: values.blocked } : null;
     }
+    if (type === 'setCollectionVisibility') {
+        return typeof values.isPublic === 'boolean' ? { isPublic: values.isPublic } : null;
+    }
     if (type === 'reload') return {};
     return null;
 }
 
 // 每次打开都有独立 id：关闭旧主页不会收起新主页，异步完成后不再处理已经离开的主页。
-export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, onOpenPlace, onError, retryDelay = 100 }) {
+export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, onOpenPlace, onOpenCommunity, onOpenFavorites, onError, retryDelay = 100 }) {
     const id = `profile-${Date.now()}-${++sequence}`;
     let stopped = false;
     let listener = null;
@@ -94,6 +97,10 @@ export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, 
                     const placeId = clip(result.values && result.values.placeId, 64);
                     if (placeId) onOpenPlace?.(placeId);
                     else onBack?.();
+                } else if (result.action === 'openCommunity') {
+                    onOpenCommunity?.();
+                } else if (result.action === 'openFavorites') {
+                    onOpenFavorites?.();
                 } else {
                     onBack?.();
                 }

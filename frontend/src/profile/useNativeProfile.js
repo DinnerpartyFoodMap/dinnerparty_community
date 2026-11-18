@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import {
     fetchUserProfile,
+    saveFavoriteVisibility,
     saveProfileWidgets,
     saveTasteLevel,
     setUserBlocked
@@ -32,6 +33,8 @@ export default function useNativeProfile({
     themeColor,
     onBack,
     onOpenPlace,
+    onOpenCommunity,
+    onOpenFavorites,
     onOpenFeedback,
     onRequireAuth,
     onUnavailable
@@ -42,14 +45,10 @@ export default function useNativeProfile({
         let session = null;
         let profile = null;
         const latest = { token, currentUser, dark };
-        // 没有上传头像时用服务器的默认头像（与网页 img/default.png 相同）
-        const avatarURL = (value) => (value?.user?.id
-            ? `${backendUrl}/users/${encodeURIComponent(value.user.id)}/avatar${value.user.has_avatar ? '' : '?fallback=default'}`
-            : '');
         const view = (value) => buildProfileViewModel(value, {
             currentUser: latest.currentUser,
             tokenPresent: !!latest.token,
-            avatarURL: avatarURL(value),
+            backendUrl,
             labels: profileBaseLabels()
         });
         const load = async () => {
@@ -94,6 +93,11 @@ export default function useNativeProfile({
                 profile = await load();
                 return { ok: true, profile: view(profile) };
             }
+            if (type === 'setCollectionVisibility' && profile?.relation?.self) {
+                const data = await saveFavoriteVisibility(backendUrl, latest.token, values.isPublic);
+                profile = { ...profile, collection_visibility: data.is_public };
+                return { ok: true, profile: view(profile) };
+            }
             if (type === 'setBlocked') {
                 await setUserBlocked(backendUrl, latest.token, userId, values.blocked);
                 if (values.blocked) onOpenFeedback?.(userReportPrefill(profile.user));
@@ -120,6 +124,8 @@ export default function useNativeProfile({
                     onEvent: handleEvent,
                     onBack: () => { if (!cancelled) onBack?.(); },
                     onOpenPlace: (placeId) => { if (!cancelled) onOpenPlace?.(placeId); },
+                    onOpenCommunity: () => { if (!cancelled && profile?.relation?.self) onOpenCommunity?.(); },
+                    onOpenFavorites: () => { if (!cancelled && profile?.content?.collection?.length) onOpenFavorites?.(userId); },
                     onError: () => { if (!cancelled) onUnavailable?.(); }
                 });
                 const started = session.start();

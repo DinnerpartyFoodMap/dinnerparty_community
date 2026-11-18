@@ -627,20 +627,42 @@ export async function getCurrentLocation({ map, timeout, onUpdate, signal, promp
 }
 
 // Evidence sampling is separate from the map's cached/best-fix optimization.
-// It never requests a new permission, uses IP fallback, or invents a timestamp.
-export async function getFreshLocation({signal,timeout=10000}={}) {
+// Passive sampling uses only existing permission. An explicit action can request it.
+export async function getFreshLocation({signal,timeout=10000,prompt=false,maxAccuracy=Infinity}={}) {
     const fresh=raw=>{
         if(!Number.isFinite(raw?.timestamp)||raw.timestamp>Date.now()||Date.now()-raw.timestamp>15000)throw new LocationError(LOCATION_ERROR.POSITION_UNAVAILABLE);
         return raw;
     };
+    const precise = (convert, raw) => {
+        const fix = convert(fresh(raw));
+        if (maxAccuracy === Infinity || accuracyRank(fix) <= maxAccuracy) return fix;
+        throw new LocationError(LOCATION_ERROR.POSITION_UNAVAILABLE);
+    };
     if(isNativePlatform()){
-        const {plugin}=await nativeLocator();
-        const permission=await plugin.checkPermissions();
-        if(permission.location!=='granted')throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
-        if(getPlatform()==='android')return nativeCall(()=>plugin.getCurrentPosition({timeout}).then(raw=>fromAmapPosition(fresh(raw))),{timeout,signal});
-        return locateWithWatch({watch:cb=>plugin.watchPosition({enableHighAccuracy:true,maximumAge:0,timeout},cb),clearWatch:id=>plugin.clearWatch({id}),toPosition:raw=>fromSystemPosition(fresh(raw)),maxAge:15000,timeout,signal});
+        const {plugin,classify:toLocationError}=await nativeLocator();
+        try {
+            let permission=await nativeCall(()=>plugin.checkPermissions(),{timeout,signal});
+            if(permission.location!=='granted'&&prompt){
+                const explain=getPlatform()==='android';
+                if(explain)announcePermissionPrompt(true);
+                try {
+                    permission=await nativeCall(()=>plugin.requestPermissions({permissions:['location','coarseLocation']}),{signal});
+                } finally {
+                    if(explain)announcePermissionPrompt(false);
+                }
+            }
+            if(permission.location!=='granted')throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
+            if(getPlatform()==='android')return await nativeCall(()=>plugin.getCurrentPosition({timeout}).then(raw=>precise(fromAmapPosition,raw)),{timeout,signal});
+            return await locateWithWatch({watch:cb=>plugin.watchPosition({enableHighAccuracy:true,maximumAge:0,timeout},cb),clearWatch:id=>plugin.clearWatch({id}),toPosition:raw=>precise(fromSystemPosition,raw),maxAge:15000,timeout,signal});
+        } catch (error) {
+            throw toLocationError(error);
+        }
     }
-    const permission=await navigator.permissions?.query({name:'geolocation'}).catch(()=>null);
-    if(permission?.state!=='granted')throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
-    return locateWithWatch({watch:cb=>navigator.geolocation.watchPosition(raw=>cb(raw),err=>cb(null,err),{enableHighAccuracy:true,maximumAge:0,timeout}),clearWatch:id=>navigator.geolocation.clearWatch(id),toPosition:raw=>fromBrowserPosition(fresh(raw)),maxAge:15000,timeout,signal});
+    const geolocation=globalThis.navigator?.geolocation;
+    if(!geolocation)throw new LocationError(LOCATION_ERROR.POSITION_UNAVAILABLE);
+    if(!prompt){
+        const permission=await navigator.permissions?.query({name:'geolocation'}).catch(()=>null);
+        if(permission?.state!=='granted')throw new LocationError(LOCATION_ERROR.PERMISSION_DENIED);
+    }
+    return locateWithWatch({watch:cb=>geolocation.watchPosition(raw=>cb(raw),err=>cb(null,err),{enableHighAccuracy:true,maximumAge:0,timeout}),clearWatch:id=>geolocation.clearWatch(id),toPosition:raw=>precise(fromBrowserPosition,raw),maxAge:15000,timeout,signal});
 }

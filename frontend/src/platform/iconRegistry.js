@@ -17,6 +17,7 @@ const ICONS = Object.freeze({
     centerLocation: ['my_location', 'location'],
     alongRoute: ['route', 'point.topleft.down.to.point.bottomright.curvepath'],
     journey: ['menu_book', 'book.closed'],
+    companion: ['emoji_people', 'figure.stand'],
     admin: ['admin_panel_settings', 'gearshape.2'],
     guide: ['help', 'questionmark.circle'],
     feedback: ['feedback', 'exclamationmark.bubble'],

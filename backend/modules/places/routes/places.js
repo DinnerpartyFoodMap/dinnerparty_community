@@ -46,6 +46,7 @@ function visibleProjectedRows(rows,viewer,detail=false){
     const blocked=require('../../accounts/services/userRelations').blockedUserIds(viewer?.id);
     return rows.filter(row=>{const current=currentById.get(row.id);return current&&!(current.creator_id!=null&&blocked.has(String(current.creator_id)))&&(detail?canViewPlace(current,viewer):current.moderation_status==='visible'||String(current.creator_id)===String(viewer?.id));});
 }
+router.use(require('./placeCheckIns'));
 router.use((req,res,next)=>req.method==='GET'&&req.path!=='/regions'&&!req.path.endsWith('/diaries')&&!req.path.endsWith('/edit-context')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
 
 // 原来的“列出全部地点”（GET /places）：一次给出全部地点的完整行和创建者用户名，前端早已不用，停用（防爬，
@@ -56,24 +57,12 @@ router.get("/", (req, res) => {
     res.status(410).json({ error: '这个接口已停用，请更新到最新版本' });
 });
 
-// 旧版 App 按视野请求时，范围大于这个面积（平方度）只给评价人数最多的若干家，不再一次给出整片的完整行
-function nearbyLimits() {
-    const area = Number(process.env.NEARBY_MAX_FULL_AREA ?? 0.25);
-    const rows = Number(process.env.NEARBY_LARGE_AREA_ROWS ?? 200);
-    return {
-        area: Number.isFinite(area) && area > 0 ? area : 0.25,
-        rows: Number.isSafeInteger(rows) && rows >= 0 ? rows : 200
-    };
-}
-
-// 按 bounds 查询范围内地点（附带创建者和最后修改者姓名、评价人数与平均分）：只给旧版 App，新版前端用分层瓦片
+// v2.2.4 将成功响应视为整个查询范围的数据，点击标记时直接用返回的地点行打开卡片。
+// 保留范围内所有可见地点及其详情，访问频次由 legacy 策略控制。
 router.get("/nearby", attachViewer, rateLimit('legacy'), (req, res) => {
     res.set('Cache-Control','no-store');
     const { minLng, minLat, maxLng, maxLat } = req.query;
     if (![minLng, minLat, maxLng, maxLat].every(Boolean)) return res.status(400).json({ error: "缺少范围参数" });
-    const span = (Number(maxLng) - Number(minLng)) * (Number(maxLat) - Number(minLat));
-    const limits = nearbyLimits();
-    const largeArea = !Number.isFinite(span) || span > limits.area;
     const names=['minLng','minLat','maxLng','maxLat'],viewKeys=names.map(name=>'view'+name[0].toUpperCase()+name.slice(1));
     let bounds=null;
     if(viewKeys.some(name=>req.query[name]!==undefined)){
@@ -90,10 +79,8 @@ router.get("/nearby", attachViewer, rateLimit('legacy'), (req, res) => {
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
                  WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND ${viewerPlaceSql('p')}
-                   AND ${notBlockedSql('p.creator_id')}
-                 ${largeArea ? 'ORDER BY rating_count DESC, p.id LIMIT ?' : ''}`;
+                   AND ${notBlockedSql('p.creator_id')}`;
     const params = [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null];
-    if (largeArea) params.push(limits.rows);
     db.all(sql, params, async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true,bounds}),req.viewer));

@@ -38,10 +38,9 @@ export function rememberOnboardingSeen() {
 }
 
 /**
- * 指引只讲最常用的一条路：找店（搜索 / 定位）→ 打开店卡 → 导航 / 收藏。
- * iOS 在收藏前补充打开更多功能：原生端练习上滑，网页回退端指出“更多”按钮。
+ * 指引涵盖找店、店卡和日记。iOS 另提供打开更多功能的引导。
  * 筛选、列表、顺路吃等其他功能不在这里挨个介绍，第一次用到时提示一句（featureIntro.js）。
- * target 是 data-tour 的取值（各布局都有搜索与收藏按钮）；“打开店卡”没有目标，居中显示。
+ * target 是 data-tour 的取值；“打开店卡”没有目标，居中显示。
  * iOS 原生玻璃工具栏（variant 'native'）网页指不到原生按钮：步骤带 native（{ target, drawer }，见 nativeMapChrome.js 的 sanitizeTour），
  * 由原生画高亮圈并回传位置；where 是写给用户看的位置，只有原生布局需要（网页的高亮框已经指明了位置）。
  */
@@ -49,7 +48,7 @@ const NATIVE_TOUR = {
     search: { target: 'search', drawer: false },
     card: { target: null, drawer: false },
     more: { target: 'drawer', drawer: false },
-    favorites: { target: 'favorites', drawer: false }
+    journey: { target: 'journey', drawer: false }
 };
 
 export function buildOnboardingSteps({ variant = 'desktop' } = {}) {
@@ -58,7 +57,7 @@ export function buildOnboardingSteps({ variant = 'desktop' } = {}) {
     const nativeWhere = {
         search: t('map:onboarding.where.native.search'),
         more: t('map:onboarding.where.native.more'),
-        favorites: t('map:onboarding.where.native.favorites')
+        journey: t('map:onboarding.where.native.journey')
     };
     const step = (id, icon, title, body, target) => {
         const item = { id, icon, title, body, target: native ? null : target };
@@ -75,9 +74,9 @@ export function buildOnboardingSteps({ variant = 'desktop' } = {}) {
     return [
         step('search', 'search', t('map:onboarding.search.title'), t('map:onboarding.search.body'), 'search'),
         step('card', 'storefront', t('map:onboarding.card.title'), t('map:onboarding.card.body'), null),
-        // 上滑成功后复用 MapOnboarding 的自动换步，保留收藏作为下一步。
+        // 上滑成功后复用 MapOnboarding 的自动换步。
         ...(ios ? [step('more', native ? 'swipe_up' : 'more_horiz', t('map:onboarding.more.title'), native ? t('map:onboarding.more.bodyNative') : t('map:onboarding.more.bodyIos'), 'more')] : []),
-        step('favorites', 'directions', t('map:onboarding.favorites.title'), t('map:onboarding.favorites.body'), 'favorites')
+        step('journey', 'book_2', t('map:onboarding.journey.title'), t('map:onboarding.journey.body'), 'journey')
     ];
 }
 

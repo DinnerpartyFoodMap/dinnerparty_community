@@ -18,6 +18,10 @@ const { normalizeQQ } = require('../../qqbot/runtime/qqIdentity');
 const { normalizeLocation, saveUserLocation, setUserLocationCity } = require('../services/userLocation');
 const { reverseGeocodeCity } = require('../../maps/services/amapRegeo');
 const { getUserProfile, saveProfileWidgets, rejectedPlaceCount } = require('../services/userProfile');
+const { avatarColumns, withAvatarFields, cleanupAvatarImage } = require('../services/userAvatar');
+const { requireWritableUser } = require('../services/userAccess');
+const { saveAvatarImage } = require('../../media/services/imageStorage');
+const { getFavoriteCollection } = require('../../preferences/services/favoriteCollection');
 const { setSelfLevel, userTasteAxes } = require('../../preferences/services/tasteAxes');
 const { viewerRelation, setBlocked } = require('../services/userRelations');
 const { CREATOR_PLACES_LIMIT, listCreatorPlaces } = require('../../places/services/creatorPlaces');
@@ -28,6 +32,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 
 const JWT_SECRET = process.env.JWT_SECRET || "yuyuko_secret_key";
 const JWT_EXPIRES_IN = 60 * 60 * 24 * 7; // 7天（秒）
+const USER_FIELDS = `id, username, admin_level, ${avatarColumns()}`;
 
 // 密码加密
 function hashPassword(password) {
@@ -164,7 +169,7 @@ const registerUserTransaction = db._raw.transaction(({ username, passwordHash, q
     ).run(userId, username, passwordHash, qq, phone);
     return {
         user: db._raw.prepare(
-            'SELECT id, username, admin_level, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?'
+            `SELECT ${USER_FIELDS} FROM User WHERE id = ?`
         ).get(userId)
     };
 });
@@ -178,7 +183,7 @@ const resetPasswordTransaction = db._raw.transaction(({ qq, verificationCode, pa
     db._raw.prepare('UPDATE User SET password = ? WHERE id = ?').run(passwordHash, account.id);
     return {
         user: db._raw.prepare(
-            'SELECT id, username, admin_level, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?'
+            `SELECT ${USER_FIELDS} FROM User WHERE id = ?`
         ).get(account.id)
     };
 });
@@ -420,7 +425,7 @@ router.post("/register", async (req, res) => {
             const field = result.failure.field || 'code';
             return res.status(400).json({ error: `${field === 'phoneCode' ? '短信' : 'QQ'}${result.failure.message}`, field });
         }
-        row = result.user;
+        row = withAvatarFields(result.user);
     } catch (error) {
         if (error && error.reason) {
             logAuthRejected(req, 'register', error.reason, normalizedUsername);
@@ -430,7 +435,6 @@ router.post("/register", async (req, res) => {
         return res.status(500).json({ error: '注册失败，请稍后重试' });
     }
 
-    row.has_avatar = !!row.has_avatar;
     row.phone_masked = phoneVerification.maskPhone(normalizedPhone);
     logger.addContext({ userId });
     const { token, sessionStored } = await issueSessionToken({ id: userId, username: normalizedUsername }, req, 'register');
@@ -462,7 +466,7 @@ router.post("/login", (req, res) => {
     }
 
     const hashed = hashPassword(password);
-    db.get("SELECT id, username, admin_level, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE username = ? AND password = ?", [username, hashed], async (err, row) => {
+    db.get(`SELECT ${USER_FIELDS} FROM User WHERE username = ? AND password = ?`, [username, hashed], async (err, row) => {
         if (err) {
             res.locals.unhandledError = err;
             return res.status(500).json({ error: err.message });
@@ -472,7 +476,7 @@ router.post("/login", (req, res) => {
             return res.status(401).json({ error: "住民名或通行密码错误" });
         }
 
-        row.has_avatar = !!row.has_avatar;
+        row = withAvatarFields(row);
         row.phone_masked = phoneVerification.maskPhone(phoneVerification.userPhone(row.id));
         logger.addContext({ userId: row.id });
         // 每次登录建立独立的设备会话，不会顶掉该住民在其他设备上的登录。
@@ -517,7 +521,7 @@ router.post('/password-reset', async (req, res) => {
             logAuthRejected(req, 'password_reset', result.failure.reason);
             return res.status(400).json({ error: result.failure.message });
         }
-        user = result.user;
+        user = withAvatarFields(result.user);
     } catch (error) {
         if (error && error.reason) {
             logAuthRejected(req, 'password_reset', error.reason);
@@ -527,7 +531,6 @@ router.post('/password-reset', async (req, res) => {
         return res.status(500).json({ error: '重设通行密码失败，请稍后重试' });
     }
 
-    user.has_avatar = !!user.has_avatar;
     user.phone_masked = phoneVerification.maskPhone(phoneVerification.userPhone(user.id));
     logger.addContext({ userId: user.id });
     // 与修改密码一致：旧密码可能已泄露，所有设备上的旧会话一并失效。
@@ -556,6 +559,7 @@ router.post('/password-reset', async (req, res) => {
 // rejected_place_count：自己被驳回的地点数（头像与“我创建的地点”上的小红点）
 // phone_masked：绑定的手机号（中间四位打码），没绑定为 null；完整号码不下发
 router.get('/me', requireAuth, (req, res) => {
+    res.set('Cache-Control', 'no-store');
     let rejected = 0;
     let phoneMasked = null;
     try { rejected = rejectedPlaceCount(req.user.id); } catch (error) { res.locals.unhandledError = error; }
@@ -629,7 +633,7 @@ router.put('/me/phone', requireAuth, (req, res) => {
     }
 });
 
-// 住民主页的两个小组件（公开收藏夹 / 最近创建 / 最喜欢），见 services/userProfile.js
+// 住民主页第二栏的小组件，见 services/userProfile.js。
 router.put('/me/profile', requireAuth, (req, res) => {
     const widgets = saveProfileWidgets(req.user.id, req.body && req.body.widgets);
     if (!widgets) return res.status(400).json({ error: '小组件设置无效' });
@@ -659,10 +663,9 @@ router.patch('/me', requireAuth, (req, res) => {
                 if (!req.sessionId) {
                     try { await sessionStore().revokeSession(req.user.id, null); } catch (e) { /* 旧键清理失败无碍 */ }
                 }
-                db.get('SELECT id, username, admin_level, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?', [req.user.id], (err2, updated) => {
+                db.get(`SELECT ${USER_FIELDS} FROM User WHERE id = ?`, [req.user.id], (err2, updated) => {
                     if (err2) return res.status(500).json({ error: err2.message });
-                    if (updated) updated.has_avatar = !!updated.has_avatar;
-                    return res.json({ user: updated, token });
+                    return res.json({ user: withAvatarFields(updated), token });
                 });
             })().catch((error) => {
                 res.locals.unhandledError = error;
@@ -706,10 +709,9 @@ router.patch('/me/password', requireAuth, (req, res) => {
                 }
                 const { token } = await issueSessionToken(req.user, req, 'password_change', { client });
                 logger.info('Password changed', { event: 'auth.password.changed', userId: req.user.id, revokedSessions: revoked });
-                db.get('SELECT id, username, admin_level, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?', [req.user.id], (err2, updated) => {
+                db.get(`SELECT ${USER_FIELDS} FROM User WHERE id = ?`, [req.user.id], (err2, updated) => {
                     if (err2) return res.status(500).json({ error: err2.message });
-                    if (updated) updated.has_avatar = !!updated.has_avatar;
-                    return res.json({ user: updated, token, other_sessions_revoked: revoked !== null });
+                    return res.json({ user: withAvatarFields(updated), token, other_sessions_revoked: revoked !== null });
                 });
             })().catch((error) => {
                 res.locals.unhandledError = error;
@@ -734,13 +736,12 @@ router.patch('/me/settings', requireAuth, (req, res) => {
     db.run('UPDATE User SET map_settings = ? WHERE id = ?', [payload, req.user.id], function (e) {
         if (e) return res.status(500).json({ error: e.message });
 
-        db.get('SELECT id, username, admin_level, map_settings, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?', [req.user.id], (err2, updated) => {
+        db.get(`SELECT ${USER_FIELDS}, map_settings FROM User WHERE id = ?`, [req.user.id], (err2, updated) => {
             if (err2) return res.status(500).json({ error: err2.message });
-            if (updated) updated.has_avatar = !!updated.has_avatar;
             if (updated && updated.map_settings) {
                 try { updated.map_settings = JSON.parse(updated.map_settings); } catch (ex) { /* ignore */ }
             }
-            return res.json({ user: updated });
+            return res.json({ user: withAvatarFields(updated) });
         });
     });
 });
@@ -766,47 +767,73 @@ router.put('/me/location', requireAuth, (req, res) => {
     }
 });
 
-// 上传当前用户头像
+const replaceAvatar = db._raw.transaction((userId, avatarUrl) => {
+    const current = requireWritableUser(userId);
+    db._raw.prepare('UPDATE User SET avatar_url = ?, avatar_blob = NULL WHERE id = ?').run(avatarUrl, userId);
+    return current.avatar_url;
+});
+
+// 上传当前用户头像，先写 OSS 再更新数据库中的地址。
 router.put('/me/avatar', requireAuth, upload.single('avatar'), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
     if (!req.file) return res.status(400).json({ error: '未上传文件' });
 
+    let buffer;
     try {
-        const buffer = await sharp(req.file.buffer)
+        buffer = await sharp(req.file.buffer)
             .resize(200, 200, { fit: 'cover' })
             .webp({ quality: 80 })
             .toBuffer();
+    } catch (error) {
+        return res.status(500).json({ error: '图片处理失败', detail: error.message });
+    }
 
-        db.run('UPDATE User SET avatar_blob = ? WHERE id = ?', [buffer, req.user.id], function (err) {
-            if (err) return res.status(500).json({ error: err.message });
+    let avatarUrl;
+    try {
+        avatarUrl = await saveAvatarImage(buffer);
+    } catch (error) {
+        res.locals.unhandledError = error;
+        if (error.code === 'AVATAR_STORAGE_UNAVAILABLE') {
+            return res.status(503).json({ error: '头像上传需要配置 OSS 存储，请联系管理员' });
+        }
+        return res.status(500).json({ error: '头像上传失败，请稍后重试' });
+    }
 
-            db.get('SELECT id, username, admin_level, (avatar_blob IS NOT NULL) AS has_avatar FROM User WHERE id = ?', [req.user.id], (err2, updated) => {
-                if (err2) return res.status(500).json({ error: err2.message });
-                if (updated) updated.has_avatar = !!updated.has_avatar;
-                res.json({ success: true, user: updated });
-            });
-        });
-    } catch (e) {
-        return res.status(500).json({ error: '图片处理失败', detail: e.message });
+    let previousUrl;
+    try {
+        previousUrl = replaceAvatar.immediate(req.user.id, avatarUrl);
+    } catch (error) {
+        await cleanupAvatarImage(avatarUrl, req.user.id);
+        res.locals.unhandledError = error;
+        return res.status(error.status || 500).json({ error: error.publicMessage || '头像更新失败，请稍后重试' });
+    }
+    await cleanupAvatarImage(previousUrl, req.user.id);
+    try {
+        // 等旧对象清理期间，另一台设备可能已经换了头像。回传当前仍有效的地址。
+        const user = db._raw.prepare(`SELECT ${USER_FIELDS} FROM User WHERE id = ?`).get(req.user.id);
+        if (!user) return res.status(404).json({ error: '住民不存在' });
+        return res.json({ success: true, user: withAvatarFields(user) });
+    } catch (error) {
+        res.locals.unhandledError = error;
+        return res.status(500).json({ error: '头像资料读取失败，请稍后重试' });
     }
 });
 
-// 获取指定用户的头像
+// 已有 SQLite 头像使用独立路径，绕开客户端对旧 URL 的缓存；迁移后两条路径都跳转到 OSS。
 // 没有头像时默认 404；?fallback=default 时返回默认头像（与网页 src/img/default.png 相同，iOS 原生列表只能加载 https 图片）
 const DEFAULT_AVATAR_FILE = path.join(__dirname, '..', 'assets', 'default-avatar.png');
-router.get('/:id/avatar', (req, res) => {
-    db.get('SELECT avatar_blob FROM User WHERE id = ?', [req.params.id], (err, row) => {
+router.get(['/:id/avatar', '/:id/avatar/legacy'], (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    db.get('SELECT avatar_url, avatar_blob FROM User WHERE id = ?', [req.params.id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (!row || !row.avatar_blob) {
+        if (row?.avatar_url) return res.redirect(302, row.avatar_url);
+        if (!row?.avatar_blob) {
             if (req.query.fallback === 'default') {
-                // 住民之后可能会上传头像：默认头像只缓存一小时
-                res.set('Cache-Control', 'public, max-age=3600');
-                return res.sendFile(DEFAULT_AVATAR_FILE);
+                return res.sendFile(DEFAULT_AVATAR_FILE, { cacheControl: false });
             }
             return res.status(404).json({ error: '未找到头像' });
         }
-        res.set('Content-Type', 'image/webp');
-        res.set('Cache-Control', 'public, max-age=86400'); // 缓存一天
-        res.send(row.avatar_blob);
+        return res.type('webp').send(row.avatar_blob);
     });
 });
 
@@ -828,6 +855,13 @@ router.get('/:id/profile', attachViewer, async (req, res) => {
         res.locals.unhandledError = error;
         res.status(500).json({ error: '住民主页加载失败，请稍后重试' });
     }
+});
+
+router.get('/:id/favorites', attachViewer, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const collection = getFavoriteCollection(req.params.id, req.viewer?.id);
+    if (!collection) return res.status(404).json({ error: '收藏不可见' });
+    res.json(collection);
 });
 
 // 某位住民创建的地点（地点卡片点“最近修改”的名字后筛选地图）：最近创建的在前，最多 limit 个，total 是全部可见数量。
@@ -966,15 +1000,13 @@ router.delete('/me', requireAuth, async (req, res) => {
             console.warn('Failed to delete redis session for user on account delete:', e && e.message);
         }
 
-        // 删除用户记录
-        db.run('DELETE FROM User WHERE id = ?', [userId], function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            logger.warn('User account deleted', {
-                event: 'auth.account.deleted',
-                userId
-            });
-            return res.json({ success: true });
+        const deleted = db._raw.prepare('DELETE FROM User WHERE id = ? RETURNING avatar_url').get(userId);
+        await cleanupAvatarImage(deleted?.avatar_url, userId);
+        logger.warn('User account deleted', {
+            event: 'auth.account.deleted',
+            userId
         });
+        return res.json({ success: true });
     } catch (e) {
         return res.status(500).json({ error: '住民档案删除失败', detail: e.message });
     }

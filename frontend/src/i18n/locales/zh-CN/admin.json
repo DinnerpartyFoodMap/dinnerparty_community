@@ -289,7 +289,7 @@
       "qqWhitelist": "QQ 白名单",
       "notices": "公告",
       "exhibitions": "展会",
-      "skinCodes": "皮肤兑换码",
+      "skinCodes": "角色与皮肤兑换码",
       "feedback": "住民反馈"
     }
   },
@@ -301,8 +301,8 @@
     "slate": "魂灵紫灰"
   },
   "skinCodes": {
-    "title": "皮肤兑换码",
-    "intro": "批量生成皮肤兑换码",
+    "title": "角色与皮肤兑换码",
+    "intro": "批量生成角色或皮肤的兑换码",
     "emptyCatalog": "还没有可兑换的皮肤",
     "skin": "皮肤",
     "notInBuild": "{{name}}（当前版本没有素材）",
@@ -320,7 +320,7 @@
     "copied": "已复制",
     "copyFailed": "复制失败，请手动选择文字复制",
     "listTitle": "最近的兑换码",
-    "empty": "还没有皮肤兑换码",
+    "empty": "还没有角色或皮肤的兑换码",
     "loading": "正在读取…",
     "loadFailed": "读取失败：{{message}}",
     "retry": "重试",

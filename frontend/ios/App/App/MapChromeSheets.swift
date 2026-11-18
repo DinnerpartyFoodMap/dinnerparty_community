@@ -1199,7 +1199,7 @@ struct MapChromePlaceCard: View {
                     Text(row.title)
                         .foregroundStyle(.primary)
                     if let subtitle = row.subtitle {
-                        Text(subtitle)
+                        Text(detailSubtitle(subtitle, emphasis: row.subtitleEmphasis))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -1215,7 +1215,16 @@ struct MapChromePlaceCard: View {
         }
         .buttonStyle(.plain)
         .disabled(row.disabled)
-        .accessibilityLabel(Text(row.title))
+        .accessibilityLabel(Text(row.subtitle.map { "\(row.title), \($0)" } ?? row.title))
+    }
+
+    private func detailSubtitle(_ subtitle: String, emphasis: String?) -> AttributedString {
+        var text = AttributedString(subtitle)
+        if let emphasis, let range = text.range(of: emphasis) {
+            text[range].font = .subheadline.weight(.bold).monospacedDigit()
+            text[range].foregroundColor = Color.primary
+        }
+        return text
     }
 
     private func galleryView(_ group: MapChromeSheetGallery) -> some View {

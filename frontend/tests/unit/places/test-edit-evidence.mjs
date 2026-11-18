@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { addedText, editCommentPreview } from '../../../src/places/editEvidence.js';
+import { buildManagePayload } from '../../../src/places/managePlacePayload.js';
 
 const require = createRequire(import.meta.url);
 const backend = require('../../../../backend/modules/places/services/placeEditDiff.js');
@@ -40,4 +41,16 @@ assert.equal(addedText('x'.repeat(1200), 'y'.repeat(1200)).length, 1000, 'bounde
 for (const [b4, after] of [['**招牌**牛肉粉', '**招牌**牛肉粉\n\n加了[链接](https://x.com)很好吃'], [null, '新写的'], ['1. 一\n2. 二', '1. 一\n2. 二\n3. 三']]) {
     assert.equal(editCommentPreview({ description: b4 }, { description: after }), backend.editCommentText({ description: b4 }, { description: after }));
 }
+
+const openedEdit = {
+    name: 'Old name', category: 'Cafe', per_person_cost: 20,
+    description: 'Before check-in approval', exterior_images: ['a', 'b'], menu_images: ['m'],
+    longitude: 120, latitude: 30
+};
+const rename = buildManagePayload({ ...openedEdit, name: 'New name', description: `${openedEdit.description} ` }, openedEdit);
+assert.deepEqual(rename, { name: 'New name', category: 'Cafe', per_person_cost: 20 }, 'a name edit leaves concurrently updated text, images and coordinates alone');
+const clear = buildManagePayload({ ...openedEdit, description: ' ', exterior_images: [], menu_images: ['m', 'n'] }, openedEdit);
+assert.deepEqual(clear, { ...rename, name: 'Old name', description: '', exterior_images: [], menu_images: ['m', 'n'] }, 'explicit description and photo changes, including clears, are sent');
+const changePosition = buildManagePayload({ ...openedEdit, longitude: 121, exterior_images: ['b', 'a'] }, openedEdit);
+assert.deepEqual(changePosition, { ...rename, name: 'Old name', longitude: 121, latitude: 30, exterior_images: ['b', 'a'] }, 'the edit preserves reordered images and updated coordinates');
 console.log('Edit record preview: only added description text, Markdown as plain text, identical to the backend rule.');

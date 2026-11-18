@@ -1,0 +1,20 @@
+{
+    "Version": 3,
+    "FileReferences": {
+        "Moc": "stick-figure.moc3",
+        "Textures": ["stick-figure.png"],
+        "Physics": "stick-figure.physics3.json",
+        "Motions": {
+            "Idle": [{ "File": "stick-figure.idle.motion3.json" }],
+            "Feed": [{ "File": "stick-figure.feed.motion3.json" }],
+            "Blink": [{ "File": "stick-figure.blink.motion3.json" }]
+        }
+    },
+    "Groups": [
+        {
+            "Target": "Parameter",
+            "Name": "EyeBlink",
+            "Ids": ["ParamEyeLOpen", "ParamEyeROpen"]
+        }
+    ]
+}
