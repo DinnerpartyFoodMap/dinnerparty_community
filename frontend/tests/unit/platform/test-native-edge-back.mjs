@@ -83,4 +83,15 @@ for (const name of ['NativeFeedbackPlugin', 'NativePlaceFormPlugin']) {
     assert.doesNotMatch(source, /UIScreenEdgePanGestureRecognizer/);
 }
 
+// Dragging back to the left edge and releasing cancels at exactly 0%; UIKit then never completes the
+// percent-driven dismissal, so finishing/transitionCoordinator stay set and neither the swipe nor the back button
+// works again. Every interactive progress goes through the clamp that keeps it strictly inside (0, 1).
+assert.match(presentation, /static func interactiveProgress\(distance: CGFloat, width: CGFloat\) -> CGFloat[\s\S]*min\(0\.999, max\(0\.001,/);
+const screenGesture = between(presentation, '@objc private func handleEdge(', 'case .began:');
+assert.match(screenGesture, /let progress = NativeBackGestureRegion\.interactiveProgress\(distance: distance, width: view\.bounds\.width\)/);
+assert.match(settingsGesture, /let progress = NativeBackGestureRegion\.interactiveProgress\(distance: distance, width: view\.bounds\.width\)/);
+for (const source of [settingsGesture, between(presentation, '@objc private func handleEdge(', '\n    }\n}')]) {
+    assert.doesNotMatch(source, /min\(1, distance \//, 'raw 0…1 progress must not reach the interactive transition');
+}
+
 console.log('Native edge-back source contracts passed (static only; Swift not compiled).');

@@ -286,7 +286,13 @@ export class MarkerLayerController {
         parts.hit.addEventListener('pointerdown', (event) => {
             if (event.pointerType === 'mouse' || entry.node.kind !== 'cluster') entry.touchSdkBlockedUntil = 0;
             const clusterTouch = event.pointerType === 'touch' && entry.node.kind === 'cluster';
-            if (clusterTouch) blockSdkClick();
+            if (clusterTouch) {
+                blockSdkClick();
+                // 浏览器在触摸点按后补发兼容鼠标事件；高德收到其中的 mousedown 会停下进行中的动画，
+                // 点聚合的放大因此停在半路（如 13→14 停在 13.1，聚合拆不开）。取消 pointerdown 不再补发鼠标事件；
+                // 高德的拖动、捏合用触摸事件，不受影响。
+                if (event.cancelable) event.preventDefault();
+            }
             touch = clusterTouch && event.isPrimary ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
         });
         parts.hit.addEventListener('pointermove', (event) => {

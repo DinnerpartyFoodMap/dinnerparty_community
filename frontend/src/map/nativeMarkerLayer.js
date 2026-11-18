@@ -2,12 +2,13 @@
 // 同一套聚合与转场规则，只是不在网页里画东西。
 //
 // - 聚合：网页的聚合引擎（cluster/engine.js，Supercluster）与快照、转场计划（snapshot.js、transitions.js）原样复用；
-//   相机静止后（moveend）按当前缩放取一份快照，与上一份比出计划，连同节点一起交给原生（setNodes）。
+//   按当前缩放取一份快照，与上一份比出计划，连同节点一起交给原生（setNodes）。相机移动中（捏合、松手后的减速、动画）
+//   每次 mapmove 都检查：聚合层级变了或视野出了缓冲区就立即提交，不等 MapKit 在减速结束后才发的 moveend。
 // - 显示：节点（单点或聚合）是 MapKit 的标注视图，拖动缩放时与底图同帧移动；合并 / 拆分动画由原生按计划用 Core Animation
-//   播放，节奏与网页的 MARKER_TIMING 相同。网页只在缩放结束、数据变化时发一次，不逐帧参与。
+//   播放，节奏与网页的 MARKER_TIMING 相同。网页只在聚合层级变化、视野出缓冲区、数据变化时发一次，不逐帧参与。
 // - 点按：单点回传 markerTap（打开卡片），聚合回传 clusterTap，交给 MapView 的 handleClusterClick（与网页相同的展开逻辑）。
 import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
-import { buildSnapshot, computeLogicalZoom } from './cluster/snapshot.js';
+import { buildSnapshot, computeLogicalZoom, boundsContains } from './cluster/snapshot.js';
 import { planTransition } from './cluster/transitions.js';
 import { PLACE_GLYPH, CLUSTER_GLYPH } from './cluster/glyph.js';
 import { placeGlyphKind, markerImageSources, DEFAULT_CLUSTER_CROP } from './markerContent.js';
@@ -124,6 +125,14 @@ export class NativeMarkerLayer {
         this.destroyed = false;
 
         this._onMoveStart = () => { this.cameraMoving = true; };
+        // 移动中：聚合层级变了（捏合、减速、点聚合后的放大动画）或视野出了缓冲区，立即换节点
+        this._onMapMove = () => {
+            if (this.destroyed || !this.engine || !this.snapshot) return;
+            const zoom = Number(this.map.getZoom());
+            const logical = computeLogicalZoom(zoom, this.logicalZoom, { minZoom: this.engine.minZoom, maxZoom: this.engine.maxZoom });
+            const viewBounds = readViewBounds(this.map);
+            if (logical !== this.logicalZoom || (viewBounds && !boundsContains(this.snapshot.coverageBounds, viewBounds))) this._commit('live');
+        };
         this._onMoveEnd = () => {
             this.cameraMoving = false;
             this.pendingData = false;
@@ -141,6 +150,7 @@ export class NativeMarkerLayer {
         // 校准结果变了：同一份节点按新坐标重发（不播放转场）
         this._onFrameChange = () => this._commit('frames');
         map.on('movestart', this._onMoveStart);
+        map.on('mapmove', this._onMapMove);
         map.on('moveend', this._onMoveEnd);
         map.on('markerTap', this._onMarkerTap);
         map.on('clusterTap', this._onClusterTap);
@@ -174,7 +184,7 @@ export class NativeMarkerLayer {
 
     _commit(reason) {
         if (this.destroyed || !this.engine) return;
-        // 拖动、缩放中不换节点（与网页相同）：数据变化等相机静止后一起提交
+        // 数据变化等相机静止后一起提交；移动中只按聚合层级与缓冲区换节点（live）
         if (this.cameraMoving && reason === 'data') {
             this.pendingData = true;
             return;
@@ -251,6 +261,7 @@ export class NativeMarkerLayer {
         window.removeEventListener('themechange', this._onTheme);
         this.themeObserver?.disconnect();
         this.map.off('movestart', this._onMoveStart);
+        this.map.off('mapmove', this._onMapMove);
         this.map.off('moveend', this._onMoveEnd);
         this.map.off('markerTap', this._onMarkerTap);
         this.map.off('clusterTap', this._onClusterTap);

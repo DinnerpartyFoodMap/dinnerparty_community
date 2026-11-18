@@ -67,7 +67,13 @@ class FakeMapPlugin {
     last(method) { return this.calls.filter(([name]) => name === method).at(-1)?.[1]; }
     count(method) { return this.calls.filter(([name]) => name === method).length; }
 }
-for (const method of ['setCamera', 'panBy', 'setStyle', 'setNodes', 'setSelected', 'setOverlays', 'setAppearance', 'setInsets', 'setTouch', 'dispose']) {
+FakeMapPlugin.prototype.setCamera = async function (args) {
+    this.calls.push(['setCamera', args]);
+    if (args.sessionId !== this.session) throw new Error('STALE_SESSION');
+    this.onSetCamera?.(args);
+    return this.cameraReply ? { camera: this.cameraReply } : {};
+};
+for (const method of ['panBy', 'setStyle', 'setNodes', 'setSelected', 'setOverlays', 'setAppearance', 'setInsets', 'setTouch', 'dispose']) {
     FakeMapPlugin.prototype[method] = async function (args) {
         this.calls.push([method, args]);
         if (method !== 'dispose' && args.sessionId !== this.session) throw new Error('STALE_SESSION');
@@ -198,6 +204,26 @@ const canvas = {
     await tick(5);
     const cameraCalls = plugin.calls.filter(([name]) => name === 'setCamera').map(([, args]) => [args.zoom, args.animated]);
     assert.deepEqual(cameraCalls, [[17, true], [20, false]]);
+
+    // 原生没动（MapKit 在这里到不了 20 级）：没有相机事件，用 setCamera 回执里的实际相机纠正乐观缓存
+    plugin.cameraReply = { phase: 'end', lng: 113.31, lat: 23.11, zoom: 19.2, width: 390, height: 844 };
+    map.setZoom(20, false);
+    assert.equal(map.getZoom(), 20, '发出时先乐观更新');
+    await tick(5);
+    assert.equal(map.getZoom(), 19.2, '原生没动：回执纠正缓存');
+    // 原生动了：start / end 事件带来实际相机，回执不覆盖
+    plugin.cameraReply = { phase: 'end', lng: 113.31, lat: 23.11, zoom: 18, width: 390, height: 844 };
+    plugin.onSetCamera = () => {
+        plugin.emit('camera', { sessionId: plugin.session, phase: 'start', lng: 113.31, lat: 23.11, zoom: 19.2 });
+        plugin.emit('camera', { sessionId: plugin.session, phase: 'end', lng: 113.31, lat: 23.11, zoom: 19.6, zoomChanged: true });
+    };
+    map.setZoom(19.6, false);
+    await tick(5);
+    assert.equal(map.getZoom(), 19.6, '相机事件优先于回执');
+    plugin.onSetCamera = null;
+    plugin.cameraReply = null;
+    map.setZoom(20, true);
+    await tick(5);
     assert.deepEqual(map.getZooms(), [3, 20]);
 
     // 投影：中心在画布正中，往返一致，与 viewport.js 同一套 Web Mercator
@@ -279,7 +305,7 @@ const canvas = {
     assert.equal(plugin.count('dispose'), 1);
     map.setZoom(5);
     await tick(5);
-    assert.equal(plugin.count('setCamera'), 2, '销毁后的调用不发');
+    assert.equal(plugin.count('setCamera'), 5, '销毁后的调用不发');
     assert.deepEqual(readPoint({ getLng: () => 1, getLat: () => 2 }), [1, 2]);
     assert.equal(readPoint([1, 99]), null);
 }
@@ -491,6 +517,37 @@ const canvas = {
     assert.equal(plan.kind, 'zoom-in');
     assert.ok(plan.splitSources.has(parentKey), '被拆开的父聚合');
     assert.deepEqual(nodes.map((n) => plan.splitFrom.get(n.id)), [parentKey, parentKey, parentKey], '子节点从父聚合位置飞出');
+
+    // 移动中（捏合、松手后的减速、点聚合后的放大动画）：聚合层级一变就换节点，不等 moveend
+    map.zoom = 14;
+    map.emit('movestart');
+    let sent = map.count('nodes');
+    map.zoom = 17.9;
+    map.emit('mapmove');
+    map.zoom = 17.4;
+    map.emit('mapmove');
+    assert.equal(map.count('nodes'), sent, '还没越过滞回边界（18 ± 0.65）：不换');
+    map.zoom = 16.3;
+    map.emit('mapmove');
+    assert.equal(map.count('nodes'), sent + 1, '缩小到另一个聚合层级：移动中立即换节点');
+    assert.equal(map.last('nodes')[1].length, 1, '四家店合并');
+    assert.equal(map.last('nodes')[3].animate, true, '移动中换节点也播放合并 / 拆分');
+    sent = map.count('nodes');
+    map.zoom = 16.1;
+    map.emit('mapmove');
+    assert.equal(map.count('nodes'), sent, '同一聚合层级内移动不换');
+    layer.update({ places: places.slice(0, 2) });
+    map.emit('mapmove');
+    assert.equal(map.count('nodes'), sent, '移动中数据变化仍等相机静止');
+    map.center = [113.6, 23.1];
+    map.emit('mapmove');
+    assert.equal(map.count('nodes'), sent + 1, '平移出缓冲区：移动中补节点');
+    map.zoom = 18;
+    map.center = [113.3, 23.1];
+    map.emit('moveend');
+    [, nodes] = map.last('nodes');
+    assert.equal(nodes.length, 2, '静止后数据变化一起提交');
+    layer.update({ places: places.slice(0, 3) });
 
     // 点按：单点交给 onPlaceClick，聚合交给 onClusterClick（与网页同一个展开逻辑）
     map.emit('markerTap', { id: 'place:2' });

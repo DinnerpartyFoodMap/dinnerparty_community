@@ -127,6 +127,16 @@ export async function runNativeClusterBrowserTests() {
         tapEntry.parts.hit.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', isPrimary: true }));
         tapEntry.marker.events.click();
         check(clusterTaps === 3, 'desktop mouse click still uses the normal SDK activation');
+        // A touch tap is followed by compatibility mouse events; AMap stops a running zoom animation on that mousedown,
+        // so a cluster expansion started on pointerup stalled half way (13 -> 13.13 instead of 14 on Android).
+        const cancelablePress = (hit, pointerType) => {
+            const event = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, pointerType, isPrimary: true, clientX: 100, clientY: 100 });
+            hit.dispatchEvent(event);
+            hit.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 9, pointerType, isPrimary: true }));
+            return event.defaultPrevented;
+        };
+        check(cancelablePress(tapEntry.parts.hit, 'touch'), 'a touch on a cluster cancels pointerdown so no compatibility mousedown interrupts the zoom');
+        check(!cancelablePress(tapEntry.parts.hit, 'mouse'), 'mouse presses on a cluster keep their default');
         const touchEvent = (type, count) => {
             const event = new Event(type, { bubbles: true });
             Object.defineProperty(event, 'touches', { value: Array.from({ length: count }, () => ({})) });
@@ -172,9 +182,10 @@ export async function runNativeClusterBrowserTests() {
         controller.options.onPlaceClick = () => { placeTaps += 1; };
         controller.update({ places: reusePlaces.slice(0, 1) });
         check(Array.from(controller.entries.values())[0] === reused && reused.node.kind === 'place', 'the same entry can return to a single place');
-        for (const type of ['pointerdown', 'pointerup']) reused.parts.hit.dispatchEvent(new PointerEvent(type, {
-            bubbles: true, pointerId: 4, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100
-        }));
+        const placePress = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 4, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100 });
+        reused.parts.hit.dispatchEvent(placePress);
+        check(!placePress.defaultPrevented, 'a touch on a single place keeps its default (AMap delivers the place click)');
+        reused.parts.hit.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 4, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100 }));
         reused.marker.events.click();
         check(placeTaps === 1 && clusterTaps === 5, 'a fresh place tap is not swallowed by the previous cluster dedup window');
         controller.options.onPlaceClick = undefined;

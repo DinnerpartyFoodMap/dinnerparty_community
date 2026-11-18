@@ -189,7 +189,8 @@ public class NativeSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc private func edgeBack(_ gesture: UIPanGestureRecognizer) {
         guard let view = gesture.view else { return }
         let distance = max(0, gesture.translation(in: view).x)
-        let progress = min(1, distance / max(1, view.bounds.width))
+        // 不正好是 0 / 1：拖回起点再松手时取消的转场才会完成（见 NativeBackGestureRegion.interactiveProgress）
+        let progress = NativeBackGestureRegion.interactiveProgress(distance: distance, width: view.bounds.width)
         switch gesture.state {
         case .began:
             guard screenTransition.canBeginInteraction?() == true else { return }

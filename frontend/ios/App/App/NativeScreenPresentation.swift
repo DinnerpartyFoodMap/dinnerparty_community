@@ -17,6 +17,14 @@ enum NativeBackGestureRegion {
         let velocity = pan.velocity(in: pan.view)
         return velocity.x > 0 && velocity.x > abs(velocity.y)
     }
+
+    /// 交给 UIPercentDrivenInteractiveTransition 的进度不能正好是 0 或 1：拖回左边缘（0%）再松手时 cancel()，
+    /// 退场动画已在起点，UIKit 不再回调动画完成，转场一直挂着——finishing 不复位、transitionCoordinator 不清空，
+    /// 之后侧滑与返回按钮都没反应（拖到最右边 100% 时 finish() 同理）。留一点余量让回弹 / 完成真正跑一帧。
+    static func interactiveProgress(distance: CGFloat, width: CGFloat) -> CGFloat {
+        let raw = distance / max(1, width)
+        return min(0.999, max(0.001, raw.isFinite ? raw : 0))
+    }
 }
 
 /// 与住民设置一致的整页呈现：地图与网页留在下方，页面从右侧推入、向右退出。
@@ -192,7 +200,7 @@ final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
     @objc private func handleEdge(_ gesture: UIPanGestureRecognizer) {
         guard let view = gesture.view else { return }
         let distance = max(0, gesture.translation(in: view).x)
-        let progress = min(1, distance / max(1, view.bounds.width))
+        let progress = NativeBackGestureRegion.interactiveProgress(distance: distance, width: view.bounds.width)
         switch gesture.state {
         case .began:
             guard canBeginInteraction else { return }

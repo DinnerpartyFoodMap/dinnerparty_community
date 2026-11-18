@@ -4,10 +4,11 @@ import MapKit
 /// 原生底图（MapKit）：放在透明 WebView 下面。地点、聚合点、数量与名称都是 MapKit 的标注视图，
 /// 拖动、缩放时由 MapKit 在同一帧里移动，不经过网页。
 ///
-/// 聚合与网页相同：网页的聚合引擎（Supercluster）在缩放结束时算出新的节点和转场计划（谁沿用、谁从哪个聚合拆出、
+/// 聚合与网页相同：网页的聚合引擎（Supercluster）算出新的节点和转场计划（谁沿用、谁从哪个聚合拆出、
 /// 谁并进哪个聚合，src/map/cluster/transitions.js），原生按计划用 Core Animation 播放与网页同样节奏的动画
 /// （MARKER_TIMING：拆分 320ms 从父聚合位置飞出；合并 260ms 吸向父聚合并缩小，父聚合延迟 110ms 回弹出现）。
-/// 动画在系统渲染进程里逐帧执行，网页只在缩放结束时发一次计划。新的手势开始时，进行中的转场立即收敛到终态（同网页）。
+/// 动画在系统渲染进程里逐帧执行。网页在相机移动中（捏合、松手后的减速、动画）收到 change 事件，聚合层级一变就发计划，
+/// 不等减速结束的 regionDidChange。新的手势开始时，进行中的转场立即收敛到终态（同网页）。
 ///
 /// 缩放级别与网页、高德一致（Web Mercator、256 像素瓦片）：MKMapSize.world 宽 2^28 = 256·2^20，
 /// 所以 z = 20 − log2(可见 MKMapRect 宽度 / 视图宽度)。地图不旋转、不倾斜，网页按同一公式在 JS 里投影。
@@ -17,8 +18,8 @@ final class NativeMapController: NSObject {
     static let maxZoom: Double = 20
     /// MKMapPoint 与 256 像素瓦片缩放级别的换算基准（log2(2^28 / 256) = 20）
     static let worldZoom = log2(MKMapSize.world.width / 256)
-    /// 拖动、缩放过程中的相机事件最多这么频繁（秒）
-    static let changeInterval: CFTimeInterval = 0.1
+    /// 拖动、缩放过程中的相机事件最多这么频繁（秒）：网页据此在移动中切换聚合层级，间隔即最大延迟
+    static let changeInterval: CFTimeInterval = 0.05
     /// 一次转场最多播放这么多个节点的动画（网页 LIMITS.travelers）；超出时直接到终态
     static let animatedNodeLimit = 400
     /// 屏幕外这么远的节点不播放动画（网页 ONSCREEN_MARGIN）

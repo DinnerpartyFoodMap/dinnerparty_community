@@ -354,6 +354,9 @@ export class NativeMapView {
         const [lng, lat] = readPoint(center) || [113.394405, 23.016485];
         this.camera = { lng, lat, zoom: this._clampZoom(zoom), width: 0, height: 0 };
         this.moveStartZoom = this.camera.zoom;
+        // 原生相机开始移动的次数与设置相机的序号：判断一次 setCamera 有没有让原生动起来
+        this.cameraStarts = 0;
+        this.cameraRequestSeq = 0;
         this.session = session || new NativeMapSession({ onEvent: (name, data) => this._handleEvent(name, data) });
         if (session) session.onEvent = (name, data) => this._handleEvent(name, data);
         this.touch = null;
@@ -452,6 +455,7 @@ export class NativeMapView {
         if (name === 'camera') {
             this._applyCamera(data);
             if (data.phase === 'start') {
+                this.cameraStarts += 1;
                 this.moveStartZoom = this.camera.zoom;
                 this._emit('movestart', {});
                 if (data.gesture) this._emit('dragstart', {});
@@ -554,7 +558,14 @@ export class NativeMapView {
         this.camera.lat = lat;
         this.camera.zoom = this._clampZoom(zoom);
         const [x, y] = this._toNative(lng, lat);
-        this._call('setCamera', { lng: x, lat: y, zoom: this.camera.zoom, animated: !!animated });
+        const request = ++this.cameraRequestSeq;
+        const starts = this.cameraStarts;
+        this._call('setCamera', { lng: x, lat: y, zoom: this.camera.zoom, animated: !!animated }).then((result) => {
+            // 原生没动（目标与当前相同，或超出 MapKit 在这里能到的缩放）：没有相机事件来纠正乐观缓存，改用回执里的实际相机。
+            // 动了的话 start / end 事件会带来实际相机，这里不覆盖。
+            if (!result?.camera || this.destroyed || request !== this.cameraRequestSeq || starts !== this.cameraStarts) return;
+            this._applyCamera(result.camera);
+        });
     }
 
     setZoomAndCenter(zoom, center, immediately = false) {

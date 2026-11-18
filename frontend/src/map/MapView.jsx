@@ -12,6 +12,8 @@ import { NativeMarkerLayer } from "./nativeMarkerLayer";
 import { canUseNativeMap } from "../platform/nativeMap";
 import { MarkerSnapshotStore, markerSnapshotSource } from "./markerSnapshot";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
+import { computeLogicalZoom } from "./cluster/snapshot";
+import { clusterZoomOutcome, revealZoom } from "./clusterZoom";
 import { readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
 import { createLocationReporter } from "./locationReport";
@@ -47,6 +49,11 @@ let autoLocateAttempted = false;
 // 打开卡片时补全的地点详情（GET /places/:id）在这段时间内直接复用
 const PLACE_DETAIL_TTL_MS = 60 * 1000;
 const PLACE_DETAIL_CACHE_SIZE = 100;
+// 点聚合后的放大：发出后这么久相机还没动算“放大不了”；停下后再等这么久才判断（原生被手势打断时先报结束再报手势）；
+// 动起来后这么久还没停下就不再跟进
+const CLUSTER_ZOOM_IDLE_MS = 600;
+const CLUSTER_ZOOM_SETTLE_MS = 120;
+const CLUSTER_ZOOM_MOVE_LIMIT_MS = 3000;
 
 function readCssVar(name) {
     try {
@@ -114,6 +121,8 @@ export default function MapView({
     feedbackRef.current = feedback;
     const mapRef = useRef(null);
     const markerLayerRef = useRef(null);
+    // 点聚合后正在进行的放大（见 handleClusterClick）
+    const clusterZoomRef = useRef(null);
     const overseasLayerRef = useRef(null);
     // 地图标记：公共快照 + 个人叠加 + 本地修改（markerSnapshot.js），与视野无关
     const markerStoreRef = useRef(null);
@@ -1199,15 +1208,67 @@ export default function MapView({
     }, [selectedPlace, mapReady]);
 
     // 点击聚合：查询真正的展开层级，把聚合放到未被遮挡区域的中央；到最大缩放仍重合时打开成员列表。
+    // 放大动画停在半路（浏览器补发的事件、底图收尾打断）时再放大一次，直到聚合拆开；
+    // 相机已放不大（原生底图在部分地区到不了 20 级）而聚合还在时打开成员列表（clusterZoom.js 的 clusterZoomOutcome）。
+    const showClusterMembers = (request) => {
+        setClusterMembers({ key: request.key, coordinate: request.coordinate, places: request.members });
+    };
+    const cancelClusterZoom = () => {
+        const request = clusterZoomRef.current;
+        if (!request) return;
+        window.clearTimeout(request.timer);
+        clusterZoomRef.current = null;
+    };
+    const issueClusterZoom = (request) => {
+        const map = mapRef.current;
+        if (!map || clusterZoomRef.current !== request) return;
+        window.clearTimeout(request.timer);
+        request.phase = 'waiting';
+        armSkipAutoSearch();
+        try {
+            if (typeof map.setZoomAndCenter === 'function') map.setZoomAndCenter(request.targetZoom, request.center, false);
+            else { map.setCenter(request.center); map.setZoom(request.targetZoom); }
+        } catch (e) {
+            console.warn('展开聚合失败', e);
+            cancelClusterZoom();
+            return;
+        }
+        // 相机一直没动（已在可达的最大缩放）：按“没有进展”处理
+        if (request.phase === 'waiting') request.timer = window.setTimeout(() => settleClusterZoom(request), CLUSTER_ZOOM_IDLE_MS);
+    };
+    const settleClusterZoom = (request) => {
+        const map = mapRef.current;
+        if (!map || clusterZoomRef.current !== request) return;
+        const zoom = Number(map.getZoom());
+        const layer = markerLayerRef.current;
+        const engine = layer?.getEngine?.();
+        const logicalZoom = engine
+            ? computeLogicalZoom(zoom, layer.logicalZoom, { minZoom: engine.minZoom, maxZoom: engine.maxZoom })
+            : NaN;
+        const outcome = clusterZoomOutcome({
+            zoom, logicalZoom, expansion: request.expansion, targetZoom: request.targetZoom,
+            previousZoom: request.previousZoom, attempts: request.attempts
+        });
+        if (outcome === 'retry') {
+            request.attempts += 1;
+            request.previousZoom = zoom;
+            issueClusterZoom(request);
+            return;
+        }
+        cancelClusterZoom();
+        if (outcome === 'members') showClusterMembers(request);
+    };
     const handleClusterClick = (node, engine) => {
         const map = mapRef.current;
         if (!map || !node || !engine) return;
+        cancelClusterZoom();
         const maxZoom = getMapZoomRange(map).max;
         const expansion = engine.expansionZoom(node);
         const currentZoom = Number(map.getZoom());
+        const members = engine.memberKeys(node).map((key) => engine.placeByKey.get(key)).filter(Boolean);
+        const request = { key: node.key, coordinate: node.coordinate, members, expansion };
         if (expansion > maxZoom || currentZoom >= maxZoom - 0.05) {
-            const members = engine.memberKeys(node).map((key) => engine.placeByKey.get(key)).filter(Boolean);
-            setClusterMembers({ key: node.key, coordinate: node.coordinate, places: members });
+            showClusterMembers(request);
             return;
         }
         const targetZoom = Math.min(maxZoom, Math.max(expansion, Math.ceil(currentZoom + 0.01)));
@@ -1222,14 +1283,50 @@ export default function MapView({
             targetY: insets.top + (height - insets.top - insets.bottom) / 2,
             width, height
         });
-        armSkipAutoSearch();
-        try {
-            if (typeof map.setZoomAndCenter === 'function') map.setZoomAndCenter(targetZoom, center, false);
-            else { map.setCenter(center); map.setZoom(targetZoom); }
-        } catch (e) {
-            console.warn('展开聚合失败', e);
-        }
+        Object.assign(request, { targetZoom, center, previousZoom: currentZoom, attempts: 0, phase: 'waiting', timer: 0 });
+        clusterZoomRef.current = request;
+        issueClusterZoom(request);
     };
+    // 点聚合后的放大：相机开始动、停下时推进；用户的新操作（拖动、捏合、点按、滚轮）或别处移动相机时放弃
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!mapReady || !map) return undefined;
+        const onMoveStart = () => {
+            const request = clusterZoomRef.current;
+            if (!request) return;
+            if (request.phase === 'waiting') {
+                window.clearTimeout(request.timer);
+                request.phase = 'moving';
+                // moveend 迟迟不来（被别的操作接管）时不再跟进
+                request.timer = window.setTimeout(cancelClusterZoom, CLUSTER_ZOOM_MOVE_LIMIT_MS);
+            } else if (request.phase === 'settling') {
+                cancelClusterZoom();
+            }
+        };
+        const onMoveEnd = () => {
+            const request = clusterZoomRef.current;
+            if (!request || request.phase !== 'moving') return;
+            window.clearTimeout(request.timer);
+            request.phase = 'settling';
+            // 稍等一下：原生底图被手势打断时先报动画结束、紧接着才报手势开始
+            request.timer = window.setTimeout(() => settleClusterZoom(request), CLUSTER_ZOOM_SETTLE_MS);
+        };
+        const onUserInput = () => cancelClusterZoom();
+        map.on('movestart', onMoveStart);
+        map.on('moveend', onMoveEnd);
+        map.on('dragstart', onUserInput);
+        const inputOptions = { capture: true, passive: true };
+        for (const type of ['pointerdown', 'wheel']) window.addEventListener(type, onUserInput, inputOptions);
+        return () => {
+            cancelClusterZoom();
+            try {
+                map.off('movestart', onMoveStart);
+                map.off('moveend', onMoveEnd);
+                map.off('dragstart', onUserInput);
+            } catch (e) { /* 地图已销毁 */ }
+            for (const type of ['pointerdown', 'wheel']) window.removeEventListener(type, onUserInput, inputOptions);
+        };
+    }, [mapReady]);
 
     const handleMapPlaceClick = (place) => {
         const currentFeedback = feedbackRef.current;
@@ -1261,6 +1358,16 @@ export default function MapView({
         window.setTimeout(() => loadPlacesRef.current?.(true), 0);
     };
 
+    // 打开某个地点时的缩放：至少 baseZoom，地点在那一级仍被聚合时放大到它单独显示的层级（clusterZoom.js 的 revealZoom）
+    const placeRevealZoom = (place, baseZoom) => {
+        const map = mapRef.current;
+        try {
+            return revealZoom({ engine: markerLayerRef.current?.getEngine?.(), place, baseZoom, maxZoom: getMapZoomRange(map).max });
+        } catch (error) {
+            return baseZoom;
+        }
+    };
+
     const handleSelectAlongRoutePlace = (place) => {
         if (!place || !mapRef.current) return;
         const lng = Number(place.longitude);
@@ -1268,7 +1375,7 @@ export default function MapView({
         if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
         try {
             // 展会等远距离目标先完成定位再开卡片，避免卡片按旧视口避让并打断地图移动。
-            const zoom = Math.max(16, Number(mapRef.current.getZoom()) || 16);
+            const zoom = placeRevealZoom(place, Math.max(16, Math.round(Number(mapRef.current.getZoom()) || 16)));
             mapRef.current.setZoomAndCenter(zoom, [lng, lat], true);
         } catch (error) { /* best effort */ }
         showPopup(place);
@@ -1690,7 +1797,8 @@ export default function MapView({
             const place = await res.json();
             if (mapRef.current && place.longitude != null && place.latitude != null) {
                 // 卡片下一帧会测量锚点并自动避让：先完成定位，避免按旧视口平移并打断定位动画。
-                mapRef.current.setZoomAndCenter(17, [place.longitude, place.latitude], true);
+                // 至少 17 级；附近店多、17 级时仍被收进聚合的，放大到它单独显示
+                mapRef.current.setZoomAndCenter(placeRevealZoom(place, 17), [place.longitude, place.latitude], true);
             }
             showPopup(place);
             return true;
