@@ -133,12 +133,13 @@ async function main() {
     assert.equal(await taste.classifyBatchWithLlm([sql.prepare('SELECT * FROM Place WHERE id=?').get(malformed)], sql, async()=>({results:[{id:malformed,axes:[]}]})),1);
     assert.ok(!taste.pendingLlmPlaces(20).some(p=>p.id===malformed),'valid empty classification is cached');
     assert.ok(Math.abs(taste.normalCdf(0) - 0.5) < 1e-6 && taste.normalCdf(1.96) > 0.97 && taste.normalCdf(-1.96) < 0.03);
-    // 8. AI 搜索筛选：标签必须是现有分类，人均范围整理好；什么都没有时为 null
+    // 8. AI 搜索筛选：只留排除的标签（必须是现有分类）和人均范围；想要的标签交给语义检索，不硬筛；什么都没有时为 null
     const categories = ['火锅店', '烧烤', '甜品店'];
-    assert.deepEqual(normalizeSearchFilter({ tags: ['火锅店', '编的标签', '火锅店'], min_cost: 80, max_cost: '30.4' }, categories), { tags: ['火锅店'], exclude_tags: [], min_cost: 30, max_cost: 80 });
+    assert.deepEqual(normalizeSearchFilter({ tags: ['火锅店', '编的标签', '火锅店'], min_cost: 80, max_cost: '30.4' }, categories), { tags: [], exclude_tags: [], min_cost: 30, max_cost: 80 });
     assert.deepEqual(normalizeSearchFilter({ tags: [], min_cost: 0, max_cost: 40 }, categories), { tags: [], exclude_tags: [], min_cost: null, max_cost: 40 });
-    assert.deepEqual(normalizeSearchFilter({ tags: ['火锅店', '烧烤'], exclude_tags: ['烧烤', '编的'] }, categories), { tags: ['火锅店'], exclude_tags: ['烧烤'], min_cost: null, max_cost: null }, 'a tag in both lists counts as excluded');
+    assert.deepEqual(normalizeSearchFilter({ tags: ['火锅店', '烧烤'], exclude_tags: ['烧烤', '编的'] }, categories), { tags: [], exclude_tags: ['烧烤'], min_cost: null, max_cost: null });
     assert.deepEqual(normalizeSearchFilter({ exclude_tags: ['甜品店'] }, categories), { tags: [], exclude_tags: ['甜品店'], min_cost: null, max_cost: null });
+    assert.equal(normalizeSearchFilter({ tags: ['火锅店'] }, categories), null, 'wanted tags alone are not a filter: 寿司 must not drop sushi shops tagged 日本料理');
     assert.equal(normalizeSearchFilter({ tags: ['不存在'] }, categories), null);
     assert.equal(normalizeSearchFilter(null, categories), null);
     assert.equal(searchFilterPredicate(null), null);

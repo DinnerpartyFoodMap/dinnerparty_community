@@ -110,11 +110,11 @@ try {
     const sent=[];
     globalThis.fetch=async(url,options={})=>{sent.push({url:new URL(url),options});return {ok:true,status:200,json:async()=>({own:[],hidden_ids:[]})};};
     const {fetchPlaceOverlay,fetchPlace}=await import('../../../src/api/client.js');
-    const {fetchMarkerSnapshot}=await import('../../../src/map/markerSnapshot.js');
-    await fetchMarkerSnapshot('https://example.test');
-    assert.equal(sent[0].url.href,'https://example.test/places/markers');
+    const {MarkerTileSource}=await import('../../../src/map/markerTiles.js');
+    await new MarkerTileSource({backendUrl:'https://example.test'}).refresh({force:true}).catch(()=>{});
+    assert.equal(sent[0].url.href,'https://example.test/places/tiles/manifest');
     assert.equal(sent[0].options.headers,undefined);
-    assert.equal(sent[0].options.cache,undefined,'snapshot uses the normal HTTP cache');
+    assert.equal(sent[0].options.cache,undefined,'tile manifest uses the normal HTTP cache');
     await fetchPlaceOverlay('https://example.test','tk');
     assert.equal(sent[1].url.pathname,'/places/overlay');
     assert.equal(sent[1].options.headers.Authorization,'Bearer tk');

@@ -2,8 +2,15 @@ const crypto = require('crypto');
 const logger = require('../../infrastructure/logger');
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
-const SENSITIVE_QUERY_KEY = /password|passwd|pwd|token|authorization|secret|invite.?code|verification.?code|jwt|api.?key|^(q|query|keywords|(?:view)?(?:minLat|maxLat|minLng|maxLng)|lat|lng|latitude|longitude|location|center|bounds|city|address|origin|destination)$/i;
+const SENSITIVE_QUERY_KEY = /password|passwd|pwd|token|authorization|secret|invite.?code|verification.?code|jwt|api.?key|^(q|query|keywords|t|(?:view)?(?:minLat|maxLat|minLng|maxLng)|lat|lng|latitude|longitude|location|center|bounds|city|address|origin|destination)$/i;
 const DEFAULT_NOISY_PREFIXES = ['/_AMapService', '/uploads', '/diagnostics/client-auth'];
+
+// 请求日志里的用户：必须登录的接口是 req.user；可选登录的接口（地点详情、列表、搜索等，attachViewer）是 req.viewer；
+// 明细瓦片靠票据认人（http/middleware/rateLimit.js 的 req.rateSubject）。三者都经过校验，用来按用户追溯数据访问
+function requestUserId(req) {
+    const user = req.user || req.viewer || req.rateSubject || null;
+    return user && user.id != null ? user.id : undefined;
+}
 
 function parsePositiveInt(value, fallback, min, max) {
     const parsed = Number.parseInt(value, 10);
@@ -128,7 +135,7 @@ function requestLogger(req, res, next) {
                 status: res.statusCode,
                 durationMs: Number(durationMs.toFixed(1)),
                 responseContentLength: res.getHeader('Content-Length'),
-                userId: req.user && req.user.id,
+                userId: requestUserId(req),
                 responseError: res.locals.responseError,
                 error: res.locals.unhandledError
             };
@@ -146,7 +153,7 @@ function requestLogger(req, res, next) {
                 event: 'http.request.aborted',
                 ...baseFields,
                 durationMs: Number(durationMs.toFixed(1)),
-                userId: req.user && req.user.id
+                userId: requestUserId(req)
             });
         });
 

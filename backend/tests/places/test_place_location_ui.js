@@ -29,7 +29,7 @@ async function main() {
     const app = express();
     app.use(express.json());
     app.use('/users', require('../../modules/accounts/routes/users'));
-    app.use('/places', require('../../modules/places/routes/places'));
+    app.use('/places/tiles', require('../../modules/places/routes/placeTiles'));app.use('/places', require('../../modules/places/routes/places'));
     app.use('/place-requests', require('../../modules/places/routes/placeRequests'));
     app.use('/comments',require('../../modules/community/routes/comments'));
     app.use('/categories', require('../../modules/places/routes/categories'));

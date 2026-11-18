@@ -31,7 +31,7 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
         if (url.pathname === '/__web-layout' || url.pathname === '/p/99') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); return; }
         const responses = {
             '/users/me': { user: { id: 'web-layout-user', username: '布局测试住民', is_banned: false } },
-            '/places/markers': { version: 'empty', generated_at: 1, fields: ['id', 'name', 'longitude', 'latitude'], rows: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': ['面食'],
+            '/places/tiles/manifest': { v: 1, version: 'empty', generated_at: 1, count: 0, dict: '000000000000', levels: [{ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }, { tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }, { tile: 8, cell: 14, minZoom: 11, maxZoom: 12 }], leaf: { tile: 12, minZoom: 13 }, tiles: { 2: {}, 5: {}, 8: {}, 12: {} } }, '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': ['面食'],
             '/places/random': { place: focusPlace, distanceKm: 0.3, candidateCount: 8 },
             '/api/community/consent': { feedback: false, version: 1 },
             '/api/places/search/fast': searchResults,

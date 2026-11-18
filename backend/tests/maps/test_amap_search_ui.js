@@ -30,7 +30,7 @@ async function main() {
         return new Response(JSON.stringify({ status: '1', pois: [{ id: 'p1', name: `${q}新分店`, location: '120.002,30.002', address: '测试路 1 号', cityname: '测试城市', type: '餐饮服务;快餐厅' }] }));
     } });
     const app = express(); app.use(express.json());
-    app.use('/places', require('../../modules/places/routes/places'));
+    app.use('/places/tiles', require('../../modules/places/routes/placeTiles'));app.use('/places', require('../../modules/places/routes/places'));
     app.use('/api', require('../../modules/discovery/routes/search'));
     app.use('/api/amap/search', createAmapSearchRouter(service));
     app.use('/api/community', require('../../modules/community/routes/community'));

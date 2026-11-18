@@ -26,6 +26,7 @@ const {
 
 // QQ / 微信打开链接时会在末尾追加参数（如 ?qq_aio_chat_type=2），地点只认路径里的 id
 const PLACE_ID = /^(\d{1,15})(?!\d)/;
+const { rateLimit } = require("../../../http/middleware/rateLimit");
 
 function htmlEscape(text) {
     return String(text || "")
@@ -177,7 +178,8 @@ router.get("/:id/:file", async (req, res) => {
     }
 });
 
-router.get("/:id", (req, res) => {
+// 分享页按去重地点数限流（share 策略，额度比单店接口宽：QQ / 微信抓卡片也走这里）
+router.get("/:id", rateLimit("share", { member: (req) => PLACE_ID.exec(String(req.params.id || ""))?.[1] || null }), (req, res) => {
     const idMatch = PLACE_ID.exec(String(req.params.id || ""));
     if (!idMatch) return res.status(404).send("地点不存在");
     const placeId = idMatch[1];

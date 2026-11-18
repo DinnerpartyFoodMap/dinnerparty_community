@@ -22,6 +22,7 @@ const { setSelfLevel, userTasteAxes } = require('../../preferences/services/tast
 const { viewerRelation, setBlocked } = require('../services/userRelations');
 const { CREATOR_PLACES_LIMIT, listCreatorPlaces } = require('../../places/services/creatorPlaces');
 const logger = require('../../../infrastructure/logger');
+const { rateLimit } = require('../../../http/middleware/rateLimit');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -832,7 +833,7 @@ router.get('/:id/profile', attachViewer, async (req, res) => {
 // 某位住民创建的地点（地点卡片点“最近修改”的名字后筛选地图）：最近创建的在前，最多 limit 个，total 是全部可见数量。
 // relation 是观看者与这位住民的关系（self / blocked / can_block，见 services/userRelations.js）；
 // 屏蔽了 Ta 时列表仍可打开（用来解除屏蔽），但不列出地点
-router.get('/:id/places', attachViewer, async (req, res) => {
+router.get('/:id/places', attachViewer, rateLimit('people', { member: (req) => String(req.params.id || '').slice(0, 64) || null }), async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
         let user = db._raw.prepare('SELECT id, username FROM User WHERE id = ?').get(req.params.id);

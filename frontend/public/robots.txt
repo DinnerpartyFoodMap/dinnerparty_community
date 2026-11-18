@@ -1,0 +1,7 @@
+# Map data and APIs are not for crawling (see /terms/, section 4).
+# /p/ share pages stay open so chat apps can build link previews.
+User-agent: *
+Disallow: /backend/
+Disallow: /api/
+Disallow: /_AMapService
+Allow: /p/

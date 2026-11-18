@@ -38,7 +38,7 @@ async function main(){
     const token=jwt.sign({id},process.env.JWT_SECRET||'yuyuko_secret_key');
     const app=express();app.use(express.json({limit:'256kb'}));
     app.use('/api/journeys',require('../../modules/journeys/routes/journeys'));app.use('/api/public/journeys',require('../../modules/journeys/routes/publicJourneys'));
-    app.use('/api/community',require('../../modules/community/routes/community'));app.use('/api/favorites',require('../../modules/preferences/routes/favorites'));app.use('/places',require('../../modules/places/routes/places'));
+    app.use('/api/community',require('../../modules/community/routes/community'));app.use('/api/favorites',require('../../modules/preferences/routes/favorites'));app.use('/places/tiles', require('../../modules/places/routes/placeTiles'));app.use('/places',require('../../modules/places/routes/places'));
     const frontend=path.resolve(__dirname, '../../../frontend');
     const {createServer}=await import(require('url').pathToFileURL(path.join(frontend,'node_modules/vite/dist/node/index.js')).href);
     vite=await createServer({root:frontend,server:{middlewareMode:true,hmr:false},appType:'custom',logLevel:'warn'});

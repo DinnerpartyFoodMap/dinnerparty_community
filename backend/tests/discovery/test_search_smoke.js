@@ -16,6 +16,7 @@ process.env.DEEPSEEK_API_KEY = '';
 const searchRouter = require('../../modules/discovery/routes/search');
 const {
     rankSemanticRows,
+    acceptedOrderScore,
     buildEmbeddingQuery,
     placeDetailCompleteness,
     isConfidentRecommendationReview,
@@ -113,8 +114,8 @@ async function main() {
             per_person_cost: 68
         }), 1);
         const detailWeighted = rankSemanticRows([
-            { id: 9, name: '高语义但资料空白', category: '其他', description: '', per_person_cost: null, latitude: 23.1291, longitude: 113.2644, vector_distance: 0.03 },
-            { id: 10, name: '资料完整且相关', category: '印度菜', description: '提供详细菜系、招牌风味、用餐环境和适合人群的信息，内容足以支撑推荐理由，并帮助用户判断是否符合当前需求。这家店还有清晰的人均价格和具体分类，不需要模型凭空猜测。', per_person_cost: 68, latitude: 23.13, longitude: 113.265, vector_distance: 0.16 }
+            { id: 9, name: '高语义但资料空白', category: '其他', description: '', per_person_cost: null, latitude: 23.1291, longitude: 113.2644, vector_distance: 0.32 },
+            { id: 10, name: '资料完整且相关', category: '印度菜', description: '提供详细菜系、招牌风味、用餐环境和适合人群的信息，内容足以支撑推荐理由，并帮助用户判断是否符合当前需求。这家店还有清晰的人均价格和具体分类，不需要模型凭空猜测。', per_person_cost: 68, latitude: 23.13, longitude: 113.265, vector_distance: 0.38 }
         ], {
             center: { lat: 23.1291, lng: 113.2644 },
             bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 },
@@ -138,7 +139,6 @@ async function main() {
         const prettyMealProfile = buildEmbeddingQuery('想吃一顿漂亮饭', parsedExpansion);
         assert.equal(prettyMealProfile.expanded, true, 'a DeepSeek-classified implicit intent should be expanded');
         assert.match(prettyMealProfile.text, /摆盘精致/);
-        assert.equal(prettyMealProfile.minimumSemanticScore, 0.55);
         const parsedLiteral = parseIntentExpansionContent(
             '{"needs_expansion":false,"retrieval_text":"印度菜"}',
             '印度菜'
@@ -151,23 +151,48 @@ async function main() {
             retrieval_text: '随便吃点',
             source: 'original'
         }, 'malformed DeepSeek output should fall back to the original query');
-        const expandedIntentMatch = rankSemanticRows([
-            { id: 6, name: '适合拍照的精致餐厅', latitude: 23.1291, longitude: 113.2644, vector_distance: 0.44 }
+        // DSC-C10: the similarity floor only drops obvious misses; the review decides relevance.
+        // Qwen3 cosine values for relevant nearby shops are often 0.5–0.6.
+        const moderateMatch = rankSemanticRows([
+            { id: 6, name: '附近的面馆', latitude: 23.1291, longitude: 113.2644, vector_distance: 0.47 }
         ], {
             center: { lat: 23.1291, lng: 113.2644 },
-            bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 },
-            limit: 5,
-            minimumSemanticScore: prettyMealProfile.minimumSemanticScore
+            bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
         });
-        assert.equal(expandedIntentMatch[0]?.place?.id, 6, 'expanded slang intent should allow a moderately similar relevant place');
+        assert.equal(moderateMatch[0]?.place?.id, 6, 'a nearby place with similarity 0.53 must still reach the review');
         const irrelevant = rankSemanticRows([
-            { id: 3, name: '附近但不相关地点', latitude: 23.1291, longitude: 113.2644, vector_distance: 0.5 }
+            { id: 3, name: '附近但不相关地点', latitude: 23.1291, longitude: 113.2644, vector_distance: 0.7 }
         ], {
             center: { lat: 23.1291, lng: 113.2644 },
             bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 },
             limit: 5
         });
-        assert.equal(irrelevant.length, 0, 'distance must not rescue a semantically irrelevant place');
+        assert.equal(irrelevant.length, 0, 'distance must not rescue a place below the absolute floor');
+        const vagueQuery = rankSemanticRows([
+            { id: 31, name: '大排档', category: '排档', latitude: 23.135, longitude: 113.27, vector_distance: 0.556 },
+            { id: 32, name: '火锅店', category: '火锅店', latitude: 23.14, longitude: 113.27, vector_distance: 0.578 }
+        ], { center: { lat: 23.1291, lng: 113.2644 }, bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 } });
+        assert.equal(vagueQuery.length, 2, 'a vague query whose best match is only 0.44 still sends its candidates to the review');
+        const specificQuery = rankSemanticRows([
+            { id: 41, name: '寿司店', latitude: 23.135, longitude: 113.27, vector_distance: 0.34 },
+            { id: 42, name: '眼前的快餐', latitude: 23.1291, longitude: 113.2644, vector_distance: 0.47 }
+        ], { center: { lat: 23.1291, lng: 113.2644 }, bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 } });
+        assert.deepEqual(specificQuery.map((match) => match.place.id), [41], 'candidates more than 0.12 below the best similarity are dropped');
+        // Cards that passed the review are all relevant: 大雄寿司 3.9 km goes before 任食寿司屋 28 km.
+        const nearSushi = { detail_adjusted_score: 0.5, proximity_score: 0.8 };
+        const farSushi = { detail_adjusted_score: 0.62, proximity_score: 0.05 };
+        assert.ok(acceptedOrderScore(nearSushi) > acceptedOrderScore(farSushi), 'among reviewed cards a nearby relevant shop goes first');
+        const nearerFirst = rankSemanticRows([
+            { id: 21, name: '二十公里外', latitude: 23.31, longitude: 113.2644, vector_distance: 0.42 },
+            { id: 22, name: '一公里内', latitude: 23.138, longitude: 113.2644, vector_distance: 0.43 }
+        ], {
+            center: { lat: 23.1291, lng: 113.2644 },
+            bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
+        });
+        assert.deepEqual(nearerFirst.map((match) => match.place.id), [22, 21], 'between similar matches the nearer one ranks first');
+        assert.equal(rankSemanticRows(Array.from({ length: 12 }, (_, index) => ({
+            id: 100 + index, name: `候选${index}`, latitude: 23.1291, longitude: 113.2644, vector_distance: 0.3
+        })), { center: { lat: 23.1291, lng: 113.2644 } }).length, 8, 'eight candidates are ranked for the review by default');
         const reviewMatches = [
             { place: { name: 'Supported Place' } },
             { place: { name: 'Generic Place' } },

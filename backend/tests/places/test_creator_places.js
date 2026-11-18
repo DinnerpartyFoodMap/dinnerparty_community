@@ -112,8 +112,7 @@ async function main() {
     assert.ok(!(await nearby('other')).includes(newest));
     assert.ok(!(await nearby('other')).includes(oldest), 'places created by the blocked resident, even if last edited by someone else');
     assert.ok(!(await searchIds('other')).includes(newest));
-    const all = await (await fetch(`${base}/places`, { headers: { Authorization: `Bearer ${tokens.other}` } })).json();
-    assert.ok(!all.some((p) => p.creator_id === users.maker));
+    assert.equal((await fetch(`${base}/places`, { headers: { Authorization: `Bearer ${tokens.other}` } })).status, 410, 'the old list-everything endpoint is retired');
     assert.ok((await nearby(null)).includes(newest), 'guests are not affected');
     assert.ok((await nearby('quiet')).includes(newest), 'other residents are not affected');
     assert.deepEqual((await get(users.maker, 'maker')).body.places.length, 4, 'the blocked resident still sees their own places');

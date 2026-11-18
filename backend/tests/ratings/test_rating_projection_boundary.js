@@ -19,14 +19,14 @@ async function main(){
  require('../../modules/accounts/middleware/auth').attachViewer=(req,res,next)=>{req.viewer=req.headers['x-test-viewer']?{id:'reader'}:null;next();};
  const express=require('express'),app=express();app.use('/places',require('../../modules/places/routes/places'));
  server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base=`http://127.0.0.1:${server.address().port}`;
- for(const endpoint of ['/places/','/places/nearby?minLng=-180&maxLng=180&minLat=-90&maxLat=90','/places/1']){
+ for(const endpoint of ['/places/nearby?minLng=-180&maxLng=180&minLat=-90&maxLat=90','/places/1']){
   db._raw.prepare("UPDATE Place SET moderation_status='visible',latitude=1,longitude=1 WHERE id=1").run();
   const res=await fetch(base+endpoint),body=await res.json();
   if(endpoint==='/places/1')assert.equal(res.status,404);else assert.deepEqual(body,[],endpoint+' excludes a place hidden during the awaited projection');
  }
  db._raw.prepare("INSERT INTO User(id,username,password) VALUES('reader','reader','unused')").run();
  adapter.ratingViews=async()=>{db._raw.prepare("INSERT OR IGNORE INTO UserBlock(user_id,blocked_id) VALUES('reader','owner')").run();return views;};
- for(const endpoint of ['/places/','/places/nearby?minLng=-180&maxLng=180&minLat=-90&maxLat=90','/places/1']){
+ for(const endpoint of ['/places/nearby?minLng=-180&maxLng=180&minLat=-90&maxLat=90','/places/1']){
   db._raw.prepare("UPDATE Place SET moderation_status='visible' WHERE id=1").run();db._raw.prepare('DELETE FROM UserBlock').run();
   const res=await fetch(base+endpoint,{headers:{'x-test-viewer':'reader'}}),body=await res.json();
   if(endpoint==='/places/1')assert.equal(res.status,404);else assert.deepEqual(body,[],endpoint+' rechecks blocks after projection');

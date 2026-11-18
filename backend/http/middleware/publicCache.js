@@ -17,8 +17,18 @@ const POLICIES = Object.freeze({
     // 地区树：随地点慢慢变化
     regions: 'public, max-age=300, s-maxage=300, stale-while-revalidate=3600',
     // 地图标记快照（GET /places/markers）：后端自己还有 15 秒的内存缓存
-    markers: 'public, max-age=30, s-maxage=60, stale-while-revalidate=600'
+    markers: 'public, max-age=30, s-maxage=60, stale-while-revalidate=600',
+    // 地图瓦片清单（GET /places/tiles/manifest）：每块瓦片的内容哈希，改了地点最多约一分钟跟上
+    tileManifest: 'public, max-age=30, s-maxage=60, stale-while-revalidate=600',
+    // 聚合瓦片与字典：URL 里带内容哈希，内容一变 URL 就变，永不过期
+    immutable: 'public, max-age=31536000, s-maxage=31536000, immutable'
 });
+
+// 带变量的公共路径：聚合瓦片（z 为 2 / 5 / 8）和字典。z 为 12 的明细瓦片不在这里：它要按 IP / 账号限流，不能进 CDN
+const PUBLIC_PATTERNS = Object.freeze([
+    [/^\/places\/tiles\/manifest$/, POLICIES.tileManifest],
+    [/^\/places\/tiles\/[0-9a-f]{12}\/(?:dict|(?:2|5|8)\/\d+\/\d+)$/, POLICIES.immutable]
+]);
 
 const PUBLIC_ROUTES = new Map([
     ['/notices/current', POLICIES.short],
@@ -35,7 +45,10 @@ const PUBLIC_ROUTES = new Map([
 function publicPolicy(req) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return null;
     const path = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
-    return PUBLIC_ROUTES.get(path) || null;
+    const exact = PUBLIC_ROUTES.get(path);
+    if (exact) return exact;
+    for (const [pattern, policy] of PUBLIC_PATTERNS) if (pattern.test(path)) return policy;
+    return null;
 }
 
 /**
@@ -63,4 +76,4 @@ function skipForPublic(corsMiddleware) {
     return (req, res, next) => (res.locals.publicCache ? next() : corsMiddleware(req, res, next));
 }
 
-module.exports = { publicCache, skipForPublic, publicPolicy, POLICIES, PUBLIC_ROUTES };
+module.exports = { publicCache, skipForPublic, publicPolicy, POLICIES, PUBLIC_ROUTES, PUBLIC_PATTERNS };

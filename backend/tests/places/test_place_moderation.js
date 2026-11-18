@@ -177,7 +177,8 @@ async function main() {
     assert.equal((await call('GET', `/places/${cinema.id}`, null)).status, 404);
     assert.equal((await call('GET', `/places/${cinema.id}`, 'owner')).body.moderation_status, 'pending');
     assert.equal((await call('GET', `/places/${cinema.id}`, 'admin')).status, 200, 'admins can open it from the review list');
-    assert.equal((await call('GET', '/places', 'other')).body.some((p) => p.id === cinema.id), false);
+    assert.equal((await nearbyIds('other')).includes(cinema.id), false);
+    assert.equal((await call('GET', '/places', 'other')).status, 410, 'the old list-everything endpoint is retired');
     assert.equal((await call('GET', `/api/places/search/fast?q=${encodeURIComponent('电影院')}`, 'other')).body.length, 0);
     assert.equal((await call('GET', `/api/places/search/fast?q=${encodeURIComponent('电影院')}`, 'owner')).body.length, 1);
     assert.equal((await call('GET', `/p/${cinema.id}`, null)).status, 404, 'share page');

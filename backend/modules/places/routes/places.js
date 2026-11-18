@@ -23,6 +23,9 @@ const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 const { listPlaces } = require('../services/placeList');
+const { rateLimit } = require('../../../http/middleware/rateLimit');
+// 防爬限流的计数对象：地点 id（反复看同一家不扣额度）
+const placeIdMember = (req) => (/^\d{1,15}$/.test(String(req.params.id || '')) ? String(req.params.id) : null);
 async function projectRatingViews(rows,viewerId,{map=false,bounds=null}={}){
     const configured=Number(process.env.MAP_EAGER_RATING_LIMIT??100),limit=Number.isSafeInteger(configured)&&configured>=0&&configured<=500?configured:100;
     const visible=rows.filter(r=>!bounds||r.longitude>=bounds.minLng&&r.longitude<=bounds.maxLng&&r.latitude>=bounds.minLat&&r.latitude<=bounds.maxLat);
@@ -45,29 +48,32 @@ function visibleProjectedRows(rows,viewer,detail=false){
 }
 router.use((req,res,next)=>req.method==='GET'&&req.path!=='/regions'&&!req.path.endsWith('/diaries')&&!req.path.endsWith('/edit-context')?require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware(req,res,next):next());
 
-// 列出所有地点（附带创建者和最后修改者姓名、评价人数与平均分）。
-// 初筛中 / 待复核的地点只给创建者本人（见 doc/placeModeration.md），所以这几个读取接口用 attachViewer 识别观看者；
-// 观看者屏蔽了的住民创建的地点也不返回（accounts/services/userRelations.js）
-router.get("/", attachViewer, (req, res) => {
-    res.set('Cache-Control','no-store');
-    const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
-                 FROM Place p
-                 LEFT JOIN User u ON p.creator_id = u.id
-                 LEFT JOIN User uu ON p.updated_by = uu.id
-                 LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
-                 WHERE ${viewerPlaceSql('p')} AND ${notBlockedSql('p.creator_id')}
-                 ORDER BY p.created_time DESC`;
-    db.all(sql, [req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true}),req.viewer));
-    });
+// 原来的“列出全部地点”（GET /places）：一次给出全部地点的完整行和创建者用户名，前端早已不用，停用（防爬，
+// http/doc/README.md#数据访问限流）。初筛中 / 待复核的地点只给创建者本人（doc/placeModeration.md），
+// 下面几个读取接口仍用 attachViewer 识别观看者；观看者屏蔽了的住民创建的地点也不返回（accounts/services/userRelations.js）
+router.get("/", (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(410).json({ error: '这个接口已停用，请更新到最新版本' });
 });
 
-// 按 bounds 查询范围内地点（附带创建者和最后修改者姓名、评价人数与平均分）
-router.get("/nearby", attachViewer, (req, res) => {
+// 旧版 App 按视野请求时，范围大于这个面积（平方度）只给评价人数最多的若干家，不再一次给出整片的完整行
+function nearbyLimits() {
+    const area = Number(process.env.NEARBY_MAX_FULL_AREA ?? 0.25);
+    const rows = Number(process.env.NEARBY_LARGE_AREA_ROWS ?? 200);
+    return {
+        area: Number.isFinite(area) && area > 0 ? area : 0.25,
+        rows: Number.isSafeInteger(rows) && rows >= 0 ? rows : 200
+    };
+}
+
+// 按 bounds 查询范围内地点（附带创建者和最后修改者姓名、评价人数与平均分）：只给旧版 App，新版前端用分层瓦片
+router.get("/nearby", attachViewer, rateLimit('legacy'), (req, res) => {
     res.set('Cache-Control','no-store');
     const { minLng, minLat, maxLng, maxLat } = req.query;
     if (![minLng, minLat, maxLng, maxLat].every(Boolean)) return res.status(400).json({ error: "缺少范围参数" });
+    const span = (Number(maxLng) - Number(minLng)) * (Number(maxLat) - Number(minLat));
+    const limits = nearbyLimits();
+    const largeArea = !Number.isFinite(span) || span > limits.area;
     const names=['minLng','minLat','maxLng','maxLat'],viewKeys=names.map(name=>'view'+name[0].toUpperCase()+name.slice(1));
     let bounds=null;
     if(viewKeys.some(name=>req.query[name]!==undefined)){
@@ -84,8 +90,11 @@ router.get("/nearby", attachViewer, (req, res) => {
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
                  WHERE p.longitude BETWEEN ? AND ? AND p.latitude BETWEEN ? AND ? AND ${viewerPlaceSql('p')}
-                   AND ${notBlockedSql('p.creator_id')}`;
-    db.all(sql, [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null], async (err, rows) => {
+                   AND ${notBlockedSql('p.creator_id')}
+                 ${largeArea ? 'ORDER BY rating_count DESC, p.id LIMIT ?' : ''}`;
+    const params = [minLng, maxLng, minLat, maxLat, req.viewer?.id ?? null, req.viewer?.id ?? null];
+    if (largeArea) params.push(limits.rows);
+    db.all(sql, params, async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(visibleProjectedRows(await projectRatingViews(rows,req.viewer?.id,{map:true,bounds}),req.viewer));
     });
@@ -101,9 +110,14 @@ router.get("/regions", (req, res) => {
     }
 });
 
-// 地图标记快照（services/placeMarkers.js）：全部公开地点的精简字段，与观看者无关，公共缓存（http/middleware/publicCache.js）。
-// 新版前端只用它画标记；/nearby 留给旧版 App
-router.get("/markers", async (req, res) => {
+// 旧的地图标记快照（services/placeMarkers.js）：全部公开地点的精简字段，公共缓存（http/middleware/publicCache.js）。
+// 新版前端改用分层瓦片（/places/tiles，services/placeTiles.js），这里只留给 2026-11-15 之后、瓦片之前的 App。
+// 它一次给出全部店名和坐标，是最大的抓取口子：旧版 App 更新完以后设 LEGACY_MARKER_SNAPSHOT=off 关掉（回 410），
+// 并在 ESA 上刷新这个路径的缓存。
+router.get("/markers", rateLimit('legacy'), async (req, res) => {
+    if (String(process.env.LEGACY_MARKER_SNAPSHOT || 'on').trim().toLowerCase() === 'off') {
+        return res.status(410).json({ error: '这个接口已停用，请更新到最新版本' });
+    }
     try {
         const snapshot = await require('../services/placeMarkers').markerSnapshot();
         const encoding = req.acceptsEncodings('br') ? 'br' : (req.acceptsEncodings('gzip') ? 'gzip' : null);
@@ -147,7 +161,7 @@ router.get("/overlay", attachViewer, async (req, res) => {
 });
 
 // 地点列表页（services/placeList.js）：可按标签、人均筛选，按综合评价与口味加权评价排序；不返回经纬度和地址
-router.get("/list", attachViewer, async (req, res) => {
+router.get("/list", attachViewer, rateLimit('list'), async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
         res.json(await listPlaces(req.query, req.viewer?.id ?? null));
@@ -204,7 +218,7 @@ router.get("/random", (req, res, next) => {
 });
 
 // 地点相关的公开日记片段（按日记去重计数、游标分页；只读取仍处于公开状态的快照）
-router.get("/:id/diaries", attachViewer, (req, res) => {
+router.get("/:id/diaries", attachViewer, rateLimit('detail', { member: placeIdMember }), (req, res) => {
     res.set('Cache-Control', 'no-store');
     const place = db._raw.prepare('SELECT id, creator_id, moderation_status FROM Place WHERE id = ?').get(req.params.id);
     if (place && !canViewPlace(place, req.viewer)) return res.status(404).json({ error: '地点不存在' });
@@ -225,8 +239,8 @@ router.get('/:id/edit-context',requireAuth,(req,res)=>{
     const mine=db._raw.prepare('SELECT score FROM PlaceRating WHERE place_id=? AND user_id=?').get(place.id,req.user.id)||null;
     res.json({place_id:place.id,mine});
 });
-// 获取单个地点（隐藏中的地点只给创建者和管理员）
-router.get("/:id", attachViewer, (req, res) => {
+// 获取单个地点（隐藏中的地点只给创建者和管理员）；按去重地点数限流
+router.get("/:id", attachViewer, rateLimit('detail', { member: placeIdMember }), (req, res) => {
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id

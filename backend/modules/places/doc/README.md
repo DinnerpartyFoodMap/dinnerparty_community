@@ -2,7 +2,20 @@
 
 地点列表 `GET /places/list`（`services/placeList.js`，可选登录）：只给公开地点，可按 `tags`（逗号分隔，命中任一）、`minCost` / `maxCost`（设了范围时没填人均的不显示）与距离（`lat`、`lng`、`radiusKm`，半径只接受 0.5/1/3/5/10 公里）筛选；按综合评价排序：公开平均分以 2 份中性分（2.5）收缩，登录且有口味画像时与口味加权平均（`ratings/services/placeRatings.js` 的 `personalizedAverages`，按观看者缓存 2 分钟）各占一半。返回 `{ items, total, offset, limit, personalized }`，条目只有 id、店名、简介、分类、人均、第一张图和评价，不带经纬度、地址和距离（距离只用来筛选，防止整页抓取拿到坐标）。
 
-地图标记 `GET /places/markers`（`services/placeMarkers.js`）：全部公开地点的精简字段（按列存 `fields` + `rows`），与观看者无关，CDN 和浏览器可缓存（[CDN 缓存](../../../doc/CDN_CACHE.md)），进程内缓存 15 秒并预压缩；`GET /places/overlay`（`no-store`，可选登录）给出自己审核中 / 未通过的地点与屏蔽的住民创建的公开地点 id。新版前端只用这两个接口画标记，描述、图片等在打开卡片时读 `GET /places/:id`；`GET /places/nearby` 留给旧版 App，行为不变。
+地图标记用分层瓦片（见下文“分层瓦片”），没有哪个请求能一次拿到全部店名和坐标；`GET /places/overlay`（`no-store`，可选登录）给出自己审核中 / 未通过的地点与屏蔽的住民创建的公开地点 id，描述、图片等在打开卡片时读 `GET /places/:id`。旧接口（防爬，[数据访问限流](../../../http/doc/README.md#数据访问限流)）：`GET /places`（一次列出全部地点和创建者用户名）停用，回 410；`GET /places/nearby` 只给旧版 App，范围大于 `NEARBY_MAX_FULL_AREA`（默认 0.25 平方度）时只给评价人数最多的 `NEARBY_LARGE_AREA_ROWS`（默认 200）家；整份快照 `GET /places/markers`（`services/placeMarkers.js`，公共缓存）留给 11-15 之后、瓦片之前的 App，旧版 App 更新完后设 `LEGACY_MARKER_SNAPSHOT=off` 回 410，并在 ESA 上刷新这个路径的缓存。`/places/:id`、`/places/:id/diaries`、`/p/:id`、`/places/list`、`/users/:id/places` 与搜索都按观看者限流。
+
+## 分层瓦片
+
+`services/placeTiles.js` + `routes/placeTiles.js`（挂在 `/places/tiles`，在 `/places` 之前），前端 `frontend/src/map/markerTiles.js` 按同样的级别和格式读取，两边一起改（`test:place-tiles` 用前端的展开与筛选函数读真实瓦片对照）：
+
+- 三级聚合瓦片：z2 / z5 / z8 瓦片，格子 z9 / z12 / z14（约 70 / 8.8 / 2.2 km），分别给 z0–7、z8–10、z11–12。每个格子是成员重心（取整到 1/8 格）和每家店匿名的一行 `[标签编号, 人均或 -1, 地区编号或 -1, 图标类型]`（0 普通、1 避雷、2 待探索，`isAvoidedPlace` 与 `hasExploreTag`），按内容排序。**不带 id、店名、单店坐标**：拉齐这些瓦片也对不上具体的店，id 只出现在明细瓦片和单店接口里，两处都有额度。
+- 明细瓦片：z12，字段与旧快照相同（id、店名、坐标、标签、人均、省市区、评价汇总），z13 起显示。
+- 字典：标签名、地区名（按地点 id 顺序第一次出现编号）；清单：版本、各级参数、每块瓦片的内容哈希（12 位）。
+
+接口：`GET /places/tiles/manifest`（公共缓存 30 / 60 秒）；`/places/tiles/<哈希>/dict` 与 `/places/tiles/<哈希>/<2|5|8>/<x>/<y>`（公共缓存，永不过期，`http/middleware/publicCache.js` 的 `PUBLIC_PATTERNS`）；`/places/tiles/<哈希>/12/<x>/<y>`（明细：`private, max-age=31536000, immutable`，不进 CDN，按 IP / 账号的去重瓦片数限流）；`GET /places/tiles/ticket`（要登录，`no-store`）发 24 小时的明细瓦片票据，前端放在查询串 `?t=` 里认账号（不带 `Authorization`，App 里每块瓦片不用多一次预检），票据用 `TILE_TICKET_SECRET`（不设时由 `JWT_SECRET` 派生）签名。哈希和当前内容对不上时 302 到当前哈希（相对地址，保留 `?t=`），瓦片没有了 404，都是 `no-store`。全部瓦片在内存里建好，`TILE_SNAPSHOT_TTL_MS`（默认 15 秒）内复用，内容没变的瓦片沿用旧的压缩结果；改一家店只换它所在的四块瓦片（每级一块）的哈希。
+
+实测（3720 家）：三级聚合瓦片全部加起来约 15 / 19 / 28 KB，明细 706 块共约 142 KB，字典约 6 KB，清单约 7 KB；一屏通常要 1 到 4 块。
+
 
 地区（`services/placeRegions.js`，表在 `placeRegionSchema.js`）：省 / 市 / 区存在单独的 `PlaceRegion` 表，不写 `Place`，因为 Place 的任何 UPDATE 都会推进评分算法时钟，补齐几千个地点不能让评分缓存全部失效。表里记下查询时的坐标，地点挪了位置后对不上就重新查。后端启动时开后台任务（`startPlaceRegionWorker`，需要 `AMAP_WEB_SERVICE_KEY`，`PLACE_REGION_WORKER=false` 关闭），每轮取最多 20 个没查过或坐标变了的地点，用高德 Web 服务批量逆地理编码；新地点创建后 `wakePlaceRegionWorker` 立即补一次；QQ 新地点推送发出前用 `ensurePlaceRegions(ids)` 给其中还没查过的地点同步补查（没有 key 时不查）。直辖市的市用省名，省直辖县级市的市用区县名；境外坐标记为已查、省市区为空，其中不在高德境内格子里的（`maps/services/chinaRegion.js`，与前端同一张表）不发请求直接记下，免得消耗高德“海外服务”日配额；高德因海外配额用完整批拒绝（`USER_ABROAD_DAILY_QUERY_OVER_LIMIT`，批里有它算作境外的点，如海参崴）时逐个重查，被拒的点记为没有省市区、其余照常保存，全部被拒时不记录；请求失败不记录、等下一轮（QPS 超限会退避重试）；高德整批 `INVALID_PARAMS` 时逐个重查，被拒绝的坐标记为没有省市区并打日志。`npm run places:regions` 一次补完（`-- --dry-run` 只统计）。`GET /places/regions` 返回有公开地点的地区树（省 → 市 → 区，每层按地点数降序，带 `bounds` 供地图移动到该范围，进程内缓存 5 分钟，走公共 CDN 缓存）；`/places`、`/places/nearby`、`/places/:id`、`/places/list` 带出 `province` / `city` / `district`，`/places/list` 可按这三个参数筛选（下层要有上层）。
 

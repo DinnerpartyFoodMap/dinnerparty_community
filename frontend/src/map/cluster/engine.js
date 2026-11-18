@@ -60,9 +60,10 @@ export function isMappableCoordinate(lng, lat) {
         && lng >= -180 && lng <= 180 && Math.abs(lat) <= MAX_MERCATOR_LAT;
 }
 
-/** 数据库地点与高德临时 POI 使用不同的 key 命名空间。 */
+/** 数据库地点、高德临时 POI 与聚合瓦片的匿名点（markerTiles.js，agg:…）使用不同的 key 命名空间。 */
 export function placeKey(place) {
     if (!place) return null;
+    if (place.aggregateKey) return place.aggregateKey;
     const rawId = place.id;
     if (place.isMarked === false) {
         const text = String(rawId ?? '');

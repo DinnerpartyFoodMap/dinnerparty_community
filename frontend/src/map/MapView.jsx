@@ -10,7 +10,7 @@ import { OverseasTileLayer } from "./overseasTileLayer";
 import { NativeMapView, NativeMarkerOverlay, isNativeMap, nativeMapAppearance } from "./nativeMapView";
 import { NativeMarkerLayer } from "./nativeMarkerLayer";
 import { canUseNativeMap } from "../platform/nativeMap";
-import { MarkerSnapshotStore, markerSnapshotSource } from "./markerSnapshot";
+import { MarkerTileStore, markerTileSource, nextBandZoom, PREFETCH } from "./markerTiles";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
 import { computeLogicalZoom } from "./cluster/snapshot";
 import { clusterZoomOutcome, nextClusterZoom, revealZoom } from "./clusterZoom";
@@ -123,10 +123,17 @@ export default function MapView({
     const markerLayerRef = useRef(null);
     // 点聚合后正在进行的放大（见 handleClusterClick）
     const clusterZoomRef = useRef(null);
+    // 当前标记模式（沿途 / 搜索 / 住民 / 附近），预取只在附近模式
+    const markerQueryModeRef = useRef('nearby');
     const overseasLayerRef = useRef(null);
-    // 地图标记：公共快照 + 个人叠加 + 本地修改（markerSnapshot.js），与视野无关
+    // 地图标记：分层瓦片（markerTiles.js）：按缩放取聚合瓦片或视野内的明细瓦片，加个人叠加与本地修改
     const markerStoreRef = useRef(null);
-    if (!markerStoreRef.current) markerStoreRef.current = new MarkerSnapshotStore();
+    if (!markerStoreRef.current || markerStoreRef.current.source.backendUrl !== backendUrl) {
+        markerStoreRef.current?.dispose();
+        markerStoreRef.current = new MarkerTileStore(markerTileSource(backendUrl));
+    }
+    // 明细瓦片额度用完的提示一次会话只出一次
+    const tileLimitTipRef = useRef(false);
     const overlayRequestRef = useRef(null);
     const nearbyFailureRef = useRef(0);
     // 快照里的地点只有标记字段，打开卡片时再补全（ensurePlaceDetail）；换账号时清空
@@ -901,8 +908,8 @@ export default function MapView({
         overseasLayerRef.current?.setDark(dark);
     }, [dark, currentUser, mapReady]);
 
-    // 地图标记（markerSnapshot.js）：公共快照（CDN 与浏览器可缓存、本机存一份）+ 登录后的个人叠加 + 本地修改。
-    // 数据与视野无关，平移缩放不发请求；地图移动时快照超过 SNAPSHOT_MAX_AGE_MS 才后台刷新（多数由缓存回答）。
+    // 地图标记（markerTiles.js）：清单与聚合瓦片走 CDN，明细瓦片（店名、精确坐标）放大到街区级才按视野拉、有额度；
+    // 再叠加登录后的个人叠加与本地修改。移动结束时按新视野换级、补拉缺的瓦片，清单旧了后台刷新。
     // 显示哪份数据由当前模式决定（沿途 > 搜索 > 住民筛选 > 附近），标记由统一入口渲染。
     const publishNearbyFromCache = () => {
         const all = markerStoreRef.current.all();
@@ -915,29 +922,61 @@ export default function MapView({
     const reportMarkerFailure = (error) => {
         if (error?.code === 'RETRY_PENDING') return;
         console.warn('加载地图标记失败', error);
-        Promise.resolve(markerSnapshotSource(backendUrl).storedLoaded).then(() => {
+        Promise.resolve(markerTileSource(backendUrl).storedLoaded).then(() => {
             if (markerStoreRef.current.hasSnapshot) return;
             nearbyFailureRef.current += 1;
             if (nearbyFailureRef.current === 1) showTip(t('map:main.nearbyLoadFailed'));
         });
     };
 
-    const refreshMarkers = (options) => markerSnapshotSource(backendUrl).refresh(options)
+    const refreshMarkers = (options) => markerTileSource(backendUrl).refresh(options)
         .then(() => { nearbyFailureRef.current = 0; }, reportMarkerFailure);
 
-    // 快照来源所有地图实例共用：启动时（main.jsx）已经开始加载，这里订阅并确保至少读过一次
+    // 瓦片来源所有地图实例共用：启动时（main.jsx）已经开始读清单，这里订阅并确保至少读过一次
     useEffect(() => {
         if (!backendUrl) return undefined;
-        const source = markerSnapshotSource(backendUrl);
-        const unsubscribe = source.subscribe((snapshot) => {
-            if (markerStoreRef.current.setSnapshot(snapshot)) publishNearbyFromCache();
+        const source = markerTileSource(backendUrl);
+        const unsubscribe = markerStoreRef.current.subscribe(() => publishNearbyFromCache());
+        const unlimited = source.onLimited(({ guest }) => {
+            if (tileLimitTipRef.current) return;
+            tileLimitTipRef.current = true;
+            showTip(guest ? t('map:main.tilesLimitedGuest') : t('map:main.tilesLimited'));
         });
-        source.start().then(() => { nearbyFailureRef.current = 0; }, reportMarkerFailure);
-        return unsubscribe;
+        source.start().then(() => {
+            nearbyFailureRef.current = 0;
+            syncMarkerView();
+            publishNearbyFromCache();
+        }, reportMarkerFailure);
+        return () => {
+            unsubscribe();
+            unlimited();
+        };
     }, [backendUrl]);
 
-    // 地图就绪、移动结束、退出搜索 / 沿途 / 住民筛选时调用：发布当前数据，快照旧了就后台刷新
+    // 按当前视野换级、补拉缺的瓦片（markerTiles.js 的 setView）
+    const syncMarkerView = () => {
+        const viewport = mapRef.current ? readMapViewport(mapRef.current) : null;
+        if (!viewport) return false;
+        const { zoom, ...bounds } = viewport;
+        return markerStoreRef.current.setView({ bounds, zoom });
+    };
+
+    // 预取明细瓦片（只在附近模式）：停在城市级（z12 以上）时拉视野中心的 1 到 2 块，放大到街区级时多半已经有了
+    const prefetchLeafTiles = (points, options) => {
+        if (markerQueryModeRef.current !== 'nearby') return;
+        markerTileSource(backendUrl).prefetchLeafAt(points, options);
+    };
+    const prefetchAtStop = () => {
+        const viewport = mapRef.current ? readMapViewport(mapRef.current) : null;
+        const leafZoom = markerTileSource(backendUrl).manifest?.leaf?.minZoom;
+        if (!viewport || !leafZoom || viewport.zoom < PREFETCH.stopZoom || viewport.zoom >= leafZoom) return;
+        prefetchLeafTiles([[(viewport.minLng + viewport.maxLng) / 2, (viewport.minLat + viewport.maxLat) / 2]]);
+    };
+
+    // 地图就绪、移动结束、退出搜索 / 沿途 / 住民筛选时调用：按视野换级并发布当前数据，清单旧了就后台刷新
     const loadPlaces = () => {
+        syncMarkerView();
+        prefetchAtStop();
         publishNearbyFromCache();
         return refreshMarkers();
     };
@@ -975,6 +1014,7 @@ export default function MapView({
     // 登录 / 退出 / 换账号：个人叠加、本地修改和补全过的详情都随身份变化
     const markerTokenRef = useRef(token);
     useEffect(() => {
+        markerTileSource(backendUrl).setToken(isAuthenticated ? token : null);
         if (markerTokenRef.current !== token) {
             markerTokenRef.current = token;
             placeDetailsRef.current.cache.clear();
@@ -998,6 +1038,7 @@ export default function MapView({
                     details.cache.delete(key);
                     return null;
                 }
+                if (res.status === 429) throw Object.assign(new Error('Place detail rate limited'), { code: 'rate_limited' });
                 if (!res.ok) throw new Error(`Failed to fetch place: ${res.status}`);
                 const place = await res.json();
                 details.cache.delete(key);
@@ -1021,7 +1062,8 @@ export default function MapView({
         try {
             full = await loadPlaceDetail(place.id);
         } catch (e) {
-            console.warn('补全地点详情失败', e);
+            if (e?.code === 'rate_limited') showTip(t('map:main.detailLimited'));
+            else console.warn('补全地点详情失败', e);
             return place;
         }
         const selected = selectedPlaceRef.current;
@@ -1135,6 +1177,10 @@ export default function MapView({
         if (!p) return;
         selectedPlaceRef.current = p;
         setSelectedPlace(p);
+        // 从搜索、分享链接、随机、列表跳过来：那家店所在的明细瓦片一起拉，回到附近模式放大时不用再等
+        const lng = Number(p.longitude);
+        const lat = Number(p.latitude);
+        if (p.isMarked !== false && Number.isFinite(lng) && Number.isFinite(lat)) markerTileSource(backendUrl).prefetchLeafAt([[lng, lat]], { maxTiles: 1 });
     };
 
     // 选中的是快照里的地点：先用标记字段显示卡片，同时补全描述、图片等
@@ -1190,6 +1236,7 @@ export default function MapView({
     // 高德临时 POI 默认只存在于结果列表；用户单独选中后才显示在地图上。住民的地点加载完成前仍显示附近地点。
     const userPlaces = userFilter?.status === 'ready' ? userFilter.places : null;
     const markerQueryMode = alongRouteResults != null ? 'along' : (searchResults != null ? 'search' : (userPlaces ? 'user' : 'nearby'));
+    markerQueryModeRef.current = markerQueryMode;
     const markerSource = alongRouteResults != null ? alongRouteResults : (searchResults != null ? searchResults : (userPlaces || places));
     useEffect(() => {
         if (!mapReady || !markerLayerRef.current) return;
@@ -1211,7 +1258,37 @@ export default function MapView({
     // 放大动画停在半路（浏览器补发的事件、底图收尾打断）时再放大一次，直到聚合拆开；
     // 相机已放不大（原生底图在部分地区到不了 20 级）而聚合还在时打开成员列表（clusterZoom.js 的 clusterZoomOutcome）。
     const showClusterMembers = (request) => {
-        setClusterMembers({ key: request.key, coordinate: request.coordinate, places: request.members });
+        // 聚合瓦片的匿名点没有店名，不进成员列表
+        setClusterMembers({ key: request.key, coordinate: request.coordinate, places: request.members.filter((place) => !place.aggregate) });
+    };
+    // 点聚合瓦片的匿名点或它们组成的聚合：放大到下一级（要到街区级时先预取那里的明细瓦片）；
+    // 已经在街区级还是匿名点，说明那块明细拿不到（额度用完或网络失败），只提示
+    const zoomIntoAggregate = (coordinate) => {
+        const map = mapRef.current;
+        if (!map || !coordinate) return;
+        const source = markerTileSource(backendUrl);
+        if (markerStoreRef.current.band?.kind === 'leaf') {
+            showTip(isAuthenticated ? t('map:main.tilesLimited') : t('map:main.tilesLimitedGuest'));
+            return;
+        }
+        cancelClusterZoom();
+        const maxZoom = getMapZoomRange(map).max;
+        const currentZoom = Number(map.getZoom());
+        const targetZoom = Math.min(maxZoom, Math.max(Math.ceil(currentZoom + 0.01), nextBandZoom(source.manifest, currentZoom)));
+        if (source.manifest && targetZoom >= source.manifest.leaf.minZoom) prefetchLeafTiles([coordinate]);
+        const container = containerRef.current;
+        const width = container?.clientWidth || window.innerWidth;
+        const height = container?.clientHeight || window.innerHeight;
+        const insets = getMapSafeInsets(container);
+        const [lng, lat] = coordinate;
+        const center = centerForScreenTarget({ lng, lat, zoom: targetZoom, targetX: width / 2, targetY: insets.top + (height - insets.top - insets.bottom) / 2, width, height });
+        armSkipAutoSearch();
+        try {
+            if (typeof map.setZoomAndCenter === 'function') map.setZoomAndCenter(targetZoom, center, false);
+            else { map.setCenter(center); map.setZoom(targetZoom); }
+        } catch (e) {
+            console.warn('放大聚合失败', e);
+        }
     };
     const cancelClusterZoom = () => {
         const request = clusterZoomRef.current;
@@ -1276,6 +1353,11 @@ export default function MapView({
         const expansion = engine.expansionZoom(node);
         const currentZoom = Number(map.getZoom());
         const members = engine.memberKeys(node).map((key) => engine.placeByKey.get(key)).filter(Boolean);
+        // 全是匿名点（聚合瓦片）：它们坐标相同拆不开，直接放大到下一级换数据
+        if (members.length && members.every((place) => place.aggregate)) {
+            zoomIntoAggregate(node.coordinate);
+            return;
+        }
         const request = { key: node.key, coordinate: node.coordinate, members, expansion };
         if (expansion > maxZoom || currentZoom >= maxZoom - 0.05) {
             showClusterMembers(request);
@@ -1345,7 +1427,42 @@ export default function MapView({
         };
     }, [mapReady]);
 
+    // 放大过程中越过 PREFETCH.crossZoom（z12.3）：预取视野中心的明细瓦片。用 mapmove / zoomchange 判断，
+    // 网页和原生底图都有；原生底图没有 zoomstart
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!mapReady || !map) return undefined;
+        let lastZoom = null;
+        const readZoom = () => {
+            try { return Number(map.getZoom()); } catch (e) { return NaN; }
+        };
+        const onMoveStart = () => { lastZoom = readZoom(); };
+        const onMove = () => {
+            const zoom = readZoom();
+            if (!Number.isFinite(zoom)) return;
+            const crossed = Number.isFinite(lastZoom) && lastZoom < PREFETCH.crossZoom && zoom >= PREFETCH.crossZoom;
+            lastZoom = zoom;
+            if (!crossed) return;
+            const viewport = readMapViewport(map);
+            if (viewport) prefetchLeafTiles([[(viewport.minLng + viewport.maxLng) / 2, (viewport.minLat + viewport.maxLat) / 2]]);
+        };
+        map.on('movestart', onMoveStart);
+        map.on('mapmove', onMove);
+        map.on('zoomchange', onMove);
+        return () => {
+            try {
+                map.off('movestart', onMoveStart);
+                map.off('mapmove', onMove);
+                map.off('zoomchange', onMove);
+            } catch (e) { /* 地图已销毁 */ }
+        };
+    }, [mapReady, backendUrl]);
+
     const handleMapPlaceClick = (place) => {
+        if (place?.aggregate) {
+            zoomIntoAggregate([Number(place.longitude), Number(place.latitude)]);
+            return;
+        }
         const currentFeedback = feedbackRef.current;
         if (currentFeedback.consent?.feedback) {
             const viewport = readMapViewport(mapRef.current);

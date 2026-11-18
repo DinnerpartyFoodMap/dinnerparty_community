@@ -154,7 +154,10 @@ async function attachViewer(req, res, next) {
         const session = await sessionStore().verifySession(payload, token);
         if (!session.ok) return next();
         const row = db._raw.prepare('SELECT id, admin_level FROM User WHERE id = ?').get(payload.id);
-        if (row) req.viewer = row;
+        if (row) {
+            req.viewer = row;
+            logger.addContext({ userId: row.id });
+        }
     } catch (_) { /* 游客 */ }
     return next();
 }

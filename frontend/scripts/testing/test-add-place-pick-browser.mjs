@@ -34,7 +34,7 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
         }
         const responses = {
             '/users/me': { user: { id: 'add-place-regression', username: '点选测试', is_banned: false } },
-            '/places/markers': { version: 'empty', generated_at: 1, fields: ['id', 'name', 'longitude', 'latitude'], rows: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': []
+            '/places/tiles/manifest': { v: 1, version: 'empty', generated_at: 1, count: 0, dict: '000000000000', levels: [{ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }, { tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }, { tile: 8, cell: 14, minZoom: 11, maxZoom: 12 }], leaf: { tile: 12, minZoom: 13 }, tiles: { 2: {}, 5: {}, 8: {}, 12: {} } }, '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': []
         };
         if (!Object.hasOwn(responses, pathname)) return next();
         res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(responses[pathname]));

@@ -26,6 +26,10 @@
 
 分别在创建者评分、分类和通知记录插入点引入错误；对 Web、Bot、日记入口各跑一轮。预期：整个事务回滚，提交后的网络工作不执行；重试成功后只创建一次。不能用当前审核事务测试替代这个矩阵。
 
+### PLC-C11 分层瓦片与防爬（已有自动化：test:place-tiles、test:rate-limit）
+
+前置：临时库，广州三家公开地点（含避雷、待探索、无人均、有 / 无地区）、北京一家、审核中与未通过各一家，一位住民。操作：读清单、字典、三级聚合瓦片和明细瓦片；带旧哈希、不存在的块和不约定的级别请求；enforce 模式下游客按 IP、住民带票据拉明细瓦片，票据被改、过期；新增一家店后作废缓存再读清单；用前端 `markerTiles.js` 与 `placeFilter.js` 读城市级瓦片并筛选；`GET /places`、大 / 小范围 `/places/nearby`、`LEGACY_MARKER_SNAPSHOT=off` 时的 `/places/markers`、超额后的 `/places/:id`。预期：只含公开地点，聚合瓦片里没有 id、店名、坐标和描述，三级店数各为 4，匿名行能还原标签 / 人均 / 地区 / 图标类型；清单与聚合瓦片是 `Access-Control-Allow-Origin: *` 的公共缓存（聚合永不过期），明细瓦片 `private` 且按 Origin 回 CORS、ETag 对得上回 304；旧哈希 302 到当前哈希（保留查询串），不存在 404、`no-store`；游客第二块不同的瓦片 429、同一块再拉不扣额度，票据按账号计、被改过按游客、过期无效；聚合瓦片不限流；新增后只有四块瓦片换哈希、字典不变，内容不变时清单不变；前端读出的匿名点筛选结果与后端数据一致；`GET /places` 410，大范围 nearby 只给少量、小范围照旧给完整行，旧快照可关；超额后单店接口 429、登录后按账号。限流本身（IP 段、主体、去重与计次、observe / enforce / off、Redis 与进程内计数、出错放行）见 `test:rate-limit`。
+
 ### PLC-C08 地图标记快照与公共缓存（已有自动化：test:place-markers）
 
 前置：临时库，公开、审核中、未通过的地点各若干，一位住民屏蔽了另一位。操作：带不同 `Accept-Encoding` 和 `If-None-Match` 读 `/places/markers`，期间新增地点并作废内存缓存；读公告与出错的公共接口；带 Origin 读 `/places/nearby` 和预检；游客、创建者、屏蔽者、无效 token 读 `/places/overlay`。预期：快照只含公开地点与约定字段、不含描述，br / gzip / 不压缩内容一致，ETag 对得上回 304，内容不变时版本不变；公共接口回 `Access-Control-Allow-Origin: *`、公共缓存头、没有 `Vary: Origin`，出错时 `no-store`；其他接口和预检仍按 Origin 回 CORS；叠加层只给自己的审核中地点和屏蔽的住民的公开地点 id，游客与无效 token 为空。

@@ -37,9 +37,20 @@ const { startVectorRetryWorker } = require('./modules/preferences/services/place
 const { startUserVectorWorker } = require('./modules/preferences/services/userPreferenceService');
 
 const app = express();
-// When running behind an HTTPS reverse proxy (e.g. nginx), enable trust proxy
-// so Express respects X-Forwarded-* headers and req.secure reflects the original protocol.
-app.set('trust proxy', true);
+// 在 HTTPS 反向代理后面运行：信任 X-Forwarded-*，req.secure / req.ip 取代理写的值。
+// TRUST_PROXY 不设时保持旧行为（true：信任整条 X-Forwarded-For，取最左边，客户端能自己伪造）；
+// 源站 Caddy 按 backend/doc/CDN_CACHE.md 覆盖写 X-Forwarded-For 以后改成 loopback，
+// req.ip 才是可信的客户端地址（日志、AI 搜索与数据访问限流都用它，见 http/doc/README.md#数据访问限流）。
+function trustProxySetting(value) {
+    const text = String(value ?? '').trim();
+    if (!text || text === 'true') return true;
+    if (text === 'false') return false;
+    if (/^\d+$/.test(text)) return Number(text);
+    return text; // loopback、uniquelocal 或逗号分隔的地址 / 网段，交给 Express 解析
+}
+app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
+// 数据访问限流的计数放在 Redis（不可用时自动退回进程内计数）
+require('./http/middleware/rateLimit').useRedis(require('./infrastructure/redis'));
 app.disable('x-powered-by');
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -310,6 +321,8 @@ app.use('/api', searchRouter);
 app.use('/api/along-route', alongRouteRouter);
 app.use('/api/amap', require('./modules/maps/routes/amap'));
 app.use('/api/app', require('./modules/appRelease/routes/appRelease'));
+// 地图标记分层瓦片，挂在 /places 之前（modules/places/routes/placeTiles.js）
+app.use("/places/tiles", require("./modules/places/routes/placeTiles"));
 app.use("/places", placesRouter);
 app.use("/p", require("./modules/places/routes/placeShare"));
 app.use("/comments", commentsRouter);

@@ -1,0 +1,270 @@
+// 地图标记分层瓦片（services/placeTiles.js、routes/placeTiles.js）与防爬第 1 阶段的路由改动：
+// 聚合瓦片不带 id / 店名 / 单店坐标且各级店数守恒；只含公开地点；字典与匿名行能还原筛选字段；
+// 清单与聚合瓦片的公共缓存头、内容哈希跳转、404；明细瓦片 private、按 IP / 票据限流；
+// 改一家店只换它所在的几块瓦片；GET /places 停用、/places/nearby 大范围只给少量、旧快照开关。
+// 临时 SQLite + 本地 express；评价汇总的外部计算换成本地实现（同 test_place_markers.js）。npm run test:place-tiles
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'yuyuko-place-tiles-'));
+Object.assign(process.env, {
+    DB_FILE: path.join(temp, 'test.sqlite'), LOG_TO_FILE: 'false', LOG_TO_CONSOLE: 'false',
+    TILE_SNAPSHOT_TTL_MS: '60000', ANTI_SCRAPE_MODE: 'observe'
+});
+delete process.env.ANTI_SCRAPE_LIMITS;
+require.cache[require.resolve('../../infrastructure/redis')] = { exports: { isReady: () => false } };
+
+require('../../infrastructure/numericAlgorithmClient').compute = async (_operation, input) => {
+    const scores = new Map();
+    for (const rating of input.ratings || []) {
+        if (!scores.has(rating.place_id)) scores.set(rating.place_id, []);
+        scores.get(rating.place_id).push(rating.score);
+    }
+    return {
+        summaries: (input.place_ids || []).map((placeId) => {
+            const list = scores.get(placeId) || [];
+            const distribution = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            list.forEach((score) => { distribution[score] += 1; });
+            const average = list.length ? list.reduce((sum, score) => sum + score, 0) / list.length : null;
+            return { place_id: placeId, count: list.length, average, tier: average === null ? null : Math.round(average), distribution };
+        })
+    };
+};
+require('../../modules/ratings/services/ratingEstimateAdapter').ratingViews = async () => ({ estimates: [], predictions: [] });
+
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const { db, init } = require('../../infrastructure/database');
+const { publicCache, skipForPublic } = require('../../http/middleware/publicCache');
+const { jsonCompression } = require('../../http/middleware/jsonCompression');
+const placeTiles = require('../../modules/places/services/placeTiles');
+const { resetForTesting } = require('../../http/middleware/rateLimit');
+const sql = db._raw;
+let server = null;
+
+const bearer = (id) => `Bearer ${jwt.sign({ id }, process.env.JWT_SECRET || 'yuyuko_secret_key')}`;
+
+async function main() {
+    init();
+    for (const id of ['owner', 'viewer', 'other']) sql.prepare('INSERT INTO User(id, username, password) VALUES(?, ?, ?)').run(id, id, 'unused');
+    const insert = sql.prepare(`INSERT INTO Place(id, name, category, description, latitude, longitude, per_person_cost, creator_id, moderation_status)
+        VALUES (?, ?, ?, '很长的描述', ?, ?, ?, ?, ?)`);
+    insert.run(1, '鱼粥', '粥, 避雷', 23.1291, 113.2644, 30, 'owner', 'visible');
+    insert.run(2, '面馆', '面食，小吃', 23.1295, 113.2650, null, 'other', 'visible');
+    insert.run(3, '甜品铺', '甜品, 待探索', 23.1301, 113.2702, 25, 'other', 'visible');
+    insert.run(4, '审核中', '甜品', 23.1302, 113.2703, 20, 'owner', 'pending');
+    insert.run(5, '没通过', '甜品', 23.1303, 113.2704, 20, 'other', 'rejected');
+    insert.run(1048577, '北京烤鸭', '烤鸭', 39.9042, 116.4074, 120, 'other', 'visible');
+    sql.prepare("INSERT INTO PlaceRegion(place_id, province, city, district, checked_at) VALUES (1, '广东省', '广州市', '越秀区', 0)").run();
+    sql.prepare("INSERT INTO PlaceRegion(place_id, province, city, district, checked_at) VALUES (2, '广东省', '广州市', '越秀区', 0)").run();
+    const ratings = require('../../modules/ratings/services/placeRatings');
+    ratings.insertCreationRating(1, 'owner', 1, Date.now(), 'creation_default');
+    ratings.insertCreationRating(2, 'other', 4, Date.now(), 'creation_default');
+
+    const app = express();
+    app.set('trust proxy', 'loopback');
+    app.use(publicCache());
+    app.use(skipForPublic(cors({ origin: true, credentials: true, maxAge: 3600 })));
+    app.use(jsonCompression());
+    app.use('/places/tiles', require('../../modules/places/routes/placeTiles'));
+    app.use('/places', require('../../modules/places/routes/places'));
+    server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const get = (url, headers = {}) => fetch(base + url, { headers, redirect: 'manual' });
+
+    // ---- 清单：公共缓存、四级瓦片 ----
+    const manifestResponse = await get('/places/tiles/manifest', { Origin: 'https://localhost' });
+    assert.equal(manifestResponse.status, 200);
+    assert.equal(manifestResponse.headers.get('access-control-allow-origin'), '*');
+    assert.match(manifestResponse.headers.get('cache-control'), /^public, max-age=30, s-maxage=60/);
+    const manifest = await manifestResponse.json();
+    assert.equal(manifest.count, 4, '只算公开地点');
+    assert.deepEqual(Object.keys(manifest.tiles).sort(), ['12', '2', '5', '8']);
+    assert.ok(!JSON.stringify(manifest).includes('鱼粥'));
+
+    // ---- 字典与聚合瓦片：公共、永不过期、不带 id / 店名 / 坐标 ----
+    const dictResponse = await get(`/places/tiles/${manifest.dict}/dict`);
+    assert.equal(dictResponse.status, 200);
+    assert.match(dictResponse.headers.get('cache-control'), /^public, max-age=31536000, s-maxage=31536000, immutable/);
+    const dict = await dictResponse.json();
+    assert.deepEqual(dict.tags, ['粥', '避雷', '面食', '小吃', '甜品', '待探索', '烤鸭'], '按 id 顺序第一次出现编号，全角逗号也拆开');
+    assert.deepEqual(dict.regions, [['广东省', '广州市', '越秀区']]);
+
+    const readAggregate = async (z) => {
+        const out = [];
+        for (const [key, hash] of Object.entries(manifest.tiles[z])) {
+            const response = await get(`/places/tiles/${hash}/${z}/${key}`, { Origin: 'https://localhost' });
+            assert.equal(response.status, 200);
+            assert.match(response.headers.get('cache-control'), /immutable/);
+            assert.equal(response.headers.get('access-control-allow-origin'), '*');
+            const text = await response.text();
+            for (const secret of ['鱼粥', '面馆', '1048577', '113.26', '很长的描述', '审核中']) assert.ok(!text.includes(secret), `聚合瓦片不带 ${secret}`);
+            out.push(JSON.parse(text));
+        }
+        return out;
+    };
+    for (const level of placeTiles.AGGREGATE_LEVELS) {
+        const bodies = await readAggregate(level.tile);
+        const rows = bodies.flatMap((body) => body.cells.flatMap((cell) => cell[4]));
+        assert.equal(rows.length, 4, `z${level.tile} 各级店数守恒`);
+        for (const body of bodies) for (const cell of body.cells) {
+            assert.ok(cell[2] >= 0 && cell[2] <= 7 && cell[3] >= 0 && cell[3] <= 7, '重心取整到 1/8 格');
+            assert.ok(cell[0] >= 0 && cell[0] < 2 ** (level.cell - level.tile));
+        }
+        // 匿名行能还原筛选字段：标签、人均、地区、图标类型
+        const decoded = rows.map(([tags, cost, region, glyph]) => ({
+            tags: tags.map((i) => dict.tags[i]).sort().join(','), cost, region: region >= 0 ? dict.regions[region].join('/') : null, glyph
+        })).sort((a, b) => a.tags.localeCompare(b.tags));
+        assert.deepEqual(decoded, [
+            { tags: '小吃,面食', cost: -1, region: '广东省/广州市/越秀区', glyph: placeTiles.GLYPH.place },
+            { tags: '待探索,甜品', cost: 25, region: null, glyph: placeTiles.GLYPH.unexplored },
+            { tags: '烤鸭', cost: 120, region: null, glyph: placeTiles.GLYPH.place },
+            { tags: '粥,避雷', cost: 30, region: '广东省/广州市/越秀区', glyph: placeTiles.GLYPH.avoid }
+        ].sort((a, b) => a.tags.localeCompare(b.tags)));
+    }
+    // 城市级（z14 格约 2 km）：广州三家、北京一家分在不同瓦片
+    assert.equal(Object.keys(manifest.tiles[8]).length, 2);
+
+    // ---- 与前端对照：frontend/src/map/markerTiles.js 读这些瓦片得到同样的点，筛选照常生效 ----
+    const { pathToFileURL } = require('node:url');
+    const front = await import(pathToFileURL(path.join(__dirname, '../../../frontend/src/map/markerTiles.js')).href);
+    const { matchesPlaceFilter, normalizePlaceFilter } = await import(pathToFileURL(path.join(__dirname, '../../../frontend/src/places/placeFilter.js')).href);
+    assert.deepEqual(front.bandForZoom(manifest, 12), { kind: 'aggregate', ...placeTiles.AGGREGATE_LEVELS[2] });
+    assert.equal(front.bandForZoom(manifest, 13).kind, 'leaf');
+    const gzCity = front.tileOf(113.2644, 23.1291, 8).join('/');
+    assert.ok(manifest.tiles[8][gzCity], '前后端的瓦片坐标一致');
+    const cityBody = await (await get(`/places/tiles/${manifest.tiles[8][gzCity]}/8/${gzCity}`)).json();
+    const anonymous = front.expandAggregateTile(cityBody, dict, gzCity);
+    assert.equal(anonymous.length, 3);
+    assert.ok(anonymous.every((p) => p.aggregate && p.name === '' && p.id === undefined));
+    for (const point of anonymous) {
+        assert.ok(Math.abs(point.longitude - 113.267) < 0.03 && Math.abs(point.latitude - 23.13) < 0.03, '匿名点落在格子里');
+    }
+    const matching = (raw) => anonymous.filter((p) => matchesPlaceFilter(p, normalizePlaceFilter(raw))).length;
+    assert.equal(matching({ tags: ['甜品'] }), 1);
+    assert.equal(matching({ excludeTags: ['避雷'] }), 2);
+    assert.equal(matching({ minCost: 20, maxCost: 40 }), 2);
+    assert.equal(matching({ province: '广东省', city: '广州市', district: '越秀区' }), 2);
+    assert.deepEqual(anonymous.map((p) => p.glyph).sort(), ['avoid', 'place', 'unexplored']);
+
+    // ---- 明细瓦片：带店名和坐标，private，按 CORS 回 Origin ----
+    const leafKeys = Object.keys(manifest.tiles[12]);
+    assert.equal(leafKeys.length, 2);
+    const gzKey = leafKeys.find((key) => Number(key.split('/')[0]) < 3340);
+    const leaf = await get(`/places/tiles/${manifest.tiles[12][gzKey]}/12/${gzKey}`, { Origin: 'https://localhost' });
+    assert.equal(leaf.status, 200);
+    assert.equal(leaf.headers.get('cache-control'), 'private, max-age=31536000, immutable');
+    assert.equal(leaf.headers.get('access-control-allow-origin'), 'https://localhost', '明细瓦片不走公共缓存');
+    const leafBody = await leaf.json();
+    assert.deepEqual(leafBody.fields, placeTiles.LEAF_FIELDS);
+    assert.deepEqual(leafBody.rows.map((row) => row[0]), [1, 2, 3]);
+    const first = Object.fromEntries(leafBody.fields.map((field, i) => [field, leafBody.rows[0][i]]));
+    assert.equal(first.name, '鱼粥');
+    assert.equal(first.rating_average, 1);
+    assert.ok(!JSON.stringify(leafBody).includes('很长的描述'), '描述等详情不在瓦片里');
+    // fetch 带 If-None-Match 时会自动加 Cache-Control: no-cache，这里用原始 http 请求
+    const etag = leaf.headers.get('etag');
+    const conditional = await new Promise((resolve, reject) => {
+        const request = require('node:http').request(`${base}/places/tiles/${manifest.tiles[12][gzKey]}/12/${gzKey}`, { headers: { 'If-None-Match': etag } }, (response) => {
+            response.resume();
+            response.on('end', () => resolve(response.statusCode));
+        });
+        request.on('error', reject);
+        request.end();
+    });
+    assert.equal(conditional, 304);
+
+    // ---- 哈希对不上：302 到当前哈希（相对地址，保留票据参数）；没有的瓦片 404 ----
+    const stale = await get(`/places/tiles/000000000000/12/${gzKey}?t=abc`);
+    assert.equal(stale.status, 302);
+    assert.equal(stale.headers.get('location'), `../../../${manifest.tiles[12][gzKey]}/12/${gzKey}?t=abc`);
+    assert.equal(stale.headers.get('cache-control'), 'no-store');
+    const staleDict = await get('/places/tiles/000000000000/dict');
+    assert.equal(staleDict.status, 302);
+    assert.equal(staleDict.headers.get('location'), `../${manifest.dict}/dict`);
+    const missing = await get(`/places/tiles/${manifest.tiles[12][gzKey]}/12/1/1`);
+    assert.equal(missing.status, 404);
+    assert.equal(missing.headers.get('cache-control'), 'no-store');
+    assert.equal((await get(`/places/tiles/${manifest.dict}/11/1/1`)).status, 404, '不是约定的级别');
+
+    // ---- 明细瓦片限流：游客按 IP，票据认出账号；票据坏了按游客 ----
+    process.env.ANTI_SCRAPE_MODE = 'enforce';
+    process.env.ANTI_SCRAPE_LIMITS = JSON.stringify({ tiles: { guest: [{ distinct: true, limit: 1, per: 'day' }], user: [{ distinct: true, limit: 2, per: 'day' }] } });
+    resetForTesting();
+    const leafUrl = (key, query = '') => `/places/tiles/${manifest.tiles[12][key]}/12/${key}${query}`;
+    const [keyA, keyB] = leafKeys;
+    const guestHeaders = { 'X-Forwarded-For': '192.0.2.5' };
+    assert.equal((await get(leafUrl(keyA), guestHeaders)).status, 200);
+    assert.equal((await get(leafUrl(keyA), guestHeaders)).status, 200, '同一块再拉不扣额度');
+    const guestLimited = await get(leafUrl(keyB), guestHeaders);
+    assert.equal(guestLimited.status, 429);
+    assert.equal((await guestLimited.json()).code, 'rate_limited');
+    const ticketResponse = await get('/places/tiles/ticket', { Authorization: bearer('viewer') });
+    assert.equal(ticketResponse.status, 200);
+    assert.equal(ticketResponse.headers.get('cache-control'), 'no-store');
+    const { ticket, expires_at } = await ticketResponse.json();
+    assert.ok(expires_at > Date.now());
+    assert.equal((await get('/places/tiles/ticket')).status, 401, '票据要登录');
+    assert.equal((await get(leafUrl(keyB, `?t=${encodeURIComponent(ticket)}`), guestHeaders)).status, 200, '票据按账号计额度');
+    assert.equal((await get(leafUrl(keyB, `?t=${encodeURIComponent(ticket)}x`), guestHeaders)).status, 429, '票据被改过按游客');
+    assert.equal(placeTiles.verifyTicket(ticket).id, 'viewer');
+    assert.equal(placeTiles.verifyTicket(ticket, expires_at + 1), null, '过期的票据无效');
+    // 聚合瓦片不限流
+    for (let i = 0; i < 3; i += 1) assert.equal((await get(`/places/tiles/${manifest.tiles[8][Object.keys(manifest.tiles[8])[0]]}/8/${Object.keys(manifest.tiles[8])[0]}`, guestHeaders)).status, 200);
+    process.env.ANTI_SCRAPE_MODE = 'observe';
+    delete process.env.ANTI_SCRAPE_LIMITS;
+    resetForTesting();
+
+    // ---- 内容寻址：新增一家店只换它所在的瓦片（每级一块）和字典 ----
+    insert.run(7, '新粥铺', '粥', 23.1292, 113.2645, 18, 'owner', 'visible');
+    placeTiles.invalidateTileSnapshot();
+    const next = await (await get('/places/tiles/manifest')).json();
+    assert.notEqual(next.version, manifest.version);
+    let changed = 0;
+    for (const z of Object.keys(manifest.tiles)) {
+        for (const [key, hash] of Object.entries(manifest.tiles[z])) if (next.tiles[z][key] !== hash) changed += 1;
+    }
+    assert.equal(changed, 4, '只有广州那一片的四块瓦片变了');
+    assert.equal(next.dict, manifest.dict, '没有新标签，字典不变');
+    placeTiles.invalidateTileSnapshot();
+    assert.equal((await (await get('/places/tiles/manifest')).json()).generated_at, next.generated_at, '内容不变时清单不变');
+
+    // ---- 第 1 阶段：GET /places 停用；/nearby 大范围只给评价最多的几家；旧快照可关 ----
+    const root = await get('/places');
+    assert.equal(root.status, 410);
+    process.env.NEARBY_LARGE_AREA_ROWS = '2';
+    const large = await (await get('/places/nearby?minLng=100&minLat=20&maxLng=120&maxLat=40')).json();
+    assert.equal(large.length, 2, '大范围只给少量');
+    const small = await (await get('/places/nearby?minLng=113.2&minLat=23.1&maxLng=113.3&maxLat=23.2')).json();
+    assert.deepEqual(small.map((place) => place.id).sort((a, b) => a - b), [1, 2, 3, 7], '小范围照旧给完整行');
+    assert.equal(small.find((place) => place.id === 1).description, '很长的描述');
+    delete process.env.NEARBY_LARGE_AREA_ROWS;
+    process.env.LEGACY_MARKER_SNAPSHOT = 'off';
+    const legacy = await get('/places/markers');
+    assert.equal(legacy.status, 410);
+    assert.equal(legacy.headers.get('cache-control'), 'no-store');
+    delete process.env.LEGACY_MARKER_SNAPSHOT;
+    assert.equal((await get('/places/markers')).status, 200, '默认仍给旧版 App');
+
+    // ---- 单店接口按去重地点数限流 ----
+    process.env.ANTI_SCRAPE_MODE = 'enforce';
+    process.env.ANTI_SCRAPE_LIMITS = JSON.stringify({ detail: { guest: [{ distinct: true, limit: 1, per: 'day' }], user: [{ distinct: true, limit: 5, per: 'day' }] } });
+    resetForTesting();
+    const detailHeaders = { 'X-Forwarded-For': '192.0.2.77' };
+    assert.equal((await get('/places/1', detailHeaders)).status, 200);
+    assert.equal((await get('/places/1', detailHeaders)).status, 200);
+    assert.equal((await get('/places/2', detailHeaders)).status, 429);
+    assert.equal((await get('/places/2', { ...detailHeaders, Authorization: bearer('viewer') })).status, 200, '登录后按账号');
+
+    console.log('Place tiles passed: aggregate tiles without ids/names, counts per level, dictionary and anonymous rows, public/private cache headers, hash redirects and 404, leaf limits with tickets, content-addressed changes, /places 410, nearby cap, legacy snapshot switch, detail limit.');
+}
+
+main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
+    delete process.env.ANTI_SCRAPE_LIMITS;
+    if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+    db._raw.close();
+    fs.rmSync(temp, { recursive: true, force: true });
+});

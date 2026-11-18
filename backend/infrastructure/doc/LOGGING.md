@@ -41,8 +41,9 @@ npm run logs -- --level error --limit 200 --json
 - 提前断开的连接以及超过 `LOG_SLOW_REQUEST_MS` 的慢请求。
 - SQLite 查询错误、超过 `DB_SLOW_QUERY_MS` 的慢查询，以及高德代理故障。
 - 登录前端失败阶段事件 `auth.client.stage`；正常阶段只在 `LOG_LEVEL=debug` 时记录。
+- 数据访问限流（[说明](../../http/doc/README.md#数据访问限流)）：`anti_scrape.would_limit`（observe 模式下本该拦的）、`anti_scrape.limited`（enforce 模式下拦了的），带策略、主体（`u:<id>` 或 IP 段）、计数与额度，同一主体同一规则十分钟记一次。汇总用 `npm run scrape:report`。
 
-正常请求默认只写一条完成日志；错误只进入 `error-*`，不会再在 `app-*` 中重复。每条请求日志都带 IP 和（已知时的）源端口，完成鉴权后还会自动带用户 UUID。
+正常请求默认只写一条完成日志；错误只进入 `error-*`，不会再在 `app-*` 中重复。每条请求日志都带 IP 和（已知时的）源端口，认出用户后还会自动带用户 UUID：必须登录的接口（`requireAuth`）、可选登录的接口（`attachViewer`：地点详情、列表、搜索、住民地点等）和带票据的地图明细瓦片都算，2026-11-18 之前可选登录的请求只有 IP。地图明细瓦片的票据参数 `t` 与坐标、搜索词一样在路径里打码。
 
 ## 客户端源端口
 

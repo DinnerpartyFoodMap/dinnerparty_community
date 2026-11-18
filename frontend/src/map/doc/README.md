@@ -24,7 +24,14 @@ iOS 原生底图（2026-11-17）：iOS App 的主地图（不是选点器）用 
 
 导航（MapUI 的导航选择面板、MapView 处理的 `nav=amap` 分享链接）里的高德链接由 `amapNavigation.js` 生成（纳入 `test:map`）：`uri.amap.com` 不是 Universal Link / App Link，所以 App 内直接用高德 scheme（iOS `iosamap://path`，Android `amapuri://route/plan/`，坐标本来就是 GCJ-02，`dev=0`），没装高德时 `openExternal` 的 `fallbackUrl` 改开网页版；网页端（以及后端分享页 `placeShare.js`）用 `uri.amap.com` 加 `callnative=1`，由高德网页尝试唤起 App。只直接打开、不用 `canOpenUrl` 探测，所以 iOS 不需要 `LSApplicationQueriesSchemes`，Android 也不需要在 `<queries>` 里登记。
 
-MapView.jsx 是旧 src/Map.jsx，仍是地图协调者；MapUI.jsx 负责地图 UI 与面板编排，二者尚未拆完。标记数据（`markerSnapshot.js`，纳入 `test:map`）与视野无关：公共快照 `GET /places/markers`（全部公开地点的精简字段，CDN 与浏览器可缓存，请求不带 token、App 里不发预检）在启动时（`main.jsx`）与高德 SDK 并行读取，上一份存在 IndexedDB（`platform/cacheStore.js`）先画出来；登录后再读个人叠加 `GET /places/overlay`（自己审核中的地点、屏蔽的住民的地点 id）。所有地图实例（首页、全屏选点）共用一份快照来源；平移缩放不发请求，快照超过 5 分钟才在地图移动时后台刷新，失败后 15 秒内不重试，一份数据都没有时才提示加载失败。快照里的地点带 `marker_only`，打开卡片时 MapView 的 `ensurePlaceDetail` 读 `GET /places/:id` 补全描述、图片、创建者（同一地点同时只请求一次，一分钟内复用）；打开编辑、选点交给饭局 / 日记 / 海报前先等补全，补全失败不打开编辑（否则保存会清空描述和图片）。新增、修改、删除和评价汇总在本地立即生效（`MarkerSnapshotStore` 的本地修改），直到快照追上（标记字段一致、删除的地点已不在快照里），最多 10 分钟；CDN 上的快照最多晚一两分钟，这段时间靠它。换账号时叠加、本地修改与补全过的详情一起作废。旧版 App 仍用 `/places/nearby`，后端保持不变。
+MapView.jsx 是旧 src/Map.jsx，仍是地图协调者；MapUI.jsx 负责地图 UI 与面板编排，二者尚未拆完。标记数据（`markerTiles.js`，纳入 `test:map`）用分层瓦片（2026-11-18 起，防爬：没有哪个请求能一次拿到全部店名和坐标；后端见 [地点模块](../../../../backend/modules/places/doc/README.md#分层瓦片)）：
+
+- 共享的 `MarkerTileSource`（一个后端地址一份，首页地图与全屏选点共用）：启动时（`main.jsx`）与高德 SDK 并行读清单 `GET /places/tiles/manifest` 和字典，上一份存在 IndexedDB（`platform/cacheStore.js`）先用；瓦片按内容哈希取（内存 → IndexedDB → 网络），清单、字典和聚合瓦片的请求不带任何头（CDN 一份、App 里不发预检）。明细瓦片登录后带 `GET /places/tiles/ticket` 发的票据（`?t=`，不带 `Authorization`）；回 429 时当天不再请求明细、提示一次（游客提示登录）。清单超过 5 分钟才在地图移动时后台刷新，失败后 15 秒内不重试，一份数据都没有时才提示加载失败。
+- 每个地图一份的 `MarkerTileStore`：移动结束时（`loadPlaces` 的 `syncMarkerView`）按逻辑缩放选级：z0–7 / z8–10 / z11–12 用三级聚合瓦片（视野加 35% 缓冲），z13 起用视野内的 z12 明细瓦片。聚合瓦片的每一行展开成没有店名和 id 的匿名点（`aggregate: true`，key 为 `agg:<格子级>/<x>/<y>#<序号>`，同一格坐标相同），交给现有聚合引擎就成了一个聚合点；`placeFilter.js` 的筛选照常作用在匿名点的标签、人均、地区上；图标类型由后端算好（`placeGlyphKind` 读 `glyph`）。换级时等新一级要用的瓦片到齐（最多 1.5 秒）再整体切换，不闪空；换级时成员 key 对不上，转场是短渐变，同一级里缩放照常合并 / 拆分。明细瓦片缺的块（还没到、超额、失败）用城市级聚合里落在这块里的匿名点顶上。
+- 点匿名点或全由匿名点组成的聚合：放大到下一级（`nextBandZoom`），要到街区级时先预取那里的明细瓦片；已经在街区级还是匿名点，说明那块明细拿不到，只提示。匿名点不进"此处有 N 家店"列表。
+- 预取明细瓦片（只在附近模式，每次最多 2 块、同时在飞最多 2 个、`priority: 'low'`，省流量模式 / 2G / 超额时不预取，预取同样计入服务端额度）：停在 z12 以上的城市级时取视野中心；放大过程中越过 z12.3（`mapmove` / `zoomchange`，原生底图没有 `zoomstart`）取视野中心；点聚合时取目标；打开某家店（`showPopup`）时取它所在的那块。
+
+明细瓦片里的地点带 `marker_only`，打开卡片时 MapView 的 `ensurePlaceDetail` 读 `GET /places/:id` 补全描述、图片、创建者（同一地点同时只请求一次，一分钟内复用；回 429 时提示一次）；打开编辑、选点交给饭局 / 日记 / 海报前先等补全，补全失败不打开编辑（否则保存会清空描述和图片）。登录后再读个人叠加 `GET /places/overlay`：自己审核中的地点各级都显示，屏蔽的住民的地点在明细级去掉（聚合级的店数不扣，聚合级不显示任何店名）。新增、修改、删除和评价汇总在明细级本地立即生效，直到明细瓦片追上（标记字段一致）或 10 分钟；聚合级不叠加本地修改。换账号时叠加、本地修改、票据与补全过的详情一起作废。旧版 App 仍用 `/places/markers` 或 `/places/nearby`（后端限量、限流）。
 
 MarkerLayerController、markerContent 与 cluster 下引擎/快照/转场负责标记；单个地点的图标由 `markerContent.js` 的 `placeGlyphKind` 决定：避雷用避雷图，“待探索”且还没人评价用 `src/img/unverified.png`（问号），地图上显示的高德未收录地点（可创建）用 `src/img/add.png`，展会地点与其余地点用普通图标；读屏标签随之加后缀。默认聚合图使用 `src/img/union.png`（白底蓝边水滴形），CSS 按素材的可见边界裁去透明留白，数量居于图形的 50%、35% 位置；皮肤聚合图沿用完整画布与原有默认数字位置，加载失败后回退到新默认图。viewport、pinchGuard、overseasTileLayer 各自处理视口、手势与境外底图（iOS 原生底图不用后两个）。MapPanel/MapAnchoredCard 是地图布局容器，不是通用页面组件。locationReport 记下最近一次定位，按最新登录状态上报 `PUT /users/me/location`（QQ Bot `!随机` 的中心），App 启动时的自动定位早于登录恢复时在登录后补报。启动自动定位在 Android 只用已授予的定位权限（`prompt: false`，没有权限时静默跳过、不弹系统授权，应用市场隐私检测要求），iOS 仍会在首次启动请求授权；没有权限时由定位按钮申请，Android 申请时顶部显示用途说明（见 [平台文档](../../platform/doc/README.md)）。
 
@@ -32,8 +39,10 @@ MarkerLayerController、markerContent 与 cluster 下引擎/快照/转场负责�
 flowchart TD
     Mount[地图容器挂载] --> SDK[订阅 SDK 状态并创建 AMap]
     SDK --> Setup[建立标记控制器 / 海外底图 / 事件]
-    Boot[启动 main.jsx] --> Snapshot[读本机快照 + 请求公共快照 /places/markers]
-    Snapshot --> Store[MarkerSnapshotStore 合并快照 / 个人叠加 / 本地修改]
+    Boot[启动 main.jsx] --> Manifest[读本机清单 + 请求 /places/tiles/manifest 与字典]
+    Manifest --> Source[MarkerTileSource 按哈希取瓦片]
+    View[移动结束 / 预取] --> Store[MarkerTileStore 按缩放选级 / 拼匿名点或明细 / 个人叠加 / 本地修改]
+    Source --> Store
     Overlay[登录后 /places/overlay] --> Store
     Local[新增 / 修改 / 删除 / 评价] --> Store
     Setup --> Render[当前模式的地点列表]
@@ -42,13 +51,13 @@ flowchart TD
     Cluster --> Markers[统一标记内容 / 点击 / 卡片锚点]
     Select[打开卡片] --> Detail[marker_only 时读 /places/:id 补全]
     Detail --> Business[places / discovery / journey]
-    Business --> Patch[本地修改立即生效 直到快照追上]
+    Business --> Patch[本地修改立即生效 直到明细瓦片追上]
     Leave[地图卸载] --> Cleanup[销毁地图 / 监听 / 控制器与定位资源]
 ```
 
 | 当前实现 | 对照 |
 | --- | --- |
-| 一份公共快照 + 个人叠加 + 本地修改 | 按视野请求的 URL 每次不同、带 token，CDN 无法缓存；平移就要回源。全量快照与视野无关，地点到两三万个以内都够用，再多可按固定网格拆分 |
+| 分层瓦片（聚合不带店名和 id）+ 筛选在前端 + 个人叠加 + 本地修改 | 整份快照一个请求就能被拿走；按视野带筛选现查（Zillow、Redfin 的做法）CDN 无法缓存；服务端按级聚合再把筛选放进 URL，302 个标签的组合会把缓存切碎。瓦片和筛选分开（deck.gl、搜索引擎位图分面的思路），聚合格子里放匿名行，筛选不碎缓存、也给不出 id |
 | 引擎/快照/转场分离 | 直接在 React 列表逐点管理难维护现有聚合成员与动画中断不变量 |
 | 海外 tile overlay 与 SDK 分工 | CARTO 是配置可选覆盖，不替换国内坐标和高德区域判断 |
 | MapView/MapUI 继续协调 | 本轮先归位地点与发现面板，状态拆分见 MAP-01，不假定文件移动已解除耦合 |

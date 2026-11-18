@@ -163,6 +163,32 @@ async function main() {
         assert.equal(paraphrased.recommendations[0].reason, noEvidence.recommendations[0].reason, 'a paraphrased excerpt falls back to the template without a quote');
         assert.ok(!paraphrased.recommendations[0].reason.includes('拍照好看'), 'model wording never reaches the sentence');
 
+        // DSC-C10: with a map center the candidates are every place within the radius, not the
+        // nationwide top 200. 250 exact matches in Beijing used to push the only nearby
+        // noodle shop (cosine 0.9, rank 252) out of the candidates, so a sparse city got nothing.
+        const insertPlace = db._raw.prepare(`INSERT INTO Place (name, category, description, per_person_cost, latitude, longitude)
+                                             VALUES (?, ?, ?, ?, ?, ?)`);
+        const insertVector = db._raw.prepare('INSERT INTO place_vectors(place_id, embedding) VALUES (?, ?)');
+        db._raw.transaction(() => {
+            for (let index = 0; index < 250; index += 1) {
+                const id = insertPlace.run(`北京面馆${index}`, '面馆', '手擀面', 20, 39.9042, 116.4074).lastInsertRowid;
+                insertVector.run(BigInt(id), Buffer.from(new Float32Array(queryVector).buffer));
+            }
+        })();
+        const nearbyVector = queryVector.map((_, index) => (index === 0 ? 0.9 : index === 1 ? Math.sqrt(1 - 0.81) : 0));
+        const noodleId = Number(insertPlace.run('巷口面馆', '面馆', '现拉的牛肉面，汤是牛骨熬的', 18, 23.138, 113.2644).lastInsertRowid);
+        insertVector.run(BigInt(noodleId), Buffer.from(new Float32Array(nearbyVector).buffer));
+        deepseekMode = 'ok';
+        deepseekContent = JSON.stringify({ recommendations: [{ name: '巷口面馆', relevant: true, confidence: 0.8, evidence: '' }] });
+        const sparseCity = await searchSemanticPlaces('附近吃碗面', {
+            center: { lat: 23.1291, lng: 113.2644 },
+            bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
+        });
+        const reviewedNames = JSON.parse(lastChatPayload.messages[1].content).recommended_places.map((place) => place.name);
+        assert.ok(reviewedNames.includes('巷口面馆') && reviewedNames.length <= 8, 'the nearby shop reaches the review, at most eight are reviewed');
+        assert.ok(!reviewedNames.some((name) => name.startsWith('北京面馆')), 'places outside the radius are never candidates');
+        assert.deepEqual(sparseCity.recommendations.map((item) => item.place.id), [noodleId]);
+
         console.log(JSON.stringify({ status: result.status, reviewSource: result.recommendations[0].review_source, quotedReason: quoted.recommendations[0].reason }));
     } finally {
         console.warn = originalWarn;

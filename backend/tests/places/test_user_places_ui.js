@@ -38,7 +38,7 @@ async function main() {
     const app = express();
     app.use(express.json());
     app.use('/users', require('../../modules/accounts/routes/users'));
-    app.use('/places', require('../../modules/places/routes/places'));
+    app.use('/places/tiles', require('../../modules/places/routes/placeTiles'));app.use('/places', require('../../modules/places/routes/places'));
     app.use('/api/favorites', require('../../modules/preferences/routes/favorites'));
     app.use('/api/ratings', require('../../modules/ratings/routes/placeRatings'));
     const frontend = path.resolve(__dirname, '../../../frontend');

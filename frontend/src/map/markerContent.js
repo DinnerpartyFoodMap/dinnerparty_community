@@ -43,6 +43,8 @@ export function isThunderPlace(place) {
  */
 export function placeGlyphKind(place) {
     if (!place) return 'place';
+    // 聚合瓦片的匿名点：图标类型由后端按评价算好（markerTiles.js），没有评价字段可算
+    if (place.aggregate) return place.glyph || 'place';
     if (place.isMarked === false) return place.exhibitionVenue ? 'place' : 'add';
     if (isAvoidedPlace(place)) return 'avoid';
     if (isUnexploredPlace(place)) return 'unexplored';

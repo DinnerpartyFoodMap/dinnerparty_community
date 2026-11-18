@@ -38,6 +38,15 @@ async function main() {
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
     app.get('/__logging_failure', (req, res, next) => next(new Error('expected request failure')));
+    // 可选登录（attachViewer）与明细瓦片票据（req.rateSubject）认出的用户也要进请求日志，用来按住民追溯数据访问
+    app.get('/__logging_viewer', require('../../modules/accounts/middleware/auth').attachViewer, (req, res) => {
+        logger.warn('Viewer probe', { event: 'test.viewer.context' });
+        res.json({ viewer: req.viewer?.id || null });
+    });
+    app.get('/__logging_ticket', (req, res) => {
+        req.rateSubject = { id: 'ticket-user-123', admin_level: 0 };
+        res.json({ ok: true });
+    });
     app.use('/users', usersRouter);
     app.use(notFoundHandler);
     app.use(errorHandler);
@@ -82,6 +91,13 @@ async function main() {
         const meBody = await meResponse.json();
         assert.strictEqual(meResponse.status, 200, JSON.stringify(meBody));
         assert.strictEqual(meBody.user.id, testUserId);
+
+        const viewerResponse = await fetch(`http://127.0.0.1:${port}/__logging_viewer`, {
+            headers: { Authorization: `Bearer ${validLoginBody.token}`, 'X-Request-ID': 'viewer-test-12345678' }
+        });
+        assert.strictEqual((await viewerResponse.json()).viewer, testUserId);
+        await fetch(`http://127.0.0.1:${port}/__logging_viewer`, { headers: { 'X-Request-ID': 'guest-test-123456789' } });
+        await fetch(`http://127.0.0.1:${port}/__logging_ticket?t=secret-ticket-value`, { headers: { 'X-Request-ID': 'ticket-test-12345678' } });
 
         const failureRequestId = 'failure-test-12345678';
         const failureResponse = await fetch(`http://127.0.0.1:${port}/__logging_failure`, {
@@ -156,6 +172,12 @@ async function main() {
         assert.strictEqual(completedFor('port-unknown-12345678').port, undefined, 'the proxy port must not pass as the client port');
         assert.ok(entries.find((entry) => entry.event === 'auth.login.succeeded' && entry.userId === testUserId).port,
             'login event lost the client port');
+        assert.strictEqual(completedFor('viewer-test-12345678').userId, testUserId, 'optional-auth request lost the viewer UUID');
+        assert.strictEqual(entries.find((entry) => entry.event === 'test.viewer.context' && entry.requestId === 'viewer-test-12345678').userId, testUserId,
+            'logs written during an optional-auth request lost the viewer UUID');
+        assert.strictEqual(completedFor('guest-test-123456789').userId, undefined, 'a guest must not get a user UUID');
+        assert.strictEqual(completedFor('ticket-test-12345678').userId, 'ticket-user-123', 'tile-ticket request lost the ticket user');
+        assert.ok(!contents.includes('secret-ticket-value'), 'tile ticket leaked into logs');
         const failureEntries = entries.filter((entry) => entry.requestId === failureRequestId);
         assert.strictEqual(
             failureEntries.filter((entry) => entry.level === 'error').length,

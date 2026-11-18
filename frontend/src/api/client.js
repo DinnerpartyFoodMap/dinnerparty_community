@@ -1,10 +1,4 @@
 import { t } from '../i18n/index.js';
-export async function fetchPlaces(backendUrl) {
-    const res = await fetch(`${backendUrl}/places`);
-    if (!res.ok) throw new Error(`Failed to fetch places: ${res.status}`);
-    return res.json();
-}
-
 export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { signal, token, radiusKm } = {}) {
     const params = new URLSearchParams({ lat: String(center.lat), lng: String(center.lng) });
     if (radiusKm !== undefined) params.set('radiusKm', String(radiusKm));
@@ -23,7 +17,7 @@ export async function fetchRandomPlace(backendUrl, center, excludedIds = [], { s
 // 带 token 时结果包含自己新增、还在审核中的地点（其他人看不到）；token 无效时后端按游客返回
 const authHeaders = (token) => (token ? { headers: { Authorization: `Bearer ${token}` } } : {});
 
-// 地图标记的个人部分（与公共快照 GET /places/markers 合用，见 map/markerSnapshot.js）：
+// 地图标记的个人部分（与分层瓦片 GET /places/tiles/* 合用，见 map/markerTiles.js）：
 // 自己审核中 / 未通过的地点与屏蔽的住民的地点 id；游客不调用
 export async function fetchPlaceOverlay(backendUrl, token, { signal } = {}) {
     const res = await fetch(`${backendUrl}/places/overlay`, { signal, cache: 'no-store', ...authHeaders(token) });

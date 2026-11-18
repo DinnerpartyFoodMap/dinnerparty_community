@@ -2,6 +2,7 @@ const express = require('express');
 const { performance } = require('perf_hooks');
 const { fastSearch } = require('../services/placeSearch');
 const { attachViewer, requireAuth } = require('../../accounts/middleware/auth');
+const { rateLimit } = require('../../../http/middleware/rateLimit');
 const {
     searchSemanticPlaces,
     normalizeCenter,
@@ -53,10 +54,10 @@ function consumeAiRateLimit(req) {
 }
 
 // Request A: local keyword relevance + proximity ranking; no AI calls.
-router.get('/places/search/fast', attachViewer, sendFastSearch);
+router.get('/places/search/fast', attachViewer, rateLimit('search'), sendFastSearch);
 
 // Backward-compatible alias used by older clients and live suggestions.
-router.get('/places/search', attachViewer, sendFastSearch);
+router.get('/places/search', attachViewer, rateLimit('search'), sendFastSearch);
 
 // Request B: embedding -> sqlite-vec KNN -> DeepSeek relevance review -> fixed-template reasons.
 // 需要登录；模型只判断相关性并逐字摘店铺介绍，推荐语由固定模板拼成（services/recommendationReason.js），不是 AI 生成内容。

@@ -19,7 +19,7 @@ async function main(){
  assert.ok(many.every(p=>p.rating_count===1&&p.rating_average===4&&p.rating_estimate===null),'legacy/default aggregate votes remain available for every marker');
  const few=await get('/places/nearby?minLng=113&maxLng=113.025&minLat=22&maxLat=24');assert.equal(few.length,2);assert.equal(projected.length,1);assert.equal(few[0].rating_estimate.average,3.5);
  const detail=await get('/places/1');assert.equal(detail.rating_estimate.average,3.5);assert.deepEqual(projected.at(-1),[1],'selected-place details still load model scores');
- process.env.MAP_EAGER_RATING_LIMIT='0';const all=await get('/places');assert.equal(all.length,3);assert.equal(projected.length,2);
+ process.env.MAP_EAGER_RATING_LIMIT='0';const all=await get('/places/nearby?minLng=113&maxLng=113.05&minLat=22.9&maxLat=23.1');assert.equal(all.length,3);assert.equal(projected.length,2);
  await get('/places/1');assert.equal(projected.length,3,'zero map limit does not defer detail scores');
  process.env.MAP_EAGER_RATING_LIMIT='2';
  const scoped=await get('/places/nearby?minLng=113&maxLng=114&minLat=22&maxLat=24&viewMinLng=113&viewMaxLng=113.025&viewMinLat=22&viewMaxLat=24');

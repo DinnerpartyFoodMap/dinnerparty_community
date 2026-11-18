@@ -50,8 +50,8 @@ function ConfigErrorScreen({ errors }) {
 const root = createRoot(document.getElementById("root"));
 
 async function startApplication() {
-    const [{ default: App }, { initPlatform }, { loadAmap }, { prefetchMarkerSnapshot }] = await Promise.all([
-        import('./app/App.jsx'), import('./platform/nativeShell.js'), import('./platform/amapLoader.js'), import('./map/markerSnapshot.js')
+    const [{ default: App }, { initPlatform }, { loadAmap }, { prefetchMarkerTiles }] = await Promise.all([
+        import('./app/App.jsx'), import('./platform/nativeShell.js'), import('./platform/amapLoader.js'), import('./map/markerTiles.js')
     ]);
     const config = getRuntimeConfig();
     if (config.errors.length) {
@@ -64,8 +64,8 @@ async function startApplication() {
     });
     initPlatform();
     loadAmap().catch((error) => console.warn('地图 SDK 首次加载失败', error));
-    // 地图标记快照与高德 SDK 并行加载（本机上一份先用），地图建好时标记多半已经到了
-    prefetchMarkerSnapshot(config.apiBaseUrl);
+    // 地图标记的瓦片清单与字典和高德 SDK 并行加载（本机上一份先用），地图建好时就能按视野拉瓦片
+    prefetchMarkerTiles(config.apiBaseUrl);
     root.render(<App />);
 }
 
