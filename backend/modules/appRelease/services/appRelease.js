@@ -5,10 +5,10 @@ const { backendPath } = require('../../../infrastructure/paths');
 // App 更新检查与安卓安装包下载（见 ../doc/README.md）。发版信息是服务器本地的 JSON（默认 backend/app-release/release.json，
 // 可用 APP_RELEASE_DIR 改目录），改了即时生效、不用重启：
 //   { "android": { "build": 24, "version": "2.2.4", "notes": "更新说明", "file": "dinnerparty-2.2.4.apk" },
-//     "ios":     { "build": 24, "version": "2.2.4", "notes": "更新说明", "url": "https://testflight.apple.com/join/..." } }
+//     "ios":     { "build": 24, "version": "2.2.4", "notes": "更新说明", "url": "https://apps.apple.com/app/id6823438886" } }
 // 客户端拿自己的构建号（Android versionCode / iOS CFBundleVersion）与 build 比较，小于它就提示更新。
 const PLATFORMS = Object.freeze(['android', 'ios']);
-const DEFAULT_IOS_URL = 'https://testflight.apple.com/join/9wshzYCG';
+const DEFAULT_IOS_URL = 'https://apps.apple.com/app/id6823438886';
 const MAX_NOTES = 2000;
 
 function releaseDir() {

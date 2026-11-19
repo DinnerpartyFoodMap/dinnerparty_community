@@ -10,7 +10,7 @@ App（Android / iOS）启动时请求 `GET /api/app/release`，拿自己的构�
 | `version` | 展示用版本号 |
 | `notes` | 更新说明，按原样分行显示 |
 | `android.file` | 同目录里的 `.apk` 文件名（只能是文件名）；`GET /api/app/android/latest.apk` 跳到它 |
-| `ios.url` | TestFlight / App Store 链接（https），缺省为当前 TestFlight 邀请链接 |
+| `ios.url` | iOS 下载链接（https），缺省为正式 App Store 地址 `https://apps.apple.com/app/id6823438886`；公开主页仅采用 App Store 地址，旧 TestFlight 配置会回退到正式商店 |
 
 `/home` 下载页（`frontend/home/`）用同一接口决定安卓按钮是否可点。安装包与 `release.json` 被 `.gitignore` 排除，只在服务器本地。
 

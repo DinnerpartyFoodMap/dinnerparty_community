@@ -1,8 +1,31 @@
 {
-  "documentTitle": "下载 App · 东方饭联地图",
-  "eyebrow": "DINNERPARTY FOOD MAP",
+  "documentTitle": "东方饭联地图 · 好味道，就在身边",
+  "eyebrow": "由同好共建的美食地图 / FOOD & COMMUNITY",
   "title": "东方饭联地图",
-  "lead": "发现、收录和评价身边的好味道。下载 App，或直接打开网页版。",
+  "lead": "跟随幽幽子一起，探索身边的宝藏美食。",
+  "skipLink": "跳转到主要内容",
+  "nav": { "label": "主页导航", "explore": "认识饭联", "download": "获取 App", "web": "打开地图" },
+  "hero": {
+    "lineOne": "好味道，", "lineTwo": "就在身边。", "cta": "开始探索地图", "download": "下载移动端"
+  },
+  "artwork": { "heading": "A TASTE OF EVERYDAY", "caption": "在这里，遇见下一餐。", "tag": "EXPLORE YOUR NEXT BITE" },
+  "explore": {
+    "eyebrow": "THE MAP WE BUILD / 大家共建的地图", "title": "从一顿饭，开始。",
+    "body": "跟着同好的足迹探索，或者让你的发现，成为别人的下一站。"
+  },
+  "features": {
+    "discover": { "title": "发现附近的好味道", "body": "打开地图，看看身边有哪些值得一试的小店。熟悉的城市，也可以有新的发现。" },
+    "contribute": { "title": "标记珍贵的宝藏店", "body": "收录你喜欢的店铺，为地图添上一个新坐标。你的日常，可以是同好的惊喜。" },
+    "connect": { "title": "让每份体验有回响", "body": "留下评价，分享真实的用餐感受。让下一个路过这里的人，多一份选择的参考。" }
+  },
+  "manifesto": {
+    "eyebrow": "GOOD FOOD, SHARED.", "lineOne": "地图上的一个点，", "lineTwo": "是生活里的一顿好饭。",
+    "body": "东方饭联地图，由同好一点点标记而成。让每一份认真吃饭的心情，都有迹可循。"
+  },
+  "download": {
+    "eyebrow": "TAKE IT WITH YOU / 带上地图出发", "title": "下一餐，一起去。",
+    "recommended": "适合当前设备", "available": "选择你的打开方式"
+  },
   "actionsLabel": "下载与打开方式",
   "inAppNotice": "点击右上角选择在浏览器中打开",
   "version": "最新版本 {{version}}",
@@ -13,11 +36,15 @@
   },
   "ios": {
     "title": "下载 iOS 版",
-    "detail": "通过 TestFlight 安装"
+    "detail": "在 App Store 下载",
+    "version": "App Store · 最新版本 {{version}}"
   },
   "web": {
     "title": "打开网页版",
     "detail": "无需安装，直接使用"
   },
-  "footer": "© 2026 东方饭联地图"
+  "footer": "© 2026 东方饭联地图",
+  "footerTagline": "认真吃饭，也认真分享。",
+  "backToTop": "回到顶部",
+  "legal": { "privacy": "隐私政策", "terms": "用户协议", "support": "技术支持" }
 }
