@@ -59,7 +59,7 @@ async function main(){
     };
     const openEntry=async()=>{await page.getByRole('button',{name:'打开日记入口'}).click();await page.getByRole('menu',{name:'日记'}).waitFor();await page.waitForTimeout(300);};
     const picker=page.getByTestId('fake-map-picker');
-    const stopNames=()=>top.locator('.jw-stop').evaluateAll(list=>list.map(el=>el.getAttribute('aria-label').replace(/^第 \d+ 站 /,'')));
+    const stopNames=()=>top.locator('.jw-stop').evaluateAll(list=>list.map(el=>el.getAttribute('aria-label').replace(/^第 \d+ 个地点 /,'')));
     const closeAll=async()=>{for(let i=0;i<6&&await page.locator('.jw-layer').count();i++){await page.keyboard.press('Escape');await page.waitForTimeout(250);}};
     await page.goto(`http://127.0.0.1:${server.address().port}/__journey_ui`);
     // A cold Vite instance may reload once after optimizing dependencies.
@@ -67,12 +67,12 @@ async function main(){
 
     // --- Entry sheet: quick creation and calendar, independent cancel. ---
     await openEntry();
-    assert.deepEqual(await page.locator('.jw-entry-sheet__text strong').allInnerTexts(),['快速创建','日历']);
+    assert.deepEqual(await page.locator('.jw-entry-sheet__text strong').allInnerTexts(),['写日记','日历']);
     await snap('entry-sheet-desktop');
     await page.getByRole('button',{name:'取消',exact:true}).click();
     await page.getByRole('button',{name:'打开日记入口'}).waitFor();
 
-    // --- Manual diary: edit, autosave, restore from 未完成. ---
+    // --- Manual diary: edit, autosave, restore from 草稿. ---
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();
     await top.getByRole('button',{name:'手动新建'}).click();
     await top.getByLabel('标题',{exact:true}).fill('周末的面食散步');
@@ -80,27 +80,27 @@ async function main(){
     await top.getByRole('button',{name:'＋ 在地图上添加地点'}).click();
     await picker.getByText('添加地点').waitFor();
     await picker.getByRole('button',{name:'选择测试面馆'}).click();
-    await top.locator('.jw-stop').first().getByText('已核对',{exact:true}).waitFor();
+    await top.locator('.jw-stop').first().getByText('已确认',{exact:true}).waitFor();
     for(const gone of ['确认地点无误','稍后补充','地图选点'])assert.equal(await top.locator('.jw-stop').first().getByRole('button',{name:gone,exact:true}).count(),0,`${gone} is no longer offered`);
     await top.locator('summary',{hasText:'补充信息'}).first().click();
-    await top.getByLabel('第 1 站的文字').fill('和朋友吃了一碗面，聊了很多。');
+    await top.getByLabel('第 1 个地点的文字').fill('和朋友吃了一碗面，聊了很多。');
     await top.getByRole('button',{name:'＋ 记一笔'}).click();
-    await top.getByLabel('第 1 站支出 1 金额').fill('28.50');
-    await top.getByLabel('第 1 站支出 1 说明').fill('晚饭');
+    await top.getByLabel('第 1 个地点支出 1 金额').fill('28.50');
+    await top.getByLabel('第 1 个地点支出 1 说明').fill('晚饭');
     await synced();
     assert.equal(count('Journey'),0);assert.equal(count('JourneyDraft',"user_id=? AND status='active'"),1);
     await page.reload();
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();
-    await top.getByRole('button',{name:'未完成 · 1'}).click();
-    await top.getByRole('button',{name:'继续编辑：周末的面食散步'}).click();
+    await top.getByRole('button',{name:'草稿 · 1'}).click();
+    await top.getByRole('button',{name:'继续：周末的面食散步'}).click();
     await top.locator('summary',{hasText:'补充信息'}).first().click();
-    assert.equal(await top.getByLabel('第 1 站支出 1 金额').inputValue(),'28.50');
-    assert.equal(await top.getByLabel('第 1 站的文字').inputValue(),'和朋友吃了一碗面，聊了很多。');
+    assert.equal(await top.getByLabel('第 1 个地点支出 1 金额').inputValue(),'28.50');
+    assert.equal(await top.getByLabel('第 1 个地点的文字').inputValue(),'和朋友吃了一碗面，聊了很多。');
 
     // --- Offline autosave, uncertain acknowledgements and leave protection. ---
     const draftUrl=/\/api\/journeys\/drafts\/[^/]+$/;
     await page.route(draftUrl,route=>route.request().method()==='PUT'?route.abort('failed'):route.continue());
-    await top.getByLabel('第 1 站的文字').fill('断网期间继续记录。');
+    await top.getByLabel('第 1 个地点的文字').fill('断网期间继续记录。');
     await top.getByText('同步失败，将自动重试',{exact:false}).waitFor();
     assert.equal(await page.evaluate(()=>window.__TEST_LEAVE()),false,'navigation is blocked while latest edits cannot be saved');
     await page.unroute(draftUrl);
@@ -109,11 +109,11 @@ async function main(){
     await page.evaluate(()=>window.dispatchEvent(new Event('online')));
     for(let i=0;i<20&&!draftAckLost;i++)await page.waitForTimeout(100);
     assert.equal(draftAckLost,true);
-    await top.getByLabel('第 1 站的文字').fill('响应丢失期间仍可继续补充。');
+    await top.getByLabel('第 1 个地点的文字').fill('响应丢失期间仍可继续补充。');
     await page.evaluate(()=>window.dispatchEvent(new Event('online')));
     await synced();await page.unroute(draftUrl);
-    assert.equal(await top.getByLabel('第 1 站的文字').inputValue(),'响应丢失期间仍可继续补充。');
-    await top.getByLabel('第 1 站的文字').fill('和朋友吃了一碗面，聊了很多。');
+    assert.equal(await top.getByLabel('第 1 个地点的文字').inputValue(),'响应丢失期间仍可继续补充。');
+    await top.getByLabel('第 1 个地点的文字').fill('和朋友吃了一碗面，聊了很多。');
     assert.equal(await page.evaluate(()=>window.__TEST_LEAVE()),true,'navigation flushes without waiting for debounce');
 
     // --- Private save whose acknowledgement is lost: the retry reuses the request and saves once. ---
@@ -129,7 +129,7 @@ async function main(){
     await snap('detail-private-desktop');
 
     // --- Share export stays separate from public reading and excludes private money. ---
-    await top.getByRole('button',{name:'生成分享图文'}).click();
+    await top.getByRole('button',{name:'分享',exact:true}).click();
     await top.getByRole('button',{name:'生成贴文与图片'}).click();
     await top.getByRole('list',{name:'图片页面'}).locator('img').first().waitFor();
     assert.ok(!(await top.getByLabel('贴文（可以直接修改）').inputValue()).includes('28.5'));
@@ -149,7 +149,7 @@ async function main(){
     await top.getByRole('button',{name:'修改',exact:true}).click();
     await top.getByRole('heading',{name:'修改日记'}).waitFor();
     await top.getByRole('radio',{name:'公开'}).click();
-    await top.getByText('公开 · 关联 1 个已有标记，创建 0 个新标记').waitFor();
+    await top.getByText('公开后：在地图上新增 0 个地点，关联 1 个已有地点').waitFor();
     await top.getByText('查看将公开的内容').click();
     assert.ok(!(await top.locator('.jw-public-preview').innerText()).includes('28.5'));
     await snap('review-public-preview-desktop');
@@ -215,7 +215,7 @@ async function main(){
     await closeAll();
 
     // --- Review #8: a lost material-save response is replayed, not reported as a conflict. ---
-    await openEntry();await page.getByRole('menuitem',{name:/快速创建/}).click();
+    await openEntry();await page.getByRole('menuitem',{name:/写日记/}).click();
     const composeUrl='**/api/journeys/compose-drafts/*';
     let composeAckLost=false;
     await page.route(composeUrl,async route=>{if(route.request().method()==='PUT'&&!composeAckLost){composeAckLost=true;await route.fetch();await route.abort('failed');}else await route.continue();});
@@ -223,17 +223,17 @@ async function main(){
     await top.getByText('同步失败',{exact:false}).waitFor();
     await top.getByLabel('说说这顿饭或这一天').fill('丢失响应后又补写了第二版');
     await page.evaluate(()=>window.dispatchEvent(new Event('online')));
-    await page.waitForFunction(()=>document.querySelector('[aria-label="素材保存状态"]')?.textContent.includes('已同步'));
+    await page.waitForFunction(()=>document.querySelector('[aria-label="保存状态"]')?.textContent.includes('已同步'));
     assert.equal(composeAckLost,true);assert.equal(await top.getByText('冲突待处理',{exact:false}).count(),0);
     await page.unroute(composeUrl);
     assert.equal(JSON.parse(sql.prepare("SELECT payload FROM JourneyComposeDraft WHERE user_id=? AND status='active' ORDER BY updated_at DESC").get(id).payload).text,'丢失响应后又补写了第二版');
 
     // --- Review #7: moving the pin and confirming at once saves the new coordinates without the old address. ---
-    await top.getByRole('button',{name:'设置地址（搜索中心）'}).click();
+    await top.getByRole('button',{name:'设置大概位置'}).click();
     await page.getByRole('button',{name:'在地图上选择'}).click();
-    await picker.getByText('选择搜索中心').waitFor();
+    await picker.getByText('选择大概位置').waitFor();
     await picker.getByRole('button',{name:'选图钉位置'}).click();
-    await top.getByRole('button',{name:'设置地址（搜索中心）'}).getByText('测试大学城',{exact:false}).waitFor();
+    await top.getByRole('button',{name:'设置大概位置'}).getByText('测试大学城',{exact:false}).waitFor();
     const readCenter=()=>JSON.parse(sql.prepare("SELECT payload FROM JourneyComposeDraft WHERE user_id=? AND status='active' ORDER BY updated_at DESC").get(id).payload).center;
     for(let i=0;i<30&&readCenter()?.name!=='测试大学城';i++)await page.waitForTimeout(200);
     const movedCenter=readCenter();
@@ -241,27 +241,27 @@ async function main(){
     await top.getByRole('button',{name:'返回',exact:true}).click();
 
     // --- Review #2: material saved only on this device stays reachable, even when the server list fails. ---
-    await openEntry();await page.getByRole('menuitem',{name:/快速创建/}).click();
+    await openEntry();await page.getByRole('menuitem',{name:/写日记/}).click();
     await page.route(composeUrl,route=>route.request().method()==='PUT'?route.abort('failed'):route.continue());
     await top.getByLabel('说说这顿饭或这一天').fill('只在本机保存的奶茶记录');
     await top.getByText('同步失败',{exact:false}).waitFor();
     await top.getByRole('button',{name:'返回',exact:true}).click();
     await page.route('**/api/journeys/unfinished',route=>route.abort('failed'));
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();
-    await top.getByRole('button',{name:/^未完成 · \d/}).click();
-    await top.getByText('无法读取服务器上的未完成内容',{exact:false}).waitFor();
+    await top.getByRole('button',{name:/^草稿 · \d/}).click();
+    await top.getByText('无法读取服务器上的草稿',{exact:false}).waitFor();
     await top.getByRole('button',{name:'继续：只在本机保存的奶茶记录'}).click();
     assert.equal(await top.getByLabel('说说这顿饭或这一天').inputValue(),'只在本机保存的奶茶记录');
     await page.unroute('**/api/journeys/unfinished');await page.unroute(composeUrl);
     await page.evaluate(()=>window.dispatchEvent(new Event('online')));
-    await page.waitForFunction(()=>document.querySelector('[aria-label="素材保存状态"]')?.textContent.includes('已同步'));
+    await page.waitForFunction(()=>document.querySelector('[aria-label="保存状态"]')?.textContent.includes('已同步'));
     await closeAll();
     // Keep the later counts exact: discard the probe materials.
     sql.prepare("UPDATE JourneyComposeDraft SET status='discarded',payload='{}' WHERE user_id=? AND status='active'").run(id);
 
     // --- Composer: photo queue, explicit text-only generation, one review draft, public save. ---
     const photos=await Promise.all(['#e07050','#70a0e0'].map(async(c,i)=>({name:`food${i}.jpg`,mimeType:'image/jpeg',buffer:await sharp({create:{width:480,height:320,channels:3,background:c}}).jpeg().toBuffer()})));
-    await openEntry();await page.getByRole('menuitem',{name:/快速创建/}).click();
+    await openEntry();await page.getByRole('menuitem',{name:/写日记/}).click();
     const chooser=page.waitForEvent('filechooser');
     await top.getByRole('button',{name:'添加图片'}).click();
     await page.getByRole('menuitem',{name:'从相册选择'}).click();
@@ -271,39 +271,39 @@ async function main(){
     await page.getByRole('button',{name:'前移'}).click();
     await page.getByRole('radio',{name:'菜单'}).click();
     await page.keyboard.press('Escape');
-    assert.equal(await top.getByRole('button',{name:'生成行程草稿'}).count(),0,'without vision the photo path is an explicit choice');
+    assert.equal(await top.getByRole('button',{name:'整理成日记'}).count(),0,'without vision the photo path is an explicit choice');
     await top.getByLabel('说说这顿饭或这一天').fill('晚上在测试面馆吃了招牌拌面，面很筋道。');
-    await page.waitForFunction(()=>document.querySelector('[aria-label="素材保存状态"]')?.textContent.includes('已同步'));
+    await page.waitForFunction(()=>document.querySelector('[aria-label="保存状态"]')?.textContent.includes('已同步'));
     const composeRow=sql.prepare("SELECT payload FROM JourneyComposeDraft WHERE user_id=? AND status='active'").get(id);
     const composePayload=JSON.parse(composeRow.payload);
     assert.equal(composePayload.media_ids.length,2);assert.equal(composePayload.media_notes[composePayload.media_ids[0]].kind,'menu','reordered photo keeps its tag');
     assert.equal(composePayload.intended_visibility,'public');
     await snap('composer-desktop');
-    await top.getByRole('button',{name:'仅根据描述生成'}).click();
-    await top.getByRole('heading',{name:'核对行程'}).waitFor({timeout:20000});
+    await top.getByRole('button',{name:'只根据文字整理'}).click();
+    await top.getByRole('heading',{name:'确认日记'}).waitFor({timeout:20000});
     assert.equal(count('JourneyDraft',"user_id=? AND status='active' AND compose_draft_id IS NOT NULL"),1);
-    assert.equal(await top.locator('[aria-label="本篇照片"] .jw-entry-photo').count(),2,'every photo stays with the entry');
+    assert.equal(await top.locator('[aria-label="照片"] .jw-entry-photo').count(),2,'every photo stays with the entry');
     // The quoted source sentence is shown in an editable box; unchanged text stays a source excerpt.
-    assert.equal(await top.getByLabel('第 1 站的文字').inputValue(),'晚上在测试面馆吃了招牌拌面，面很筋道。');
-    await top.locator('.jw-stop').first().getByText('原文摘录',{exact:false}).waitFor();
-    const genText=top.getByLabel('第 1 站的文字');
+    assert.equal(await top.getByLabel('第 1 个地点的文字').inputValue(),'晚上在测试面馆吃了招牌拌面，面很筋道。');
+    await top.locator('.jw-stop').first().getByText('摘自你的描述',{exact:false}).waitFor();
+    const genText=top.getByLabel('第 1 个地点的文字');
     await genText.fill('面很筋道，下次还来。');
-    await top.locator('.jw-stop').first().getByText('作者编辑',{exact:false}).waitFor();
-    await top.getByRole('button',{name:'恢复原文摘录'}).click();
+    await top.locator('.jw-stop').first().getByText('已修改',{exact:false}).waitFor();
+    await top.getByRole('button',{name:'恢复原话'}).click();
     assert.equal(await genText.inputValue(),'晚上在测试面馆吃了招牌拌面，面很筋道。');
     // Clearing the box returns the sentence to the unassigned source text, from where it can be assigned again.
     await genText.fill('');
-    await top.getByText('待归属的原文（2 句）').click();
-    for(let i=0;i<2;i++)await top.getByRole('combobox',{name:/^把“.*”归到某一站$/}).first().selectOption({label:'1. 测试面馆'});
+    await top.getByText('还没放到地点下的文字（2 句）').click();
+    for(let i=0;i<2;i++)await top.getByRole('combobox',{name:/^把“.*”放到某个地点$/}).first().selectOption({label:'1. 测试面馆'});
     assert.equal(await genText.inputValue(),'晚上在测试面馆吃了招牌拌面，面很筋道。');
-    assert.equal(await top.getByText('待归属的原文',{exact:false}).count(),0);
+    assert.equal(await top.getByText('还没放到地点下的文字',{exact:false}).count(),0);
     assert.deepEqual(await stopNames(),['测试面馆'],'the review shows the finished service response');
     // The remote sample requires explicit place confirmation before publication.
     assert.equal(await top.getByText('待定位',{exact:true}).count(),1);
     await top.getByRole('button',{name:'选择店铺',exact:true}).click();
     await page.getByRole('list',{name:'候选店铺'}).getByRole('button',{name:/测试面馆/}).click();
-    await top.locator('.jw-stop').first().getByText('已核对',{exact:true}).waitFor();
-    await top.getByText('公开 · 关联 1 个已有标记，创建 0 个新标记').waitFor();
+    await top.locator('.jw-stop').first().getByText('已确认',{exact:true}).waitFor();
+    await top.getByText('公开后：在地图上新增 0 个地点，关联 1 个已有地点').waitFor();
     await page.getByRole('button',{name:'保存并公开'}).click();
     await top.getByText('已公开 · 已关联 1 个地点').first().waitFor();
     assert.equal(count('JourneyComposeDraft',"user_id=? AND status='active'"),0,'the material draft closes with the save');
@@ -320,8 +320,8 @@ async function main(){
     ]},id);
     draftStore.putDraft(id,randomUUID(),{document:resolutionDoc,draft_revision:0,base_revision:0});
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();
-    await top.getByRole('button',{name:/未完成 · /}).click();
-    await top.getByRole('button',{name:'继续编辑：地图选点回归'}).click();
+    await top.getByRole('button',{name:/草稿 · /}).click();
+    await top.getByRole('button',{name:'继续：地图选点回归'}).click();
     const card=top.locator('.jw-stop').first();
     for(const gone of ['补充线索','已到访','仅提及','待确定','清除位置'])assert.equal(await card.getByRole('button',{name:gone}).count()+await card.getByRole('radio',{name:gone}).count(),0,`${gone} is no longer offered`);
     assert.equal(await card.getByText('在公开日记中显示这一站',{exact:false}).count(),0);
@@ -336,13 +336,13 @@ async function main(){
     await card.getByRole('button',{name:'选择店铺',exact:true}).click();
     await page.getByRole('button',{name:'都不是，在地图上选点'}).click();
     await picker.getByRole('button',{name:'选择测试面馆'}).click();
-    await top.locator('.jw-stop').first().getByText('已核对',{exact:true}).waitFor();
+    await top.locator('.jw-stop').first().getByText('已确认',{exact:true}).waitFor();
     // Photos for one stop: from this diary, from earlier uploads, or new ones; the panel says how many are chosen.
     await top.locator('.jw-stop').first().getByRole('button',{name:'＋ 添加图片'}).click();
     const stopPhotos=page.getByRole('dialog',{name:'为「测试面馆」添加图片'});
-    await stopPhotos.getByText('这一站已选 0 / 12 张').waitFor();
-    await stopPhotos.getByRole('region',{name:'之前上传的图片'}).getByRole('button',{name:'把这张照片用于这一站'}).first().click();
-    await stopPhotos.getByText('这一站已选 1 / 12 张').waitFor();
+    await stopPhotos.getByText('已选 0 / 12 张').waitFor();
+    await stopPhotos.getByRole('region',{name:'之前上传的图片'}).getByRole('button',{name:'把这张照片放到这个地点'}).first().click();
+    await stopPhotos.getByText('已选 1 / 12 张').waitFor();
     await stopPhotos.getByRole('button',{name:'完成'}).click();
     await top.locator('.jw-stop').first().getByRole('button',{name:'照片 · 1 张'}).waitFor();
     // Adding below the anchor opens the picker at the anchor; the pin's address arrives later and is attached.
@@ -353,16 +353,16 @@ async function main(){
     await added.getByText('测试省测试市测试区大学城路 1 号').waitFor();
     await added.getByLabel('店名 / 地点名称').fill('路边糖水摊');
     assert.deepEqual(await stopNames(),['测试面馆','固定锚点','路边糖水摊']);
-    await added.getByRole('button',{name:'前移一站'}).click();
+    await added.getByRole('button',{name:'往前移'}).click();
     assert.deepEqual(await stopNames(),['测试面馆','路边糖水摊','固定锚点']);
-    await top.locator('.jw-stop').nth(1).getByRole('button',{name:'移除此站'}).click();
+    await top.locator('.jw-stop').nth(1).getByRole('button',{name:'移除这个地点'}).click();
     await page.getByRole('alertdialog').getByRole('button').last().click();
     assert.deepEqual(await stopNames(),['测试面馆','固定锚点']);
     // Escape closes only the picker; nothing is added.
     await top.locator('.jw-stop').nth(1).getByRole('button',{name:'在下方添加地点'}).click();
     await picker.waitFor();await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
     assert.deepEqual(await stopNames(),['测试面馆','固定锚点']);
-    await top.getByRole('heading',{name:'核对行程'}).waitFor();
+    await top.getByRole('heading',{name:'确认日记'}).waitFor();
     await page.getByRole('button',{name:'保存为私密'}).click();
     await top.getByText('已保存，仅自己可见').waitFor();
     const resolved=JSON.parse(sql.prepare("SELECT document FROM Journey WHERE user_id=? AND json_extract(document,'$.title')='地图选点回归'").get(id).document);
@@ -392,7 +392,7 @@ async function main(){
     await closeAll();
     await page.setViewportSize({width:390,height:844});
     await openEntry();await noOverflow();await snap('entry-sheet-mobile');
-    await page.getByRole('menuitem',{name:/快速创建/}).click();await noOverflow();await snap('composer-mobile');
+    await page.getByRole('menuitem',{name:/写日记/}).click();await noOverflow();await snap('composer-mobile');
     await top.getByRole('button',{name:'返回'}).click();
     await openEntry();await page.getByRole('menuitem',{name:/日历/}).click();await noOverflow();
     await page.evaluate(()=>window.__TEST_THEME(true));await snap('calendar-dark-mobile');await page.evaluate(()=>window.__TEST_THEME(false));

@@ -76,6 +76,8 @@ struct MapChromeView: View {
     /// 拖动工具栏时手指的竖直位移（向上为正）；松手后随展开/收起动画归零
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.42, dampingFraction: 0.86)))
     private var drawerDrag: CGFloat = 0
+    /// 拖动工具栏的手势进行中（松手或被系统取消时自动归位），同步给模型随布局回传
+    @GestureState private var drawerDragging = false
     /// 更多功能内容的自然高度
     @State private var drawerContentHeight: CGFloat = 0
     /// 工具栏占位的顶边（根坐标系）：菜单面板的高度上限由它决定
@@ -241,6 +243,10 @@ struct MapChromeView: View {
         .onChange(of: model.search.focusToken) {
             applyFocusRequest()
         }
+        // 同样放在常驻根视图：拖动中工具栏被搜索或面板替换时，手势归位也能回传
+        .onChange(of: drawerDragging) { _, dragging in
+            model.setDrawerDragging(dragging)
+        }
     }
 
     /// 操作指引“更多功能”一步的上滑示意：手指从拖动条往上划，工具栏随之露出一截更多功能再落回，循环到这一步结束。
@@ -289,6 +295,7 @@ struct MapChromeView: View {
                     proxy.size.height
                 }, action: { height in
                     drawerContentHeight = height
+                    model.setDrawerContentHeight(height)
                 })
                 .frame(height: revealed, alignment: .top)
                 .clipped()
@@ -359,6 +366,9 @@ struct MapChromeView: View {
         DragGesture(minimumDistance: 10, coordinateSpace: .global)
             .updating($drawerDrag) { value, state, _ in
                 state = -value.translation.height
+            }
+            .updating($drawerDragging) { _, state, _ in
+                state = true
             }
             .onEnded { value in
                 guard drawerContentHeight > 0 else { return }

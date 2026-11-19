@@ -281,8 +281,16 @@ final class MapChromeModel: ObservableObject {
     /// 底部工具栏上滑后的“更多功能”
     @Published private(set) var drawer: MapChromeDrawer?
     @Published private(set) var drawerExpanded = false {
-        didSet { if drawerExpanded != oldValue { onFramesChanged?() } }
+        didSet {
+            guard drawerExpanded != oldValue else { return }
+            onFramesChanged?()
+            onDrawerMotion?()
+        }
     }
+    /// 手指正在拖动工具栏（展开或收起更多功能）。与展开状态、内容高度一起随布局回传（layout.drawer），网页的小伙伴据此起飞、落下
+    private(set) var drawerDragging = false
+    /// 更多功能内容的高度（pt）：完全展开时工具栏上沿升高这么多。是几何信息，与会话无关，reset 不清空
+    private(set) var drawerContentHeight: CGFloat = 0
     /// 操作指引（nil 表示没有进行中的指引）；指引期间面板让位
     @Published private(set) var tour: MapChromeTour? {
         didSet { onPresentationChange?() }
@@ -313,6 +321,8 @@ final class MapChromeModel: ObservableObject {
     /// 更多功能事件：type 为 select
     var onDrawerEvent: ((String, [String: Any]) -> Void)?
     var onFramesChanged: (() -> Void)?
+    /// 更多功能开始 / 停止拖动、展开 / 收起或内容高度变化：插件立即回传布局，不等防抖
+    var onDrawerMotion: (() -> Void)?
     /// 面板是否应当显示可能变化：由 FoodMapBridgeViewController 的面板呈现器对账（与会话无关，reset 不清空）
     var onPresentationChange: (() -> Void)?
     /// 卡片摘要高度变化：重新计算第一段停靠高度
@@ -483,6 +493,19 @@ final class MapChromeModel: ObservableObject {
         if let tour, !tour.swipeHint { return }
         let next = expanded && drawerAvailable
         if drawerExpanded != next { drawerExpanded = next }
+    }
+
+    /// 拖动手势开始 / 结束（含被系统取消）：由视图的 GestureState 同步
+    func setDrawerDragging(_ dragging: Bool) {
+        guard drawerDragging != dragging else { return }
+        drawerDragging = dragging
+        onDrawerMotion?()
+    }
+
+    func setDrawerContentHeight(_ height: CGFloat) {
+        guard abs(drawerContentHeight - height) >= 0.5 else { return }
+        drawerContentHeight = height
+        onDrawerMotion?()
     }
 
     func selectDrawerRow(_ row: MapChromeSheetRow) {

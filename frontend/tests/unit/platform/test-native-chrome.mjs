@@ -7,7 +7,7 @@ import { randomFoodChromeSheet } from '../../../src/discovery/randomFoodSheet.js
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
 
-const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
+const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, readDrawerLayout, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -447,6 +447,17 @@ function makeSession(plugin, extra = {}) {
     assert.equal(readTourLayout({ ...tourLayout, tour: undefined }), null);
     assert.equal(readTourLayout({ ...tourLayout, slots: tourLayout.slots.filter((slot) => slot.id !== 'tour') }).rect, null, '目标还没回传');
     assert.equal(readTourLayout({ ...tourLayout, tour: { step: 'more', drawerOpen: 1 } }).drawerOpen, true);
+
+    // 布局里的更多功能状态（底栏小伙伴起飞）：旧版原生不带、控件收起、高度无效时都当作收起
+    const closedDrawer = { open: false, dragging: false, height: 0 };
+    assert.deepEqual(readDrawerLayout({ showing: true, drawer: { open: true, dragging: false, height: 311.6 } }), { open: true, dragging: false, height: 312 });
+    assert.deepEqual(readDrawerLayout({ showing: true, drawer: { open: false, dragging: true, height: 300 } }), { open: false, dragging: true, height: 300 });
+    assert.deepEqual(readDrawerLayout({ showing: true }), closedDrawer, '旧版原生没有 drawer');
+    assert.deepEqual(readDrawerLayout({ showing: false, drawer: { open: true, height: 300 } }), closedDrawer, '控件收起');
+    assert.deepEqual(readDrawerLayout({ showing: true, drawer: { open: true, height: 0 } }), closedDrawer, '还没量到高度');
+    assert.deepEqual(readDrawerLayout({ showing: true, drawer: { open: 'yes', dragging: 1, height: 300 } }), closedDrawer, '只认布尔值');
+    assert.deepEqual(readDrawerLayout({ showing: true, drawer: { open: true, height: 1e9 } }).height, 2000, '高度封顶');
+    assert.deepEqual(readDrawerLayout(null), closedDrawer);
 
     // v6 更多功能（工具栏上滑）：没有可显示的行时不下发，行数封顶
     assert.equal(sanitizeDrawer(null), null);

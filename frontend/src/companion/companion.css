@@ -12,6 +12,10 @@
 .fm-companion-settings__toggle input { width: 22px; height: 22px; accent-color: var(--theme-primary); }
 .fm-companion-roam { display: none; position: absolute; z-index: 1990; left: 9%; width: 46px; height: 55px; pointer-events: none; }
 .fm-companion-roam .fm-companion, .fm-companion-roam .fm-companion__stage { width: 100%; height: 100%; }
+/* 飞行的三层（companionFlight.js）：上下位移 > 拉长压扁（以脚底为原点）> 悬停浮动；影子留在地面 */
+.fm-companion-roam__fly, .fm-companion-roam__body, .fm-companion-roam__bob { width: 100%; height: 100%; }
+.fm-companion-roam__body { transform-origin: 50% 100%; }
+.fm-companion-roam__shadow { position: absolute; left: 50%; bottom: -1px; width: 28px; height: 6px; margin-left: -14px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.22), transparent); }
 @media (max-width: 768px) {
     .fm-companion-roam { display: block; animation: fm-companion-walk 24s ease-in-out infinite alternate; }
 }

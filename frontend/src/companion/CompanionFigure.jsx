@@ -11,9 +11,12 @@ export function StickFigureDrawing() {
     return <img className="fm-companion__drawing" src={drawing} alt="" />;
 }
 
-export default function CompanionFigure({ backendUrl, token, companion, showStatus = false }) {
+/** mood：'aloft' 时飞在空中的姿态（抬头、略向后仰），null 为平常。只在 Live2D 动起来时有效。 */
+export default function CompanionFigure({ backendUrl, token, companion, showStatus = false, mood = null }) {
     const container = useRef(null);
     const scene = useRef(null);
+    const moodRef = useRef(mood);
+    moodRef.current = mood;
     const last = useRef(companion.satiety);
     const [loading, setLoading] = useState(false);
     const [ready, setReady] = useState(false);
@@ -40,6 +43,7 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
             });
             if (signal.aborted) { stage?.destroy(); return; }
             scene.current = stage;
+            stage?.setMood(moodRef.current);
             setReady(!!stage);
         }).catch(() => { if (!signal.aborted && !isDefault) setError(true); }).finally(() => {
             if (!signal.aborted) setLoading(false);
@@ -50,6 +54,10 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
             scene.current = null;
         };
     }, [backendUrl, token, id, isDefault, retry]);
+
+    useEffect(() => {
+        scene.current?.setMood(mood);
+    }, [mood]);
 
     useEffect(() => {
         const previous = last.current;

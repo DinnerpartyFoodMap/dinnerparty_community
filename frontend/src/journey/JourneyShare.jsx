@@ -172,14 +172,13 @@ export default function JourneyShare({ctx,nav,params}) {
                     {textStale&&<Notice role="status">{t('journey:share.textStale')}</Notice>}
                     {share&&<>
                         <label className="jw-field"><span className="jw-field__label">{t('journey:share.postLabel')}{share.generated&&<AiTag style={{marginLeft:6}}/>}</span><textarea rows={9} maxLength={4000} value={text} onChange={e=>setText(e.target.value)}/></label>
-                        <p className="jw-muted">{tx('journey:share.lengthInfo', { length, min: share.min, max: share.max, rangeHint: length<share.min||length>share.max?t('journey:share.lengthOutOfRange'):'', aiNote: !share.generated?t('journey:share.noAiNote'):'' })}{text!==share.text&&t('journey:share.editedNote')}</p>
+                        <p className="jw-muted">{tx('journey:share.lengthInfo', { length, min: share.min, max: share.max, rangeHint: length<share.min||length>share.max?t('journey:share.lengthOutOfRange'):'' })}{text!==share.text&&t('journey:share.editedNote')}</p>
                         {!!unsupported.length&&<Notice tone="warn" role="status">
                             <strong>{t('journey:share.unsupportedTitle')}</strong>
                             <span className="jw-claims">{unsupported.map(c=><mark key={c.text}>{c.text}</mark>)}</span>
                             <span>{t('journey:share.unsupportedHint')}</span>
                             <span className="jw-inline-actions"><button type="button" onClick={removeUnsupported}>{t('journey:share.removeUnsupported')}</button></span>
                         </Notice>}
-                        {share.generated&&<p className="jw-muted">{t('journey:share.aiExportNote')}</p>}
                     </>}
                 </section>
                 {share&&<section className="jw-card jw-stack" aria-label={t('journey:share.imageSection')}>

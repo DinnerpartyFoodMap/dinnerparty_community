@@ -28,6 +28,50 @@ function hasStickFigureColors(renderer) {
     return false;
 }
 
+// 姿态：参数 id 与偏移比例（正数按最大值、负数按最小值算，模型不同范围也不同），叠加在待机动作之上，待机的晃动照常。
+// aloft：飞在空中，抬头、身体略向后仰。内置火柴人只给头身角度、前倾、比例与呼吸做了形变，
+// 手臂、嘴、眉毛、眼珠参数不会改变画面，所以不用。
+const MOODS = {
+    aloft: [['ParamAngleY', 0.55], ['ParamBodyLean', -0.4]]
+};
+const MOOD_EASE_MS = 140;
+
+/**
+ * 姿态叠加在物理之后、模型更新之前（beforeModelUpdate）；参数在帧末由 loadParameters 还原，不会累积。
+ * 切换时按时间常数平滑过渡。模型没有的参数跳过。
+ */
+function attachMoods(model) {
+    const core = model.internalModel.coreModel;
+    const count = core.getParameterCount();
+    const resolve = (name) => (MOODS[name] || []).flatMap(([id, fraction]) => {
+        const index = core.getParameterIndex(id);
+        if (index < 0 || index >= count) return [];
+        const value = fraction >= 0 ? core.getParameterMaximumValue(index) * fraction : core.getParameterMinimumValue(index) * -fraction;
+        return [{ index, value }];
+    });
+    const state = { targets: [], blend: 0, goal: 0, last: 0 };
+    const apply = () => {
+        const now = performance.now();
+        const dt = state.last ? Math.min(100, now - state.last) : 16;
+        state.last = now;
+        state.blend += (state.goal - state.blend) * (1 - Math.exp(-dt / MOOD_EASE_MS));
+        if (state.blend < 0.001) return;
+        for (const { index, value } of state.targets) {
+            core.addParameterValueByIndex(index, value * state.blend);
+        }
+    };
+    model.internalModel.on('beforeModelUpdate', apply);
+    return (name) => {
+        if (name && MOODS[name]) {
+            state.targets = resolve(name);
+            state.goal = 1;
+        } else {
+            // 淡出时沿用上一组目标
+            state.goal = 0;
+        }
+    };
+}
+
 export async function mountLive2D(container, source, { signal, reducedMotion = false, verifyColors = false, onContextLost, onContextRestored } = {}) {
     await loadCore();
     const { Live2DModel } = await import('pixi-live2d-display/cubism4');
@@ -60,8 +104,10 @@ export async function mountLive2D(container, source, { signal, reducedMotion = f
         app.view.addEventListener('webglcontextlost', onContextLost);
         app.view.addEventListener('webglcontextrestored', onContextRestored);
         if (!reducedMotion) app.start();
+        const setMood = reducedMotion ? () => {} : attachMoods(model);
         return {
             feed: () => !reducedMotion && model.motion('Feed', 0, 3).catch(() => {}),
+            setMood,
             destroy: () => {
                 app.view.removeEventListener('webglcontextlost', onContextLost);
                 app.view.removeEventListener('webglcontextrestored', onContextRestored);

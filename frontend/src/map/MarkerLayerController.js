@@ -8,7 +8,7 @@
 // - 单点标记的名称总是显示（不做碰撞避让）；转场期间先隐藏，相机静止、转场结束后统一显示。
 
 import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
-import { buildSnapshot, resolveMarkerZoom } from './cluster/snapshot.js';
+import { buildSnapshot, resolveMarkerZoom, shouldRefineMarkerAnchors, stabilizeMarkerAnchors } from './cluster/snapshot.js';
 import { planTransition } from './cluster/transitions.js';
 import {
     createMarkerParts, applyNodeAppearance, glyphSize
@@ -113,8 +113,14 @@ export class MarkerLayerController {
         }
 
         this._onMoveStart = () => {
+            if (!this.cameraMoving) this.cameraStartZoom = Number(this.map.getZoom());
             this.cameraMoving = true;
             this._finishAll();
+        };
+        this._onZoomChange = () => {
+            if (this.cameraMoving && shouldRefineMarkerAnchors(this.snapshot, Number(this.map.getZoom()), this.cameraStartZoom)) {
+                this._commit('refine');
+            }
         };
         this._onMoveEnd = () => {
             this.cameraMoving = false;
@@ -127,6 +133,7 @@ export class MarkerLayerController {
         };
         for (const type of ['movestart', 'zoomstart', 'dragstart']) map.on(type, this._onMoveStart);
         for (const type of ['moveend', 'zoomend']) map.on(type, this._onMoveEnd);
+        map.on('zoomchange', this._onZoomChange);
         map.on('resize', this._onResize);
         document.addEventListener('visibilitychange', this._onVisibility);
         this.nativeClusters = new NativeClusterLayer(this);
@@ -164,6 +171,9 @@ export class MarkerLayerController {
         if (this.selectedKey === key) return;
         const previous = this.selectedKey;
         this.selectedKey = key || null;
+        if (this.snapshot?.nodeByKey.get(this.selectedKey)?.sourceCoordinate) {
+            this._commit('selection');
+        }
         for (const k of [previous, this.selectedKey]) {
             const entry = k ? this.entries.get(k) : null;
             if (entry && !entry.ghost) this._refreshAppearance(entry);
@@ -214,6 +224,7 @@ export class MarkerLayerController {
         try {
             for (const type of ['movestart', 'zoomstart', 'dragstart']) map.off(type, this._onMoveStart);
             for (const type of ['moveend', 'zoomend']) map.off(type, this._onMoveEnd);
+            map.off('zoomchange', this._onZoomChange);
             map.off('resize', this._onResize);
         } catch (e) { /* ignore */ }
         document.removeEventListener('visibilitychange', this._onVisibility);
@@ -247,7 +258,9 @@ export class MarkerLayerController {
         if (!viewBounds) return;
         const started = performance.now();
         const zoom = Number(this.map.getZoom());
-        const logicalZoom = resolveMarkerZoom(zoom, this.logicalZoom, {
+        const refining = reason === 'refine';
+        if (refining && this.snapshot?.engine !== this.engine) return;
+        const logicalZoom = refining ? this.logicalZoom : resolveMarkerZoom(zoom, this.logicalZoom, {
             minZoom: this.engine.minZoom,
             maxZoom: this.engine.maxZoom
         }, this.markerBand, this.options.getMarkerViewZoom);
@@ -261,6 +274,7 @@ export class MarkerLayerController {
             transitionVersion: this.version + 1
         });
         const plan = planTransition(this.snapshot, next);
+        stabilizeMarkerAnchors(this.snapshot, next, plan, { refining, selectedKey: this.selectedKey });
         this._apply(plan, next, reason);
         this._pushMetric('commits', { reason, kind: plan.kind, nodes: next.visibleNodes.length, ms: performance.now() - started });
     }

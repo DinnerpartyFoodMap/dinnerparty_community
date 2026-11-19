@@ -58,8 +58,8 @@ export default function PublicJourneyView({ctx,nav,params,active}) {
                     <h3>{journey.title}
                         {report&&author.id!==userId&&<button type="button" className="jw-report" style={{marginLeft:8}} aria-label={t('journey:public.reportLabel', { title: journey.title })} onClick={()=>report(diaryReportPrefill(journey))}>{t('journey:public.report')}</button>}
                     </h3>
-                    <p className="jw-muted">{tx('journey:public.meta', { range: formatRange(journey.start_date,journey.end_date), count: journey.stops.length })}</p>
-                    {journey.ai_assisted&&<p className="jw-muted"><AiTag label={t('common:ai.assisted')} style={{marginRight:6}}/>{t('journey:public.aiAssisted')}</p>}
+                    <p className="jw-muted">{tx('journey:public.meta', { range: formatRange(journey.start_date,journey.end_date), count: journey.stops.length })}
+                        {journey.ai_assisted&&<AiTag label={t('common:ai.assisted')} style={{marginLeft:6}}/>}</p>
                 </header>
                 {journey.summary&&<MarkdownText className="jw-detail-summary" text={journey.summary}/>}
                 {journey.text&&<MarkdownText className="jw-detail-summary" text={journey.text}/>}
@@ -67,7 +67,7 @@ export default function PublicJourneyView({ctx,nav,params,active}) {
                 <ol className="jw-detail-stops">{journey.stops.map(s=><li key={s.id} id={`jw-public-${s.id}`} className={s.id===params.stopId?'is-focus':''}>
                     <div className="jw-row-between"><strong>{s.index+1}. {s.name}</strong>{s.unverified&&<Badge>{t('journey:public.unverified')}</Badge>}</div>
                     {s.at&&<small className="jw-muted">{formatStopTime(s.at)}</small>}
-                    {s.excerpt.map((e,i)=><blockquote key={i} className={`jw-excerpt${e.kind==='edited'?' is-edited':''}`}><MarkdownText text={e.text}/><small>{e.kind==='edited'?t('journey:common.label.authorEdited'):t('journey:common.label.originalExcerpt')}</small></blockquote>)}
+                    {s.excerpt.map((e,i)=><blockquote key={i} className="jw-excerpt"><MarkdownText text={e.text}/></blockquote>)}
                     {!!s.media_ids.length&&<div className="jw-strip">{s.media_ids.map(id=>photo(id,`${s.index+1}. ${s.name}`))}</div>}
                     {s.place_id&&<button type="button" className="jw-link" onClick={()=>showPlace(s.place_id)}>{t('journey:public.viewMarker')}</button>}
                 </li>)}</ol>

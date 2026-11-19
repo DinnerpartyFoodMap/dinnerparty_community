@@ -6,7 +6,7 @@ import { t } from '../i18n/index.js';
 export default function JourneyEntrySheet({open,counts,onSelect,onClose}) {
     const material=counts?.material||0,unfinished=counts?.count||0;
     const items=[
-        {id:'composer',icon:'✦',title:t('journey:common.feature.generate'),hint:material?t('journey:entry.composerHintUnfinished', { material }):t('journey:entry.composerHint')},
+        {id:'composer',icon:'✎',title:t('journey:common.feature.generate'),hint:material?t('journey:entry.composerHintUnfinished', { material }):t('journey:entry.composerHint')},
         {id:'calendar',icon:'▦',title:t('journey:common.feature.calendar'),hint:t('journey:entry.calendarHint'),badge:unfinished?t('journey:entry.calendarBadge', { unfinished }):''}
     ];
     return <ResponsivePanel open={open} onClose={onClose} label={t('journey:entry.title')} kind="journey-entry" desktop="center" mobile="sheet" showClose={false}

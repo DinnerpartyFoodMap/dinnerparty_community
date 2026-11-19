@@ -178,6 +178,7 @@
 .jw-photo-choice>button[aria-pressed=true]{outline:3px solid var(--theme-primary);outline-offset:-3px}
 .jw-photo-choice>button>span{position:absolute;right:4px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--theme-primary);color:var(--theme-on-primary);display:flex;align-items:center;justify-content:center;font-size:13px}
 .jw-entry-photo{position:relative;margin:0}.jw-entry-photo figcaption{position:absolute;left:4px;bottom:4px;font-size:11px;border-radius:calc(var(--radius-md) - 4px);padding:1px 5px;background:var(--color-scrim);color:var(--color-on-scrim)}
+.jw-root .jw-entry-photo figcaption button{min-height:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-decoration:none}
 .jw-root .jw-entry-photo__remove{position:absolute;right:3px;top:3px;width:26px;height:26px;min-height:0;padding:0;border-radius:50%;background:var(--color-scrim);color:var(--color-on-scrim);border:0;font-size:15px;line-height:1}
 .jw-unassigned{display:grid;grid-template-columns:1fr minmax(110px,40%);gap:8px;align-items:center;padding:6px 0;border-top:1px dashed var(--color-border)}
 .jw-public-preview{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:var(--radius-lg);border:1px solid var(--color-border);background:var(--color-bg-base)}

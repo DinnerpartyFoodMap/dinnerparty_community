@@ -613,8 +613,37 @@ const canvas = {
     assert.deepEqual(leafNodes.map((node) => node.id), ['place:101', 'place:102', 'place:103']);
     assert.deepEqual([...leafOptions.prevKeys], aggregateNodes.map((node) => node.id), '从此前显示的匿名节点过渡');
     assert.deepEqual([...leafPlan.splitFrom], [['place:101', aggregate.id], ['place:102', aggregate.id]]);
-    assert.deepEqual([...leafPlan.reanchor], ['place:103'], '独立标记随拆分一起提交，直接落在精确坐标');
+    const standaloneAnchor = aggregateNodes.find((node) => !node.cluster);
+    const detail = leafNodes.find((node) => node.id === 'place:103');
+    assert.deepEqual([detail.lng, detail.lat], [standaloneAnchor.lng, standaloneAnchor.lat], '拆分时独立标记继续使用屏幕上已有的地理锚点');
     assert.equal(leafOptions.animate, true);
+    tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
+    assert.equal(tileMap.count('nodes'), 2, '静止时重复提交明细不会重新定位');
+    tileMap.emit('movestart');
+    tileMap.zoom = 12;
+    tileMap.emit('moveend');
+    tileLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    const [, zoomedOutNodes, mergePlan] = tileMap.last('nodes');
+    const mergedStandalone = zoomedOutNodes.find((node) => !node.cluster);
+    assert.deepEqual([mergedStandalone.lng, mergedStandalone.lat], [detail.lng, detail.lat], '合并时独立标记仍固定');
+    assert.deepEqual([...mergePlan.mergeInto.keys()], ['place:101', 'place:102']);
+
+    tileMap.zoom = 13;
+    tileMap.emit('moveend');
+    tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
+    tileMap.emit('movestart');
+    tileMap.zoom = 13.3;
+    tileMap.emit('mapmove');
+    const [, refinedNodes, refinePlan] = tileMap.last('nodes');
+    const refined = refinedNodes.find((node) => node.id === 'place:103');
+    assert.ok(Math.abs(refined.lng - 113.264) < 1e-7, '继续放大时采用真实明细位置');
+    assert.ok(refinePlan.reanchor.has('place:103'), '补齐明细位置时不额外播放滑动动画');
+    tileMap.emit('moveend');
+    tileMap.zoom = 12;
+    tileMap.emit('moveend');
+    tileLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    const coarseWithExactAnchor = tileMap.last('nodes')[1].find((node) => !node.cluster);
+    assert.deepEqual([coarseWithExactAnchor.lng, coarseWithExactAnchor.lat], [refined.lng, refined.lat], '已知精确位置的点缩小时保持在原处');
     tileLayer.destroy();
 
     // 上一次停在 13 级，回捏到 12 级时才收到明细，仍保留画面上的匿名聚合。

@@ -20,7 +20,7 @@ export async function loadUnfinished(api,userId) {
         total:(list?.count||0)+(local.editor?1:0)+local.composes.length,material:(list?.material.length||0)+local.composes.length};
 }
 
-/** 未完成：本机未同步、素材草稿、生成中、待核对、编辑草稿，统一在这里继续或丢弃。 */
+/** 草稿：本机未同步、待确认、整理中、未整理、修改中的内容排成一列，在这里继续或丢弃。 */
 export default function JourneyUnfinished({ctx,nav,active}) {
     const {api,base,token,confirm}=ctx;
     const userId=getTokenUserId(token);
@@ -33,7 +33,7 @@ export default function JourneyUnfinished({ctx,nav,active}) {
     useEffect(()=>{if(active)load();},[active,load]);
     const run=async fn=>{setBusy(true);setError('');try{await fn();await load();}catch(e){setError(e.message);}finally{setBusy(false);}};
     const discard=(label,fn)=>run(async()=>{if(await confirm(t('journey:unfinished.confirmDiscard', { label }), { destructive: true, confirmLabel: t('common:action.discard') }))await fn();});
-    const row=(item,{title,meta,open,openLabel,remove})=><div key={`${item.kind||'local'}-${item.id||item.draftId}`} className="jw-entry-row">
+    const row=(item,{kind,title,meta,open,openLabel,remove})=><div key={`${kind}-${item.id||item.draftId}`} className="jw-entry-row">
         <button type="button" className="jw-entry" onClick={open} aria-label={t('journey:unfinished.openItem', { openLabel, title })}>
             {item.cover_media_id?<PrivatePhoto id={item.cover_media_id} base={base} token={token} className="jw-entry__cover" alt=""/>:<span className="jw-entry__cover jw-entry__cover--empty" aria-hidden="true">✎</span>}
             <span className="jw-entry__body"><strong>{title}</strong><small>{meta}</small></span>
@@ -42,38 +42,37 @@ export default function JourneyUnfinished({ctx,nav,active}) {
         {remove&&<button type="button" className="jw-icon-button" disabled={busy} aria-label={t('journey:unfinished.discardItem', { title })} onClick={remove}>×</button>}
     </div>;
     const total=(list?.count||0)+(local.editor?1:0)+local.composes.length;
+    // 所有草稿排成一列，每行开头写明状态（只存在本机 / 待确认 / 整理中 / 未整理 / 修改中），点按都是“继续”
+    const STATUS={local:t('journey:unfinished.status.local'),review:t('journey:unfinished.status.review'),generating:t('journey:unfinished.status.generating'),
+        material:t('journey:unfinished.status.material'),editing:t('journey:unfinished.status.editing')};
+    const status=(kind,meta)=>meta?`${STATUS[kind]} · ${meta}`:STATUS[kind];
+    const go=t('journey:unfinished.continue');
+    const items=[];
+    if(local.editor)items.push(row({id:'editor'},{kind:'local-editor',title:local.editor.journal.document?.title||t('journey:unfinished.untitledDiary'),meta:status('local',t('journey:unfinished.savedAt', { time: new Date(local.editor.updatedAt).toLocaleString() })),openLabel:go,
+        open:()=>nav.push('review',{mode:'create',restoreLocal:true}),remove:()=>discard(t('journey:unfinished.discard.localEdits'),()=>deleteLocalDraft(userId,'active'))}));
+    for(const r of local.composes)items.push(row({id:r.draftId},{kind:'local',title:(r.payload?.text||'').trim().slice(0,30)||t('journey:unfinished.photoCount', { count: r.photos.length }),meta:status('local',t('journey:unfinished.localMaterialMeta', { count: r.photos.filter(p=>!p.mediaId).length })),openLabel:go,
+        open:()=>nav.push('composer',{composeId:r.draftId}),remove:()=>discard(t('journey:unfinished.discard.localMaterial'),()=>deleteLocalCompose(userId,r.draftId))}));
+    if(list){
+        for(const d of list.review)items.push(row(d,{kind:'review',title:d.title,meta:status('review',t('journey:unfinished.reviewMeta', { range: formatRange(d.start_date,d.end_date), stop_count: d.stop_count, pending: d.pending?t('journey:unfinished.reviewPending', { pending: d.pending }):'' })),openLabel:go,
+            open:()=>nav.push('review',{mode:'create',draftId:d.id}),remove:()=>discard(t('journey:unfinished.discard.review'),()=>api(`/drafts/${d.id}`,{method:'DELETE',body:JSON.stringify({draft_revision:d.revision})}))}));
+        for(const m of list.generating)items.push(row(m,{kind:'generating',title:m.title,meta:m.job_status==='queued'?t('journey:unfinished.queued'):status('generating'),openLabel:go,
+            open:()=>nav.push('generation',{composeId:m.id,jobId:m.job_id})}));
+        for(const m of list.material)items.push(row(m,{kind:'material',title:m.title,meta:status('material',t('journey:unfinished.materialMeta', { range: m.start_date?formatRange(m.start_date):t('journey:unfinished.noDate'), media_count: m.media_count, newer: m.newer_than_review?t('journey:unfinished.newerThanReview'):'', lastError: m.failed?t('journey:unfinished.lastFailed', { error: m.error }):'' })),openLabel:go,
+            open:()=>nav.push('composer',{composeId:m.id}),remove:()=>discard(t('journey:unfinished.discard.material'),async()=>{await api(`/compose-drafts/${m.id}`,{method:'DELETE',body:JSON.stringify({revision:m.revision})});await deleteLocalCompose(userId,m.id);})}));
+        for(const d of list.editing)items.push(row(d,{kind:'editing',title:d.title,meta:status('editing',`${formatRange(d.start_date,d.end_date)}${d.journey_id?t('journey:unfinished.editingExisting'):t('journey:unfinished.editingNew')}`),openLabel:go,
+            open:()=>nav.push('review',{mode:d.journey_id?'edit':'create',draftId:d.id}),remove:()=>discard(t('journey:unfinished.discard.editing'),()=>api(`/drafts/${d.id}`,{method:'DELETE',body:JSON.stringify({draft_revision:d.revision})}))}));
+    }
     return <div className="jw-page">
         <PageHeader title={t('journey:unfinished.title', { total: total?` · ${total}`:'' })} onBack={nav.pop}/>
         <div className="jw-scroll"><div className="jw-content jw-stack">
             {error&&<Notice tone="error" onClose={()=>setError('')}>{error}</Notice>}
             {serverError&&<Notice tone="warn">{tx('journey:unfinished.serverError', { serverError })}</Notice>}
             {!list&&!serverError&&!error&&<p className="jw-muted">{t('journey:common.status.fetching')}</p>}
-            {(local.editor||!!local.composes.length)&&<section className="jw-stack" aria-label={t('journey:unfinished.localLabel')}>
-                <h3 className="jw-section-title">{t('journey:unfinished.localLabel')}</h3>
-                {local.editor&&row({id:'editor'},{title:local.editor.journal.document?.title||t('journey:unfinished.untitledDiary'),meta:t('journey:unfinished.savedAt', { time: new Date(local.editor.updatedAt).toLocaleString() }),openLabel:t('journey:unfinished.restore'),
-                    open:()=>nav.push('review',{mode:'create',restoreLocal:true}),remove:()=>discard(t('journey:unfinished.discard.localEdits'),()=>deleteLocalDraft(userId,'active'))})}
-                {local.composes.map(r=>row({id:r.draftId},{title:(r.payload?.text||'').trim().slice(0,30)||t('journey:unfinished.photoCount', { count: r.photos.length }),meta:t('journey:unfinished.localMaterialMeta', { count: r.photos.filter(p=>!p.mediaId).length }),openLabel:t('journey:unfinished.continue'),
-                    open:()=>nav.push('composer',{composeId:r.draftId}),remove:()=>discard(t('journey:unfinished.discard.localMaterial'),()=>deleteLocalCompose(userId,r.draftId))}))}
-            </section>}
-            {list&&<>
-                <Section title={t('journey:unfinished.section.material')} items={list.material} render={m=>row(m,{title:m.title,meta:t('journey:unfinished.materialMeta', { range: m.start_date?formatRange(m.start_date):t('journey:unfinished.noDate'), media_count: m.media_count, newer: m.newer_than_review?t('journey:unfinished.newerThanReview'):'', lastError: m.failed?t('journey:unfinished.lastFailed', { error: m.error }):'' }),openLabel:t('journey:unfinished.continue'),
-                    open:()=>nav.push('composer',{composeId:m.id}),remove:()=>discard(t('journey:unfinished.discard.material'),async()=>{await api(`/compose-drafts/${m.id}`,{method:'DELETE',body:JSON.stringify({revision:m.revision})});await deleteLocalCompose(userId,m.id);})})}/>
-                <Section title={t('journey:unfinished.section.generating')} items={list.generating} render={m=>row(m,{title:m.title,meta:m.job_status==='queued'?t('journey:unfinished.queued'):t('journey:unfinished.section.generating'),openLabel:t('journey:unfinished.view'),
-                    open:()=>nav.push('generation',{composeId:m.id,jobId:m.job_id})})}/>
-                <Section title={t('journey:unfinished.section.review')} items={list.review} render={d=>row(d,{title:d.title,meta:t('journey:unfinished.reviewMeta', { range: formatRange(d.start_date,d.end_date), stop_count: d.stop_count, pending: d.pending?t('journey:unfinished.reviewPending', { pending: d.pending }):'' }),openLabel:t('journey:unfinished.continueReview'),
-                    open:()=>nav.push('review',{mode:'create',draftId:d.id}),remove:()=>discard(t('journey:unfinished.discard.review'),()=>api(`/drafts/${d.id}`,{method:'DELETE',body:JSON.stringify({draft_revision:d.revision})}))})}/>
-                <Section title={t('journey:unfinished.section.editing')} items={list.editing} render={d=>row(d,{title:d.title,meta:`${formatRange(d.start_date,d.end_date)}${d.journey_id?t('journey:unfinished.editingExisting'):t('journey:unfinished.editingNew')}`,openLabel:t('journey:unfinished.continueEditing'),
-                    open:()=>nav.push('review',{mode:d.journey_id?'edit':'create',draftId:d.id}),remove:()=>discard(t('journey:unfinished.discard.editing'),()=>api(`/drafts/${d.id}`,{method:'DELETE',body:JSON.stringify({draft_revision:d.revision})}))})}/>
-            </>}
+            {!!items.length&&<section className="jw-stack" aria-label={t('journey:unfinished.listLabel')}>{items}</section>}
             {(list||serverError)&&!total&&<Empty title={t('journey:unfinished.emptyTitle')}>{t('journey:unfinished.emptyHint')}</Empty>}
         </div></div>
     </div>;
 }
-function Section({title,items,render}) {
-    if(!items.length)return null;
-    return <section className="jw-stack" aria-label={title}><h3 className="jw-section-title">{title} · {items.length}</h3>{items.map(render)}</section>;
-}
-
 /** 私人图片空间：可删除未被日记、版本、草稿、生成任务或公开内容引用的图片。 */
 export function JourneyMedia({ctx,nav,active}) {
     const {api,base,token,confirm}=ctx;

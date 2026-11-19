@@ -451,6 +451,8 @@ private struct NativeJourneyComposerView: View {
                 Text(data.label("date", "日期"))
             }
             .listRowBackground(FM.bgSurface)
+            // 新网页只在保存时选一次可见性，不再发送 visibility 标签；旧网页包仍显示这一项
+            if !data.label("visibility", "").isEmpty {
             Section {
                 Picker(data.label("visibility", "可见性"), selection: $visibility) {
                     Text(data.label("public", "公开")).tag("public")
@@ -463,6 +465,7 @@ private struct NativeJourneyComposerView: View {
                 Text(data.label("visibility", "可见性"))
             } footer: {
                 Text(data.label("privacyNote", ""))
+            }
             }
             if !data.string("note").isEmpty {
                 Section {

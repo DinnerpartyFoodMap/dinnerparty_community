@@ -59,7 +59,6 @@ export default function JourneyDetail({ctx,nav,params,active}) {
                 <button type="button" className="jw-primary" onClick={()=>nav.push('review',{mode:'edit',journeyId:journey.id})}>{t('journey:detail.edit')}</button>
                 <button type="button" disabled={!d.stops.some(located)} onClick={()=>showJourneyOnMap(journey)}>{t('journey:detail.viewOnMap')}</button>
                 <button type="button" onClick={()=>nav.push('share',{journeyId:journey.id})}>{t('journey:common.action.generateShare')}</button>
-                <button type="button" onClick={()=>nav.backTo('calendar',{month:d.start_date.slice(0,7),day:d.start_date})}>{tx('journey:detail.backTo', { range: formatRange(d.start_date) })}</button>
             </div>
             {revisions&&<section className="jw-card jw-stack" aria-label={t('journey:detail.history')}>
                 <div className="jw-row-between"><strong>{t('journey:detail.history')}</strong><button type="button" onClick={()=>setRevisions(null)}>{t('journey:detail.collapse')}</button></div>

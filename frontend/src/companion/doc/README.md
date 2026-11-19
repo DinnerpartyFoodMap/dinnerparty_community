@@ -8,6 +8,17 @@
 
 `npm run build` 和 `npm run build:mobile` 在构建前从 Live2D 官方地址准备 Cubism Core。生成的供应商运行时位于 `src/companion/runtime/`，由 Git 忽略并在构建时一起打包。已准备过 Core 的构建可以离线运行。开发时可先执行 `node scripts/prepare-live2d-core.mjs` 再启动 Vite。发版时按 [Live2D SDK 发布许可](https://www.live2d.com/en/sdk/license/) 核对项目适用的条款。
 
+## 底栏飞行
+
+底栏角色由 `CompanionRoam.jsx` 渲染，飞行逻辑在 `companionFlight.js`。
+- 左右走仍用 CSS 动画。
+- 在 iOS 原生控件里上拉「更多功能」时，手指一动角色就起飞：先飞到展开高度再加 40px（拖动时工具栏最多被拉过这么多），松手展开后落到工具栏上沿悬停。从展开状态往下拖时原地等着，收起后落回原位继续走。抽屉状态来自原生布局的 `drawer`（见 [平台文档](../../platform/doc/README.md)），旧版 App 不带这一项，角色不飞。
+- 窄屏 App 展开搜索时，没有结果就在搜索框上方悬停，有结果就停在结果列表上方，列表变高时跟着上移。
+- 起飞会冲过一点再回到位置，身体先拉长；落下越落越快，着地时压扁再弹回；在空中悬停时上下浮动。地面影子随高度变小变淡。Live2D 在空中抬头、略向后仰（`live2dScene.js` 的 `MOODS`，叠加在待机动作上）。内置火柴人只对头身角度、前倾、比例和呼吸做了形变；手臂、嘴、眉毛、眼珠的参数存在，但不会改变画面。想要举手、张嘴，需要在原稿里补这些形变后重新导出。
+- 减弱动态效果时不飞，而是淡出后在新位置淡入。
+
+所有位移都用 Web Animations 改 transform，不写 style 或 class。原因是 iOS 原生底图会监听整页属性的变化，重新采样触摸区域（`map/nativeMapView.js`），每帧写属性会让它反复全屏采样。暂停和继续行走也通过动画对象控制，不切换 class。测试：`npm run test:companion`。
+
 ## 额外角色
 
 网页观察屋和主题皮肤页共用兑换表单，角色和皮肤都按账号持有。选择已拥有的额外角色时获取版本和临时下载授权。资源格式和部署目录见 [皮肤与角色兑换](../../../../backend/modules/skins/doc/README.md#远程资源包)。

@@ -1,5 +1,4 @@
 import React,{useEffect,useRef,useState} from 'react';
-import Segmented from "../components/forms/Segmented";
 import {eventId} from './feedback';
 import useComposeDraft from './useComposeDraft';
 import JourneyPhotoPicker from './JourneyPhotoPicker';
@@ -10,13 +9,13 @@ import { t, tx } from '../i18n/index.js';
 const TEXT_LIMIT=12000;
 const SYNC_TEXT={empty:'',local:t('journey:composer.sync.local'),saving:t('journey:composer.sync.saving'),synced:t('journey:composer.sync.synced'),offline:t('journey:composer.sync.offline'),error:t('journey:composer.sync.error'),conflict:t('journey:composer.sync.conflict')};
 
-/** 全屏图文生成：图片 → 描述 → 地址（搜索中心）→ 日期 → 可见性 → 生成行程草稿。 */
+/** 写日记：图片 → 描述 → 大概位置（搜索中心）→ 日期 → 整理成日记；可见性只在保存时选择。 */
 export default function JourneyComposer({ctx,nav,params}) {
     const {api,base,token,cap,mapRef,tip}=ctx;
     const draft=useComposeDraft({base,token,composeId:params.composeId,preset:params.preset});
     const {payload,setPayload,photos,sync}=draft;
     const [error,setError]=useState(''),[busy,setBusy]=useState(false),[locationOpen,setLocationOpen]=useState(false);
-    const [dateOpen,setDateOpen]=useState(false),[visibilityOpen,setVisibilityOpen]=useState(false),[others,setOthers]=useState(null);
+    const [dateOpen,setDateOpen]=useState(false),[others,setOthers]=useState(null);
     const attempt=useRef(null);
     useEffect(()=>{
         // 有未完成内容时只提示，不自动覆盖当前的新输入
@@ -42,13 +41,13 @@ export default function JourneyComposer({ctx,nav,params}) {
             nav.replace('generation',{composeId:saved.id,jobId:job.id});
         }catch(e){if([409,410].includes(e.status))attempt.current=null;throw e;}
     });
-    // 不经 AI：用当前素材直接新建可编辑的日记草稿；原始描述与全部照片随之保留
+    // 自己整理：用当前内容直接新建可编辑的日记草稿；描述作为正文（保存时再选可见性），原始描述与全部照片随之保留
     const manual=()=>run(async()=>{
         const saved=draft.hasContent?await draft.flush():null;
         const content=draft.content;
         const media_meta=Object.fromEntries(Object.entries(content.media_notes).map(([id,v])=>[id,{kind:v.kind,kind_source:'user'}]));
         nav.replace('review',{mode:'create',journal:{id:null,revision:0,compose_draft_id:saved?.id||null,compose_revision:saved?.revision??null,document:{
-            title:t('journey:composer.defaultTitle'),start_date:payload.start_date,end_date:payload.end_date||payload.start_date,summary:'',stops:[],
+            title:t('journey:composer.defaultTitle'),start_date:payload.start_date,end_date:payload.end_date||payload.start_date,summary:payload.text.slice(0,5000),stops:[],
             entry_media_ids:content.media_ids,media_meta,source_input:{text:payload.text,start_date:payload.start_date,end_date:payload.end_date||payload.start_date,center:payload.center},
             intended_visibility:payload.intended_visibility}}});
     });
@@ -121,14 +120,6 @@ export default function JourneyComposer({ctx,nav,params}) {
                     {sync.kind==='offline'&&<button type="button" onClick={()=>run(()=>draft.flush())}>{t('journey:composer.retry')}</button>}
                     {sync.kind==='conflict'&&<><button type="button" onClick={()=>run(()=>draft.fork())}>{t('journey:composer.forkDraft')}</button><button type="button" onClick={()=>run(()=>draft.reload())}>{t('journey:composer.loadOtherVersion')}</button></>}
                 </div>
-                <SettingRow label={t('journey:composer.visibility.label')} value={payload.intended_visibility==='public'?t('journey:common.label.public'):t('journey:common.label.private')} expanded={visibilityOpen} onClick={()=>setVisibilityOpen(v=>!v)} ariaLabel={t('journey:composer.visibility.ariaLabel')}>
-                    {visibilityOpen&&<div className="jw-row-body">
-                        <Segmented label={t('journey:composer.visibility.label')} value={payload.intended_visibility} onChange={value=>setPayload({intended_visibility:value})}
-                            options={[['public',t('journey:common.label.public')],['private',t('journey:common.label.private')]]}/>
-                        <p className="jw-muted">{t('journey:composer.privacyNote')}</p>
-                    </div>}
-                </SettingRow>
-                {!cap.text_ai&&<p className="jw-muted">{t('journey:composer.noAiNote')}</p>}
                 {textOnlyMode&&<p className="jw-muted">{t('journey:composer.textOnlyNote')}</p>}
             </>}
         </div></div>

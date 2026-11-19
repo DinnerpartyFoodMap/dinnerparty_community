@@ -482,6 +482,7 @@ try {
         window.__markerTravel = [];
         const standalone = [...window.__foodMapMarkers.entries.values()].find(entry => entry.node.count === 1);
         window.__standaloneMarker = standalone.marker;
+        window.__standalonePosition = [...standalone.marker.position];
         window.__standaloneTravel = standalone.parts.travel;
         window.__standaloneAnimations = 0;
         Element.prototype.animate = function (keyframes, options) {
@@ -519,12 +520,12 @@ try {
         window.__foodMapMarkers.txns.size === 0`);
     const standalone = await evaluate(`(() => {
         const entry = window.__foodMapMarkers.entries.get('place:5');
-        return { sameMarker: entry.marker === window.__standaloneMarker, position: entry.marker.position, animations: window.__standaloneAnimations };
+        return { sameMarker: entry.marker === window.__standaloneMarker, position: entry.marker.position,
+            initialPosition: window.__standalonePosition, animations: window.__standaloneAnimations };
     })()`);
     assert.equal(standalone.sameMarker, true, 'the standalone marker keeps its existing view');
-    assert.ok(Math.abs(standalone.position[0] - 119.977) < 1e-7 && Math.abs(standalone.position[1] - 29.983) < 1e-7,
-        'the standalone marker lands at the precise coordinates');
-    assert.equal(standalone.animations, 0, 'the standalone marker changes coordinates without sliding');
+    assert.deepEqual(standalone.position, standalone.initialPosition, 'the standalone marker keeps its geographic anchor through the split');
+    assert.equal(standalone.animations, 0, 'the standalone marker has no split motion');
     const splitTravel = await evaluate('window.__markerTravel');
     const finalChildTrips = splitTravel.slice(pendingSplit.animations).filter(frames => frames[0]?.transform?.startsWith('translate(') &&
         frames[0].transform !== 'translate(0px, 0px)' && frames.at(-1)?.transform === 'translate(0px, 0px)');
@@ -546,7 +547,31 @@ try {
     const mergeTrips = mergeTravel.filter(frames => frames[0]?.transform === 'translate(0px, 0px)' &&
         frames.at(-1)?.transform?.startsWith('translate(') && frames.at(-1).transform !== 'translate(0px, 0px)');
     assert.equal(mergeTrips.length, 2, 'zoom back moves both children toward the aggregate');
-    assert.equal(mergeTravel.length, 3, 'zoom back also moves the reused marker');
+    assert.equal(mergeTravel.length, 3, 'zoom back also repositions the cluster whose membership changed');
+    assert.deepEqual(await evaluate('window.__standaloneMarker.position'), standalone.initialPosition,
+        'the standalone marker keeps its geographic anchor through the merge');
+    await evaluate(`window.__WEB_LAYOUT_MAP.setZoom(13)`);
+    await waitFor(`window.__foodMapMarkers.entries.get('place:5')?.marker === window.__standaloneMarker &&
+        window.__foodMapMarkers.txns.size === 0`);
+    await evaluate(`(() => {
+        const map = window.__WEB_LAYOUT_MAP;
+        map.emit('zoomstart');
+        map.zoom = 13.3;
+        map.positionMarkers();
+        map.emit('zoomchange');
+    })()`);
+    const precisePosition = await evaluate('window.__standaloneMarker.position');
+    assert.ok(Math.abs(precisePosition[0] - 119.977) < 1e-7 && Math.abs(precisePosition[1] - 29.983) < 1e-7,
+        'the next active zoom-in can refine the displayed coordinate');
+    await evaluate(`(() => {
+        const map = window.__WEB_LAYOUT_MAP;
+        map.setZoom(12);
+        map.emit('moveend');
+    })()`);
+    await waitFor(`window.__foodMapMarkers.snapshot.markerBand.kind === 'aggregate' && window.__foodMapMarkers.txns.size === 0`);
+    assert.deepEqual(await evaluate('window.__standaloneMarker.position'), precisePosition,
+        'zooming out retains the exact anchor once displayed');
+    assert.equal(await evaluate('window.__standaloneAnimations'), 0, 'refining during a camera zoom adds no marker-only travel');
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'marker tile zoom has no browser errors');
 
     await navigate('map', 1280, 900);

@@ -227,7 +227,6 @@ export default function JourneyReview({ctx,nav,params}) {
         <div className="jw-scroll"><div className="jw-content jw-stack">
             {message&&<Notice onClose={()=>setMessage('')}>{message}</Notice>}
             {error&&<Notice tone="error" onClose={()=>setError('')}>{error}</Notice>}
-            {document.ai_assisted&&<Notice><AiTag label={t('common:ai.assisted')} style={{marginRight:6}}/>{t('journey:review.aiAssisted')}</Notice>}
             {dirty&&['offline','conflict','pending'].includes(drafts.state.kind)&&<Notice tone="warn" role="status">
                 <span aria-label={t('journey:review.syncStatusLabel')}>{drafts.state.message||SYNC_TEXT[drafts.state.kind]}</span>
                 <span className="jw-inline-actions">
@@ -243,17 +242,20 @@ export default function JourneyReview({ctx,nav,params}) {
             </section>}
             <section className="jw-card jw-stack" aria-label={t('journey:review.titleSectionLabel')}>
                 <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.title')}</span><input value={document.title} maxLength={120} onChange={e=>edit({title:e.target.value})}/></label>
-                <p className="jw-muted">{tx('journey:review.summaryLine', { range: formatRange(document.start_date,document.end_date), stops: stops.length, pending: pendingStops.length, center: center?t('journey:review.summaryCenter', { centerLabel: centerLabel(center) }):'' })}</p>
+                {/* 由 AI 整理的草稿只在这里放一个小标签，不再逐项提示 */}
+                <p className="jw-muted">{document.ai_assisted&&<AiTag label={t('journey:review.aiTag')} style={{marginRight:6}}/>}{tx('journey:review.summaryLine', { range: formatRange(document.start_date,document.end_date), stops: stops.length, pending: pendingStops.length?t('journey:review.summaryPending', { count: pendingStops.length }):'', center: center?t('journey:review.summaryCenter', { centerLabel: centerLabel(center) }):'' })}</p>
                 <details className="jw-more">
                     <summary>{t('journey:review.datesSummary')}</summary>
-                    <div className="jw-stack">
-                        <div className="jw-actions">
-                            <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.startDate')}</span><input type="date" value={document.start_date} onChange={e=>edit(d=>({start_date:e.target.value,end_date:d.end_date<e.target.value?e.target.value:d.end_date}))}/></label>
-                            <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.endDate')}</span><input type="date" min={document.start_date} value={document.end_date} onChange={e=>edit({end_date:e.target.value})}/></label>
-                        </div>
-                        <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.summary')}</span><MarkdownField rows={3} maxLength={5000} value={document.summary} onChange={e=>edit({summary:e.target.value})}/></label>
+                    <div className="jw-actions">
+                        <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.startDate')}</span><input type="date" value={document.start_date} onChange={e=>edit(d=>({start_date:e.target.value,end_date:d.end_date<e.target.value?e.target.value:d.end_date}))}/></label>
+                        <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.endDate')}</span><input type="date" min={document.start_date} value={document.end_date} onChange={e=>edit({end_date:e.target.value})}/></label>
                     </div>
                 </details>
+                {/* 正文：AI 整理时是整理出的摘要，自己整理时是写下的描述；公开时显示 */}
+                <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.summary')}</span><MarkdownField rows={4} maxLength={5000} value={document.summary||''} placeholder={t('journey:review.field.summaryPlaceholder')} onChange={e=>edit({summary:e.target.value})}/></label>
+                {/* 旧草稿里另写过的公开文字：有内容才显示，清空后不再出现 */}
+                {!!document.public_text&&<label className="jw-field"><span className="jw-field__label">{t('journey:review.field.publicText')}</span>
+                    <MarkdownField rows={3} maxLength={5000} value={document.public_text} onChange={e=>edit({public_text:e.target.value})}/></label>}
             </section>
             {stops.map((s,i)=><JourneyStopCard key={s.id} stop={s} index={i} total={stops.length} dates={[document.start_date,document.end_date]} expanded={expanded===s.id}
                 onToggle={open=>setExpanded(open?s.id:null)} editStop={patch=>editStop(s.id,patch)} editingSaved={editingSaved}
@@ -265,7 +267,8 @@ export default function JourneyReview({ctx,nav,params}) {
                 <p className="jw-muted">{t('journey:review.noStopsHint')}</p>
                 <div className="jw-actions"><button type="button" onClick={()=>addBelow(-1)}>{t('journey:review.addOnMap')}</button></div>
             </section>}
-            <EntryPhotos document={document} base={base} token={token} busy={busy} onAdd={()=>uploadPhotos(null)}
+            <EntryPhotos document={document} base={base} token={token} busy={busy} visibility={visibility} onAdd={()=>uploadPhotos(null)}
+                onTogglePublic={id=>edit(d=>{const list=d.public_media_ids||[];return {public_media_ids:list.includes(id)?list.filter(m=>m!==id):[...list,id]};})}
                 onRemove={id=>edit(d=>({entry_media_ids:(d.entry_media_ids||[]).filter(m=>m!==id),public_media_ids:(d.public_media_ids||[]).filter(m=>m!==id),stops:d.stops.map(s=>({...s,media_ids:s.media_ids.filter(m=>m!==id)}))}))}
                 onAssign={assignPhotos}/>
             {!!unassigned.length&&<details className="jw-card jw-more">
@@ -289,12 +292,6 @@ export default function JourneyReview({ctx,nav,params}) {
                 {visibility==='public'?<>
                     <p role="status">{counts?t('journey:review.publicCounts', { link: counts.link, create: counts.create, conflicts: counts.conflict?t('journey:review.publicConflicts', { conflict: counts.conflict }):'' }):previewState==='loading'||previewState==='stale'?t('journey:review.previewUpdating'):t('journey:review.previewOnSave')}</p>
                     {counts&&<p className="jw-muted">{tx('journey:review.publicScope', { public_stops: counts.public_stops, public_photos: counts.public_photos, private_photos: counts.private_photos })}</p>}
-                    <label className="jw-field"><span className="jw-field__label">{t('journey:review.field.publicText')}</span>
-                        <MarkdownField rows={4} maxLength={5000} value={document.public_text||''} placeholder={t('journey:review.field.publicTextPlaceholder')} onChange={e=>edit({public_text:e.target.value})}/></label>
-                    {!!document.source_input?.text&&!document.public_text&&<button type="button" onClick={()=>edit({public_text:document.source_input.text.slice(0,5000)})}>{t('journey:review.useOriginalText')}</button>}
-                    {!!(document.entry_media_ids||[]).length&&<div className="jw-field"><span className="jw-field__label">{t('journey:review.publicPhotosLabel')}</span>
-                        <div className="jw-photo-choice">{document.entry_media_ids.map(id=>{const on=(document.public_media_ids||[]).includes(id);return <button type="button" key={id} aria-pressed={on} aria-label={on?t('journey:review.unpublishPhoto'):t('journey:review.publishPhoto')}
-                            onClick={()=>edit(d=>({public_media_ids:on?(d.public_media_ids||[]).filter(m=>m!==id):[...(d.public_media_ids||[]),id]}))}><PrivatePhoto id={id} base={base} token={token} alt=""/>{on&&<span aria-hidden="true">✓</span>}</button>;})}</div></div>}
                     {counts?.empty_public&&<Notice tone="warn">{t('journey:review.emptyPublicWarning')}</Notice>}
                     {preview?.body&&<details className="jw-more" open={previewOpen} onToggle={e=>setPreviewOpen(e.currentTarget.open)}>
                         <summary>{t('journey:review.viewPublicContent')}</summary>
@@ -303,7 +300,7 @@ export default function JourneyReview({ctx,nav,params}) {
                 </>:<p className="jw-muted">{tx('journey:review.privateScope', { unpublishNote: wasPublic?t('journey:review.unpublishNote'):'' })}</p>}
                 {wasPublic&&publication?.outdated&&visibility==='public'&&<p className="jw-muted">{t('journey:review.publicOutdated')}</p>}
             </section>
-            <p className="jw-muted">{tx('journey:review.totals', { count: stops.length, total: total.toFixed(2) })}</p>
+            {total>0&&<p className="jw-muted">{tx('journey:review.totals', { count: stops.length, total: total.toFixed(2) })}</p>}
         </div></div>
         {/* 输入时键盘盖住底部：操作区收起，不随 WebView 缩小被顶到键盘上方（index.html .keyboard-open） */}
         <footer className="jw-footer" data-hide-when-keyboard="">
@@ -326,9 +323,14 @@ export default function JourneyReview({ctx,nav,params}) {
             onToggle={id=>toggleStopPhoto(photosFor,id)} onUpload={()=>uploadPhotos(photosFor)} onClose={()=>setPhotosFor(null)}/>
     </div>;
 }
-function EntryPhotos({document,base,token,busy,onAdd,onRemove,onAssign}) {
+/**
+ * 这篇日记的全部照片集中在这里：放到地点（随该地点公开）、移出；公开时，没放到地点的照片在下方单独切换公开。
+ */
+function EntryPhotos({document,base,token,busy,visibility,onAdd,onRemove,onAssign,onTogglePublic}) {
     const ids=document.entry_media_ids||[];
     const used=new Set(document.stops.flatMap(s=>s.media_ids));
+    const published=new Set(document.public_media_ids||[]);
+    const isPublic=visibility==='public';
     // 一次用餐的多张照片可以一起归到某一站，不必逐站展开选择
     const [picking,setPicking]=useState(null);
     const toggle=id=>setPicking(list=>list.includes(id)?list.filter(x=>x!==id):[...list,id]);
@@ -344,14 +346,17 @@ function EntryPhotos({document,base,token,busy,onAdd,onRemove,onAssign}) {
                 <PrivatePhoto id={id} base={base} token={token} alt=""/>{picking.includes(id)&&<span aria-hidden="true">✓</span>}</button>
             :<figure key={id} className="jw-entry-photo">
                 <PrivatePhoto id={id} base={base} token={token} alt=""/>
-                {!used.has(id)&&<figcaption>{t('journey:review.photos.unassigned')}</figcaption>}
+                {!used.has(id)&&(isPublic
+                    ?<figcaption><button type="button" className="jw-link" aria-pressed={published.has(id)} aria-label={published.has(id)?t('journey:review.unpublishPhoto'):t('journey:review.publishPhoto')} onClick={()=>onTogglePublic(id)}>
+                        {published.has(id)?t('journey:review.photos.publicOn'):t('journey:review.photos.publicOff')}</button></figcaption>
+                    :<figcaption>{t('journey:review.photos.unassigned')}</figcaption>)}
                 <button type="button" className="jw-entry-photo__remove" aria-label={t('journey:review.photos.removeFromEntry')} onClick={()=>onRemove(id)}>×</button>
             </figure>)}</div>:<p className="jw-muted">{t('journey:review.photos.empty')}</p>}
         {picking&&<label className="jw-field"><span className="jw-field__label">{tx('journey:review.photos.assignSelected', { count: picking.length })}</span>
             <select aria-label={t('journey:review.photos.assignSelectLabel')} value="" disabled={!picking.length} onChange={e=>{if(e.target.value&&onAssign(picking,e.target.value)!==false)setPicking(null);}}>
                 <option value="">{t('journey:review.photos.chooseStop')}</option>{document.stops.map((s,i)=><option key={s.id} value={s.id}>{i+1}. {s.name}</option>)}
             </select></label>}
-        {!picking&&ids.some(id=>!used.has(id))&&<p className="jw-muted">{t('journey:review.photos.unassignedHint')}</p>}
+        {!picking&&ids.some(id=>!used.has(id))&&<p className="jw-muted">{isPublic?t('journey:review.photos.unassignedHint'):t('journey:review.photos.unassignedHintPrivate')}</p>}
     </section>;
 }
 function PublicPreview({body,links}) {
@@ -362,7 +367,7 @@ function PublicPreview({body,links}) {
         {!!body.entry_media_ids?.length&&<small className="jw-muted">{tx('journey:review.preview.morePhotos', { count: body.entry_media_ids.length })}</small>}
         {body.stops.map(s=><div key={s.id} className="jw-public-preview__stop">
             <span>{s.index+1}. {s.name}</span>
-            {s.excerpt.length?s.excerpt.map((e,i)=><blockquote key={i} className={`jw-excerpt${e.kind==='edited'?' is-edited':''}`}><MarkdownText text={e.text}/><small>{e.kind==='edited'?t('journey:common.label.authorEdited'):t('journey:common.label.originalExcerpt')}</small></blockquote>):<small className="jw-muted">{t('journey:review.preview.noText')}</small>}
+            {s.excerpt.length?s.excerpt.map((e,i)=><blockquote key={i} className="jw-excerpt"><MarkdownText text={e.text}/></blockquote>):<small className="jw-muted">{t('journey:review.preview.noText')}</small>}
             <small className="jw-muted">{tx('journey:review.preview.stopMeta', { count: s.media_ids.length, mapAction: ({link:t('journey:review.preview.mapLink'),create:t('journey:review.preview.mapCreate')})[links.get(s.id)?.action]||t('journey:review.preview.mapNone') })}</small>
         </div>)}
         {!body.stops.length&&<p className="jw-muted">{t('journey:review.preview.noStops')}</p>}

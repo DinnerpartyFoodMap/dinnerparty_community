@@ -8,7 +8,7 @@
 //   播放，节奏与网页的 MARKER_TIMING 相同。网页只在聚合层级变化、视野出缓冲区、数据变化时发一次，不逐帧参与。
 // - 点按：单点回传 markerTap（打开卡片），聚合回传 clusterTap，交给 MapView 的 handleClusterClick（与网页相同的展开逻辑）。
 import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
-import { buildSnapshot, resolveMarkerZoom, boundsContains } from './cluster/snapshot.js';
+import { buildSnapshot, resolveMarkerZoom, boundsContains, shouldRefineMarkerAnchors, stabilizeMarkerAnchors } from './cluster/snapshot.js';
 import { planTransition } from './cluster/transitions.js';
 import { PLACE_GLYPH, CLUSTER_GLYPH } from './cluster/glyph.js';
 import { placeGlyphKind, markerImageSources, DEFAULT_CLUSTER_CROP } from './markerContent.js';
@@ -126,7 +126,10 @@ export class NativeMarkerLayer {
         this.styleTimer = 0;
         this.destroyed = false;
 
-        this._onMoveStart = () => { this.cameraMoving = true; };
+        this._onMoveStart = () => {
+            if (!this.cameraMoving) this.cameraStartZoom = Number(this.map.getZoom());
+            this.cameraMoving = true;
+        };
         // 移动中：聚合层级变了（捏合、减速、点聚合后的放大动画）或视野出了缓冲区，立即换节点
         this._onMapMove = () => {
             if (this.destroyed || !this.engine || !this.snapshot) return;
@@ -134,7 +137,11 @@ export class NativeMarkerLayer {
             const logical = this._resolveZoom(zoom);
             if (logical === null) return;
             const viewBounds = readViewBounds(this.map);
-            if (logical !== this.logicalZoom || (viewBounds && !boundsContains(this.snapshot.coverageBounds, viewBounds))) this._commit('live');
+            const refining = this.cameraMoving && logical === this.logicalZoom && this.snapshot.engine === this.engine
+                && shouldRefineMarkerAnchors(this.snapshot, zoom, this.cameraStartZoom);
+            if (refining || logical !== this.logicalZoom || (viewBounds && !boundsContains(this.snapshot.coverageBounds, viewBounds))) {
+                this._commit('live', refining);
+            }
         };
         this._onMoveEnd = () => {
             this.cameraMoving = false;
@@ -186,7 +193,7 @@ export class NativeMarkerLayer {
         this._commit('data');
     }
 
-    _commit(reason) {
+    _commit(reason, refining = false) {
         if (this.destroyed || !this.engine) return;
         // 数据变化等相机静止后一起提交；移动中只按聚合层级与缓冲区换节点（live）
         if (this.cameraMoving && reason === 'data') {
@@ -208,6 +215,7 @@ export class NativeMarkerLayer {
             transitionVersion: ++this.version
         });
         const plan = planTransition(this.snapshot, next);
+        stabilizeMarkerAnchors(this.snapshot, next, plan, { refining, selectedKey: this.selectedKey });
         this.snapshot = next;
         const nodes = next.visibleNodes.map(nativeNode);
         const signature = nodesSignature(nodes);
@@ -230,6 +238,9 @@ export class NativeMarkerLayer {
         const next = key || null;
         if (next === this.selectedKey) return;
         this.selectedKey = next;
+        if (this.snapshot?.nodeByKey.get(next)?.sourceCoordinate) {
+            this._commit('selection');
+        }
         this.map.setSelectedPlace(next);
     }
 

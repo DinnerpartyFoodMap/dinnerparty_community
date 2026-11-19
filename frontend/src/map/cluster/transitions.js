@@ -18,7 +18,8 @@ function emptyPlan(kind) {
     return {
         kind,
         reuse: new Map(),        // nextKey -> prevKey：沿用同一图形（key 相同，或成员一致/一一对应的跨代节点）
-        reanchor: new Set(),     // nextKey：换档只校正位置，直接落在新坐标
+        keepAnchor: new Set(),   // nextKey：换档时仍代表同一组地点，保留已显示的坐标
+        reanchor: new Set(),     // nextKey：补齐明细坐标时跳过独立的滑动动画
         splitFrom: new Map(),    // nextKey -> prevKey：从父聚合的位置出发，移动到自己的位置
         mergeInto: new Map(),    // prevKey -> nextKey：旧节点朝父聚合移动并收拢
         splitSources: new Set(), // prevKey：被拆开的父聚合，原地淡出
@@ -170,7 +171,7 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
 
     const nextToPrev = new Map();
     const prevToNext = new Map();
-    const reanchorCandidates = new Set();
+    const stableCandidates = new Set();
     let total = 0;
     for (const node of fineNodes) {
         total += node.count;
@@ -187,7 +188,8 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
         let bestDistance = Infinity;
         for (const [parent, count] of votes) {
             if (count < bestCount) continue;
-            const distance = markerDistanceSquared(node.coordinate, coarse.nodeByKey.get(parent).coordinate);
+            const coarseNode = coarse.nodeByKey.get(parent);
+            const distance = markerDistanceSquared(node.sourceCoordinate ?? node.coordinate, coarseNode.sourceCoordinate ?? coarseNode.coordinate);
             if (count > bestCount || distance < bestDistance || (distance === bestDistance && parent < bestParent)) {
                 bestParent = parent;
                 bestCount = count;
@@ -198,11 +200,11 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
         const nextKey = refining ? node.key : bestParent;
         const prevKey = refining ? bestParent : node.key;
         linkNodes(nextToPrev, prevToNext, nextKey, prevKey);
-        if (bestCount === node.count && bestCount === coarse.nodeByKey.get(bestParent).count) reanchorCandidates.add(nextKey);
+        if (bestCount === node.count && bestCount === coarse.nodeByKey.get(bestParent).count) stableCandidates.add(nextKey);
     }
     planRelations(plan, nextToPrev, prevToNext);
-    for (const key of reanchorCandidates) {
-        if (plan.reuse.has(key)) plan.reanchor.add(key);
+    for (const key of stableCandidates) {
+        if (plan.reuse.has(key)) plan.keepAnchor.add(key);
     }
 }
 

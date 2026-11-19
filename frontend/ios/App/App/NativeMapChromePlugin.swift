@@ -28,7 +28,9 @@ import Capacitor
 ///   sheet: { sessionId, ownerId, type: select|dismiss, sheetId, token, rowId? }
 ///   drawer: { sessionId, ownerId, type: select, rowId }
 ///   layout: { sessionId, showing, occupiedRects, slots: [{ id, x, y, width, height }], bottomOccupied, viewport, safeArea,
-///             tour?: { step, drawerOpen } }（指引中的目标位置是 id 为 "tour" 的 slot）
+///             drawer: { open, dragging, height }, tour?: { step, drawerOpen } }（指引中的目标位置是 id 为 "tour" 的 slot）
+///   drawer（v18 内追加，旧版原生不带，网页当作收起）：更多功能的展开、拖动与内容高度；开始拖动、展开 / 收起时立即回传，不等防抖
+///   （底栏小伙伴随之起飞、落下）
 ///
 /// - v3：搜索展开后工具栏变为原生输入框，文本、提交、焦点与退出经 search 事件交给网页处理。
 /// - v4：更多 / 住民 / 收藏面板改为系统 sheet（iOS 26 Liquid Glass）；行内容由网页下发，选择交回网页执行。
@@ -94,6 +96,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
     private var eventSeq = 0
     private var pendingAction: (eventId: String, deadline: Date)?
     private var layoutWorkItem: DispatchWorkItem?
+    private var drawerMotionPending = false
     private var statusBarDark: Bool?
     private var observers: [NSObjectProtocol] = []
 
@@ -159,6 +162,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             model.onSheetEvent = { [weak self] type, data in self?.emit("sheet", type, data) }
             model.onDrawerEvent = { [weak self] type, data in self?.emit("drawer", type, data) }
             model.onFramesChanged = { [weak self] in self?.scheduleLayout() }
+            model.onDrawerMotion = { [weak self] in self?.scheduleDrawerMotion() }
             self.pendingAction = nil
             self.lastHeartbeat = Date()
             self.startHealthTimer()
@@ -645,6 +649,19 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
     }
 
+    /// 更多功能开始拖动、展开 / 收起：下一轮主循环立即回传布局（网页的小伙伴要赶在工具栏上沿之前起飞），不走 60ms 防抖。
+    /// 同一轮里的几处变化（松手时拖动结束与展开）合并成一次，网页不会先看到“收起”再看到“展开”。
+    private func scheduleDrawerMotion() {
+        guard !drawerMotionPending else { return }
+        drawerMotionPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.drawerMotionPending = false
+            self.layoutWorkItem?.cancel()
+            self.emitLayout()
+        }
+    }
+
     /// 回传占用区域：坐标换算为 WebView 视口的 CSS 像素（原生点 → WebView 坐标 → 除以缩放）
     private func emitLayout() {
         guard let model = model, let sessionId = model.sessionId, let geometry = geometryProvider?() else { return }
@@ -679,6 +696,12 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             "occupiedRects": model.interactiveRects.map(css),
             "slots": slots,
             "bottomOccupied": bottomOccupied,
+            // 更多功能：展开时工具栏上沿比占位高 height；拖动中 dragging 为真（还没决定展开或收起）
+            "drawer": [
+                "open": model.drawerOpen,
+                "dragging": model.drawerDragging && model.drawerAvailable,
+                "height": Double(model.drawerContentHeight / zoom)
+            ] as [String: Any],
             "viewport": ["width": Double(webView.bounds.width / zoom), "height": Double(viewportHeight)],
             "safeArea": [
                 "top": Double(insets.top / zoom),

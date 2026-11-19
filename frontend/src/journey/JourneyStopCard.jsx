@@ -3,7 +3,6 @@ import {eventId} from './feedback';
 import {PrivatePhoto,Badge,MarkdownField} from './shared';
 import {located,needsReview,excerptText,distanceMeters,formatDistance} from './reviewUtils';
 import { t, tx } from '../i18n/index.js';
-import { AiTag } from '../components/primitives/AiLabel';
 
 const MAP_ACTION={link:t('journey:stopCard.mapAction.link'),create:t('journey:stopCard.mapAction.create'),conflict:t('journey:stopCard.mapAction.conflict')};
 
@@ -40,7 +39,7 @@ export default function JourneyStopCard({stop,index,total,dates,expanded,onToggl
             <MarkdownField aria-label={t('journey:stopCard.textAriaLabel', { index: index+1 })} className={`jw-excerpt-input${stop.excerpt_edited?' is-edited':''}`} rows={Math.min(8,Math.max(2,Math.ceil(excerpt.length/28)))} maxLength={2000}
                 value={excerpt} placeholder={t('journey:stopCard.textPlaceholder')} onChange={e=>editText(e.target.value)}/>
         </div>
-        {!!stop.dishes?.length&&<p className="jw-muted"><AiTag label={t('journey:stopCard.dishesSource')} style={{marginRight:6}}/>{tx('journey:stopCard.dishes', { dishes: stop.dishes.join(t('common:punctuation.listSeparator')) })}</p>}
+        {!!stop.dishes?.length&&<p className="jw-muted">{tx('journey:stopCard.dishes', { dishes: stop.dishes.join(t('common:punctuation.listSeparator')) })}</p>}
         <p className="jw-stop__place">{located(stop)?`${stop.address||(stop.place_id?t('journey:stopCard.localMarker'):t('journey:stopCard.located'))}${distance!=null?t('journey:stopCard.distanceFromCenter', { distance: formatDistance(distance) }):''}`:t('journey:stopCard.unlocatedHint')}</p>
 
         <div className="jw-stop__actions">
@@ -94,7 +93,7 @@ export default function JourneyStopCard({stop,index,total,dates,expanded,onToggl
 }
 /**
  * 到访时间：可以只知道日期，也可以再填具体时间（单日行程只填时间）。不知道日期就留空，不会被当成行程第一天。
- * 由模型从描述里推测的时间（at_source=model）标为「AI 推测」，作者修改或确认后标记消失。
+ * 由描述推断的时间（at_source=model）标为「时间待确认」，作者修改或确认后标记消失。整篇草稿的 AI 标签只在核对页顶部出现一次。
  */
 function StopTime({stop,dates,editStop}) {
     const [start,end]=dates,multiDay=start!==end;
@@ -104,7 +103,7 @@ function StopTime({stop,dates,editStop}) {
         editStop({at:d?(nextTime?`${d}T${nextTime}`:d):'',at_source:''});
     };
     return <div className="jw-field">
-        <span className="jw-field__label">{t('journey:stopCard.field.time')}{stop.at_source==='model'&&<AiTag label={t('journey:stopCard.timeGuessed')} style={{marginLeft:6}}/>}</span>
+        <span className="jw-field__label">{t('journey:stopCard.field.time')}</span>
         <div className="jw-actions">
             {multiDay&&<input type="date" aria-label={t('journey:stopCard.field.day')} min={start} max={end} value={day} onChange={e=>setAt(e.target.value,e.target.value?time:'')}/>}
             <input type="time" aria-label={t('journey:stopCard.field.clock')} disabled={multiDay&&!day} value={time} onChange={e=>setAt(day,e.target.value)}/>

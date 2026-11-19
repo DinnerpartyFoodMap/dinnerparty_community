@@ -9,7 +9,7 @@ import Markdown from "../components/markdown/Markdown";
 import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
 import PlaceCheckInPanel from "../places/components/PlaceCheckInPanel";
 import RatingPredictionValue from "../places/components/RatingPredictionValue";
-import CompanionFigure from '../companion/CompanionFigure';
+import CompanionRoam from '../companion/CompanionRoam';
 import usePlaceRating from "../places/hooks/usePlaceRating";
 import useVisitEvidence from '../places/useVisitEvidence';
 import useDetailInterest from '../places/useDetailInterest';
@@ -608,6 +608,8 @@ export default function MapUI(props) {
     const mobileFloatingBottom = compactSearch ? 78 : 130;
     const addSearchPlaceholder = addMode ? t('map:ui.addSearchPlaceholder') : null;
     const [searchExpandedState, setSearchExpanded] = useState(false);
+    // 搜索结果列表元素：窄屏 App 搜索时底栏小伙伴飞到它上方
+    const [searchListEl, setSearchListEl] = useState(null);
     const searchExpanded = searchExpandedState || (compactSearch && addMode);
     // 网页输入框的“输入中”布局：失焦稍后生效，避免点“收起键盘”时按钮先被换回头像、点击落空
     const [webSearchEditing, setWebSearchEditing] = useState(false);
@@ -2155,6 +2157,7 @@ export default function MapUI(props) {
         {searchTerm && searchResultsVisible && (addMode || aiThinking || aiRecommendations.length > 0 || Array.isArray(searchResults) || searchFailed || spLoading || spError || Array.isArray(spResults)) && (
             <ScrollableView
                 key="search-results"
+                ref={setSearchListEl}
                 className="fm-search-results"
                 data-native-cluster-occluder=""
                 as={motion.div}
@@ -2338,11 +2341,14 @@ export default function MapUI(props) {
             <div className="fm-statusbar-occluder" data-map-occluder="" aria-hidden="true" />
             {isNarrow && mapReady && !chrome.connecting && (!nativeChrome || chrome.showing)
                 && props.companion && !pickerMode && !selectedPlace && !addMode && !openSheetId && !mobileMoreOpen && !nativeOverlayActive && (
-                <div className="fm-companion-roam" aria-hidden="true" style={{ bottom: nativeChrome
-                    ? chrome.bottomOccupied + 4
-                    : aboveBottomInset(platform === 'web' ? mobileFloatingBottom + (userFilter ? 52 : 0) : 52) }}>
-                    <CompanionFigure backendUrl={backendUrl} token={token} companion={props.companion} />
-                </div>
+                // 上拉更多功能（iOS 原生控件）或展开搜索（窄屏 App）时飞起，收起时落回
+                <CompanionRoam backendUrl={backendUrl} token={token} companion={props.companion}
+                    bottom={nativeChrome
+                        ? chrome.bottomOccupied + 4
+                        : aboveBottomInset(platform === 'web' ? mobileFloatingBottom + (userFilter ? 52 : 0) : 52)}
+                    drawer={chrome.drawerMotion}
+                    searching={compactSearch && searchExpanded}
+                    perch={compactSearch && searchExpanded ? searchListEl : null} />
             )}
 
             {addMode && !pickerMode && <Notice title={t('map:ui.addPlaceHint')} tone="warning"

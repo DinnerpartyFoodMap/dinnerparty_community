@@ -30,6 +30,7 @@
 | npm run test:overlay | backdropPress 点击/触摸守卫；不代表每个弹层均有浏览器覆盖 |
 | npm run test:rating | 评分展示规则与请求封装；组件生命周期另需交互测试 |
 | npm run test:native-chrome | JS 地图控件（协议 v17）与设置桥接会话、清洗和请求响应；实际顺序包含两个测试文件 |
+| npm run test:companion | 底栏小伙伴的起飞高度、飞行动画计划与各层控制（假元素）；实际动画和 Live2D 表情要在浏览器或真机看 |
 | npm run test:journey-text | 原文片段分配与重叠逻辑；完整日记在浏览器/后端测试 |
 | npm run test:i18n | 默认语言键、插值、源码硬编码与登记的数据值 |
 | npm run build / build:mobile | Web/移动产物构建；移动配置检查不等于原生签名或真机验收 |

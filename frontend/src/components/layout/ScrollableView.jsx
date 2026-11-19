@@ -1,6 +1,7 @@
 import React from 'react';
 
-export default function ScrollableView({ children, style = {}, className = "", as: Component = 'div', ...props }) {
+// ref 转给滚动容器本身（地图搜索结果：底栏小伙伴停在它上方）
+const ScrollableView = React.forwardRef(function ScrollableView({ children, style = {}, className = "", as: Component = 'div', ...props }, ref) {
     // We can use a single global class to avoid generating too many <style> blocks, 
     // or just inject it globally if we can, but since dark mode may change, 
     // injecting via a component ensures the values match the current theme.
@@ -25,6 +26,7 @@ export default function ScrollableView({ children, style = {}, className = "", a
                 }
             `}</style>
             <Component
+                ref={ref}
                 className={`yuyuko-custom-scrollbar ${className}`.trim()}
                 style={{
                     overflowY: 'auto',
@@ -38,4 +40,6 @@ export default function ScrollableView({ children, style = {}, className = "", a
             </Component>
         </>
     );
-}
+});
+
+export default ScrollableView;

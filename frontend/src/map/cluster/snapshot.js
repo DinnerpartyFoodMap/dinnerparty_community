@@ -101,6 +101,44 @@ export function buildSnapshot(engine, { viewBounds, logicalZoom, queryMode, mark
     };
 }
 
+function matchesCoordinate(a, b) {
+    return Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+}
+
+export function shouldRefineMarkerAnchors(snapshot, zoom, startZoom) {
+    return snapshot?.hasRefinableAnchors && zoom - startZoom >= DEFAULT_HYSTERESIS;
+}
+
+function markerPrecision(node, snapshot) {
+    if (node.kind === 'place') return node.place?.aggregateCell?.[0] ?? Infinity;
+    return snapshot.markerBand?.cell ?? Infinity;
+}
+
+/** 保留未拆合标记已显示的坐标。索引和地点数据仍使用瓦片原坐标。 */
+export function stabilizeMarkerAnchors(prev, next, plan, { refining = false, selectedKey = null } = {}) {
+    if (!prev || prev.queryMode !== next.queryMode) return;
+    for (const [index, node] of next.visibleNodes.entries()) {
+        const previous = prev.nodeByKey.get(plan.reuse.get(node.key));
+        if (!previous) continue;
+        const carried = previous.sourceCoordinate && matchesCoordinate(previous.sourceCoordinate, node.coordinate);
+        if (!plan.keepAnchor.has(node.key) && !carried) continue;
+        if (matchesCoordinate(previous.coordinate, node.coordinate)) continue;
+
+        const anchorPrecision = previous.anchorPrecision ?? markerPrecision(previous, prev);
+        const morePrecise = markerPrecision(node, next) > anchorPrecision;
+        const detail = node.kind === 'place' && !node.place?.aggregate;
+        // 后续继续放大时采用更细的坐标；选中地点时立即使用精确位置。
+        if ((refining && morePrecise && carried && !plan.keepAnchor.has(node.key)) || (detail && selectedKey === node.key)) {
+            plan.reanchor.add(node.key);
+            continue;
+        }
+        const anchored = { ...node, coordinate: previous.coordinate, sourceCoordinate: node.coordinate, anchorPrecision };
+        next.visibleNodes[index] = anchored;
+        next.nodeByKey.set(node.key, anchored);
+        if (morePrecise) next.hasRefinableAnchors = true;
+    }
+}
+
 /** 构建 成员 key → 节点 key 的映射。只在需要跨代比对时按需构建，并受成员总数预算限制。 */
 export function buildMemberToNode(snapshot, budget = 6000) {
     const map = new Map();

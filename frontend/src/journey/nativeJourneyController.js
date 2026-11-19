@@ -230,6 +230,8 @@ export function createNativeJourneyController({
       case 'composer': return composerPage(params);
       case 'generation': return generationPage(params);
       case 'review': return reviewPage(params);
+      case 'shop': return shopPage(params);
+      case 'duplicates': return duplicatesPage();
       case 'calendar': return calendarPage();
       case 'detail': return detailPage(params);
       case 'unfinished': return unfinishedPage();
@@ -449,7 +451,6 @@ export function createNativeJourneyController({
     let note = '';
     if (!cap.text_ai) {
       buttons = [{ id: 'manual', title: t('journey:composer.manualSave'), style: 'primary' }];
-      note = t('journey:composer.noAiNote');
     } else if (textOnlyMode) {
       buttons = [
         { id: 'generateTextOnly', title: t('journey:composer.generateTextOnly'), style: 'primary', needsText: true },
@@ -560,10 +561,6 @@ export function createNativeJourneyController({
           dateStart: t('journey:composer.date.start'),
           dateEnd: t('journey:composer.date.end'),
           multiDay: t('journey:composer.multiDay'),
-          visibility: t('journey:composer.visibility.label'),
-          public: t('journey:common.label.public'),
-          private: t('journey:common.label.private'),
-          privacyNote: t('journey:composer.privacyNote'),
           saveDraft: t('journey:composer.saveDraft'),
           blockerEmpty: t('journey:composer.blocker.empty')
         }
@@ -757,46 +754,182 @@ export function createNativeJourneyController({
     return review;
   }
 
+  // 到访时间：开关决定是否记录；时间选择器的初始值只是默认位置，开关关着时不保存
+  function timeFields(stop, document) {
+    const guessed = stop?.at_source === 'model';
+    return [
+      { id: 'has_at', kind: 'toggle', label: t('journey:stopCard.field.hasTime'), value: !!stop?.at },
+      { id: 'at', kind: 'datetime', label: t('journey:stopCard.field.time'), value: stop?.at || `${document.start_date}T12:00`, footer: guessed ? t('journey:stopCard.timeGuessedHint') : '' }
+    ];
+  }
+  function timeValue(values) {
+    if (!values.has_at) return '';
+    const at = String(values.at || '').trim();
+    return /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(at) ? at : '';
+  }
+
   function reviewStopForm(stop) {
+    const document = review.document;
     return registerForm({
       title: stop.name,
-      message: t('journey:review.nativeHint') || '',
+      message: '',
       submitTitle: t('common:action.save'),
       openTitle: t('common:action.edit'),
       fields: [
         { id: 'name', kind: 'text', label: t('journey:stopCard.field.name'), value: stop.name },
-        { id: 'at', kind: 'text', label: t('journey:stopCard.field.time'), value: stop.at || '' },
-        { id: 'address', kind: 'text', label: t('journey:composer.address.label'), value: stop.address || '', placeholder: t('journey:composer.address.label') },
-        { id: 'text', kind: 'textarea', label: t('journey:stopCard.textLabel'), value: excerptText(stop) },
-        { id: 'note', kind: 'textarea', label: t('journey:stopCard.field.mood'), value: stop.note || '' },
-        { id: 'latitude', kind: 'number', label: t('admin:exhibitions.latitude'), value: stop.lat ?? '' },
-        { id: 'longitude', kind: 'number', label: t('admin:exhibitions.longitude'), value: stop.lng ?? '' }
+        ...timeFields(stop, document),
+        { id: 'text', kind: 'textarea', label: t('journey:stopCard.textLabel'), value: excerptText(stop) }
       ],
       handler: async (values) => {
-        const lat = values.latitude === '' ? null : Number(values.latitude);
-        const lng = values.longitude === '' ? null : Number(values.longitude);
-        const located = Number.isFinite(lat) && Number.isFinite(lng);
         const text = String(values.text || '');
         const source = (stop.excerpts || []).map((item) => item.text).join(t('journey:reviewUtils.excerptSeparator'));
+        const at = timeValue(values);
         Object.assign(stop, {
           name: String(values.name || '').trim() || stop.name,
-          at: String(values.at || '').trim(),
-          address: String(values.address || '').trim(),
-          note: String(values.note || '').trim(),
-          excerpt_edited: text === source ? '' : text,
-          lat: located ? lat : null,
-          lng: located ? lng : null,
-          confirmed: located || stop.confirmed,
-          visit_status: 'visited'
+          // 作者看过时间并保存：不再标「时间待确认」
+          at,
+          at_source: '',
+          excerpt_edited: text === source ? '' : text
         });
-        return { page: await reviewPage({}), message: t('journey:review.savedWithPending') };
+        return { page: await reviewPage({}) };
       }
     });
+  }
+
+  // 选定的店铺或位置写进这一站：亲自选定即为已确认（与网页 placeToStop / pointToStop 相同的字段）
+  const CHOSEN = { visit_status: 'visited', confirmed: true, location_resolution: 'pending', candidates: [], needs_choice: false, suggested_id: null };
+  function chooseForStop(stopId, patch) {
+    const stop = review?.document.stops.find((item) => item.id === stopId);
+    if (stop) Object.assign(stop, patch, CHOSEN);
+    // 回到核对页：保留内存中的修改，不按原参数重新读取
+    const index = stack.map((item) => item.type).lastIndexOf('review');
+    if (index >= 0) stack[index].params = {};
+    return back(index >= 0 ? index + 1 : stack.length - 1);
+  }
+
+  async function searchShops(query, center) {
+    const params = new URLSearchParams({ q: query, limit: '20' });
+    if (Number.isFinite(center?.lat) && Number.isFinite(center?.lng)) {
+      params.set('lat', String(center.lat));
+      params.set('lng', String(center.lng));
+    }
+    const res = await fetch(`${backendUrl}/api/places/search/fast?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(t('journey:feedback.requestFailed', { status: res.status }));
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  /** 选择店铺：先列候选，再按店名搜索地图上已有的店，或直接用当前位置。 */
+  async function shopPage(params) {
+    if (!review) await loadReview({});
+    const stop = review.document.stops.find((item) => item.id === params.stopId);
+    if (!stop) return back(stack.length - 1);
+    const query = String(params.query || '');
+    const center = Number.isFinite(stop.lat) && Number.isFinite(stop.lng) ? stop : review.document.source_input?.center || null;
+    const sections = [];
+    let error = '';
+    const candidates = stop.candidates || [];
+    if (candidates.length) {
+      if (stop.candidate_basis === 'broad') sections.push({ id: 'broad', title: '', text: t('journey:review.broadCandidates') });
+      sections.push({
+        id: 'candidates',
+        title: t('journey:review.candidatesLabel'),
+        rows: candidates.map((candidate) => ({
+          id: String(candidate.id),
+          title: candidate.name,
+          subtitle: candidate.address || (candidate.source === 'local' ? t('journey:review.localMarker') : t('common:label.amapPlace')),
+          badge: candidate.suggested ? t('journey:review.suggested') : '',
+          actions: [action(candidate.name, async () => ({ page: await chooseForStop(stop.id, {
+            name: candidate.name, lng: candidate.lng, lat: candidate.lat, place_id: candidate.place_id || null, source: candidate.source,
+            address: candidate.address || '', external_id: candidate.source === 'amap' ? candidate.id : ''
+          }) }))]
+        }))
+      });
+    }
+    if (query) {
+      try {
+        const results = await searchShops(query, center);
+        sections.push(results.length ? {
+          id: 'results',
+          title: t('journey:review.shop.results'),
+          rows: results.map((place) => ({
+            id: `place-${place.id}`,
+            title: place.name,
+            subtitle: place.address || t('journey:review.localMarker'),
+            actions: [action(place.name, async () => ({ page: await chooseForStop(stop.id, {
+              name: place.name, place_id: Number(place.id), lng: Number(place.longitude), lat: Number(place.latitude),
+              address: place.address || '', source: 'local', external_id: ''
+            }) }))]
+          }))
+        } : { id: 'no-results', title: '', text: t('journey:review.shop.noResults') });
+      } catch (e) { error = e.message || ''; }
+    }
+    const buttons = [
+      action(t('journey:review.shop.useCurrentLocation'), async () => {
+        const [{ getCurrentLocation }, { reverseGeocode }] = await Promise.all([import('../platform/geolocation.js'), import('./maps.jsx')]);
+        const position = await getCurrentLocation({});
+        const place = await reverseGeocode(position.lng, position.lat, backendUrl).catch(() => ({}));
+        return { page: await chooseForStop(stop.id, { lng: position.lng, lat: position.lat, address: place.address || '', source: 'manual', place_id: null, external_id: '' }) };
+      })
+    ];
+    return basePage('journey-shop', t('journey:common.action.chooseShop'), {
+      subtitle: stop.name,
+      searchPlaceholder: t('journey:review.shop.searchPlaceholder'),
+      searchValue: query,
+      empty: candidates.length || query ? '' : t('journey:review.shop.hint'),
+      error,
+      sections,
+      buttons
+    });
+  }
+
+  const formatDistanceLabel = (m) => (!Number.isFinite(m) ? '' : m < 1000 ? t('journey:reviewUtils.meters', { m: Math.round(m) }) : t('journey:reviewUtils.kilometers', { m: (m / 1000).toFixed(m < 10000 ? 1 : 0) }));
+
+  /** 公开前确认可能重复的店：逐个选“就是这家”或“不是同一家”，全部确认后再公开。 */
+  async function duplicatesPage() {
+    if (!review) return back(stack.length - 1);
+    await persistReviewDraft();
+    const preview = await api(`/api/journeys/drafts/${encodeURIComponent(review.draftId)}/map-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ draft_revision: review.draftRevision, visibility: 'public' })
+    });
+    const stops = review.document.stops;
+    const rows = [];
+    for (const link of preview.links || []) {
+      if (link.action !== 'conflict') continue;
+      const stop = stops.find((item) => item.id === link.stop_id);
+      if (!stop) continue;
+      for (const duplicate of link.duplicates || []) {
+        rows.push({
+          id: `${stop.id}-${duplicate.id}`,
+          title: t('journey:review.duplicates.row', { stop: stop.name, name: duplicate.name }),
+          subtitle: `${duplicate.address || t('journey:stopCard.localMarkerShort')} · ${formatDistanceLabel(duplicate.distance_m)}`,
+          actions: [
+            action(t('journey:stopCard.sameShop'), async () => {
+              Object.assign(stop, { place_id: duplicate.id, source: 'local', lng: duplicate.lng, lat: duplicate.lat, address: duplicate.address || '', name: duplicate.name, external_id: '' });
+              return { page: await duplicatesPage() };
+            }),
+            action(t('journey:stopCard.differentShop'), async () => {
+              stop.duplicate_ack = [...new Set([...(stop.duplicate_ack || []), duplicate.id])];
+              return { page: await duplicatesPage() };
+            })
+          ]
+        });
+      }
+    }
+    const sections = rows.length
+      ? [{ id: 'hint', title: '', text: t('journey:stopCard.duplicateHint') }, { id: 'duplicates', title: '', rows }]
+      : [{ id: 'done', title: '', text: t('journey:review.duplicates.done') }];
+    const buttons = rows.length ? [] : [action(t('journey:review.save.publish'), async () => commitReview('public'), { tone: 'primary' })];
+    return basePage('journey-duplicates', t('journey:review.duplicates.title'), { sections, buttons });
   }
 
   async function reviewPage(params) {
     const wantsNew = !!(params.journal || params.draftId || params.journeyId);
     if (!review || wantsNew) await loadReview(params);
+    // 之后回到这一页（选店、确认重复后）沿用内存中的修改，不再按原参数重新读取
+    const own = stack.map((item) => item.type).lastIndexOf('review');
+    if (wantsNew && own >= 0) stack[own].params = {};
     const document = review.document;
     const stops = document.stops || [];
     const infoForm = registerForm({
@@ -807,11 +940,7 @@ export function createNativeJourneyController({
         { id: 'title', kind: 'text', label: t('journey:review.field.title'), value: document.title || '' },
         { id: 'start_date', kind: 'date', label: t('journey:review.field.startDate'), value: document.start_date },
         { id: 'end_date', kind: 'date', label: t('journey:review.field.endDate'), value: document.end_date },
-        { id: 'summary', kind: 'textarea', label: t('journey:review.field.summary'), value: document.summary || '' },
-        { id: 'visibility', kind: 'select', label: t('journey:review.visibility'), value: document.intended_visibility === 'private' ? 'private' : 'public', options: [
-          { id: 'public', title: t('journey:common.label.public') },
-          { id: 'private', title: t('journey:common.label.private') }
-        ] }
+        { id: 'summary', kind: 'textarea', label: t('journey:review.field.summary'), value: document.summary || '' }
       ],
       handler: async (values) => {
         document.title = String(values.title || '').trim() || document.title;
@@ -819,18 +948,18 @@ export function createNativeJourneyController({
         document.end_date = String(values.end_date || document.end_date);
         if (document.end_date < document.start_date) document.end_date = document.start_date;
         document.summary = String(values.summary || '');
-        document.intended_visibility = values.visibility === 'private' ? 'private' : 'public';
         return { page: await reviewPage({}) };
       }
     });
     const rows = stops.map((stop, index) => ({
       id: stop.id,
       title: `${index + 1}. ${stop.name}`,
-      subtitle: [stop.at || '', stop.address || ''].filter(Boolean).join(' · '),
+      subtitle: [stop.at ? stop.at.replace('T', ' ') : '', stop.address || (Number.isFinite(stop.lat) ? '' : t('journey:review.shop.none'))].filter(Boolean).join(' · '),
       detail: excerptText(stop).slice(0, 160),
-      badge: stop.confirmed ? '' : t('journey:stopCard.badge.pending'),
-      badgeTone: stop.confirmed ? '' : 'warning',
+      badge: !stop.confirmed ? t('journey:stopCard.badge.pending') : stop.at_source === 'model' ? t('journey:stopCard.badge.timeGuessed') : '',
+      badgeTone: !stop.confirmed || stop.at_source === 'model' ? 'warning' : '',
       actions: [
+        action(t('journey:common.action.chooseShop'), async () => ({ page: await go('shop', { stopId: stop.id }) }), { push: true }),
         formAction(t('common:action.edit'), () => reviewStopForm(stop)),
         action(t('journey:stopCard.moveUp'), async () => {
           if (index <= 0) return {};
@@ -848,32 +977,23 @@ export function createNativeJourneyController({
         }, { tone: 'danger', confirm: { title: t('common:action.remove'), message: t('journey:review.confirmRemoveStop', { name: stop.name }), button: t('common:action.remove') } })
       ]
     }));
+    // 新地点先写店名、时间和文字；位置在这一行的「选择店铺」里选
     const addStop = formAction(t('journey:review.addPlace'), () => registerForm({
       title: t('journey:review.addPlace'),
-      message: t('journey:review.nativeHint') || '',
+      message: '',
       submitTitle: t('common:action.save'),
       openTitle: t('common:action.edit'),
       fields: [
         { id: 'name', kind: 'text', label: t('journey:stopCard.field.name'), value: '' },
-        { id: 'at', kind: 'text', label: t('journey:stopCard.field.time'), value: '' },
-        { id: 'address', kind: 'text', label: t('journey:stopCard.field.name'), value: '' },
-        { id: 'text', kind: 'textarea', label: t('journey:stopCard.textLabel'), value: '' },
-        { id: 'latitude', kind: 'number', label: t('admin:exhibitions.latitude'), value: '' },
-        { id: 'longitude', kind: 'number', label: t('admin:exhibitions.longitude'), value: '' }
+        ...timeFields(null, document),
+        { id: 'text', kind: 'textarea', label: t('journey:stopCard.textLabel'), value: '' }
       ],
       handler: async (values) => {
-        const lat = values.latitude === '' ? null : Number(values.latitude);
-        const lng = values.longitude === '' ? null : Number(values.longitude);
-        const located = Number.isFinite(lat) && Number.isFinite(lng);
-        const text = String(values.text || '');
+        if (document.stops.length >= 60) return { error: t('journey:review.maxStops') };
         document.stops.push(newStop({
           name: String(values.name || '').trim() || t('journey:stopCard.pendingShop'),
-          at: String(values.at || '').trim(),
-          address: String(values.address || '').trim(),
-          excerpt_edited: text,
-          lat: located ? lat : null,
-          lng: located ? lng : null,
-          confirmed: located,
+          at: timeValue(values),
+          excerpt_edited: String(values.text || ''),
           visit_status: 'visited'
         }));
         return { page: await reviewPage({}) };
@@ -913,11 +1033,12 @@ export function createNativeJourneyController({
           return { error: error.message };
         }
       }, { kind: 'photo' }),
-      action(t('journey:review.save.private'), async () => commitReview('private'), { tone: 'primary' }),
+      action(t('journey:review.save.private'), async () => commitReview('private')),
       action(t('journey:review.save.publish'), async () => commitReview('public'), { tone: 'primary' })
     ];
     return basePage('journey-review', review.journeyId ? t('journey:review.editTitle') : t('journey:review.title'), {
-      subtitle: formatRange(document.start_date, document.end_date),
+      // AI 整理的草稿只在副标题带一个标签
+      subtitle: [formatRange(document.start_date, document.end_date), document.ai_assisted ? t('journey:review.aiTag') : ''].filter(Boolean).join(' · '),
       sections,
       buttons
     });
@@ -949,7 +1070,9 @@ export function createNativeJourneyController({
       body: JSON.stringify({ draft_revision: review.draftRevision, visibility })
     });
     if (visibility === 'public' && Number(preview.counts?.conflict) > 0) {
-      return { error: t('journey:review.resolveConflictsFirst') };
+      const top = stack[stack.length - 1];
+      if (top?.type === 'duplicates') return { page: await duplicatesPage(), error: t('journey:review.resolveConflictsFirst') };
+      return { page: await go('duplicates', {}), message: t('journey:review.resolveConflictsFirst') };
     }
     const result = await api(`/api/journeys/drafts/${encodeURIComponent(review.draftId)}/commit`, {
       method: 'POST',
@@ -961,11 +1084,12 @@ export function createNativeJourneyController({
         as_copy: false
       })
     });
+    const created = result.created_place_ids?.length || 0;
     const message = visibility === 'public'
-      ? t('journey:review.savedPublic', { linked: result.linked || 0, created: '' })
+      ? t('journey:review.savedPublic', { linked: result.linked || 0, created: created ? t('journey:review.savedPublicCreated', { count: created }) : '' })
       : t('journey:review.savedPrivate');
     review = null;
-    stack = stack.filter((item) => item.type !== 'review');
+    stack = stack.filter((item) => !['review', 'shop', 'duplicates'].includes(item.type));
     return { page: await go('detail', { journeyId: result.journey_id, message }) };
   }
 
@@ -1260,13 +1384,13 @@ export function createNativeJourneyController({
           rows: revisions.map((revision) => ({
             id: String(revision.revision),
             title: tx('journey:detail.revisionLabel', { revision: revision.revision, time: String(revision.created_at || '').slice(0, 16).replace('T', ' '), current: revision.revision === journey.revision ? t('journey:detail.current') : '' }),
-            actions: [action(t('journey:detail.history'), async () => {
+            actions: revision.revision === journey.revision ? [] : [action(t('journey:detail.restoreVersion'), async () => {
               await api(`/api/journeys/${encodeURIComponent(journey.id)}/restore`, {
                 method: 'POST',
                 body: JSON.stringify({ revision: revision.revision, base_revision: journey.revision })
               });
-              return { page: await go('detail', { journeyId: journey.id, message: t('journey:detail.restoredPrivate') }) };
-            }, { confirm: { title: t('journey:detail.history'), message: t('journey:detail.confirmRestore', { revision: revision.revision }), button: t('journey:detail.history') } })]
+              return { page: await go('detail', { journeyId: journey.id, message: journey.visibility === 'public' ? t('journey:detail.restoredPublic') : t('journey:detail.restoredPrivate') }) };
+            }, { confirm: { title: t('journey:detail.restoreVersion'), message: t('journey:detail.confirmRestore', { revision: revision.revision }), button: t('journey:detail.restoreVersion') } })]
           }))
         });
         return { page };
@@ -1305,70 +1429,83 @@ export function createNativeJourneyController({
     const buttons = [];
     let data = null;
     try { data = await api('/api/journeys/unfinished'); } catch (error) { sections.push({ id: 'error', title: '', text: error.message }); }
-    if (data) {
-      const group = (title, items, buildRow) => {
-        if (!items?.length) return;
-        sections.push({ id: `group-${title}`, title: `${title} · ${items.length}`, rows: items.map(buildRow) });
-      };
-      group(t('journey:unfinished.section.material'), data.material || [], (item) => ({
-        id: String(item.id),
-        title: item.title,
-        subtitle: t('journey:unfinished.materialMeta', {
-          range: item.start_date ? formatRange(item.start_date) : t('journey:unfinished.noDate'),
-          media_count: item.media_count,
-          newer: '',
-          lastError: ''
-        }),
-        // 点按继续编辑；左滑出现“继续”“删除”，不再进入这一行的详情页
-        ...swipeRow(
-          action(t('journey:unfinished.continue'), async () => ({ page: await go('composer', { composeId: item.id }) }), { push: true }),
-          action(t('common:action.delete'), async () => {
-            await api(`/api/journeys/compose-drafts/${encodeURIComponent(item.id)}`, { method: 'DELETE', body: JSON.stringify({ revision: item.revision }) });
-            return { page: await unfinishedPage() };
-          }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:unfinished.confirmDiscard', { label: item.title }), button: t('common:action.delete') } })
-        )
-      }));
-      group(t('journey:unfinished.section.generating'), data.generating || [], (item) => ({
-        id: String(item.id),
-        title: item.title,
-        subtitle: item.job_status === 'queued' ? t('journey:unfinished.queued') : t('journey:unfinished.section.generating'),
-        actions: [action(t('journey:unfinished.view'), async () => ({ page: await go('generation', { composeId: item.id, jobId: item.job_id }) }), { push: true })]
-      }));
-      group(t('journey:unfinished.section.review'), data.review || [], (item) => ({
-        id: String(item.id),
-        title: item.title,
-        subtitle: t('journey:unfinished.reviewMeta', { range: formatRange(item.start_date, item.end_date), stop_count: item.stop_count, pending: item.pending ? t('journey:unfinished.reviewPending', { pending: item.pending }) : '' }),
-        actions: [action(t('journey:unfinished.continueReview'), async () => ({ page: await go('review', { draftId: item.id }) }), { push: true })]
-      }));
-      group(t('journey:unfinished.section.editing'), data.editing || [], (item) => ({
-        id: String(item.id),
-        title: item.title,
-        subtitle: `${formatRange(item.start_date, item.end_date)}${item.journey_id ? t('journey:unfinished.editingExisting') : t('journey:unfinished.editingNew')}`,
-        actions: [action(t('journey:unfinished.continueEditing'), async () => ({ page: await go('review', { draftId: item.id }) }), { push: true })]
-      }));
-    }
+    // 所有草稿排成一列，副标题开头写明状态；点按都是“继续”
+    const rows = [];
+    const status = {
+      local: t('journey:unfinished.status.local'), review: t('journey:unfinished.status.review'), generating: t('journey:unfinished.status.generating'),
+      material: t('journey:unfinished.status.material'), editing: t('journey:unfinished.status.editing')
+    };
+    const withStatus = (kind, meta) => (meta ? `${status[kind]} · ${meta}` : status[kind]);
+    const resume = (open) => action(t('journey:unfinished.continue'), open, { push: true });
     const localEditor = userId ? await loadLocalDraft(userId, 'active').catch(() => null) : null;
     if (localEditor && !localEditor.synced && localEditor.journal) {
-      sections.unshift({
-        id: 'local-editor',
-        title: t('journey:unfinished.localLabel'),
-        rows: [{
-          id: 'local',
-          title: localEditor.journal.document?.title || t('journey:unfinished.untitledDiary'),
-          subtitle: t('journey:unfinished.savedAt', { time: new Date(localEditor.updatedAt).toLocaleString() }),
-          ...swipeRow(
-            action(t('journey:unfinished.restore'), async () => {
-              review = null;
-              return { page: await go('review', { journal: localEditor.journal }) };
-            }, { push: true }),
-            action(t('common:action.delete'), async () => {
-              await deleteLocalDraft(userId, 'active');
-              return { page: await unfinishedPage() };
-            }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:unfinished.confirmDiscard', { label: t('journey:unfinished.discard.localEdits') }), button: t('common:action.delete') } })
-          )
-        }]
+      rows.push({
+        id: 'local',
+        title: localEditor.journal.document?.title || t('journey:unfinished.untitledDiary'),
+        subtitle: withStatus('local', t('journey:unfinished.savedAt', { time: new Date(localEditor.updatedAt).toLocaleString() })),
+        ...swipeRow(
+          resume(async () => {
+            review = null;
+            return { page: await go('review', { journal: localEditor.journal }) };
+          }),
+          action(t('common:action.delete'), async () => {
+            await deleteLocalDraft(userId, 'active');
+            return { page: await unfinishedPage() };
+          }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:unfinished.confirmDiscard', { label: t('journey:unfinished.discard.localEdits') }), button: t('common:action.delete') } })
+        )
       });
     }
+    if (data) {
+      const removeDraft = (item) => action(t('common:action.delete'), async () => {
+        await api(`/api/journeys/drafts/${encodeURIComponent(item.id)}`, { method: 'DELETE', body: JSON.stringify({ draft_revision: item.revision }) });
+        return { page: await unfinishedPage() };
+      }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:unfinished.confirmDiscard', { label: item.title }), button: t('common:action.delete') } });
+      for (const item of data.review || []) {
+        rows.push({
+          id: `review-${item.id}`,
+          title: item.title,
+          subtitle: withStatus('review', t('journey:unfinished.reviewMeta', { range: formatRange(item.start_date, item.end_date), stop_count: item.stop_count, pending: item.pending ? t('journey:unfinished.reviewPending', { pending: item.pending }) : '' })),
+          ...swipeRow(resume(async () => ({ page: await go('review', { draftId: item.id }) })), removeDraft(item))
+        });
+      }
+      for (const item of data.generating || []) {
+        rows.push({
+          id: `generating-${item.id}`,
+          title: item.title,
+          subtitle: item.job_status === 'queued' ? t('journey:unfinished.queued') : withStatus('generating'),
+          actions: [resume(async () => ({ page: await go('generation', { composeId: item.id, jobId: item.job_id }) }))]
+        });
+      }
+      for (const item of data.material || []) {
+        rows.push({
+          id: `material-${item.id}`,
+          title: item.title,
+          subtitle: withStatus('material', t('journey:unfinished.materialMeta', {
+            range: item.start_date ? formatRange(item.start_date) : t('journey:unfinished.noDate'),
+            media_count: item.media_count,
+            newer: '',
+            lastError: ''
+          })),
+          // 点按继续编辑；左滑出现“继续”“删除”，不再进入这一行的详情页
+          ...swipeRow(
+            resume(async () => ({ page: await go('composer', { composeId: item.id }) })),
+            action(t('common:action.delete'), async () => {
+              await api(`/api/journeys/compose-drafts/${encodeURIComponent(item.id)}`, { method: 'DELETE', body: JSON.stringify({ revision: item.revision }) });
+              return { page: await unfinishedPage() };
+            }, { tone: 'danger', confirm: { title: t('common:action.delete'), message: t('journey:unfinished.confirmDiscard', { label: item.title }), button: t('common:action.delete') } })
+          )
+        });
+      }
+      for (const item of data.editing || []) {
+        rows.push({
+          id: `editing-${item.id}`,
+          title: item.title,
+          subtitle: withStatus('editing', `${formatRange(item.start_date, item.end_date)}${item.journey_id ? t('journey:unfinished.editingExisting') : t('journey:unfinished.editingNew')}`),
+          ...swipeRow(resume(async () => ({ page: await go('review', { draftId: item.id }) })), removeDraft(item))
+        });
+      }
+    }
+    if (rows.length) sections.push({ id: 'drafts', title: '', rows });
     buttons.push(action(t('journey:calendar.createManually'), async () => ({ page: await go('review', { date: today() }) }), { push: true }));
     buttons.push(action(t('journey:common.feature.generate'), async () => ({ page: await go('composer', {}) }), { push: true }));
     return basePage('journey-unfinished', t('journey:unfinished.title', { total: '' }), {
@@ -1568,6 +1705,10 @@ export function createNativeJourneyController({
         if (top?.type === 'address' && payload.filterId === 'search') {
           top.params = { ...top.params, query: String(payload.value || '').slice(0, 60) };
           return { page: await addressPage(top.params) };
+        }
+        if (top?.type === 'shop' && payload.filterId === 'search') {
+          top.params = { ...top.params, query: String(payload.value || '').slice(0, 60) };
+          return { page: await shopPage(top.params) };
         }
         if (top?.type === 'merge' && payload.filterId === 'tabs') {
           if (merge) merge.policy = ['constraints', 'time', 'source'].includes(payload.value) ? payload.value : 'constraints';

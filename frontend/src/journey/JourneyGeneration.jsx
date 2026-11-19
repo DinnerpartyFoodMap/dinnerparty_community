@@ -49,7 +49,7 @@ export default function JourneyGeneration({ctx,nav,params,active}) {
     };
     const status=job?.status||'queued';
     return <div className="jw-page">
-        <PageHeader title={t('journey:common.action.generateDraft')} onBack={nav.pop}/>
+        <PageHeader title={t('journey:generation.title')} onBack={nav.pop}/>
         <div className="jw-scroll"><div className="jw-content jw-stack">
             <div className={`jw-progress jw-progress--${status}`} role="status" aria-live="polite">
                 {['queued','running'].includes(status)&&<span className="jw-spinner" aria-hidden="true"/>}

@@ -39,6 +39,7 @@ import { t } from '../i18n/index.js';
 // 点一行回传地点 key（place:<id>），关闭只收起列表。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
+// 布局里的 drawer（更多功能展开 / 拖动 / 高度，底栏小伙伴起飞用）旧版原生不带，网页当作收起，也不升级版本。
 export const NATIVE_CHROME_PROTOCOL = 18;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
@@ -375,6 +376,23 @@ export function readTourLayout(layout) {
             : box;
     }
     return { step: clipText(tour.step, 32) || '', rect, chrome, drawerOpen: !!tour.drawerOpen };
+}
+
+const CLOSED_DRAWER = Object.freeze({ open: false, dragging: false, height: 0 });
+
+/**
+ * 布局里的更多功能状态（v18 内追加，底栏小伙伴随之起飞）：open 已展开，dragging 手指正在拖动工具栏，
+ * height 为展开后工具栏上沿升高的高度（CSS 像素）。控件收起、旧版原生不带或高度无效时当作收起。
+ */
+export function readDrawerLayout(layout) {
+    const drawer = layout && layout.showing ? layout.drawer : null;
+    if (!drawer || typeof drawer !== 'object') return CLOSED_DRAWER;
+    const height = Number(drawer.height);
+    if (!Number.isFinite(height) || height <= 0) return CLOSED_DRAWER;
+    const open = drawer.open === true;
+    const dragging = drawer.dragging === true;
+    if (!open && !dragging) return CLOSED_DRAWER;
+    return { open, dragging, height: Math.min(Math.round(height), 2000) };
 }
 
 function sanitizeSections(list, budget) {
