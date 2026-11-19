@@ -405,6 +405,7 @@ public class NativeMapPlugin: CAPPlugin, CAPBridgedPlugin {
     static func parsePlan(_ call: CAPPluginCall) -> NativeMapTransitionPlan {
         NativeMapTransitionPlan(
             reuse: pairs(call.getArray("reuse")),
+            reanchor: keys(call.getArray("reanchor")),
             splitFrom: pairs(call.getArray("splitFrom")),
             mergeInto: pairs(call.getArray("mergeInto")),
             splitSources: keys(call.getArray("splitSources")),

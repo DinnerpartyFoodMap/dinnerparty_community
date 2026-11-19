@@ -27,12 +27,15 @@ const aggregateTileKey = '213/105';
 const leafTileKey = '3413/1689';
 const aggregateTileHash = '111111111111';
 const leafTileHash = '222222222222';
-// Two cells form one cluster at zoom 11. At zoom 13 their four points form two clusters.
+// At zoom 12 two cells form separate clusters. The closest pair crosses their boundary at zoom 13.
 const aggregateRows = [[[], 0, -1, 0], [[], 0, -1, 0]];
-const aggregateTile = { v: 1, z: 8, cell: 14, cells: [[21, 39, 3, 4, aggregateRows], [22, 39, 4, 4, aggregateRows]] };
+const aggregateTile = { v: 1, z: 8, cell: 14, cells: [
+    [21, 39, 1, 4, aggregateRows], [22, 39, 6, 4, aggregateRows], [20, 40, 3, 6, [aggregateRows[0]]]
+] };
 const leafTile = { v: 1, fields: ['id', 'name', 'longitude', 'latitude'], rows: [
-    [1, 'West 1', 120.002, 30.002], [2, 'West 2', 120.0024, 30.002],
-    [3, 'East 1', 120.028, 30.002], [4, 'East 2', 120.0284, 30.002]
+    [1, 'West 1', 119.996, 30.002], [2, 'West 2', 120.0145, 30.002],
+    [3, 'East 1', 120.0147, 30.002], [4, 'East 2', 120.032, 30.002],
+    [5, 'Standalone', 119.977, 29.983]
 ] };
 let requestLeafTile;
 const longListPlaces = Array.from({ length: 20 }, (_, index) => ({ ...focusPlace, id: 100 + index, name: '安全区滚动测试面馆 ' + (index + 1) }));
@@ -58,7 +61,7 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
         const responses = {
             '/users/me': { user: { id: 'web-layout-user', username: '布局测试住民', is_banned: false } },
             '/places/tiles/manifest': requestLeafTile ? {
-                ...tileManifest, version: 'marker-band-test', count: 4,
+                ...tileManifest, version: 'marker-band-test', count: 5,
                 tiles: { ...tileManifest.tiles, 8: { [aggregateTileKey]: aggregateTileHash }, 12: { [leafTileKey]: leafTileHash } }
             } : tileManifest,
             '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] },
@@ -413,6 +416,26 @@ try {
             assert.equal(await evaluate(`document.querySelector(${JSON.stringify(`${rating} strong:last-of-type`)})?.textContent`), '3.6', 'the place card emphasizes the predicted digits');
         }
         await screenshot(`share-link-card-${width}`);
+        const checkInEntry = ':is(.fm-card-host, .fm-skin-card) button[aria-label="打卡"]';
+        assert.ok(await evaluate(`(() => {
+            const entry = document.querySelector(${JSON.stringify(checkInEntry)});
+            return entry?.previousElementSibling?.textContent.includes('评价') && !!entry.nextElementSibling?.querySelector('[aria-haspopup="menu"]');
+        })()`), 'the check-in action sits between rating and more');
+        assert.ok(await evaluate(`(() => {
+            const entry = document.querySelector(${JSON.stringify(checkInEntry)});
+            const row = entry.parentElement.getBoundingClientRect();
+            return entry.nextElementSibling.getBoundingClientRect().right <= row.right + 1;
+        })()`), 'the action row stays inside the place card');
+        // The card ignores touch-through clicks during the first few hundred milliseconds.
+        const checkInDialog = '[role="dialog"][aria-label="地点打卡"]';
+        await waitFor(`(() => {
+            if (document.querySelector('${checkInDialog} form textarea') || window.__WEB_LAYOUT_ERRORS.length) return true;
+            document.querySelector(${JSON.stringify(checkInEntry)})?.click();
+            return false;
+        })()`);
+        assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'opening check-in renders without browser errors');
+        await click(`${checkInDialog} button[aria-label="关闭"]`);
+        await waitFor(`!document.querySelector('${checkInDialog}')`);
         await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }, sessionId);
         await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' }, sessionId);
         await waitFor(`!document.querySelector('.fm-card-host,.fm-skin-card')`);
@@ -452,13 +475,18 @@ try {
     }
     const leafTileRequested = new Promise(resolve => { requestLeafTile = resolve; });
     await navigate('map&markerBand=1&deferredCamera=1', 1280, 900);
-    await waitFor(`window.__foodMapMarkers?.snapshot?.visibleNodes.length === 1 &&
-        window.__foodMapMarkers.snapshot.visibleNodes[0].count === 4 && window.__foodMapMarkers.txns.size === 0`);
+    await waitFor(`window.__foodMapMarkers?.snapshot?.visibleNodes.map(node => node.count).sort().join() === '1,2,2' &&
+        window.__foodMapMarkers.txns.size === 0`);
     await evaluate(`(() => {
         const animate = Element.prototype.animate;
         window.__markerTravel = [];
+        const standalone = [...window.__foodMapMarkers.entries.values()].find(entry => entry.node.count === 1);
+        window.__standaloneMarker = standalone.marker;
+        window.__standaloneTravel = standalone.parts.travel;
+        window.__standaloneAnimations = 0;
         Element.prototype.animate = function (keyframes, options) {
             if (this.matches('.fm-marker__travel')) window.__markerTravel.push(keyframes);
+            if (this === window.__standaloneTravel) window.__standaloneAnimations += 1;
             return animate.call(this, keyframes, options);
         };
         const map = window.__WEB_LAYOUT_MAP;
@@ -479,27 +507,56 @@ try {
             new Promise(resolve => setTimeout(resolve, BAND_SWITCH_WAIT_MS + 150)))`);
         await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
         pendingSplit = await evaluate(`({
-            counts: window.__foodMapMarkers.snapshot.visibleNodes.map(node => node.count),
+            counts: window.__foodMapMarkers.snapshot.visibleNodes.map(node => node.count).sort(),
             animations: window.__markerTravel.length
         })`);
     } finally {
         releaseLeafTile();
     }
-    await waitFor(`window.__foodMapMarkers.snapshot.visibleNodes.length === 2 &&
-        window.__foodMapMarkers.snapshot.visibleNodes.every(node => node.count === 2 &&
+    await waitFor(`window.__foodMapMarkers.snapshot.visibleNodes.length === 4 &&
+        window.__foodMapMarkers.snapshot.visibleNodes.every(node =>
             window.__foodMapMarkers.engine.memberKeys(node).every(key => key.startsWith('place:'))) &&
         window.__foodMapMarkers.txns.size === 0`);
+    const standalone = await evaluate(`(() => {
+        const entry = window.__foodMapMarkers.entries.get('place:5');
+        return { sameMarker: entry.marker === window.__standaloneMarker, position: entry.marker.position, animations: window.__standaloneAnimations };
+    })()`);
+    assert.equal(standalone.sameMarker, true, 'the standalone marker keeps its existing view');
+    assert.ok(Math.abs(standalone.position[0] - 119.977) < 1e-7 && Math.abs(standalone.position[1] - 29.983) < 1e-7,
+        'the standalone marker lands at the precise coordinates');
+    assert.equal(standalone.animations, 0, 'the standalone marker changes coordinates without sliding');
     const splitTravel = await evaluate('window.__markerTravel');
     const finalChildTrips = splitTravel.slice(pendingSplit.animations).filter(frames => frames[0]?.transform?.startsWith('translate(') &&
         frames[0].transform !== 'translate(0px, 0px)' && frames.at(-1)?.transform === 'translate(0px, 0px)');
     assert.deepEqual(
         { pending: pendingSplit, totalTravelAnimations: splitTravel.length, finalChildTrips: finalChildTrips.length },
-        { pending: { counts: [4], animations: 0 }, totalTravelAnimations: 2, finalChildTrips: 2 },
-        'zoom keeps the parent intact while waiting, then moves both final children from it once'
+        { pending: { counts: [1, 2, 2], animations: 0 }, totalTravelAnimations: 3, finalChildTrips: 3 },
+        'zoom preserves both old clusters while waiting, then moves all three detail nodes once'
     );
+    await evaluate(`(() => {
+        window.__markerTravel.length = 0;
+        const map = window.__WEB_LAYOUT_MAP;
+        map.emit('movestart');
+        map.emit('zoomstart');
+        map.setZoom(12);
+        map.emit('moveend');
+    })()`);
+    await waitFor(`window.__foodMapMarkers.snapshot.markerBand.kind === 'aggregate' && window.__foodMapMarkers.txns.size === 0`);
+    const mergeTravel = await evaluate('window.__markerTravel');
+    const mergeTrips = mergeTravel.filter(frames => frames[0]?.transform === 'translate(0px, 0px)' &&
+        frames.at(-1)?.transform?.startsWith('translate(') && frames.at(-1).transform !== 'translate(0px, 0px)');
+    assert.equal(mergeTrips.length, 2, 'zoom back moves both children toward the aggregate');
+    assert.equal(mergeTravel.length, 3, 'zoom back also moves the reused marker');
     assert.deepEqual(await evaluate('window.__WEB_LAYOUT_ERRORS'), [], 'marker tile zoom has no browser errors');
 
-    console.log(JSON.stringify({ passed: true, overlap, wide, scope, radarFillCount: radar.fills.length, markerBandSplit: splitTravel.length, screenshots: scratch }));
+    await navigate('map', 1280, 900);
+    await waitFor(`!!document.querySelector('header [data-tour="more"]')`);
+    const homeLink = 'header a[href="/home"]';
+    assert.equal(await evaluate(`document.querySelector(${JSON.stringify(homeLink)})?.textContent.trim()`), '东方饭联地图');
+    await click(homeLink);
+    await waitFor(`['/home', '/home/'].includes(location.pathname) && !!document.querySelector('.home__title')`);
+
+    console.log(JSON.stringify({ passed: true, overlap, wide, scope, radarFillCount: radar.fills.length, markerBandSplit: splitTravel.length, markerBandMerge: mergeTravel.length, screenshots: scratch }));
     await command('Browser.close');
 } catch (error) { console.error(error); console.error('Artifacts: ' + scratch); process.exitCode = 1; }
 finally { socket?.close(); processHandle?.kill(); await server.close(); }

@@ -45,7 +45,7 @@ class Marker {
 class TestMap {
     constructor(el, options) {
         this.el = el; this.center = options.center; this.zoom = options.zoom; this.handlers = {}; this.markers = new Set();
-        if (fixtureParams.has('markerBand')) this.zoom = 11;
+        if (fixtureParams.has('markerBand')) this.zoom = 12;
         this.deferredCamera = fixtureParams.has('deferredCamera');
         this.cameraMoves = []; this.autoPans = [];
         window.__WEB_LAYOUT_MAP = this;

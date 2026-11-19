@@ -10,6 +10,7 @@ import { t } from "../../i18n/index.js";
 import LegalLinks from '../../auth/components/LegalLinks.jsx';
 import { resolveAvatarUrl } from '../../auth/avatarUrl.js';
 import SkinAvatarFrame, { useSkinDefaultAvatar } from '../../skins/SkinAvatar';
+import { preserveJourneyBeforeLeave } from '../../journey/navigation';
 
 const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onOpenAuth, onOpenAdmin, onOpenDinners, onOpenPosterExport, onOpenRandomFood, onOpenAlongRoute, onOpenGuide, onOpenFeedback, onOpenPlaceList, onOpenProfile, onGoHome, onMenuOpenChange, pathname, backendUrl, interactionDisabled = false }, forwardedRef) {
     // 自己有被驳回的地点：头像与“我创建的地点”上的小红点
@@ -204,12 +205,19 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onOpenA
 
                     </div>
                 )}
-                <Button
-                    onClick={onGoHome}
-                    style={{ border: 0, background: 'transparent', color: 'var(--color-text-primary)', padding: '8px', textAlign: 'left' }}
+                <a
+                    href="/home"
+                    className="fm-button fm-button--secondary fm-pressable"
+                    onClick={async (event) => {
+                        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                        const { href } = event.currentTarget;
+                        event.preventDefault();
+                        if (await preserveJourneyBeforeLeave()) window.location.assign(href);
+                    }}
+                    style={{ border: 0, background: 'transparent', color: 'var(--color-text-primary)', padding: '8px', textAlign: 'left', textDecoration: 'none' }}
                 >
                     <span style={{ display: 'block', fontSize: 17, fontWeight: 700, lineHeight: 1.1 }}>{t('common:app.name')}</span>
-                </Button>
+                </a>
             </div>
 
             <div ref={moreAnchorRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>

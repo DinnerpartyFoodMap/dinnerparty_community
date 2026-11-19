@@ -33,7 +33,11 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
         Promise.all([source, import('./live2dScene')]).then(async ([url, { mountLive2D }]) => {
             if (signal.aborted || !container.current) return;
             const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            const stage = await mountLive2D(container.current, url, { signal, reducedMotion });
+            const stage = await mountLive2D(container.current, url, {
+                signal, reducedMotion, verifyColors: isDefault,
+                onContextLost: () => setReady(false),
+                onContextRestored: () => setRetry(count => count + 1)
+            });
             if (signal.aborted) { stage?.destroy(); return; }
             scene.current = stage;
             setReady(!!stage);
@@ -60,7 +64,7 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
     return <div className="fm-companion">
         <div className="fm-companion__stage">
             {!ready && <StickFigureDrawing />}
-            <div className="fm-companion__canvas" ref={container} aria-hidden="true" />
+            <div className="fm-companion__canvas" ref={container} aria-hidden="true" style={{ visibility: ready ? 'visible' : 'hidden' }} />
             {fed && <span className="fm-companion__heart" title={t('companion:fed')} aria-hidden="true">♥</span>}
         </div>
         {showStatus && loading && <p role="status">{t('companion:loadingPack')}</p>}

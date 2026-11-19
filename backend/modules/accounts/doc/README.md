@@ -4,6 +4,8 @@
 
 `GET /users/:id/favorites` 读取完整清单，支持匿名查看公开收藏。`GET` 和 `PUT /api/favorites/visibility` 读取与更新本人的 `{ is_public }`。`User.favorites_public` 默认为公开，对既有和新增账户生效。收藏条目来自 `Favorite`，同好匹配开关独立。服务端应用本人身份、屏蔽、封禁和地点审核规则。
 
+主页的 `content.recent` 与创建地点列表共用审核可见性。本人可看到自己创建的待审核地点，访客只看公开地点。`PATCH /users/me/settings` 的 `map_settings.companion_enabled` 保存观察屋开关，缺省开启。
+
 入口：`routes/users.js`（挂载 `/users`）、`middleware/auth.js`。服务包括 sessions、qqVerification、phoneVerification（两者共用 `verificationCodeStore.js` 的哈希、冷却、配额、错误次数与消费逻辑）、qqWhitelist、userAccess、userLocation、userRelations。`GET /users/:id/places`（可选登录）返回住民名、观看者与这位住民的关系 `relation`（`self`、`blocked`、`can_block`）和这位住民创建的地点（places 模块的 `creatorPlaces.js`），供地图按住民筛选；已屏蔽时不列出地点。`POST` / `DELETE /users/:id/block`（需登录，不能屏蔽自己）屏蔽 / 解除屏蔽并返回新的 `relation`，数据在 `UserBlock`（任一方注销时级联删除）。屏蔽只影响屏蔽者自己看到的内容：`services/userRelations.js` 的 `notBlockedSql` 用在全部地点 / 附近地点（places）、快速搜索（discovery）、地点下的公开日记（journeys）和同好匹配（community）；AI 搜索、随机推荐、顺路和单个地点 / 分享链接不过滤。数据：User（含 `phone`）、QQWhitelist、QQVerificationCode、PhoneVerificationCode、UserLastLocation；Redis 保存设备会话。依赖数据库、日志、Redis、qqbot 的私信边界，以及 `infrastructure/aliyunSms.js` 的短信边界。
 
 ## 头像

@@ -258,7 +258,7 @@ assert.ok(sawSplit && sawMerge, '夹具没有覆盖拆分与合并');
     }
 }
 
-// ---- 跨粗格的明细聚合无法判断来源，相关节点保留渐变 ----
+// ---- 明细聚合横跨两个旧聚合时，按覆盖成员数和距离选定一条位移路径 ----
 {
     const row = [[], -1, -1, 0];
     const coarseRows = expandAggregateTile({ z: 8, cell: 14, cells: [
@@ -274,12 +274,49 @@ assert.ok(sawSplit && sawMerge, '夹具没有覆盖拆分与合并');
     const fine = tileSnap(fineRows, 13, { kind: 'leaf', tile: 12, minZoom: 13 });
     assert.deepEqual(coarse.visibleNodes.map((node) => node.count), [2, 2]);
     assert.deepEqual(fine.visibleNodes.map((node) => node.count).sort(), [1, 1, 2]);
-    for (const [prev, next] of [[coarse, fine], [fine, coarse]]) {
-        const plan = planTransition(prev, next);
-        assert.equal(plan.reuse.size + plan.splitFrom.size + plan.mergeInto.size, 0);
-        assert.equal(plan.enter.length, next.visibleNodes.length);
-        assert.equal(plan.exit.length, prev.visibleNodes.length);
-    }
+    const [west, east] = [...coarse.visibleNodes].sort((a, b) => a.coordinate[0] - b.coordinate[0]);
+    const boundary = fine.visibleNodes.find((node) => node.count === 2);
+    const split = planTransition(coarse, fine);
+    assert.deepEqual(split.splitFrom, new Map([['place:51', west.key], [boundary.key, west.key]]));
+    assert.deepEqual(split.reuse, new Map([['place:54', east.key]]));
+    assert.deepEqual(split.enter, []);
+    assert.deepEqual(split.exit, []);
+    const merge = planTransition(fine, coarse);
+    assert.deepEqual(merge.mergeInto, new Map([['place:51', west.key], [boundary.key, west.key]]));
+    assert.deepEqual(merge.reuse, new Map([[east.key, 'place:54']]));
+    assert.deepEqual(merge.enter, []);
+    assert.deepEqual(merge.exit, []);
+
+    // 明细聚合的中心更靠西，两个东侧成员仍应使它从东侧聚合出发。
+    const majority = tileSnap([
+        fineRows[0], { ...fineRows[1], longitude: 0.017 }, fineRows[2], fineRows[3],
+        { id: 58, longitude: 0.0221, latitude: -0.002 }
+    ], 13, fine.markerBand);
+    const boundaryGroup = majority.visibleNodes.find((node) => node.count === 3);
+    assert.deepEqual(majority.engine.memberKeys(boundaryGroup), ['place:52', 'place:53', 'place:58']);
+    assert.equal(planTransition(coarse, majority).splitFrom.get(boundaryGroup.key), east.key);
+
+    // 视野边缘的明细只有一部分落在旧快照内，那些成员仍然能提供动画来源。
+    const edge = tileSnap([...fineRows, { id: 55, longitude: 0.0441, latitude: -0.020 }], 13, fine.markerBand);
+    const eastGroup = edge.visibleNodes.find((node) => edge.engine.memberKeys(node).includes('place:55'));
+    assert.deepEqual(edge.engine.memberKeys(eastGroup), ['place:54', 'place:55']);
+    assert.equal(planTransition(coarse, edge).reuse.get(eastGroup.key), east.key);
+}
+
+// ---- 同一聚合里有一直可见的个人标记和换档的匿名点，两个子节点应一起拆开 ----
+{
+    const city = { kind: 'aggregate', tile: 8, cell: 14, minZoom: 11, maxZoom: 12 };
+    const leaf = { kind: 'leaf', tile: 12, minZoom: 13 };
+    const own = { id: 56, longitude: 0.002, latitude: -0.009 };
+    const detail = { id: 57, longitude: 0.019, latitude: -0.009 };
+    const anonymous = expandAggregateTile({ z: 8, cell: 14, cells: [[0, 0, 3, 3, [[[], -1, -1, 0]]]] },
+        { tags: [], regions: [] }, '128/128');
+    const coarse = tileSnap([...anonymous, own], 12, city);
+    const fine = tileSnap([own, detail], 13, leaf);
+    const [parent] = coarse.visibleNodes;
+    assert.equal(parent.count, 2);
+    assert.deepEqual(planTransition(coarse, fine).splitFrom, new Map([['place:56', parent.key], ['place:57', parent.key]]));
+    assert.deepEqual(planTransition(fine, coarse).mergeInto, new Map([['place:56', parent.key], ['place:57', parent.key]]));
 }
 
 // ---- 成员签名与顺序无关 ----

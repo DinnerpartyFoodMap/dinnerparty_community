@@ -281,6 +281,7 @@ function makeSession(plugin, extra = {}) {
         id: 'place', token: 3, title: '老码头火锅', size: 'card', detail: 'd'.repeat(2600), caption: 'a'.repeat(300),
         leading: { id: 'favorite', title: '收藏', symbol: 'heart.fill', tone: 'accent', keepsOpen: true, latitude: 1 },
         actions: Array.from({ length: 9 }, (_, i) => ({ id: `a${i}`, title: `操作${i}`, tone: i === 0 ? 'accent' : undefined, keepsOpen: true, expands: i === 3, latitude: 1 })),
+        detailFooterAction: { id: 'report', title: '举报', symbol: 'flag', keepsOpen: true, latitude: 1 },
         gallery: [
             { id: 'exterior', title: '外观', images: ['https://img.example.com/a.jpg', 'http://img.example.com/b.jpg', 'javascript:alert(1)', 'https://user:pw@img.example.com/c.jpg', 'capacitor://localhost/x.png', ...Array.from({ length: 20 }, (_, i) => `https://img.example.com/${i}.jpg`)] },
             { id: 'menu', title: '菜单', images: ['http://only-http.example.com/m.jpg'] },
@@ -297,6 +298,9 @@ function makeSession(plugin, extra = {}) {
     assert.equal(place.actions.every((action) => action.keepsOpen), true);
     assert.deepEqual(place.actions.map((action) => action.expands), [false, false, false, true, false, false]);
     assert.equal('latitude' in place.actions[0], false);
+    assert.equal(place.detailFooterAction.id, 'report');
+    assert.equal(place.detailFooterAction.keepsOpen, true);
+    assert.equal('latitude' in place.detailFooterAction, false);
     assert.equal(place.gallery[0].images[0], 'https://img.example.com/a.jpg');
     assert.equal(place.gallery[0].images.length, 12, '每组最多 12 张');
     assert.equal(place.gallery[0].images.every((url) => url.startsWith('https://') && !url.includes('@')), true, '只收不带凭据的 https 图片');

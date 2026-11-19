@@ -400,8 +400,9 @@ export default function MapUI(props) {
     const [ratingOpen, setRatingOpen] = useState(false);
     const [checkInTarget, setCheckInTarget] = useState(null);
     const [checkInResult, setCheckInResult] = useState(null);
-    const canCheckIn = ratingPlaceId != null && !!selectedPlace && !selectedPlace.marker_only
-        && (!selectedPlace.moderation_status || selectedPlace.moderation_status === 'visible') && !currentUser?.is_banned;
+    // 公开标记的快照可能还没有详情字段，打卡只需要地点 ID；最终由服务端校验公开状态、权限和距离。
+    const canCheckIn = ratingPlaceId != null && (!selectedPlace.moderation_status || selectedPlace.moderation_status === 'visible')
+        && !currentUser?.is_banned;
     const checkInOpen = canCheckIn && !!checkInTarget && checkInTarget.placeId === ratingPlaceId && checkInTarget.token === token;
     const markerCheckInCount = Number(selectedPlace?.checkin_count) || 0;
     const checkInCount = checkInResult?.place_id === ratingPlaceId && checkInResult.previousCount === markerCheckInCount
@@ -604,6 +605,7 @@ export default function MapUI(props) {
     // iOS App 窄屏：搜索框不常驻，点工具栏“搜索”后工具栏变成输入框（原生玻璃控件，或同样布局的网页控件）。
     // 输入中右侧头像位置变为“收起键盘”按钮；收起键盘后头像回来，左侧返回圆钮退出搜索。
     const compactSearch = iosApp && isNarrow && !pickerMode;
+    const mobileFloatingBottom = compactSearch ? 78 : 130;
     const addSearchPlaceholder = addMode ? t('map:ui.addSearchPlaceholder') : null;
     const [searchExpandedState, setSearchExpanded] = useState(false);
     const searchExpanded = searchExpandedState || (compactSearch && addMode);
@@ -691,6 +693,7 @@ export default function MapUI(props) {
     // “更多功能”行前的皮肤图标
     const panelIconStyle = { marginRight: 10, verticalAlign: 'middle' };
     const popupActionLabelStyle = { fontSize: 11, fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap' };
+    const popupSecondaryActionStyle = { ...popupActionButtonStyle, flexDirection: 'column', gap: 3, padding: '4px 6px' };
     const mobileNavButtonStyle = {
         flex: 1,
         minWidth: 0,
@@ -1163,7 +1166,7 @@ export default function MapUI(props) {
         : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
         // 聚合成员列表（“此处有 N 家店”）：选中其中一家后关闭，让位给地点卡片
         : (clusterMembers && !pickerMode) ? 'clusterMembers'
-        : (selectedPlace && !pickerMode && !checkInOpen) ? 'place'
+        : (selectedPlace && !pickerMode) ? 'place'
         : (favoritesOwner && !pickerMode) ? 'favorites'
         // 住民的地点列表：选中其中一个地点后让位给地点卡片
         : (userFilter && userPlacesOpen && !pickerMode) ? 'userPlaces'
@@ -1258,13 +1261,12 @@ export default function MapUI(props) {
                     ...nativeIcon(myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none'),
                     keepsOpen: true
                 },
-                canCheckIn && { id: 'checkIn', title: t('map:checkIn.submit'), symbol: sfSymbol('centerLocation'), keepsOpen: true },
                 unmarked
                     ? (venueCard ? null : { id: 'create', title: t('map:ui.createPlace'), symbol: sfSymbol('create'), ...nativeIcon('cardActions.create'), keepsOpen: true })
                     : { id: 'edit', title: t('map:ui.edit'), symbol: sfSymbol('edit'), ...nativeIcon('cardActions.edit'), keepsOpen: true },
-                // 举报占了原来“详情”按钮的位置，全屏详情靠上滑展开
-                !unmarked && canReportPlace && { id: 'report', title: t('map:ui.report'), symbol: sfSymbol('report'), ...nativeIcon('cardActions.report'), keepsOpen: true }
+                !unmarked && { id: 'checkIn', title: t('map:checkIn.submit'), symbol: sfSymbol('centerLocation'), disabled: !canCheckIn, keepsOpen: true }
             ].filter(Boolean),
+            detailFooterAction: canReportPlace ? { id: 'report', title: t('map:ui.report'), symbol: sfSymbol('report'), ...nativeIcon('cardActions.report'), keepsOpen: true } : undefined,
             sections: [
                 ratingRow && { id: 'rating', title: t('map:rating.panel.title'), rows: [ratingRow] },
                 {
@@ -1910,7 +1912,7 @@ export default function MapUI(props) {
         { id: 'share', title: t('map:ui.share.title'), icon: 'share', slot: 'cardActions.share', run: () => setShareOpen(true) },
         { id: 'edit', title: t('map:ui.edit'), icon: 'edit', slot: 'cardActions.edit', run: () => openManagePanel?.() },
         isAdmin && { id: 'comments', title: t('map:editEvidence.history'), icon: 'history', slot: 'cardActions.details', run: () => openCommentPanel?.() },
-        canReportPlace && { id: 'report', title: t('map:ui.report'), icon: 'flag', slot: 'cardActions.report', run: reportPlace }
+        !iosApp && canReportPlace && { id: 'report', title: t('map:ui.report'), icon: 'flag', slot: 'cardActions.report', run: reportPlace }
     ].filter(Boolean);
 
     // 地点卡片内容：宽屏卡片与窄屏底部面板共用。外框可由皮肤替换（窄屏面板的外框见 skins/skin.css 的 .fm-skin-card）；
@@ -1972,10 +1974,9 @@ export default function MapUI(props) {
                 })()}
             </div>
             {ratingPlaceId != null && renderRatingRow()}
-            {canCheckIn && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                    <Button variant="secondary" size="sm" onClick={openCheckIn}>{t('map:checkIn.submit')}</Button>
-                    {checkInCount > 0 && <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('map:checkIn.count', { count: checkInCount })}</span>}
+            {ratingPlaceId != null && checkInCount > 0 && (
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                    {t('map:checkIn.count', { count: checkInCount })}
                 </div>
             )}
 
@@ -2032,7 +2033,7 @@ export default function MapUI(props) {
                         )}
                     </div>
                 ) : !hideNonSearchButtons && (
-                    // 导航是主按钮；收藏、评价是次要操作；详情、分享、编辑、举报收进“更多”
+                    // 导航是主按钮；收藏、评价、打卡直接可用，其余操作收进“更多”。
                     <div style={{ marginTop: 10, display: 'flex', alignItems: 'stretch', gap: 6 }}>
                         <Tooltip text={hasNavigationTarget ? t('map:ui.card.navigateTooltip') : t('map:ui.card.noCoordinates')}>
                             <Button
@@ -2059,7 +2060,7 @@ export default function MapUI(props) {
                                 disabled={favoriteLoading}
                                 aria-label={favorited ? t('map:ui.card.unfavoriteLabel') : t('map:ui.card.favoriteLabel')}
                                 aria-pressed={favorited}
-                                style={{ ...popupActionButtonStyle, color: favorited ? 'var(--color-primary)' : popupActionButtonStyle.color }}
+                                style={{ ...popupSecondaryActionStyle, color: favorited ? 'var(--color-primary)' : popupSecondaryActionStyle.color }}
                             >
                                 <SkinIcon slot={favorited ? 'cardActions.favoriteActive' : 'cardActions.favorite'} size={20}>
                                     <span className="material-symbols-outlined" style={{ ...popupActionIconStyle, fontVariationSettings: favorited ? "'FILL' 1" : undefined }}>favorite</span>
@@ -2070,12 +2071,16 @@ export default function MapUI(props) {
                         <Button
                             onClick={openRating}
                             aria-label={t('map:rating.card.openLabel', { summary: summaryText(ratingSummary) })}
-                            style={{ ...popupActionButtonStyle, color: myRatingTier ? myRatingTier.tone : popupActionButtonStyle.color }}
+                            style={{ ...popupSecondaryActionStyle, color: myRatingTier ? myRatingTier.tone : popupSecondaryActionStyle.color }}
                         >
                             <SkinIcon slot={myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none'} size={20}>
                                 <span className="material-symbols-outlined" style={{ ...popupActionIconStyle, fontVariationSettings: myRatingTier?.fill ? "'FILL' 1" : undefined }}>{myRatingTier ? myRatingTier.icon : 'rate_review'}</span>
                             </SkinIcon>
                             <span style={popupActionLabelStyle}>{myRatingTier ? tierLabel(myRatingTier) : t('map:rating.card.rate')}</span>
+                        </Button>
+                        <Button onClick={openCheckIn} disabled={!canCheckIn} aria-label={t('map:checkIn.submit')} style={popupSecondaryActionStyle}>
+                            <span className="material-symbols-outlined" aria-hidden="true" style={popupActionIconStyle}>my_location</span>
+                            <span style={popupActionLabelStyle}>{t('map:checkIn.submit')}</span>
                         </Button>
                         <span ref={cardMoreRef} style={{ display: 'inline-flex' }}>
                             <Button
@@ -2139,7 +2144,8 @@ export default function MapUI(props) {
                     }) : t('map:ui.lastModified', { modifier: lastModifierText(lastModifier) })}
                 </div>
             )}
-            {inSheet && showCardDetails && <PlaceCardDetails place={selectedPlace} backendUrl={backendUrl} />}
+            {inSheet && showCardDetails && <PlaceCardDetails place={selectedPlace} backendUrl={backendUrl}
+                onReport={iosApp && canReportPlace ? reportPlace : undefined} />}
         </div>
     );
 
@@ -2330,9 +2336,11 @@ export default function MapUI(props) {
             <div ref={containerRef} id="map" className="fm-map-canvas" style={{ width: "100%", height: "100%", position: "relative" }}></div>
             {/* 状态栏区域登记为遮挡：地图居中、聚合展开时避开它（网页中高度为 0，不生效） */}
             <div className="fm-statusbar-occluder" data-map-occluder="" aria-hidden="true" />
-            {isNarrow && props.companion && !pickerMode && !selectedPlace && !addMode && !openSheetId && !mobileMoreOpen && !nativeOverlayActive && (
+            {isNarrow && mapReady && !chrome.connecting && (!nativeChrome || chrome.showing)
+                && props.companion && !pickerMode && !selectedPlace && !addMode && !openSheetId && !mobileMoreOpen && !nativeOverlayActive && (
                 <div className="fm-companion-roam" aria-hidden="true" style={{ bottom: nativeChrome
-                    ? chrome.bottomOccupied + 4 : 'calc(52px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))' }}>
+                    ? chrome.bottomOccupied + 4
+                    : aboveBottomInset(platform === 'web' ? mobileFloatingBottom + (userFilter ? 52 : 0) : 52) }}>
                     <CompanionFigure backendUrl={backendUrl} token={token} companion={props.companion} />
                 </div>
             )}
@@ -2537,14 +2545,14 @@ export default function MapUI(props) {
             />}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
-                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset((compactSearch ? 78 : 130) + 52), zIndex: 2000, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(mobileFloatingBottom + 52), zIndex: 2000, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {listToggleButton(26)}
                     {filterButton(26)}
                 </div>
             )}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
-                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(compactSearch ? 78 : 130), zIndex: 2000 }}>
+                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(mobileFloatingBottom), zIndex: 2000 }}>
                     <Tooltip text={locating ? t('map:ui.locating') : t('map:ui.locateTooltip')} placement="top">
                         <div style={{ display: 'inline-block' }}>
                             <Button
@@ -2591,7 +2599,7 @@ export default function MapUI(props) {
                         ...(nativeChrome
                             ? { left: 12, right: 76, bottom: chrome.bottomOccupied + 17 }
                             : isNarrow
-                                ? { left: 12, right: 68, bottom: aboveBottomInset(compactSearch ? 78 : 130) }
+                                ? { left: 12, right: 68, bottom: aboveBottomInset(mobileFloatingBottom) }
                                 : { left: '50%', bottom: 44, transform: 'translateX(-50%)', maxWidth: 'min(480px, calc(100% - 140px))' })
                     }}
                 >
@@ -3375,7 +3383,7 @@ export default function MapUI(props) {
                 <>
                     <PlaceDetailPanel open={detailOpen && !!selectedPlace} place={selectedPlace} focus={detailFocus} backendUrl={backendUrl} onClose={() => setDetailOpen(false)} onNavigate={handleNavigate}
                         rating={ratingPlaceId != null ? { summary: ratingSummary, mine: myRatingTier } : null} onOpenRating={openRating}
-                        onReport={canReportPlace ? reportPlace : undefined} />
+                        onReport={canReportPlace ? reportPlace : undefined} reportAtBottom={iosApp} />
                     <ResponsivePanel open={!!visitEvidence.prompt} onClose={()=>void visitEvidence.answer('later')} title={t('map:rating.visitQuestion')} kind="visit-confirmation" desktop="center" mobile="sheet">
                         <div style={{padding:20,display:'flex',gap:12}}>
                             <Button onClick={()=>void visitEvidence.answer('yes')}>{t('map:rating.visitYes')}</Button>

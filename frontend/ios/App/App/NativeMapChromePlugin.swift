@@ -393,6 +393,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             closeImageTemplate: (raw["closeImageTemplate"] as? Bool) ?? false,
             subtitleAction: parseSingleRow(raw["subtitleAction"]),
             captionAction: parseSingleRow(raw["captionAction"]),
+            detailFooterAction: parseSingleRow(raw["detailFooterAction"]),
             focusRow: clip(raw["focusRow"], 80)
         )
     }

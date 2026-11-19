@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import Button from '../components/primitives/Button';
-import PageTemplate from '../components/layout/PageTemplate';
 import { useTips } from '../components/feedback/Tips';
 import { t } from '../i18n';
 import { getPlatform } from '../platform/env';
@@ -9,7 +8,7 @@ import { saveActiveCompanion } from '../skins/skinApi';
 import CompanionFigure from './CompanionFigure';
 import { DEFAULT_COMPANION } from './useCompanion';
 
-export default function CompanionSettings({ backendUrl, token, companion, update, onBack }) {
+export default function CompanionSettings({ backendUrl, token, companion, update, enabled, onEnabledChange }) {
     const [busy, setBusy] = useState(false);
     const showTip = useTips();
     const roles = [{ id: DEFAULT_COMPANION, name: t('companion:defaultName') }, ...companion.owned];
@@ -23,19 +22,33 @@ export default function CompanionSettings({ backendUrl, token, companion, update
         finally { setBusy(false); }
     }
 
-    return <PageTemplate breadcrumb={[{ label: t('settings:common.nav.settings'), onClick: onBack }, { label: t('companion:title') }]}>
-        <section className="fm-companion-room">
-            <CompanionFigure backendUrl={backendUrl} token={token} companion={companion} showStatus />
-            <strong>{active.name}</strong>
-            <p className="fm-companion-room__satiety" aria-live="polite">{t('companion:satiety', { count: companion.satiety })}</p>
-            <p>{t('companion:unlockHint')}</p>
-        </section>
-        <div className="fm-companion-room__choices" aria-label={t('companion:role')}>
-            {roles.map((role) => <Button key={role.id} variant={role.id === active.id ? 'primary' : 'secondary'}
-                aria-pressed={role.id === active.id} disabled={busy || role.id === active.id} onClick={() => choose(role.id)}>{role.name}</Button>)}
-        </div>
-        {getPlatform() !== 'ios' && <ResourceRedeemForm backendUrl={backendUrl} token={token} onRedeemed={(result) => {
-            if (result.type === 'companion') update(result.state);
-        }} />}
-    </PageTemplate>;
+    async function toggle(nextEnabled) {
+        if (busy) return;
+        setBusy(true);
+        try { await onEnabledChange(nextEnabled); }
+        catch (error) { showTip(error.message || t('settings:personalizeMap.saveFailed')); }
+        finally { setBusy(false); }
+    }
+
+    return <div className="fm-companion-settings">
+        <label className="fm-companion-settings__toggle">
+            <span>{t('companion:enabled')}</span>
+            <input type="checkbox" role="switch" checked={enabled} disabled={busy} onChange={(event) => toggle(event.target.checked)} />
+        </label>
+        {enabled && <>
+            <section className="fm-companion-room">
+                <CompanionFigure backendUrl={backendUrl} token={token} companion={companion} showStatus />
+                <strong>{active.name}</strong>
+                <p className="fm-companion-room__satiety" aria-live="polite">{t('companion:satiety', { count: companion.satiety })}</p>
+                <p>{t('companion:unlockHint')}</p>
+            </section>
+            <div className="fm-companion-room__choices" aria-label={t('companion:role')}>
+                {roles.map((role) => <Button key={role.id} variant={role.id === active.id ? 'primary' : 'secondary'}
+                    aria-pressed={role.id === active.id} disabled={busy || role.id === active.id} onClick={() => choose(role.id)}>{role.name}</Button>)}
+            </div>
+            {getPlatform() !== 'ios' && <ResourceRedeemForm backendUrl={backendUrl} token={token} onRedeemed={(result) => {
+                if (result.type === 'companion') update(result.state);
+            }} />}
+        </>}
+    </div>;
 }

@@ -1,6 +1,6 @@
 const { db } = require('../../../infrastructure/database');
 const { PLACE_COLUMNS, widgetPlace, getFavoriteCollection } = require('../../preferences/services/favoriteCollection');
-const { publicPlaceSql } = require('../../places/services/placeVisibility');
+const { publicPlaceSql, viewerPlaceSql } = require('../../places/services/placeVisibility');
 const { getUserCity } = require('./userLocation');
 const { viewerRelation } = require('./userRelations');
 const { userTasteAxes } = require('../../preferences/services/tasteAxes');
@@ -8,7 +8,7 @@ const { avatarColumns, avatarFields } = require('./userAvatar');
 
 // 住民主页（GET /users/:id/profile，见 ../doc/README.md）：头像、六类餐饮偏好雷达（preferences/services/tasteAxes.js）、上次定位的城市，
 // 以及固定的收藏、创建地点和最喜欢地点的预览。
-// 地点只给公开的；屏蔽了 Ta 时只返回头部信息（用来解除屏蔽）。
+// 访客只看公开地点；本人创建地点预览与地图创建地点列表的可见范围一致。
 const PROFILE_WIDGETS = Object.freeze(['collection', 'recent', 'favorite']);
 const DEFAULT_WIDGETS = Object.freeze(['collection', 'recent']);
 const CHOOSABLE_WIDGETS = ['recent', 'favorite'];
@@ -37,10 +37,10 @@ function readWidgetSettings(value) {
     };
 }
 
-function recentPlaces(userId, database = db._raw) {
+function recentPlaces(userId, viewerId, database) {
     return database.prepare(`SELECT ${PLACE_COLUMNS} FROM Place p
-        WHERE p.creator_id = ? AND ${publicPlaceSql('p')}
-        ORDER BY p.created_time DESC, p.id DESC LIMIT ?`).all(userId, WIDGET_PLACE_LIMIT).map(widgetPlace);
+        WHERE p.creator_id = ? AND ${viewerPlaceSql('p')}
+        ORDER BY p.created_time DESC, p.id DESC LIMIT ?`).all(userId, viewerId, WIDGET_PLACE_LIMIT).map(widgetPlace);
 }
 
 /** 最喜欢：住民自己评“均线之上”及以上的地点，分高的在前，同分时最近评的在前 */
@@ -86,7 +86,7 @@ async function getUserProfile(userId, viewer = null, database = db._raw) {
     if (relation.blocked) return profile;
     const collection = getFavoriteCollection(user.id, viewer?.id, { limit: WIDGET_PLACE_LIMIT, database });
     profile.content.collection = collection ? [{ id: 'favorites', title: '我的收藏', total: collection.total, places: collection.places }] : [];
-    if (relation.self || !profile.hidden_widgets.includes('recent')) profile.content.recent = recentPlaces(user.id, database);
+    if (relation.self || !profile.hidden_widgets.includes('recent')) profile.content.recent = recentPlaces(user.id, relation.self ? user.id : null, database);
     if (relation.self || !profile.hidden_widgets.includes('favorite')) profile.content.favorite = favoritePlaces(user.id, database);
     if (relation.self && collection) profile.collection_visibility = collection.is_public;
     return profile;

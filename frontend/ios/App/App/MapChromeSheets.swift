@@ -1141,6 +1141,10 @@ struct MapChromePlaceCard: View {
             ForEach(sheet.gallery) { group in
                 galleryView(group)
             }
+            if let action = sheet.detailFooterAction {
+                detailRow(action)
+                    .background(groupFill, in: RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous))
+            }
         }
     }
 

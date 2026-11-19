@@ -161,6 +161,7 @@ struct MapChromeSheet: Identifiable, Equatable {
     /// 可点的副标题 / 地址行（v9，展会地点）：点按与行相同，回传行 id；行标题用作读屏标签
     var subtitleAction: MapChromeSheetRow? = nil
     var captionAction: MapChromeSheetRow? = nil
+    var detailFooterAction: MapChromeSheetRow? = nil
     /// 列表打开时滚到这一行（收藏：从店卡回来时停在原来的位置）
     var focusRow: String? = nil
 

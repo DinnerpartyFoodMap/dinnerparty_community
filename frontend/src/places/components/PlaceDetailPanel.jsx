@@ -23,14 +23,14 @@ export function parseImages(value, backendUrl) {
 }
 
 // 地点详情：宽屏为右侧信息板（非模态，地图仍可操作），窄屏为可在中/全屏两档停靠的底部面板。
-// 图片预览是嵌套浮层：返回键先关闭预览，再关闭详情。onReport 有值时店名后面跟一个小字“举报”。
-export default function PlaceDetailPanel({ open = true, place, onClose, onNavigate, focus = null, backendUrl, rating = null, onOpenRating, onReport }) {
+// 图片预览是嵌套浮层：返回键先关闭预览，再关闭详情。iOS 的举报放在详情内容的最后。
+export default function PlaceDetailPanel({ open = true, place, onClose, onNavigate, focus = null, backendUrl, rating = null, onOpenRating, onReport, reportAtBottom = false }) {
     const layout = useLayoutPolicy();
     return (
         <ResponsivePanel
             open={open && !!place}
             onClose={onClose}
-            title={place ? <>{place.name}{onReport && <ReportLink name={place.name} onReport={onReport} />}</> : t('map:placeDetail.title')}
+            title={place ? <>{place.name}{onReport && !reportAtBottom && <ReportLink name={place.name} onReport={onReport} />}</> : t('map:placeDetail.title')}
             label={place ? t('map:placeDetail.titleNamed', { name: place.name }) : t('map:placeDetail.title')}
             kind="place-detail"
             desktop="side-right"
@@ -43,16 +43,17 @@ export default function PlaceDetailPanel({ open = true, place, onClose, onNaviga
             snap="half"
             bodyStyle={{ padding: 0 }}
         >
-            {place && <PlaceDetailBody place={place} onNavigate={onNavigate} isMobile={layout.sheet} focus={focus} backendUrl={backendUrl} rating={rating} onOpenRating={onOpenRating} />}
+            {place && <PlaceDetailBody place={place} onNavigate={onNavigate} isMobile={layout.sheet} focus={focus} backendUrl={backendUrl} rating={rating} onOpenRating={onOpenRating}
+                onReport={reportAtBottom ? onReport : undefined} />}
         </ResponsivePanel>
     );
 }
 
 /**
  * 窄屏地点小卡上拉后的详情：完整简介、地址、相关日记、外观与菜单图片（与详情面板同一套内容）。
- * 按钮不在这里：小卡的按钮布局保持不变。
+ * iOS 网页回退时，举报也放在详情的最后。
  */
-export function PlaceCardDetails({ place, backendUrl }) {
+export function PlaceCardDetails({ place, backendUrl, onReport }) {
     const [preview, setPreview] = useState(null);
     const exteriorImages = parseImages(place.exterior_images);
     const menuImages = parseImages(place.menu_images);
@@ -67,6 +68,7 @@ export function PlaceCardDetails({ place, backendUrl }) {
             {exteriorImages.length === 0 && menuImages.length === 0 && checkInImages.length === 0 && (
                 <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 13, margin: '8px 0', textAlign: 'center' }}>{t('map:placeDetail.noImages')}</div>
             )}
+            {onReport && <PlaceReportRow onReport={onReport} />}
             <ImagePreview preview={preview} onClose={() => setPreview(null)} />
         </div>
     );
@@ -94,7 +96,7 @@ function ImageGroup({ title, images, onPreview }) {
     );
 }
 
-function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, rating, onOpenRating }) {
+function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, rating, onOpenRating, onReport }) {
     const [preview, setPreview] = useState(null);
     const diariesRef = useRef(null);
     // 从地点小卡的「相关日记」进入时，直接定位到日记区域
@@ -142,11 +144,19 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
                 {exteriorImages.length === 0 && menuImages.length === 0 && checkInImages.length === 0 && (
                     <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 13, marginTop: 24, textAlign: 'center' }}>{t('map:placeDetail.noImages')}</div>
                 )}
+                {onReport && <PlaceReportRow onReport={onReport} />}
             </div>
 
             <ImagePreview preview={preview} onClose={() => setPreview(null)} />
         </>
     );
+}
+
+function PlaceReportRow({ onReport }) {
+    return <Button variant="menu" full onClick={onReport} style={{ justifyContent: 'flex-start', gap: 8 }}>
+        <SkinIcon slot="cardActions.report" size={20}><span className="material-symbols-outlined" aria-hidden="true">flag</span></SkinIcon>
+        {t('map:ui.report')}
+    </Button>;
 }
 
 /** 店名后的小字举报入口：跟在标题文字末尾（店名换行时也贴着最后一个字） */

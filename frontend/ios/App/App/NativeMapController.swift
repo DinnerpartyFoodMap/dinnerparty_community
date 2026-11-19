@@ -282,17 +282,24 @@ final class NativeMapController: NSObject {
             if let previousKey, !consumed.contains(previousKey), let annotation = previous[previousKey] {
                 // 沿用：同一个视图，原地更新
                 consumed.insert(previousKey)
-                let fromPoint = point(annotation.coordinate)
                 let oldCount = annotation.count
                 let wasCluster = annotation.cluster
                 let moved = annotation.coordinate.latitude != input.coordinate.latitude || annotation.coordinate.longitude != input.coordinate.longitude
+                let reanchor = plan.reanchor.contains(input.id)
+                let fromPoint = moved && !reanchor ? point(annotation.coordinate) : .zero
                 annotation.apply(input, selected: isSelected)
-                if moved { annotation.coordinate = input.coordinate }
+                if moved {
+                    if reanchor {
+                        UIView.performWithoutAnimation { annotation.coordinate = input.coordinate }
+                    } else {
+                        annotation.coordinate = input.coordinate
+                    }
+                }
                 next[input.id] = annotation
                 guard let view = mapView.view(for: annotation) as? NativeMapNodeView else { continue }
                 view.configure(annotation, style: style)
                 guard animate, isOnScreen(view) else { continue }
-                if moved {
+                if moved && !reanchor {
                     let to = point(input.coordinate)
                     view.playMove(from: CGPoint(x: fromPoint.x - to.x, y: fromPoint.y - to.y), reduced: reduced)
                 }
@@ -649,6 +656,8 @@ struct NativeMapNodeInput {
 struct NativeMapTransitionPlan {
     /// 新 key → 旧 key：沿用同一个视图
     var reuse: [String: String] = [:]
+    /// 换档只校正位置，直接落在新坐标的节点
+    var reanchor: Set<String> = []
     /// 新 key → 旧父聚合：从父聚合的位置飞出
     var splitFrom: [String: String] = [:]
     /// 旧 key → 新父聚合：吸向父聚合并收拢

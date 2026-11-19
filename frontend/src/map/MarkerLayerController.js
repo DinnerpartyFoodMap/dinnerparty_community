@@ -466,14 +466,15 @@ export class MarkerLayerController {
                 const recounted = previousNode.count !== node.count;
                 if (moved || recounted) {
                     const visual = this._takeOver(entry);
+                    const animateMove = animate && !plan.reanchor.has(node.key);
                     let offset = { x: 0, y: 0 };
                     if (moved) {
-                        const from = animate ? project(previousNode.coordinate) : null;
+                        const from = animateMove ? project(previousNode.coordinate) : null;
                         entry.marker.setPosition(node.coordinate);
-                        const to = animate ? project(node.coordinate) : null;
+                        const to = animateMove ? project(node.coordinate) : null;
                         if (from && to && (onscreen(from) || onscreen(to)) && !reduced) offset = { x: from.x - to.x, y: from.y - to.y };
                     }
-                    if (animate) settle(entry, visual, offset);
+                    if (animateMove) settle(entry, visual, offset);
                     if (recounted && animate && !reduced && !degraded && !(visual && visual.glyph.opacity < 0.99)) {
                         run(entry, entry.parts.glyph, [
                             { transform: 'scale(0.94)' },

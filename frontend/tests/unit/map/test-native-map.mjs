@@ -36,7 +36,7 @@ const {
     NativeMapView, NativeMarkerOverlay, NativePolylineOverlay, isNativeMap, nativeMapAppearance, sampleTouchHoles, readPoint
 } = await import('../../../src/map/nativeMapView.js');
 const { NativeMarkerLayer, buildNativeMarkerStyle, nativeNode, NATIVE_BUFFER_RATIO } = await import('../../../src/map/nativeMarkerLayer.js');
-const { tileOf } = await import('../../../src/map/markerTiles.js');
+const { lngOf, tileOf } = await import('../../../src/map/markerTiles.js');
 const { computeLogicalZoom } = await import('../../../src/map/cluster/snapshot.js');
 const {
     frameRegion, FRAME_PROBES, decideProbe, decideFrames, toNativeCoordinate, fromNativeCoordinate, distanceMeters,
@@ -119,13 +119,14 @@ FakeMapPlugin.prototype.fitBounds = async function (args) {
 
     const plan = {
         reuse: new Map([['a', 'a'], ['b', 'gone-prev']]),
+        reanchor: new Set(['a', 'b', 'c']),
         splitFrom: new Map([['c', 'p'], ['x', 'p']]),
         mergeInto: new Map([['p', 'c'], ['q', 'missing']]),
         splitSources: new Set(['p', 'unknown']),
         mergeTargets: new Set(['c', 'zz'])
     };
     assert.deepEqual(encodeNativePlan(plan, { nextKeys: new Set(['a', 'b', 'c']), prevKeys: new Set(['a', 'p']) }), {
-        reuse: ['a', 'a'], splitFrom: ['c', 'p'], mergeInto: ['p', 'c'], splitSources: ['p'], mergeTargets: ['c']
+        reuse: ['a', 'a'], reanchor: ['a'], splitFrom: ['c', 'p'], mergeInto: ['p', 'c'], splitSources: ['p'], mergeTargets: ['c']
     }, '计划只保留两份快照里都存在的 key');
     assert.deepEqual(sanitizeProbes([{ id: 'p', names: ['天安门', '', 'x'.repeat(99), 3], lng: 116.4, lat: 39.9, radius: 1 }, { id: 'bad', names: [], lng: 1, lat: 1 }]),
         [{ id: 'p', names: ['天安门', 'x'.repeat(60)], lng: 116.4, lat: 39.9, radius: 200 }]);
@@ -585,15 +586,18 @@ const canvas = {
     const leafBand = { kind: 'leaf', tile: 12, minZoom: 13 };
     const leafPlaces = [
         { id: 101, name: '甲', longitude: 113.300, latitude: 23.1 },
-        { id: 102, name: '乙', longitude: 113.318, latitude: 23.1 }
+        { id: 102, name: '乙', longitude: 113.318, latitude: 23.1 },
+        { id: 103, name: '丙', longitude: 113.264, latitude: 23.075 }
     ];
-    const aggregatePlaces = leafPlaces.map(({ longitude, latitude }) => {
+    const aggregatePlaces = leafPlaces.map(({ id, longitude, latitude }) => {
         const [x, y] = tileOf(longitude, latitude, aggregateBand.cell);
-        return { longitude, latitude, aggregate: true, aggregateCell: [aggregateBand.cell, x, y], aggregateKey: `agg:14/${x}/${y}#0` };
+        return { longitude: id === 103 ? lngOf(x + 0.875, 14) : longitude, latitude,
+            aggregate: true, aggregateCell: [aggregateBand.cell, x, y], aggregateKey: `agg:14/${x}/${y}#0` };
     });
     tileMap.zoom = 12;
     tileLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
-    const [, [aggregate]] = tileMap.last('nodes');
+    const [, aggregateNodes] = tileMap.last('nodes');
+    const aggregate = aggregateNodes.find((node) => node.cluster);
     assert.equal(aggregate.count, 2, '12 级时两个匿名点合为一处聚合');
 
     tileMap.emit('movestart');
@@ -606,9 +610,10 @@ const canvas = {
     tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
     assert.equal(tileMap.count('nodes'), 2, '明细到达时只发送一份转场');
     const [, leafNodes, leafPlan, leafOptions] = tileMap.last('nodes');
-    assert.deepEqual(leafNodes.map((node) => node.id), ['place:101', 'place:102']);
-    assert.deepEqual([...leafOptions.prevKeys], [aggregate.id], '从此前显示的匿名聚合过渡');
+    assert.deepEqual(leafNodes.map((node) => node.id), ['place:101', 'place:102', 'place:103']);
+    assert.deepEqual([...leafOptions.prevKeys], aggregateNodes.map((node) => node.id), '从此前显示的匿名节点过渡');
     assert.deepEqual([...leafPlan.splitFrom], [['place:101', aggregate.id], ['place:102', aggregate.id]]);
+    assert.deepEqual([...leafPlan.reanchor], ['place:103'], '独立标记随拆分一起提交，直接落在精确坐标');
     assert.equal(leafOptions.animate, true);
     tileLayer.destroy();
 
@@ -622,7 +627,7 @@ const canvas = {
     });
     reverseMap.zoom = 12;
     reverseLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
-    const [, [reverseAggregate]] = reverseMap.last('nodes');
+    const reverseAggregate = reverseMap.last('nodes')[1].find((node) => node.cluster);
     reverseMap.emit('movestart');
     reverseMap.zoom = 13;
     reverseMap.emit('mapmove');
@@ -635,7 +640,7 @@ const canvas = {
     reverseMap.emit('mapmove');
     assert.equal(reverseMap.count('nodes'), 1, '回到 12 级时不显示迟到的明细');
     reverseMap.emit('clusterTap', { id: reverseAggregate.id });
-    assert.deepEqual(clickedMembers, aggregatePlaces.map((place) => place.aggregateKey), '点按仍使用画面上的聚合成员');
+    assert.deepEqual(clickedMembers, aggregatePlaces.slice(0, 2).map((place) => place.aggregateKey), '点按仍使用画面上的聚合成员');
 
     reverseMap.zoom = 12.48;
     reverseMap.emit('moveend');

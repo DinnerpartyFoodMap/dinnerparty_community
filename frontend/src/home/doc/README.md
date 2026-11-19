@@ -1,6 +1,6 @@
 # /home 下载页
 
-独立的 Vite 页面（`frontend/home/index.html` → `main.jsx` → `HomePage.jsx`，`vite.config.js` 的 `STATIC_PAGES`），扫描海报上的二维码后进入，不加载地图，也没有隐私确认弹窗。文案在 `home` 命名空间。
+独立的 Vite 页面（`frontend/home/index.html` → `main.jsx` → `HomePage.jsx`，`vite.config.js` 的 `STATIC_PAGES`），扫描海报上的二维码后进入，不加载地图，也没有隐私确认弹窗。宽屏地图顶栏的「东方饭联地图」也链接到此页。文案在 `home` 命名空间。
 
 - 下载 Android 版：`GET /api/app/android/latest.apk`，安装包放在服务器本地（后端 [App 更新与下载](../../../../backend/modules/appRelease/doc/README.md)）；服务器没有安装包时按钮置灰。
 - 下载 iOS 版：发版信息里的 `ios.url`，缺省为 TestFlight 邀请链接。

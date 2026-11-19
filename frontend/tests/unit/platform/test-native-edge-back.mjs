@@ -95,12 +95,14 @@ for (const source of [settingsGesture, between(presentation, '@objc private func
 
 // The profile preview must leave the bridge session untouched until the user commits the swipe.
 const profile = read('NativeProfilePlugin');
-assert.match(profile, /screenPresenter\.previewsEdgeBack = true/);
-const preview = between(presentation, 'private func handleEdgePreview(', '\n    }\n}');
+assert.match(profile, /screenPresenter = NativeContainedScreenPresenter\(/);
+const contained = presentation.slice(presentation.indexOf('final class NativeContainedScreenPresenter'));
+assert.match(contained, /parent\.addChild\(host\)[\s\S]*view\.frame = parent\.view\.bounds[\s\S]*parent\.view\.addSubview\(view\)/, 'the full-screen profile is layered above the original map or list');
+const preview = between(contained, '@objc private func handleEdge(', '\n    }\n}');
 assert.doesNotMatch(between(preview, 'case .began:', 'case .ended:'), /onEdgeBack|dismiss\(/);
-assert.match(preview, /case \.ended:[\s\S]*commitsEdgeBack[\s\S]*onEdgeBack\?\(\)/);
+assert.match(preview, /case \.ended:[\s\S]*NativeBackGestureRegion\.commits[\s\S]*onEdgeBack\?\(\)/);
 assert.match(preview, /case \.cancelled, \.failed:[\s\S]*restoreEdgePreview/);
-assert.match(profile, /screenPresenter\.onDismissed = [\s\S]*?completeDismissal\(host\)/, 'UIKit dismissal also ends the pending bridge session');
+assert.match(profile, /screenPresenter\.dismiss\(host[\s\S]*?completeDismissal\(host\)/, 'removal ends the pending bridge session');
 
 // Translate only the foreground page. UIKit's containing view stays clear over the live previous page.
 const screenController = between(presentation, 'final class NativeScreenPresentationController', 'final class NativeScreenSlideAnimator');

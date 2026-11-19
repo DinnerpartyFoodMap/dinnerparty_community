@@ -1,5 +1,6 @@
 {
   "title": "角色观察屋",
+  "enabled": "开启角色观察屋",
   "defaultName": "小火柴人",
   "role": "角色",
   "redeemTarget": "兑换内容",

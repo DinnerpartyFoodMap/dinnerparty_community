@@ -32,7 +32,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     private var queuedFinish: (action: String, values: [String: Any], animated: Bool)?
     private var closeCompletions: [() -> Void] = []
     private var loadingObservation: NSKeyValueObservation?
-    private let screenPresenter = NativeScreenPresenter()
+    private let screenPresenter = NativeContainedScreenPresenter()
 
     public override func load() {
         loadingObservation = bridge?.webView?.observe(\.isLoading, options: [.new]) { [weak self] view, _ in
@@ -44,10 +44,6 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             guard let id = call.getString("id"), !id.isEmpty else {
                 call.reject("Missing request id", "INVALID_ARGUMENT"); return
-            }
-            // 系统先移除旧页面时，也允许本次打开回收已结束的会话。
-            if let previousHost = self.host, !self.presenting {
-                self.completeDismissal(previousHost)
             }
             guard self.host == nil, let presenter = self.bridge?.viewController,
                   presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else {
@@ -63,21 +59,10 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
                 guard let self, self.requestID == id else { return }
                 self.finish(action: action, values: values)
             }
-            let host = MapChromeHostingController(rootView: NativeProfileView(model: model), dark: model.dark)
-            // 与住民设置一致：整页不透明底色，保留地图在下方等待滑回；玻璃卡片负责层次。
+            let host = UIHostingController(rootView: NativeProfileView(model: model))
+            host.overrideUserInterfaceStyle = model.dark ? .dark : .light
             host.view.backgroundColor = FM.UI.bgBase
-            self.screenPresenter.previewsEdgeBack = true
-            self.screenPresenter.onDismissCancelled = { [weak self, weak host] in
-                guard let self, let host, self.host === host else { return }
-                self.activeFinish = nil
-            }
-            self.screenPresenter.onDismissed = { [weak self, weak host] in
-                // 等 UIKit 清除呈现关系后，与主动关闭共用同一收尾。
-                DispatchQueue.main.async {
-                    guard let host else { return }
-                    self?.completeDismissal(host)
-                }
-            }
+            host.view.accessibilityViewIsModal = true
             self.screenPresenter.onEdgeBack = { [weak self] in
                 guard let self, !self.presenting, self.activeFinish == nil else { return false }
                 self.finish(action: "back")
@@ -147,7 +132,7 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func completeDismissal(_ host: UIViewController) {
-        guard self.host === host, host.presentingViewController == nil else { return }
+        guard self.host === host, host.parent == nil else { return }
         let result = activeFinish ?? (action: "back", values: [:])
         let call = pending
         let id = requestID

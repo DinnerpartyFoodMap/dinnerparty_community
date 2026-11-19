@@ -61,6 +61,8 @@ async function main() {
     assert.deepEqual(profile.widgets, ['collection', 'recent']);
     assert.deepEqual(profile.hidden_widgets, [], 'legacy profiles show both location sections by default');
     assert.ok(Array.isArray(profile.content.recent) && Array.isArray(profile.content.favorite));
+    assert.deepEqual(ids(profile.content.recent), [1], 'visitors see only public created places');
+    assert.deepEqual(ids((await call(profileUrl, owner)).data.content.recent), [2, 1], 'the owner preview includes the same pending places as the map list');
     const widgetSettingsUrl = '/users/me/profile';
     assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: profile.widgets, hidden_widgets: ['recent', 'collection'] })).status, 400);
     assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: profile.widgets, hidden_widgets: ['recent'] })).status, 200);

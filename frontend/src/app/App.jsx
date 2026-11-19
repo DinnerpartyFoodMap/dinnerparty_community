@@ -14,6 +14,7 @@ import PersonalizeMap from "../settings/PersonalizeMap";
 import CustomThemes from "../settings/CustomThemes";
 import EditAvatar from "../settings/EditAvatar";
 import SkinSettings from "../settings/SkinSettings";
+import { saveMapSettings } from '../settings/mapSettings';
 import CompanionSettings from '../companion/CompanionSettings';
 import { useCompanion } from '../companion/useCompanion';
 import "../skins/packs";
@@ -136,6 +137,7 @@ export default function App() {
     const [nativeJourneySession, setNativeJourneySession] = useState(0);
     const lastPathRef = useRef(pathname);
     const webPageUnderProfile = useRef(null);
+    const companionEntry = useRef(null);
     const pageDirectionRef = useRef('push');
     const siteNoticeRef = useRef(null);
     const [noticeLayout, setNoticeLayout] = useState({ top: 12, banTop: 84 });
@@ -574,6 +576,13 @@ export default function App() {
     // 主题皮肤：随住民切换；冷启动时按通行凭证里的住民先换上本机记住的皮肤
     useSkinSession({ backendUrl: BACKEND_URL, token, userId: user ? user.id : null, pendingUserId: token && !user ? (decodeTokenPayload(token)?.id || null) : null });
     const companion = useCompanion(BACKEND_URL, token);
+    const companionEnabled = user?.map_settings?.companion_enabled !== false;
+    const setCompanionEnabled = async (enabled) => {
+        const mapSettings = { ...user.map_settings, companion_enabled: enabled };
+        const result = await saveMapSettings({ backendUrl: BACKEND_URL, token, mapSettings });
+        if (!result.ok) throw new Error(result.message);
+        setUser(current => current?.id === user.id ? { ...current, map_settings: { ...current.map_settings, companion_enabled: enabled } } : current);
+    };
     const showAdminPage = pathname === "/admin" && !!token;
     // iOS 原生管理后台：网页不渲染 AdminDashboard，地图保持挂载，原生页从地图上弹出
     const nativeAdminActive = showAdminPage && !!user?.admin_level && !nativeAdminFailed && supportsNativeAdmin();
@@ -620,7 +629,17 @@ export default function App() {
         && (!profileUserId || nativeProfileActive);
     const openPlaceOnMap = useCallback((placeId) => goPath(`/?place=${encodeURIComponent(placeId)}`), [goPath]);
     const openProfile = useCallback((userId) => { if (userId) goPath(`/users/${encodeURIComponent(userId)}`); }, [goPath]);
-    const openCompanion = useCallback(() => goPath('/settings/companions'), [goPath]);
+    const openCompanion = useCallback(() => {
+        companionEntry.current = { userId: user.id, index: currentNavigationIndex() + 1 };
+        return goPath('/settings/companions');
+    }, [goPath, user?.id]);
+    const backFromCompanion = useCallback(() => {
+        if (companionEntry.current?.userId === user?.id && companionEntry.current?.index === currentNavigationIndex()) {
+            window.history.back();
+        } else {
+            goPath(user ? `/users/${encodeURIComponent(user.id)}` : '/', { replace: true });
+        }
+    }, [goPath, user?.id]);
     const openProfileCommunity = useCallback(() => {
         if (user?.id) goPath(`/users/${encodeURIComponent(user.id)}?tab=community`);
     }, [goPath, user?.id]);
@@ -736,6 +755,10 @@ export default function App() {
     // 系统返回（Android）：弹层自行登记更高优先级；这里处理页面层级——
     // 先回到应用内上一页，没有历史时回到上级页面，已在首页则交给系统（退到后台）。
     useBackHandler(true, () => {
+        if (showSettingsCompanion) {
+            backFromCompanion();
+            return true;
+        }
         if (canGoBack()) {
             window.history.back();
             return true;
@@ -984,8 +1007,8 @@ export default function App() {
             )
         );
 
-        if (showSettingsCompanion) return user ? <CompanionSettings backendUrl={BACKEND_URL} token={token}
-            companion={companion.state} update={companion.update} onBack={() => canGoBack() ? window.history.back() : goPath('/')} />
+        if (showSettingsCompanion) return user ? <CompanionSettings key={user.id} backendUrl={BACKEND_URL} token={token}
+            companion={companion.state} update={companion.update} enabled={companionEnabled} onEnabledChange={setCompanionEnabled} />
             : <div style={placeholderStyle}>{t('common:app.verifyingSession')}</div>;
 
         if (showSettingsEdit) return (
@@ -1092,7 +1115,7 @@ export default function App() {
                                 onRequireAuth={() => setShowAuth(true)}
                                 onOpenDinners={() => goPath('/dinners')}
                                 onOpenJourney={openJourney}
-                                companion={showMapPage && !profileUserId && user?.map_settings?.companion_roaming !== false ? companion.state : null}
+                                companion={showMapPage && !profileUserId && companionEnabled && user?.map_settings?.companion_roaming !== false ? companion.state : null}
                                 onOpenAdmin={() => goPath('/admin')}
                                 onOpenPosterExport={() => {
                                     if (!isAuth) {
@@ -1119,7 +1142,8 @@ export default function App() {
                         </div>
 
                         <PageTransition pageKey={pageKey} direction={pageDirection} onCoveredChange={setMapCovered} coveredByNative={!!coveredWebPage}>
-                            {pageElement && <RoutePageShell path={pagePath} onNavigate={goPath}>{pageElement}</RoutePageShell>}
+                            {pageElement && <RoutePageShell path={pagePath} onNavigate={goPath}
+                                onBack={pagePath === '/settings/companions' ? backFromCompanion : undefined}>{pageElement}</RoutePageShell>}
                         </PageTransition>
 
                         {/* 原生住民设置：不占网页页面，只负责驱动原生设置页与执行它交回的账号请求 */}

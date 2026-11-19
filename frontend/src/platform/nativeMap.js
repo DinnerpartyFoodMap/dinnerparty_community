@@ -116,6 +116,7 @@ export function encodeNativePlan(plan, { nextKeys, prevKeys }) {
     const list = (values, set) => [...(values || [])].filter((key) => has(set, key));
     return {
         reuse: pairs(plan?.reuse, nextKeys, prevKeys),
+        reanchor: list(plan?.reanchor, nextKeys).filter((key) => has(prevKeys, plan?.reuse?.get(key))),
         splitFrom: pairs(plan?.splitFrom, nextKeys, prevKeys),
         mergeInto: pairs(plan?.mergeInto, prevKeys, nextKeys),
         splitSources: list(plan?.splitSources, prevKeys),
