@@ -7,7 +7,7 @@ import { randomFoodChromeSheet } from '../../../src/discovery/randomFoodSheet.js
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
 
-const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, readDrawerLayout, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
+const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, readDrawerLayout, readSearchFieldBottom, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -256,6 +256,18 @@ function makeSession(plugin, extra = {}) {
     await session.stop();
     plugin.search('input', { text: 'after-stop' });
     assert.equal(events.length, 5, '会话结束后不再处理');
+}
+
+// Anchor the companion to the input itself, including changes when the keyboard appears.
+{
+    const layout = { showing: true, viewport: { height: 565 }, slots: [
+        { id: 'toolbar', x: 12, y: 477, width: 366, height: 72 },
+        { id: 'searchField', x: 12, y: 487, width: 300, height: 52 }
+    ] };
+    assert.equal(readSearchFieldBottom(layout), 78);
+    assert.equal(readSearchFieldBottom({ ...layout, viewport: { height: 550 } }), 63);
+    assert.equal(readSearchFieldBottom({ ...layout, showing: false }), null);
+    assert.equal(readSearchFieldBottom({ ...layout, slots: layout.slots.slice(0, 1) }), null);
 }
 
 // The result list is an optional capability: older iOS shells still use the web dropdown.

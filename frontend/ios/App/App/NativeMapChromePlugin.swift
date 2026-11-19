@@ -703,6 +703,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         var slots: [[String: Any]] = []
         for (id, rect) in model.frames {
+            if id == "searchField" && !model.searchExpanded { continue }
             if id == "searchResults" && model.presentedSearchResults == nil { continue }
             var entry = css(rect)
             entry["id"] = id

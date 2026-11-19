@@ -1,6 +1,6 @@
 // 底栏小伙伴飞行（src/companion/companionFlight.js）：起飞高度、动画计划与四层元素的控制。
 import assert from 'node:assert/strict';
-import { CompanionFlight, DRAWER_OVERSHOOT, PERCH_GAP, SEARCH_HOVER, companionLift, flightPlan } from '../../../src/companion/companionFlight.js';
+import { CompanionFlight, DRAWER_OVERSHOOT, PERCH_GAP, companionLift, flightPlan } from '../../../src/companion/companionFlight.js';
 
 // 起飞高度：更多功能优先于搜索
 assert.equal(companionLift({}), 0, '平常站在工具栏上');
@@ -9,7 +9,8 @@ assert.equal(companionLift({ drawer: { open: false, dragging: true, height: 300 
 assert.equal(companionLift({ drawer: { open: true, dragging: false, height: 300 } }), 300, '展开后停在工具栏上沿');
 assert.equal(companionLift({ drawer: { open: true, dragging: true, height: 300 } }), 300, '从展开往下拖：原地等着');
 assert.equal(companionLift({ drawer: { open: true, dragging: false, height: 0 } }), 0, '还没量到高度');
-assert.equal(companionLift({ searchPerch: 0 }), SEARCH_HOVER, '搜索还没有结果：在搜索框上方悬停');
+assert.equal(companionLift({ searchPerch: 0 }), 0, '还没量到结果框时站在搜索输入框上');
+assert.equal(companionLift({ searchPerch: 12 }), 12 + PERCH_GAP, '结果框离输入框很近时也跟随实际高度');
 assert.equal(companionLift({ searchPerch: 180.4 }), 180 + PERCH_GAP, '停在结果列表上方');
 assert.equal(companionLift({ searchPerch: null }), 0, '不在搜索');
 assert.equal(companionLift({ drawer: { open: true, height: 250 }, searchPerch: 120 }), 250);

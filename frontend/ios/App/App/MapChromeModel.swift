@@ -452,7 +452,7 @@ final class MapChromeModel: ObservableObject {
             }
         }
         if drawerExpanded && !drawerAvailable { drawerExpanded = false }
-        let ids = Set(next.map(\.id)).union(["toolbar", "floating", "drawer", "panel", "tour", "searchResults"])
+        let ids = Set(next.map(\.id)).union(["toolbar", "floating", "drawer", "panel", "tour", "searchField", "searchResults"])
         let pruned = frames.filter { ids.contains($0.key) }
         if pruned.count != frames.count {
             frames = pruned

@@ -2439,6 +2439,17 @@ export default function MapUI(props) {
         );
     };
 
+    const companionSearching = compactSearch && searchExpanded;
+    let companionBottom = nativeChrome
+        ? chrome.bottomOccupied + 4
+        : aboveBottomInset(platform === 'web' ? mobileFloatingBottom + (userFilter ? 52 : 0) : 52);
+    if (companionSearching) {
+        // 旧原生壳只回传 72pt 工具栏。52pt 搜索输入框在其中垂直居中。
+        companionBottom = nativeChrome
+            ? chrome.searchFieldBottom ?? Math.max(0, chrome.bottomOccupied - 10)
+            : aboveBottomInset(60);
+    }
+
     return (
         <div className="fm-map-root" style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden" }}>
             {/* iOS App 中底图延伸到状态栏下方（见 overlay.css .fm-map-canvas），其余界面仍在安全区内 */}
@@ -2447,15 +2458,13 @@ export default function MapUI(props) {
             <div className="fm-statusbar-occluder" data-map-occluder="" aria-hidden="true" />
             {isNarrow && mapReady && !chrome.connecting && (!nativeChrome || chrome.showing)
                 && props.companion && !pickerMode && !selectedPlace && !addMode && !openSheetId && !mobileMoreOpen && !nativeOverlayActive && (
-                // 上拉更多功能（iOS 原生控件）或展开搜索（窄屏 App）时飞起，收起时落回
+                // 上拉更多功能或显示搜索结果时飞起，收起时落回
                 <CompanionRoam backendUrl={backendUrl} token={token} companion={props.companion}
-                    bottom={nativeChrome
-                        ? chrome.bottomOccupied + 4
-                        : aboveBottomInset(platform === 'web' ? mobileFloatingBottom + (userFilter ? 52 : 0) : 52)}
+                    bottom={companionBottom}
                     drawer={chrome.drawerMotion}
-                    searching={compactSearch && searchExpanded}
-                    perch={compactSearch && searchExpanded ? searchListEl : null}
-                    perchTop={chrome.searchResultsTop} />
+                    searching={companionSearching}
+                    perch={chrome.searchResults ? null : searchListEl}
+                    perchTop={nativeSearchResults ? chrome.searchResultsTop : null} />
             )}
 
             {addMode && !pickerMode && <Notice title={t('map:ui.addPlaceHint')} tone="warning"

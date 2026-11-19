@@ -1,11 +1,9 @@
-// 底栏小伙伴的上下飞行：上拉「更多功能」或打开搜索时飞起，停在工具栏上沿或搜索结果上方；收起时落回原位继续走。
+// 底栏小伙伴的上下飞行：上拉「更多功能」或出现搜索结果时飞起，收起时落回原位继续走。
 // 位移只用 Web Animations（element.animate）改 transform，不写 style / class：iOS 原生底图监听整页的属性变化
 // 来重新采样触摸区域（map/nativeMapView.js），每帧写属性会让它反复全屏采样。CSS 动画和 Web Animations 都不改属性。
 
 /** 拖动中工具栏上沿最多被拉过展开高度这么多（MapChromeView.drawerRevealed 的阻尼上限） */
 export const DRAWER_OVERSHOOT = 40;
-/** 搜索时还没有结果列表：离地这么高悬停 */
-export const SEARCH_HOVER = 28;
 /** 停在结果列表上方时与列表上沿的间距 */
 export const PERCH_GAP = 2;
 /** 悬停时上下浮动的幅度与半周期 */
@@ -16,15 +14,15 @@ const lifted = (px) => `translateY(${-Math.round(px)}px)`;
 
 /**
  * 离地高度（CSS 像素，0 为站在工具栏上）。
- * drawer：readDrawerLayout 的结果；searchPerch：搜索中为结果列表上沿离地的高度（没有列表为 0），不在搜索时为 null。
+ * drawer：readDrawerLayout 的结果。searchPerch 为结果列表上沿离搜索输入框的高度。
  */
 export function companionLift({ drawer = null, searchPerch = null } = {}) {
     if (drawer && (drawer.open || drawer.dragging) && drawer.height > 0) {
         // 从收起开始拖：先飞到工具栏最多可能被拉到的高度之上；松手展开后落到展开高度；从展开往下拖时原地等着
         return Math.round(drawer.height + (drawer.open ? 0 : DRAWER_OVERSHOOT));
     }
-    if (searchPerch !== null && searchPerch !== undefined && Number.isFinite(searchPerch)) {
-        return Math.round(Math.max(SEARCH_HOVER, searchPerch + PERCH_GAP));
+    if (Number.isFinite(searchPerch) && searchPerch > 0) {
+        return Math.round(searchPerch + PERCH_GAP);
     }
     return 0;
 }

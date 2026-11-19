@@ -36,7 +36,7 @@ function usePerchHeight(perch, perchTop, groundRef, bottom) {
 
 /**
  * 地图底栏上走动的小伙伴。drawer：useMapChrome 的 drawerMotion（iOS 原生控件上拉更多功能时飞起）；
- * searching：搜索已展开，perch 为搜索结果列表元素（没有结果时为 null，在搜索框上方悬停）。
+ * searching 表示搜索已展开。perch 或 perchTop 提供实际结果列表的位置，等待结果时站在输入框上。
  */
 export default function CompanionRoam({ backendUrl, token, companion, bottom, drawer = null, searching = false, perch = null, perchTop = null }) {
     const roam = useRef(null);
@@ -48,7 +48,7 @@ export default function CompanionRoam({ backendUrl, token, companion, bottom, dr
     const { reduced } = useMotionFlags();
     const [aloft, setAloft] = useState(false);
     const perchHeight = usePerchHeight(searching ? perch : null, searching ? perchTop : null, roam, bottom);
-    const lift = companionLift({ drawer, searchPerch: searching ? perchHeight : null });
+    const lift = companionLift({ drawer, searchPerch: searching && (perch || perchTop != null) ? perchHeight : null });
 
     useLayoutEffect(() => {
         const controller = new CompanionFlight({

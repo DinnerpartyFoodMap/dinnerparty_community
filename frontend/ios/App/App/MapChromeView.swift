@@ -750,6 +750,10 @@ struct MapChromeView: View {
         }
         .chromeGlass(Capsule(), interactive: true)
         .chromeGlassID("toolbar", in: glassNamespace)
+        .onGeometryChange(for: CGRect.self, of: { proxy in
+            proxy.frame(in: .named(Self.coordinateSpaceName))
+        }, action: { model.setFrame("searchField", $0) })
+        .onDisappear { model.clearFrame("searchField") }
         .animation(.easeOut(duration: 0.15), value: model.searchText.isEmpty)
         .animation(.easeOut(duration: 0.15), value: model.search.busy)
         .onAppear { applyFocusRequest() }
@@ -1070,7 +1074,7 @@ private struct MapChromeSearchResultsView: View {
     @State private var contentHeight: CGFloat = .greatestFiniteMagnitude
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: MapChromeMenuPanel.cornerRadius, style: .continuous)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(results.entries) { entry in
@@ -1086,10 +1090,9 @@ private struct MapChromeSearchResultsView: View {
             if height > 0 { contentHeight = height.rounded(.up) }
         }
         .frame(height: min(maxHeight, contentHeight))
-        .background(FM.bgSurface, in: shape)
         .clipShape(shape)
-        .overlay(shape.strokeBorder(FM.border, lineWidth: 1).allowsHitTesting(false))
-        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+        .chromeGlass(shape)
+        .chromeGlassTransitionIdentity()
     }
 }
 
@@ -1153,7 +1156,11 @@ private struct MapChromeSearchResultRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 7) {
                 Text(entry.title).font(.subheadline).lineLimit(2)
-                badge
+                if let provider = entry.badge {
+                    Text(provider)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(FM.textSecondary)
+                }
             }
             HStack(spacing: 8) {
                 if let subtitle = entry.subtitle { Text(subtitle).lineLimit(1) }
@@ -1167,8 +1174,6 @@ private struct MapChromeSearchResultRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .background(entry.badge == nil ? Color.clear : accent.opacity(0.08))
-        .overlay(alignment: .bottom) { Divider() }
         .contentShape(Rectangle())
     }
 

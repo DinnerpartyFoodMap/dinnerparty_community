@@ -389,7 +389,7 @@ export function readTourLayout(layout) {
     let chrome = null;
     for (const slot of Array.isArray(layout.slots) ? layout.slots : []) {
         // 菜单面板指引期间不显示，它的位置可能是旧的
-        if (!slot || slot.id === 'panel' || slot.id === 'searchResults') continue;
+        if (!slot || slot.id === 'panel' || slot.id === 'searchField' || slot.id === 'searchResults') continue;
         const box = finiteRect(slot);
         if (!box) continue;
         if (slot.id === 'tour') rect = box;
@@ -404,6 +404,13 @@ export function readSearchResultsTop(layout) {
     if (!layout?.showing || !Array.isArray(layout.slots)) return null;
     const box = finiteRect(layout.slots.find(slot => slot?.id === 'searchResults'));
     return box ? Math.round(box.top) : null;
+}
+
+export function readSearchFieldBottom(layout) {
+    if (!layout?.showing || !Array.isArray(layout.slots)) return null;
+    const height = layout.viewport?.height;
+    const box = finiteRect(layout.slots.find(slot => slot?.id === 'searchField'));
+    return box && Number.isFinite(height) && height > box.top ? Math.round(height - box.top) : null;
 }
 
 const CLOSED_DRAWER = Object.freeze({ open: false, dragging: false, height: 0 });
