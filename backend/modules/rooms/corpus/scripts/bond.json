@@ -1,0 +1,22 @@
+[
+  { "id": "bond.add-friend", "kind": "bond", "level": 1, "x": [], "y": [], "beats": [
+    { "who": "xy", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{x}和{y}互相加了好友", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.nod", "kind": "bond", "level": 1, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "walk", "action": "{x}走的时候冲{y}点了下头", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "walk", "star": true, "action": "{y}也点了一下", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.next-week", "kind": "bond", "level": 2, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}问{y}下周还来不来", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}说「来」", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.two-person-group", "kind": "bond", "level": 2, "x": [], "y": [], "beats": [
+    { "who": "xy", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{x}和{y}拉了个两个人的群", "sound": [], "detail": ["群名叫「今天吃什么」"] }
+  ] },
+  { "id": "bond.nickname", "kind": "bond", "level": 3, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{x}把{y}的备注改成了「饭搭子」", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.pinned", "kind": "bond", "level": 3, "x": [], "y": [], "beats": [
+    { "who": "y", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{y}把和{x}的聊天置顶了", "sound": [], "detail": [] }
+  ] }
+]

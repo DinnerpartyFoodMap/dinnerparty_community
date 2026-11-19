@@ -33,6 +33,7 @@
 | 发现 | npm run test:search / test:random | 排序、降级、地理边界、概率 |
 | 偏好与社区 | npm run test:preferences / test:community | 行为去重、画像、同好隐私 |
 | 日记 | npm run test:journeys / test:journey-resolution / test:journey-publication | 修订、澄清、公开快照、幂等提交 |
+| 观察屋 | npm run test:rooms | 固定语料的字数、占位符、禁用词、住民之间的分寸和成批比例 |
 | Bot 与图片 | npm run test:qq-bot / test:images | 协议替身、草稿、通知、隐私、OSS 迁移 |
 | 技术能力 | npm run test:ai-clients / test:logging / test:migration | 上游异常、脱敏、客户端源端口、日志保留下限、旧 schema |
 | 资源路径 | node tests/infrastructure/test_resource_paths.js | 更换 cwd 后相对 DB_FILE、默认上传与日志仍指向既有位置；也由 npm test 执行 |

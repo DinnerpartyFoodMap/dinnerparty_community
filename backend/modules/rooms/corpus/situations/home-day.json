@@ -1,0 +1,167 @@
+[
+  {
+    "id": "home.tidy", "scene": "home", "window": [[540, 1260]], "minutes": [15, 40], "icon": "clean",
+    "quiz": 12, "ask": "收拾房间",
+    "variants": [
+      { "id": "shelf", "fits": ["爱操心"], "action": "{a}把书架上的书按高矮排了一遍", "sound": [], "detail": ["排完又抽出一本来看"] },
+      { "id": "cabinet", "fits": ["随缘"], "action": "{a}把地上的东西都塞进了柜子", "sound": ["「好了」"], "detail": ["柜门关不上了"] },
+      { "id": "earphones", "fits": ["迷糊"], "action": "{a}收拾到一半翻出了上个月丢的耳机", "sound": ["「原来在这」"], "detail": ["坐下来听起了歌"] },
+      { "id": "plain", "fits": [], "minutes": [10, 20], "action": "{a}扫了一遍地", "sound": [], "detail": ["扫出来两个瓶盖"] }
+    ]
+  },
+  {
+    "id": "home.afternoon", "scene": "home", "window": [[810, 1050]], "minutes": [30, 90], "icon": "tv",
+    "quiz": 13, "ask": "一个人在家的下午",
+    "variants": [
+      { "id": "sofa", "fits": ["宅"], "action": "{a}窝在沙发上没挪过地方", "sound": [], "detail": ["中间只起来喝了口水"] },
+      { "id": "finish-book", "fits": ["爱看书"], "icon": "book", "action": "{a}把没看完的书看完了", "sound": [], "detail": ["最后几页翻得很快"] },
+      { "id": "games", "fits": ["打游戏"], "icon": "game", "action": "{a}开了一把游戏，又开了一把", "sound": ["「最后一把」"], "detail": ["手机烫得拿不住"] },
+      { "id": "messages", "fits": ["话多"], "icon": "chat", "minutes": [5, 15], "action": "{a}给三个人发了消息", "sound": [], "detail": ["只有一个回了"] },
+      { "id": "plain", "fits": [], "action": "{a}把一部老电影看了一半", "sound": [], "detail": ["剩下的留着晚上看"] }
+    ]
+  },
+  {
+    "id": "home.sleepy", "scene": "home", "window": [[780, 990]], "minutes": [10, 40], "icon": "sleep",
+    "quiz": 17, "ask": "下午犯困",
+    "variants": [
+      { "id": "nap", "fits": ["爱睡觉"], "minutes": [40, 45], "action": "{a}说眯五分钟，睡了四十分钟", "sound": [], "detail": ["脸上压出了印子"] },
+      { "id": "coffee", "fits": ["咖啡茶饮续命"], "icon": "drink", "minutes": [5, 10], "action": "{a}又冲了一杯咖啡", "sound": ["「呼——」"], "detail": ["今天第三杯"] },
+      { "id": "deny", "fits": ["嘴硬"], "action": "{a}坐着打了好几个哈欠", "sound": ["「我不困」"], "detail": ["头往下点了一下"] },
+      { "id": "plain", "fits": [], "minutes": [3, 6], "action": "{a}用冷水洗了把脸", "sound": [], "detail": ["回来接着打哈欠"] }
+    ]
+  },
+  {
+    "id": "home.read", "scene": "home", "window": [[540, 1440]], "minutes": [20, 60], "icon": "book",
+    "variants": [
+      { "id": "chapters", "fits": ["爱看书"], "action": "{a}翻到上次折的那一页", "sound": ["「沙沙」"], "detail": ["一口气看了三章"] },
+      { "id": "bookmark", "fits": ["迷糊"], "minutes": [5, 10], "action": "{a}找了半天书签", "sound": ["「去哪了」"], "detail": ["夹在另一本书里"] },
+      { "id": "doze", "fits": ["爱睡觉"], "action": "{a}躺着看书，看了两页", "sound": [], "detail": ["书盖在脸上睡着了"] },
+      { "id": "plain", "fits": [], "action": "{a}在看一本借来的书", "sound": [], "detail": ["页边都是别人的笔记"] }
+    ]
+  },
+  {
+    "id": "home.game", "scene": "home", "window": [[600, 1560]], "minutes": [20, 90], "icon": "game",
+    "variants": [
+      { "id": "five", "fits": ["打游戏"], "action": "{a}连着打了五把", "sound": ["「再来」"], "detail": ["赢了一把"] },
+      { "id": "lag", "fits": ["嘴硬"], "minutes": [10, 20], "action": "{a}输了一局", "sound": ["「网卡了」"], "detail": ["网很好"] },
+      { "id": "muted", "fits": ["社恐"], "action": "{a}打游戏时把麦关了", "sound": [], "detail": ["队友喊了半天"] },
+      { "id": "plain", "fits": [], "action": "{a}打了两局小游戏", "sound": [], "detail": ["第二局卡在了同一关"] }
+    ]
+  },
+  {
+    "id": "home.phone", "scene": "home", "window": null, "minutes": [10, 40], "icon": "phone",
+    "variants": [
+      { "id": "drop", "fits": ["宅"], "action": "{a}躺着刷手机", "sound": ["「哎哟」"], "detail": ["手机砸到了脸上"] },
+      { "id": "share", "fits": ["话多"], "action": "{a}刷到一条视频转给了五个人", "sound": [], "detail": ["自己又看了三遍"] },
+      { "id": "cart", "fits": ["选择困难"], "action": "{a}在购物车里删了又加", "sound": [], "detail": ["什么也没下单"] },
+      { "id": "plain", "fits": [], "action": "{a}刷了会儿手机", "sound": ["「噗」"], "detail": ["把一条笑话截了图"] }
+    ]
+  },
+  {
+    "id": "home.chat", "scene": "home", "window": [[540, 1500]], "minutes": [5, 25], "icon": "chat",
+    "variants": [
+      { "id": "seven", "fits": ["话多"], "action": "{a}在群里连发了七条", "sound": [], "detail": ["群里没人说话了"] },
+      { "id": "ok", "fits": ["话少"], "action": "{a}在群里只回了一个「好」", "sound": [], "detail": [] },
+      { "id": "delete", "fits": ["社恐"], "action": "{a}打了一长段字又删掉了", "sound": [], "detail": ["发出去的是一个表情"] },
+      { "id": "plain", "fits": [], "action": "{a}回了几条消息", "sound": [], "detail": ["有一条是上周的"] }
+    ]
+  },
+  {
+    "id": "home.music", "scene": "home", "window": null, "minutes": [15, 40], "icon": "phone",
+    "variants": [
+      { "id": "loop", "fits": ["话少"], "action": "{a}戴着耳机坐在窗边", "sound": [], "detail": ["同一首歌放了六遍"] },
+      { "id": "asleep", "fits": ["爱睡觉"], "action": "{a}听着歌睡着了", "sound": [], "detail": ["耳机掉了一只"] },
+      { "id": "plain", "fits": [], "action": "{a}放着歌在屋里走来走去", "sound": [], "detail": ["跟着唱错了一句"] }
+    ]
+  },
+  {
+    "id": "home.balcony", "scene": "home", "window": [[480, 1140]], "minutes": [5, 20], "icon": "walk",
+    "variants": [
+      { "id": "sun", "fits": ["爱睡觉"], "action": "{a}搬了把椅子去阳台晒太阳", "sound": [], "detail": ["晒着晒着打起了瞌睡"] },
+      { "id": "wave", "fits": ["话多"], "action": "{a}在阳台冲对面楼的人挥手", "sound": ["「喂——」"], "detail": ["对面没看见"] },
+      { "id": "one-sock", "fits": ["迷糊"], "action": "{a}去阳台收衣服，收回来一只袜子", "sound": [], "detail": ["另一只还在架子上"] },
+      { "id": "plain", "fits": [], "action": "{a}趴在阳台栏杆上看楼下的人遛狗", "sound": [], "detail": ["狗也抬头看了一眼"] }
+    ]
+  },
+  {
+    "id": "home.write", "scene": "home", "window": [[540, 1440]], "minutes": [15, 45], "icon": "write",
+    "variants": [
+      { "id": "post", "fits": ["话多"], "action": "{a}写了一条很长的动态", "sound": [], "detail": ["发之前删了一半"] },
+      { "id": "quote", "fits": ["爱看书"], "action": "{a}把书里的一句话抄在了便签上", "sound": [], "detail": ["贴在了电脑旁边"] },
+      { "id": "list", "fits": ["选择困难"], "action": "{a}列了一张想去的店的清单", "sound": [], "detail": ["列了二十家"] },
+      { "id": "plain", "fits": [], "action": "{a}在本子上记这几天花的钱", "sound": ["「又超了」"], "detail": ["算了两遍对不上"] }
+    ]
+  },
+  {
+    "id": "home.package", "scene": "home", "window": [[600, 1260]], "minutes": [5, 15], "icon": "bag",
+    "variants": [
+      { "id": "forgot", "fits": ["迷糊"], "action": "{a}对着快递单看了半天", "sound": ["「这是什么」"], "detail": ["是自己上周买的"] },
+      { "id": "flatten", "fits": ["爱操心"], "action": "{a}把快递盒拆平叠好", "sound": [], "detail": ["胶带一条条撕干净了"] },
+      { "id": "slippers", "fits": ["宅"], "action": "{a}穿着拖鞋下楼拿快递", "sound": [], "detail": ["顺便倒了垃圾"] },
+      { "id": "plain", "fits": [], "action": "{a}拆了一个快递", "sound": ["「刺啦」"], "detail": ["箱子比东西大好几倍"] }
+    ]
+  },
+  {
+    "id": "home.errand", "scene": "home", "window": [[480, 1320]], "minutes": [5, 15], "icon": "walk",
+    "variants": [
+      { "id": "wait-neighbor", "fits": ["社恐"], "action": "{a}在门后等邻居走了才出门", "sound": [], "detail": [] },
+      { "id": "soy-sauce", "fits": ["随缘"], "action": "{a}出门买瓶酱油", "sound": [], "detail": ["拎回来一袋零食"] },
+      { "id": "one-lap", "fits": ["宅"], "action": "{a}到楼下转了一圈就回来了", "sound": [], "detail": ["前后五分钟"] },
+      { "id": "plain", "fits": [], "action": "{a}下楼扔垃圾", "sound": ["「叮」"], "detail": ["在电梯里碰见了邻居家的猫"] }
+    ]
+  },
+  {
+    "id": "home.lost", "scene": "home", "window": null, "minutes": [5, 15], "icon": "clean",
+    "variants": [
+      { "id": "keys", "fits": ["迷糊"], "action": "{a}满屋子找钥匙", "sound": ["「钥匙呢」"], "detail": ["在门上插着"] },
+      { "id": "remote", "fits": ["爱操心"], "action": "{a}把遥控器放回了固定的位置", "sound": [], "detail": ["旁边贴了张便签"] },
+      { "id": "headphones", "fits": ["嘴硬"], "action": "{a}到处找耳机", "sound": ["「肯定被人拿了」"], "detail": ["挂在自己脖子上"] },
+      { "id": "plain", "fits": [], "action": "{a}在沙发缝里摸东西", "sound": [], "detail": ["摸出三个硬币和一颗糖"] }
+    ]
+  },
+  {
+    "id": "home.battery", "scene": "home", "window": [[600, 1500]], "minutes": [3, 10], "icon": "phone",
+    "quiz": 19, "ask": "手机快没电了",
+    "variants": [
+      { "id": "sockets", "fits": ["迷糊"], "action": "{a}拿着充电线试了三个插座", "sound": [], "detail": ["插头没插紧"] },
+      { "id": "one-percent", "fits": ["随缘"], "action": "{a}看着电量掉到百分之一", "sound": [], "detail": ["关机了"] },
+      { "id": "lie-down", "fits": ["打游戏"], "minutes": [20, 50], "action": "{a}插着充电线接着玩", "sound": [], "detail": ["线短，只能趴在床边"] },
+      { "id": "plain", "fits": [], "action": "{a}去找充电宝", "sound": [], "detail": ["充电宝也没电了"] }
+    ]
+  },
+  {
+    "id": "home.rain", "scene": "home", "window": [[480, 1320]], "weight": 0.3, "minutes": [5, 15], "icon": "walk",
+    "variants": [
+      { "id": "rush", "fits": ["迷糊"], "action": "{a}冲去阳台收衣服", "sound": ["「衣服」"], "detail": ["衣服早上就收了"] },
+      { "id": "takeout", "fits": ["宅"], "action": "{a}看着下雨，把外卖软件打开了", "sound": [], "detail": [] },
+      { "id": "plain", "fits": [], "action": "{a}听见外面下雨了", "sound": ["「哗——」"], "detail": ["去关了窗"] }
+    ]
+  },
+  {
+    "id": "home.snack", "scene": "home", "window": [[600, 1380]], "minutes": [5, 15], "icon": "eat",
+    "variants": [
+      { "id": "crumbs", "fits": ["甜品脑袋"], "action": "{a}拆了一包饼干", "sound": [], "detail": ["倒着把碎渣也吃了"] },
+      { "id": "three-bags", "fits": ["眼大肚小"], "action": "{a}一次拆了三包零食", "sound": ["「刺啦」"], "detail": ["每包吃了两口"] },
+      { "id": "clip", "fits": ["爱操心"], "action": "{a}把零食袋折起来夹好", "sound": [], "detail": ["还剩小半包"] },
+      { "id": "plain", "fits": [], "action": "{a}剥了个橘子", "sound": [], "detail": ["橘子皮剥成了一整张"] }
+    ]
+  },
+  {
+    "id": "home.tea", "scene": "home", "window": [[480, 1080]], "minutes": [5, 15], "icon": "drink",
+    "variants": [
+      { "id": "grinder", "fits": ["咖啡茶饮续命"], "action": "{a}磨了豆子冲咖啡", "sound": ["「嗡——」"], "detail": ["磨豆机吵得自己捂了下耳朵"] },
+      { "id": "refill", "fits": ["吃得慢"], "action": "{a}泡了一壶茶", "sound": [], "detail": ["续了三次水"] },
+      { "id": "cold", "fits": ["迷糊"], "action": "{a}泡了杯茶，放在桌上没管", "sound": [], "detail": ["端起来已经凉了"] },
+      { "id": "plain", "fits": [], "action": "{a}烧了壶开水", "sound": ["「嘀」"], "detail": ["倒了一杯放着晾"] }
+    ]
+  },
+  {
+    "id": "home.fridge", "scene": "home", "window": null, "minutes": [2, 6], "icon": "eat",
+    "variants": [
+      { "id": "leftovers", "fits": ["眼大肚小"], "minutes": [10, 20], "action": "{a}把冰箱里的剩菜都端了出来", "sound": [], "detail": ["只吃了一盘"] },
+      { "id": "expired", "fits": ["爱操心"], "action": "{a}把冰箱里过期的酸奶扔了", "sound": [], "detail": ["扔了三盒"] },
+      { "id": "ham", "fits": ["夜宵党"], "action": "{a}站在冰箱门口吃了块火腿", "sound": [], "detail": ["冰箱门开着就吃完了"] },
+      { "id": "plain", "fits": [], "action": "{a}打开冰箱看了看又关上了", "sound": [], "detail": [] }
+    ]
+  }
+]

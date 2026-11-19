@@ -18,8 +18,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # macos-26 镜像只有 Xcode 26（iOS 26 SDK）；Xcode 27 在 GitHub 单独的 xcode-27 镜像上（2026-11 仍标为 preview）
   verify:
-    runs-on: ${{ vars.IOS_RUNNER || 'macos-26' }}
+    runs-on: ${{ vars.IOS_RUNNER || 'xcode-27' }}
     defaults:
       run:
         working-directory: frontend
@@ -32,8 +33,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          # 原生地图控件使用 iOS 26 SDK 的 SwiftUI Liquid Glass API，固定经过验证的 Xcode 26 版本
-          xcode-version: ${{ vars.IOS_XCODE_VERSION || '26.6' }}
+          # App Store Connect 自 2027-04 起只收 iOS 27 SDK（Xcode 27+）构建；固定一个具体的 Xcode 27 版本，升级时改这里或设 IOS_XCODE_VERSION
+          xcode-version: ${{ vars.IOS_XCODE_VERSION || '27.2' }}
 
       - run: npm ci
 
@@ -124,7 +125,7 @@ jobs:
   testflight:
     if: github.event_name == 'workflow_dispatch' && inputs.distribute
     needs: verify
-    runs-on: ${{ vars.IOS_RUNNER || 'macos-26' }}
+    runs-on: ${{ vars.IOS_RUNNER || 'xcode-27' }}
     environment: testflight
     defaults:
       run:
@@ -140,8 +141,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          # 原生地图控件使用 iOS 26 SDK 的 SwiftUI Liquid Glass API，固定经过验证的 Xcode 26 版本
-          xcode-version: ${{ vars.IOS_XCODE_VERSION || '26.6' }}
+          # App Store Connect 自 2027-04 起只收 iOS 27 SDK（Xcode 27+）构建；固定一个具体的 Xcode 27 版本，升级时改这里或设 IOS_XCODE_VERSION
+          xcode-version: ${{ vars.IOS_XCODE_VERSION || '27.2' }}
 
       - name: 计算版本号
         # run_number 在 2026-10-16 迁移到新仓库后从 1 重新计数；默认加 1000，保证构建号大于旧仓库发出的版本（安装升级与 TestFlight 都要求递增）

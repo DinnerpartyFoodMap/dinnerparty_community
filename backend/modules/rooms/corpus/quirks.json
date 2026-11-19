@@ -1,0 +1,124 @@
+[
+  { "id": "soup-first", "name": "先喝汤", "fits": ["吃得慢"], "hooks": [
+    { "situation": "outing.eat-homestyle", "action": "{a}先盛了一碗汤", "sound": [], "detail": ["喝完才动筷子"] },
+    { "situation": "home.meal", "action": "{a}先把汤喝了", "sound": [], "detail": ["饭推到了一边"] }
+  ] },
+  { "id": "chopsticks", "name": "筷子要摆齐", "fits": ["爱操心"], "hooks": [
+    { "situation": "outing.serve", "axes": ["homestyle", "noodles", "hotpotBbq"], "action": "{a}把筷子摆正了才开吃", "sound": [], "detail": ["两头对得齐齐整整"] },
+    { "situation": "home.dishes", "action": "{a}把筷子一根根对齐放回筒里", "sound": [], "detail": [] }
+  ] },
+  { "id": "turn-back", "name": "出门必回头拿东西", "fits": ["迷糊"], "hooks": [
+    { "situation": "outing.leave", "action": "{a}出门走了几步又折回来", "sound": ["「手机」"], "detail": ["在鞋柜上"] },
+    { "situation": "home.errand", "action": "{a}下楼走到一半又上来了", "sound": [], "detail": ["忘带垃圾了"] }
+  ] },
+  { "id": "sauce-packs", "name": "攒酱料包", "fits": ["眼大肚小"], "hooks": [
+    { "situation": "home.delivery", "action": "{a}把外卖里的酱包都收进了抽屉", "sound": [], "detail": ["抽屉里已经有一堆"] },
+    { "situation": "home.cook", "action": "{a}翻出一包外卖剩的酱", "sound": [], "detail": ["倒进了锅里"] }
+  ] },
+  { "id": "no-ice", "name": "饮料去冰", "fits": ["咖啡茶饮续命"], "hooks": [
+    { "situation": "outing.order", "axes": ["drinks"], "action": "{a}点单时先说了去冰", "sound": ["「去冰」"], "detail": [] },
+    { "situation": "home.fridge", "action": "{a}拿了瓶饮料放在桌上回温", "sound": [], "detail": [] }
+  ] },
+  { "id": "less-sugar", "name": "奶茶三分糖", "fits": ["咖啡茶饮续命"], "hooks": [
+    { "situation": "outing.order", "axes": ["drinks"], "action": "{a}点单时说了句三分糖", "sound": [], "detail": [] },
+    { "situation": "outing.eat-drinks", "action": "{a}看了一眼杯子上的标签", "sound": [], "detail": ["写的是三分糖"] }
+  ] },
+  { "id": "window-seat", "name": "坐靠窗的位置", "fits": ["社恐"], "hooks": [
+    { "situation": "outing.arrive", "action": "{a}进门先看靠窗有没有空位", "sound": [], "detail": ["有一个"] },
+    { "situation": "outing.wait", "action": "{a}坐在靠窗的位置看外面", "sound": [], "detail": ["数了数路过的车"] }
+  ] },
+  { "id": "napkin-squares", "name": "纸巾叠成方块", "fits": ["话少"], "hooks": [
+    { "situation": "outing.wait", "action": "{a}把纸巾叠成了小方块", "sound": [], "detail": ["叠了四张"] },
+    { "situation": "outing.full", "action": "{a}把用过的纸巾叠好放在盘边", "sound": [], "detail": [] }
+  ] },
+  { "id": "humming", "name": "边做事边哼歌", "fits": ["话多"], "hooks": [
+    { "situation": "home.dishes", "action": "{a}边洗碗边哼歌", "sound": ["「嗯嗯嗯」"], "detail": ["一首歌哼了好几遍"] },
+    { "situation": "home.tidy", "action": "{a}哼着歌扫地", "sound": [], "detail": ["哼到副歌忘词了"] },
+    { "situation": "home.cook", "action": "{a}哼着歌颠了下锅", "sound": [], "detail": ["菜掉出来一片"] }
+  ] },
+  { "id": "phone-stand", "name": "边吃边看视频", "fits": ["宅"], "hooks": [
+    { "situation": "home.meal", "action": "{a}把手机靠在碗边放视频", "sound": [], "detail": ["饭吃完了视频还没完"] },
+    { "situation": "outing.eat", "action": "{a}把手机立在桌上边吃边看", "sound": [], "detail": [] }
+  ] },
+  { "id": "save-last", "name": "最后一口留着", "fits": ["吃得慢"], "hooks": [
+    { "situation": "outing.eat-homestyle", "action": "{a}把最大的一块肉拨到一边", "sound": [], "detail": ["吃到最后才吃"] },
+    { "situation": "outing.eat-dessert", "action": "{a}把顶上那颗水果留到了最后", "sound": [], "detail": [] }
+  ] },
+  { "id": "no-scallion", "name": "挑葱花", "fits": [], "hooks": [
+    { "situation": "outing.serve", "axes": ["homestyle", "noodles"], "action": "{a}先把葱花一粒粒挑出来", "sound": [], "detail": ["挑了五分钟"] },
+    { "situation": "home.delivery", "action": "{a}打开外卖先挑葱花", "sound": [], "detail": ["挑出一小堆"] }
+  ] },
+  { "id": "shoes-neat", "name": "鞋要摆整齐", "fits": ["爱操心"], "hooks": [
+    { "situation": "outing.back", "action": "{a}进门把鞋摆成一排", "sound": [], "detail": ["鞋尖朝外"] },
+    { "situation": "home.bedtime", "action": "{a}睡前把拖鞋摆正", "sound": [], "detail": ["摆了两次"] }
+  ] },
+  { "id": "many-alarms", "name": "定好几个闹钟", "fits": ["爱睡觉"], "hooks": [
+    { "situation": "home.alarm", "action": "{a}关掉了第四个闹钟", "sound": ["「还有一个」"], "detail": [] },
+    { "situation": "home.bedtime", "action": "{a}睡前定了五个闹钟", "sound": [], "detail": ["隔五分钟一个"] }
+  ] },
+  { "id": "water-first", "name": "起床先喝水", "fits": ["早起"], "hooks": [
+    { "situation": "home.alarm", "action": "{a}起来先喝了一大杯水", "sound": [], "detail": [] },
+    { "situation": "home.wash", "action": "{a}端着水杯去洗漱", "sound": [], "detail": ["杯子落在了洗手台上"] }
+  ] },
+  { "id": "odd-socks", "name": "袜子穿不成对", "fits": ["迷糊"], "hooks": [
+    { "situation": "outing.leave", "action": "{a}穿着一黑一白的袜子出门了", "sound": [], "detail": [] },
+    { "situation": "home.laundry", "action": "{a}晾袜子时数了数", "sound": [], "detail": ["单出来三只"] }
+  ] },
+  { "id": "receipts", "name": "小票都留着", "fits": ["爱操心"], "hooks": [
+    { "situation": "outing.pay", "action": "{a}把小票折好放进了钱包", "sound": [], "detail": [] },
+    { "situation": "home.write", "action": "{a}把这周的小票按日期理好", "sound": [], "detail": ["夹进了本子"] }
+  ] },
+  { "id": "wash-hands", "name": "吃饭前洗手", "fits": ["爱操心"], "hooks": [
+    { "situation": "outing.serve", "action": "{a}先去洗了个手", "sound": [], "detail": ["回来东西已经上齐了"] },
+    { "situation": "home.meal", "action": "{a}洗了手才坐下", "sound": [], "detail": [] }
+  ] },
+  { "id": "cross-legged", "name": "盘腿坐", "fits": ["宅"], "hooks": [
+    { "situation": "home.afternoon", "action": "{a}盘腿坐在沙发上", "sound": [], "detail": ["腿麻了"] },
+    { "situation": "outing.wait", "action": "{a}在椅子上盘起了腿", "sound": [], "detail": ["又放下了"] },
+    { "situation": "home.video", "action": "{a}盘腿坐在地毯上看", "sound": [], "detail": [] }
+  ] },
+  { "id": "two-hands", "name": "双手捧杯子", "fits": ["咖啡茶饮续命"], "hooks": [
+    { "situation": "home.tea", "action": "{a}双手捧着杯子喝", "sound": [], "detail": [] },
+    { "situation": "outing.eat-drinks", "action": "{a}两只手捧着杯子坐着", "sound": [], "detail": [] }
+  ] },
+  { "id": "umbrella", "name": "包里总带伞", "fits": ["爱操心"], "hooks": [
+    { "situation": "outing.leave", "action": "{a}出门前把伞塞进了包里", "sound": [], "detail": ["天是晴的"] },
+    { "situation": "home.rain", "action": "{a}看着下雨，摸了摸包里的伞", "sound": [], "detail": [] }
+  ] },
+  { "id": "sockets", "name": "先找插座", "fits": ["打游戏"], "hooks": [
+    { "situation": "outing.arrive", "action": "{a}坐下先看哪儿有插座", "sound": [], "detail": [] },
+    { "situation": "outing.wait", "action": "{a}找到插座把手机充上了", "sound": [], "detail": [] }
+  ] },
+  { "id": "snack-drawer", "name": "抽屉里藏零食", "fits": ["甜品脑袋"], "hooks": [
+    { "situation": "home.snack", "action": "{a}从抽屉最里面摸出一包饼干", "sound": [], "detail": ["还是上个月的"] },
+    { "situation": "home.write", "action": "{a}写着写着拉开抽屉拿了颗糖", "sound": [], "detail": [] }
+  ] },
+  { "id": "blow", "name": "吹凉了再吃", "fits": ["吃得慢"], "hooks": [
+    { "situation": "outing.serve", "axes": ["homestyle", "noodles", "hotpotBbq"], "action": "{a}对着碗吹了好一会儿", "sound": ["「呼——」"], "detail": [] },
+    { "situation": "home.tea", "action": "{a}吹了好几下才喝第一口", "sound": [], "detail": [] }
+  ] },
+  { "id": "bag-chair", "name": "包挂椅背上", "fits": ["随缘"], "hooks": [
+    { "situation": "outing.arrive", "action": "{a}把包挂在了椅背上", "sound": [], "detail": [] },
+    { "situation": "outing.pay", "action": "{a}走到门口又回来拿包", "sound": [], "detail": [] }
+  ] },
+  { "id": "menu-photo", "name": "先拍菜单", "fits": ["选择困难"], "hooks": [
+    { "situation": "outing.order", "action": "{a}先把菜单拍了下来", "sound": [], "detail": ["拍完才开始翻"] },
+    { "situation": "home.write", "action": "{a}翻出之前拍的菜单照片", "sound": [], "detail": ["存了一百多张"] }
+  ] },
+  { "id": "route", "name": "查好几遍路线", "fits": ["选择困难"], "hooks": [
+    { "situation": "outing.leave", "action": "{a}出门前把路线查了三遍", "sound": [], "detail": [] },
+    { "situation": "outing.back", "action": "{a}回家路上又打开了导航", "sound": [], "detail": ["走的是来时的路"] }
+  ] },
+  { "id": "yogurt-lid", "name": "舔酸奶盖", "fits": ["甜品脑袋"], "hooks": [
+    { "situation": "home.snack", "action": "{a}撕开酸奶先舔了盖子", "sound": [], "detail": [] },
+    { "situation": "home.breakfast", "action": "{a}早饭是一盒酸奶", "sound": [], "detail": ["盖子舔干净了"] }
+  ] },
+  { "id": "straw", "name": "咬吸管", "fits": ["话少"], "hooks": [
+    { "situation": "outing.eat-drinks", "action": "{a}边喝边咬吸管", "sound": [], "detail": ["吸管咬扁了"] },
+    { "situation": "home.fridge", "action": "{a}拿了盒牛奶插上吸管", "sound": [], "detail": ["吸管很快被咬扁了"] }
+  ] },
+  { "id": "doggy-bag", "name": "吃不完就打包", "fits": ["光盘"], "hooks": [
+    { "situation": "outing.full", "action": "{a}要了个打包盒", "sound": [], "detail": ["剩的全装走了"] },
+    { "situation": "home.fridge", "action": "{a}把打包回来的剩菜放进冰箱", "sound": [], "detail": [] }
+  ] }
+]

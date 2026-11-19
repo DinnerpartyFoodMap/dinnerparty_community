@@ -1,0 +1,70 @@
+[
+  { "id": "table.usual-seat", "kind": "table", "bond": [2, 2], "x": [], "y": ["早起"], "axis": null, "beats": [
+    { "who": "y", "minutes": [1, 3], "icon": "walk", "action": "{y}先到了，占了老位置", "sound": [], "detail": ["对面的椅子拉开了"] },
+    { "who": "x", "minutes": [1, 2], "icon": "walk", "star": true, "action": "{x}进门直接坐到了对面", "sound": [], "detail": [] },
+    { "who": "xy", "minutes": [20, 30], "icon": "chat", "action": "{x}和{y}一边吃一边说这周的事", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.order-for-two", "kind": "table", "bond": [2, 3], "x": ["果断"], "y": ["选择困难"], "axis": null, "beats": [
+    { "who": "y", "minutes": [3, 6], "icon": "eat", "action": "{y}拿着菜单翻来翻去", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{x}把菜单拿过去，点了两人份", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [20, 30], "icon": "eat", "action": "{y}看了看{x}点的", "sound": ["「就是这个」"], "detail": [] }
+  ] },
+  { "id": "table.share-half", "kind": "table", "bond": [2, 3], "x": ["自来熟", "话多"], "y": [], "axis": null, "beats": [
+    { "who": "x", "minutes": [1, 3], "icon": "chat", "action": "{x}端着东西坐到{y}那桌", "sound": ["「拼个桌」"], "detail": [] },
+    { "who": "xy", "minutes": [15, 25], "icon": "eat", "action": "{x}和{y}各点了一份分着吃", "sound": [], "detail": ["{y}把辣的那半推了过去", "{x}多要了一个小碗"] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}问{x}「下回还来吗」", "sound": [], "detail": ["「看你」"] }
+  ] },
+  { "id": "table.scallions", "kind": "table", "bond": [2, 3], "x": ["爱操心"], "y": ["随缘"], "axis": "noodles", "beats": [
+    { "who": "x", "minutes": [3, 5], "icon": "eat", "action": "{x}帮{y}把葱花挑了出来", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}说其实葱花也能吃", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [10, 20], "icon": "eat", "star": true, "action": "{x}又挑了一遍", "sound": ["「不行」"], "detail": [] }
+  ] },
+  { "id": "table.who-pays", "kind": "table", "bond": [2, 3], "x": ["自来熟"], "y": ["嘴硬"], "axis": null, "beats": [
+    { "who": "xy", "minutes": [1, 2], "icon": "bag", "action": "{x}和{y}同时拿出手机要付钱", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "bag", "star": true, "action": "{y}把{x}的手机按了下去", "sound": ["「我来」"], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}说下回轮到自己", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.leftovers", "kind": "table", "bond": [2, 3], "x": ["光盘"], "y": ["眼大肚小"], "axis": "homestyle", "beats": [
+    { "who": "y", "minutes": [15, 25], "icon": "eat", "action": "{y}吃到一半就放下了筷子", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [5, 10], "icon": "eat", "star": true, "action": "{x}把{y}剩下的也吃了", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}说下回点小份", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.whole-meal", "kind": "table", "bond": [2, 2], "x": ["话多"], "y": ["话少"], "axis": null, "beats": [
+    { "who": "x", "minutes": [20, 30], "icon": "chat", "star": true, "action": "{x}从坐下说到吃完", "sound": [], "detail": ["{y}回了三个「嗯」"] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}走之前问{x}下回什么时候来", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.two-desserts", "kind": "table", "bond": [2, 3], "x": ["甜品脑袋"], "y": [], "axis": "dessert", "beats": [
+    { "who": "x", "minutes": [3, 6], "icon": "eat", "action": "{x}一下点了两份", "sound": [], "detail": ["一份推到了{y}面前"] },
+    { "who": "y", "minutes": [10, 20], "icon": "eat", "star": true, "action": "{y}挖了一勺，又挖了一勺", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.usual-drink", "kind": "table", "bond": [2, 3], "x": ["咖啡茶饮续命"], "y": [], "axis": "drinks", "beats": [
+    { "who": "x", "minutes": [3, 6], "icon": "drink", "star": true, "action": "{x}点单时顺口报了{y}常喝的那款", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}愣了一下", "sound": [], "detail": ["点头说就是这个"] },
+    { "who": "xy", "minutes": [60, 60], "icon": "drink", "action": "{x}和{y}一人一杯坐了一个钟头", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.ask-spice", "kind": "table", "bond": [2, 3], "x": ["能吃辣", "火锅烧烤党"], "y": ["不吃辣"], "axis": "hotpotBbq", "beats": [
+    { "who": "x", "minutes": [1, 3], "icon": "chat", "star": true, "action": "{x}点单前先问{y}能不能吃辣", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}摇了摇头", "sound": [], "detail": ["{x}把辣度改成了微辣"] },
+    { "who": "xy", "minutes": [30, 50], "icon": "eat", "action": "{x}和{y}吃到最后都没再加辣", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.no-menu", "kind": "table", "bond": [3, 3], "x": ["果断"], "y": [], "axis": null, "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{x}没看菜单，直接报了两个人的", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}只补了一句「多放香菜」", "sound": [], "detail": [] },
+    { "who": "xy", "minutes": [20, 30], "icon": "chat", "action": "{x}和{y}边吃边聊，手机扣在桌上", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.warm-water", "kind": "table", "bond": [3, 3], "x": ["爱操心"], "y": ["迷糊"], "axis": null, "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "drink", "star": true, "action": "{x}提前给{y}要了一杯温水", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "walk", "action": "{y}到的时候手里还攥着家门钥匙", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [15, 25], "icon": "chat", "action": "{x}把钥匙放进了{y}的包", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.overslept", "kind": "table", "bond": [3, 3], "x": ["早起"], "y": ["爱睡觉"], "axis": null, "beats": [
+    { "who": "x", "minutes": [10, 10], "icon": "phone", "action": "{x}到了等了十分钟", "sound": [], "detail": ["给{y}发了个问号"] },
+    { "who": "y", "minutes": [1, 2], "icon": "walk", "action": "{y}跑了进来", "sound": ["「睡过了」"], "detail": [] },
+    { "who": "x", "minutes": [15, 25], "icon": "eat", "star": true, "action": "{x}把已经点好的那份推了过去", "sound": [], "detail": [] }
+  ] },
+  { "id": "table.same-as-always", "kind": "table", "bond": [3, 3], "x": [], "y": [], "axis": null, "beats": [
+    { "who": "xy", "minutes": [1, 3], "icon": "chat", "star": true, "action": "{x}和{y}坐下就说「老样子」", "sound": [], "detail": [] },
+    { "who": "xy", "minutes": [20, 30], "icon": "eat", "action": "{x}和{y}吃到一半同时停下来", "sound": [], "detail": ["都在找纸巾"] },
+    { "who": "x", "minutes": [1, 2], "icon": "bag", "action": "{x}付钱时顺手拿走了{y}的小票", "sound": [], "detail": [] }
+  ] }
+]

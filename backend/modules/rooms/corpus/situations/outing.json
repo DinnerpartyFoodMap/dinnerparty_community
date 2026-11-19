@@ -1,0 +1,175 @@
+[
+  {
+    "id": "outing.pick", "scene": "outing", "step": "pick", "minutes": [5, 15], "icon": "phone",
+    "quiz": 6, "ask": "选店的时候",
+    "variants": [
+      { "id": "scroll", "fits": ["选择困难"], "action": "{a}把收藏的店从头翻到尾", "sound": ["「到底吃什么」"], "detail": ["又翻回了第一家"] },
+      { "id": "straight", "fits": ["果断"], "action": "{a}直接点开了{place}", "sound": [], "detail": [] },
+      { "id": "eyes-shut", "fits": ["随缘"], "action": "{a}闭着眼在地图上点了一家", "sound": [], "detail": ["点到了{place}"] },
+      { "id": "new-cuisine", "fits": ["异国料理"], "action": "{a}专挑没吃过的菜系", "sound": [], "detail": ["挑中了{place}"] },
+      { "id": "hours", "fits": ["爱操心"], "action": "{a}出门前查了{place}几点关门", "sound": [], "detail": [] },
+      { "id": "plain", "fits": [], "action": "{a}打开地图看附近有什么吃的", "sound": [], "detail": ["选了{place}"] }
+    ]
+  },
+  {
+    "id": "outing.leave", "scene": "outing", "step": "leave", "minutes": [3, 10], "icon": "walk",
+    "quiz": 7, "ask": "出门的时候",
+    "variants": [
+      { "id": "keys", "fits": ["迷糊"], "action": "{a}出了门又回来拿钥匙", "sound": ["「钥匙」"], "detail": ["第二次回来拿的是伞"] },
+      { "id": "lights", "fits": ["爱操心"], "action": "{a}出门前把灯挨个关了一遍", "sound": [], "detail": [] },
+      { "id": "shoes", "fits": ["宅"], "action": "{a}在门口站了一会儿才出门", "sound": [], "detail": ["换了两次鞋"] },
+      { "id": "grab", "fits": ["果断"], "action": "{a}抓起外套就出门了", "sound": [], "detail": ["门是用脚带上的"] },
+      { "id": "plain", "fits": [], "action": "{a}换了鞋出门", "sound": ["「咔哒」"], "detail": [] }
+    ]
+  },
+  {
+    "id": "outing.arrive", "scene": "outing", "step": "arrive", "when": "explore", "minutes": [2, 6], "icon": "walk",
+    "quiz": 11, "ask": "第一次去一家店",
+    "variants": [
+      { "id": "pace", "fits": ["社恐"], "action": "{a}在{place}门口走过去又走回来", "sound": [], "detail": ["第三次才推门进去"] },
+      { "id": "ask", "fits": ["自来熟"], "action": "{a}一进门就问店员哪个点的人多", "sound": [], "detail": [] },
+      { "id": "sign", "fits": ["先拍照"], "action": "{a}先在{place}门口拍了张照", "sound": ["「咔嚓」"], "detail": ["拍了门头"] },
+      { "id": "plain", "fits": [], "action": "{a}推开{place}的门", "sound": [], "detail": ["找了个靠里的位置"] }
+    ]
+  },
+  {
+    "id": "outing.order", "scene": "outing", "step": "order", "minutes": [3, 8], "icon": "eat",
+    "quiz": 1, "ask": "点菜的时候",
+    "variants": [
+      { "id": "three-times", "fits": ["选择困难"], "action": "{a}把菜单翻了三遍", "sound": ["「嗯……」"], "detail": ["最后点了第一眼看到的"] },
+      { "id": "fast", "fits": ["果断"], "action": "{a}坐下就点好了", "sound": ["「好了」"], "detail": ["菜单没翻开"] },
+      { "id": "more", "fits": ["眼大肚小"], "action": "{a}点完又加了两样", "sound": [], "detail": ["店员问了句吃得完吗"] },
+      { "id": "point", "fits": ["话少"], "action": "{a}指着菜单上的图点了两下", "sound": [], "detail": [] },
+      { "id": "plain", "fits": [], "action": "{a}扫码点了单", "sound": [], "detail": ["选完又删了一样"] }
+    ]
+  },
+  {
+    "id": "outing.wait", "scene": "outing", "step": "wait", "chance": 0.4, "minutes": [5, 15], "icon": "phone",
+    "quiz": 14, "ask": "等菜的时候",
+    "variants": [
+      { "id": "report", "fits": ["话多"], "action": "{a}给人发消息说在外面吃饭", "sound": [], "detail": ["东西还没上"] },
+      { "id": "number", "fits": ["迷糊"], "action": "{a}把桌上的号码牌拿反了", "sound": [], "detail": [] },
+      { "id": "photos", "fits": ["先拍照"], "action": "{a}把店里拍了一圈", "sound": ["「咔嚓」"], "detail": [] },
+      { "id": "watch", "fits": ["随缘"], "action": "{a}看别桌都点了什么", "sound": [], "detail": ["看了三桌"] },
+      { "id": "plain", "fits": [], "action": "{a}等着，喝了两口水", "sound": [], "detail": [] }
+    ]
+  },
+  {
+    "id": "outing.serve", "scene": "outing", "step": "serve", "chance": 0.6, "minutes": [1, 3], "icon": "eat",
+    "quiz": 2, "ask": "菜上来了",
+    "variants": [
+      { "id": "photo", "fits": ["先拍照"], "action": "{a}先举着手机拍了两张", "sound": ["「咔嚓」"], "detail": ["又换了个角度"] },
+      { "id": "dig-in", "fits": ["吃得快"], "action": "{a}东西一上桌就开吃了", "sound": [], "detail": ["照片忘了拍"] },
+      { "id": "wipe-table", "fits": ["爱操心"], "action": "{a}抽了张纸巾把桌面擦了一遍", "sound": [], "detail": [] },
+      { "id": "cool", "fits": ["吃得慢"], "action": "{a}凑近闻了闻", "sound": [], "detail": ["等凉一点再吃"] },
+      { "id": "plain", "fits": [], "action": "{a}接过来说了声谢谢", "sound": [], "detail": [] }
+    ]
+  },
+  {
+    "id": "outing.eat-homestyle", "scene": "outing", "step": "eat", "axis": "homestyle", "minutes": [20, 40], "icon": "eat",
+    "variants": [
+      { "id": "second-bowl", "fits": ["家常菜"], "action": "{a}吃到了第二碗饭", "sound": [], "detail": ["菜汤也拌进去了"] },
+      { "id": "empty", "fits": ["光盘"], "action": "{a}把每个盘子都吃空了", "sound": [], "detail": ["连葱花都夹走了"] },
+      { "id": "slow", "fits": ["吃得慢"], "action": "{a}一样一样慢慢吃", "sound": [], "detail": ["隔壁桌换了两拨人"] },
+      { "id": "plain", "fits": [], "action": "{a}夹了一筷子青菜", "sound": [], "detail": ["米饭又添了半碗"] }
+    ]
+  },
+  {
+    "id": "outing.eat-noodles", "scene": "outing", "step": "eat", "axis": "noodles", "minutes": [10, 25], "icon": "eat",
+    "variants": [
+      { "id": "head-down", "fits": ["面食快餐派"], "minutes": [8, 15], "action": "{a}低头吃得很快", "sound": [], "detail": ["中间没抬过头"] },
+      { "id": "ten-minutes", "fits": ["吃得快"], "minutes": [8, 12], "action": "{a}十分钟就吃完了", "sound": [], "detail": ["比点单用的时间还短"] },
+      { "id": "corner", "fits": ["话少"], "action": "{a}一个人坐在角落吃", "sound": [], "detail": ["吃完擦了擦桌子"] },
+      { "id": "plain", "fits": [], "action": "{a}吃完了一份", "sound": ["「嗝」"], "detail": ["纸巾用了一大把"] }
+    ]
+  },
+  {
+    "id": "outing.eat-hotpot", "scene": "outing", "step": "eat", "axis": "hotpotBbq", "minutes": [40, 90], "icon": "eat",
+    "variants": [
+      { "id": "guard", "fits": ["火锅烧烤党"], "action": "{a}一直守着等肉熟", "sound": ["「熟了没」"], "detail": ["筷子没离过手"] },
+      { "id": "three-spoons", "fits": ["能吃辣"], "action": "{a}蘸料里放了三勺辣椒", "sound": [], "detail": [] },
+      { "id": "mild-half", "fits": ["不吃辣"], "action": "{a}只吃不辣的那一半", "sound": [], "detail": ["另一半一筷子没动"] },
+      { "id": "two-more", "fits": ["眼大肚小"], "action": "{a}又加了两盘肉", "sound": [], "detail": ["最后一盘剩了一半"] },
+      { "id": "plain", "fits": [], "action": "{a}吃到一半把外套脱了", "sound": [], "detail": ["额头上全是汗"] }
+    ]
+  },
+  {
+    "id": "outing.eat-dessert", "scene": "outing", "step": "eat", "axis": "dessert", "minutes": [15, 30], "icon": "eat",
+    "variants": [
+      { "id": "spoon", "fits": ["甜品脑袋"], "action": "{a}一口一口挖着吃", "sound": [], "detail": ["勺子舔得很干净"] },
+      { "id": "photos", "fits": ["先拍照"], "action": "{a}先拍了一圈才动勺子", "sound": [], "detail": [] },
+      { "id": "small-bites", "fits": ["吃得慢"], "action": "{a}吃一小口停一下", "sound": [], "detail": ["奶油化了一点"] },
+      { "id": "plain", "fits": [], "action": "{a}把一份吃完了", "sound": [], "detail": ["盘子边上还沾着一点"] }
+    ]
+  },
+  {
+    "id": "outing.eat-drinks", "scene": "outing", "step": "eat", "axis": "drinks", "minutes": [20, 60], "icon": "drink",
+    "variants": [
+      { "id": "another", "fits": ["咖啡茶饮续命"], "action": "{a}三口喝掉了半杯", "sound": [], "detail": ["又点了一杯"] },
+      { "id": "hour", "fits": ["吃得慢"], "minutes": [55, 65], "action": "{a}一杯喝了一个钟头", "sound": [], "detail": ["冰块都化了"] },
+      { "id": "call", "fits": ["话多"], "action": "{a}边喝边打电话", "sound": ["「喂」"], "detail": [] },
+      { "id": "inner-seat", "fits": ["社恐"], "action": "{a}坐在最里面的位置", "sound": [], "detail": ["戴着耳机"] },
+      { "id": "plain", "fits": [], "action": "{a}喝了一大口", "sound": ["「咕咚」"], "detail": ["杯子外面全是水珠"] }
+    ]
+  },
+  {
+    "id": "outing.eat-foreign", "scene": "outing", "step": "eat", "axis": "foreign", "minutes": [25, 50], "icon": "eat",
+    "variants": [
+      { "id": "read-menu", "fits": ["异国料理"], "action": "{a}照着菜单念了一遍菜名", "sound": [], "detail": ["念错了两个"] },
+      { "id": "how-to-eat", "fits": ["迷糊"], "action": "{a}拿着手机查这个怎么吃", "sound": [], "detail": [] },
+      { "id": "every-dish", "fits": ["先拍照"], "action": "{a}把每一样都拍了一张", "sound": [], "detail": [] },
+      { "id": "plain", "fits": [], "action": "{a}吃到一半去要了杯水", "sound": [], "detail": [] }
+    ]
+  },
+  {
+    "id": "outing.eat", "scene": "outing", "step": "eat", "minutes": [20, 40], "icon": "eat",
+    "variants": [
+      { "id": "head-down", "fits": ["吃得快"], "minutes": [6, 10], "action": "{a}埋头吃完了", "sound": [], "detail": ["前后不到十分钟"] },
+      { "id": "breaks", "fits": ["吃得慢"], "action": "{a}吃两口歇一会儿", "sound": [], "detail": ["手机看了好几眼"] },
+      { "id": "chat-staff", "fits": ["话多"], "action": "{a}边吃边跟店员搭话", "sound": [], "detail": ["问了句几点打烊"] },
+      { "id": "plain", "fits": [], "action": "{a}把点的东西都吃完了", "sound": [], "detail": ["桌上只剩空盘子"] }
+    ]
+  },
+  {
+    "id": "outing.spicy", "scene": "outing", "step": "spicy", "when": "spicy", "chance": 0.7, "minutes": [2, 5], "icon": "eat",
+    "quiz": 15, "ask": "吃到很辣的",
+    "variants": [
+      { "id": "more-chili", "fits": ["能吃辣"], "action": "{a}又加了一勺辣椒", "sound": [], "detail": ["额头上冒了汗"] },
+      { "id": "hiss", "fits": ["不吃辣"], "action": "{a}被辣得直吸气", "sound": ["「嘶——」"], "detail": ["灌下去半杯水"] },
+      { "id": "not-spicy", "fits": ["嘴硬"], "action": "{a}说一点都不辣", "sound": ["「不辣」"], "detail": ["眼泪都出来了"] },
+      { "id": "plain", "fits": [], "action": "{a}吃了一口，停下来喝水", "sound": [], "detail": [] }
+    ]
+  },
+  {
+    "id": "outing.full", "scene": "outing", "step": "full", "chance": 0.3, "axes": ["homestyle", "noodles", "hotpotBbq", "dessert", "foreign"], "minutes": [3, 8], "icon": "eat",
+    "quiz": 8, "ask": "吃撑了",
+    "variants": [
+      { "id": "sigh", "fits": ["眼大肚小"], "action": "{a}看着剩下的半份叹了口气", "sound": [], "detail": ["说下次少点"] },
+      { "id": "last-bite", "fits": ["光盘"], "action": "{a}撑着把最后一口吃完了", "sound": [], "detail": [] },
+      { "id": "lean-back", "fits": ["吃得慢"], "action": "{a}靠在椅背上歇了一会儿", "sound": [], "detail": [] },
+      { "id": "plain", "fits": [], "action": "{a}摸着肚子坐了五分钟", "sound": ["「嗝」"], "detail": [] }
+    ]
+  },
+  {
+    "id": "outing.pay", "scene": "outing", "step": "pay", "chance": 0.5, "minutes": [1, 3], "icon": "bag",
+    "quiz": 9, "ask": "结账的时候",
+    "variants": [
+      { "id": "qr", "fits": ["迷糊"], "action": "{a}在收银台前找付款码", "sound": ["「等一下」"], "detail": ["后面的人等着"] },
+      { "id": "receipt", "fits": ["爱操心"], "action": "{a}把小票对了一遍", "sound": [], "detail": [] },
+      { "id": "change", "fits": ["随缘"], "action": "{a}付了钱，零钱没要", "sound": [], "detail": [] },
+      { "id": "next-time", "fits": ["话多"], "action": "{a}结账时跟老板说下次还来", "sound": [], "detail": [] },
+      { "id": "plain", "fits": [], "action": "{a}扫码付了钱", "sound": ["「嘀」"], "detail": [] }
+    ]
+  },
+  {
+    "id": "outing.back", "scene": "outing", "step": "back", "minutes": [5, 20], "icon": "walk",
+    "quiz": 18, "ask": "吃完饭回家的路上",
+    "variants": [
+      { "id": "store", "fits": ["随缘"], "action": "{a}顺路逛了家便利店", "sound": [], "detail": ["什么也没买"] },
+      { "id": "straight-home", "fits": ["宅"], "action": "{a}吃完直接回了家", "sound": [], "detail": [] },
+      { "id": "send-photo", "fits": ["先拍照"], "action": "{a}路上给人发了张刚才的照片", "sound": [], "detail": [] },
+      { "id": "boxes", "fits": ["眼大肚小"], "action": "{a}拎着打包盒往回走", "sound": [], "detail": ["打包了两盒"] },
+      { "id": "plain", "fits": [], "action": "{a}慢慢走回家", "sound": [], "detail": ["绕了一小段路"] }
+    ]
+  }
+]
