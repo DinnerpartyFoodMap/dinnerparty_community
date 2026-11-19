@@ -63,7 +63,9 @@ class FakePlugin {
         this.acks = [];
         this.state = { session: null, visible: false, suspended: false, revision: 0 };
     }
-    async capabilities() { return { protocolVersion: this.options.protocol ?? NATIVE_CHROME_PROTOCOL }; }
+    async capabilities() {
+        return { protocolVersion: this.options.protocol ?? NATIVE_CHROME_PROTOCOL, searchResults: this.options.searchResults };
+    }
     async attach({ sessionId, ownerId }) { this.calls.push('attach'); this.state = { ...this.state, session: sessionId, owner: ownerId, visible: false }; return { ready: true }; }
     async setState({ sessionId, revision, items, glass, search, sheet, drawer, tour, labels }) {
         this.calls.push(`setState:${revision}`);
@@ -254,6 +256,43 @@ function makeSession(plugin, extra = {}) {
     await session.stop();
     plugin.search('input', { text: 'after-stop' });
     assert.equal(events.length, 5, '会话结束后不再处理');
+}
+
+// The result list is an optional capability: older iOS shells still use the web dropdown.
+for (const supported of [false, true]) {
+    const plugin = new FakePlugin({ searchResults: supported });
+    const events = [];
+    const modes = [];
+    const session = new NativeMapChromeSession({
+        ownerId: 'map-results', plugin, available: true,
+        timing: { selfHideMs: 30, retryMs: 10000, handshakeMs: 200 },
+        onModeChange: (mode, searchResults) => modes.push([mode, searchResults]),
+        onSearch: (event) => events.push(event)
+    });
+    const search = { expanded: true, text: '火锅', results: { token: 4, entries: [
+        { kind: 'heading', id: 'site-heading', title: '已收录' },
+        { kind: 'place', id: 'site:0', title: '火锅店', subtitle: '南街', longitude: 114, latitude: 22, trackExposure: true },
+        { kind: 'button', id: 'external-search', title: '找未收录地点', disabled: true }
+    ] } };
+    try {
+        assert.equal(await session.start({ items, search }), true);
+        await session.activate();
+        assert.deepEqual(modes.at(-1), ['native', supported]);
+        assert.equal('results' in plugin.state.search, supported);
+        if (supported) assert.equal('longitude' in plugin.state.search.results.entries[1], false);
+        plugin.search('result', { token: 3, rowId: 'site:0' });
+        plugin.search('result', { token: 4, rowId: 'unknown' });
+        plugin.search('result', { token: 4, rowId: 'external-search' });
+        plugin.search('exposure', { token: 4, rowId: 'site-heading' });
+        plugin.search('exposure', { token: 4, rowId: 'site:0' });
+        plugin.search('result', { token: 4, rowId: 'site:0' });
+        assert.deepEqual(events, supported ? [
+            { type: 'exposure', token: 4, rowId: 'site:0' },
+            { type: 'result', token: 4, rowId: 'site:0' }
+        ] : []);
+    } finally {
+        await session.stop();
+    }
 }
 
 // ---- v4 原生面板：快照清洗、随状态下发、事件只接受当前会话与白名单 ----

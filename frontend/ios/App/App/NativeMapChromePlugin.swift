@@ -4,11 +4,11 @@ import Capacitor
 
 /// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 18）。
 ///
-/// capabilities() -> { protocolVersion, systemVersion, accessibility }
+/// capabilities() -> { protocolVersion, systemVersion, accessibility, searchResults }
 /// attach({ sessionId, ownerId }) -> { ready }
 /// setState({ sessionId, ownerId, revision, items, theme, glass, floatingGap, search, sheet, drawer, skin, tour }) -> { appliedRevision }
 ///   items: [{ id, title, symbol, image?, imageTemplate?, selected, disabled, busy, badge?, avatarURL?, placement, tone?, opensOverlay }]
-///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus }
+///   search: { expanded, placeholder, busy, text, textVersion, focusToken, focus, results?: { token, entries } }
 ///   sheet: null | { id, token, title, subtitle?, subtitleExpanded?: [string], message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
 ///                   image?: https, paragraphs?: [{ id, title?, text, markdown? }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
@@ -24,7 +24,7 @@ import Capacitor
 /// heartbeat({ sessionId }) / dispose({ sessionId })
 ///
 /// 事件：action / search / sheet / drawer / layout / sessionLost / accessibilityChanged / availabilityChanged
-///   search: { sessionId, ownerId, type: input|submit|focus|close, text?, focused? }
+///   search: { sessionId, ownerId, type: input|submit|focus|close|result|exposure, text?, focused?, token?, rowId? }
 ///   sheet: { sessionId, ownerId, type: select|dismiss, sheetId, token, rowId? }
 ///   drawer: { sessionId, ownerId, type: select, rowId }
 ///   layout: { sessionId, showing, occupiedRects, slots: [{ id, x, y, width, height }], bottomOccupied, viewport, safeArea,
@@ -138,6 +138,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             call.resolve([
                 "protocolVersion": NativeMapChromePlugin.protocolVersion,
+                "searchResults": true,
                 "systemVersion": UIDevice.current.systemVersion,
                 "accessibility": self.accessibilitySnapshot()
             ])
@@ -362,7 +363,25 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         search.textVersion = (raw["textVersion"] as? Int) ?? 0
         search.focusToken = (raw["focusToken"] as? Int) ?? 0
         search.focus = (raw["focus"] as? Bool) ?? false
+        search.results = parseSearchResults(raw["results"] as? JSObject)
         return search
+    }
+
+    private static func parseSearchResults(_ raw: JSObject?) -> MapChromeSearchResults? {
+        guard let raw, let token = raw["token"] as? Int, token >= 0,
+              let rows = raw["entries"] as? JSArray else { return nil }
+        var ids = Set<String>()
+        let entries = rows.prefix(300).compactMap { rawRow -> MapChromeSearchResult? in
+            guard let row = rawRow as? JSObject,
+                  let id = clip(row["id"], 64), let title = clip(row["title"], 240),
+                  let value = row["kind"] as? String, let kind = MapChromeSearchResult.Kind(rawValue: value),
+                  ids.insert(id).inserted else { return nil }
+            return MapChromeSearchResult(id: id, kind: kind, title: title,
+                subtitle: clip(row["subtitle"], 300), detail: clip(row["detail"], 80),
+                badge: clip(row["badge"], 60), reason: clip(row["reason"], 1000),
+                disabled: row["disabled"] as? Bool ?? false, trackExposure: row["trackExposure"] as? Bool ?? false)
+        }
+        return entries.isEmpty ? nil : MapChromeSearchResults(token: token, entries: entries)
     }
 
     /// 面板快照：只接受白名单面板，文本截断、行数封顶；原生只展示，不解释行的含义
@@ -684,6 +703,7 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         var slots: [[String: Any]] = []
         for (id, rect) in model.frames {
+            if id == "searchResults" && model.presentedSearchResults == nil { continue }
             var entry = css(rect)
             entry["id"] = id
             slots.append(entry)

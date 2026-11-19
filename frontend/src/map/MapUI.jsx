@@ -947,6 +947,23 @@ export default function MapUI(props) {
     };
 
     const handleNativeSearch = (event) => {
+        if (event.type === 'result' || event.type === 'exposure') {
+            if (event.token !== nativeSearchResults?.token || !chrome.showing) return;
+            const entry = nativeSearchEntries.find(({ id }) => id === event.rowId);
+            if (!entry || entry.disabled) return;
+            if (entry.place) {
+                if (event.type === 'exposure') {
+                    if (entry.trackExposure && document.visibilityState === 'visible') {
+                        feedback?.record('exposure', 'search', entry.place.id, { card_id: entry.cardId, search_cards: nativeSearchCards });
+                    }
+                } else {
+                    handleSelectSpItem(entry.place, entry.cardId, nativeSearchCards);
+                }
+            } else if (event.type === 'result') {
+                entry.action?.();
+            }
+            return;
+        }
         switch (event.type) {
             case 'input': {
                 const text = event.text || '';
@@ -1424,6 +1441,111 @@ export default function MapUI(props) {
         }
     };
 
+    const { results: spResults, resultTerm: spResultTerm, loading: spLoading, error: spError, retry: retrySpSearch } = useSearchPanel(addMode ? '' : searchTerm, mapRef, backendUrl, mapReady, places, token);
+    const hasSubmittedSearch = Array.isArray(searchResults);
+    const baseResults = hasSubmittedSearch ? searchResults : spResults;
+    const showSearchResults = !!searchTerm && searchResultsVisible && (
+        addMode || aiThinking || aiRecommendations.length > 0 || hasSubmittedSearch || searchFailed || spLoading || spError || Array.isArray(spResults)
+    );
+    const recommendations = addMode ? [] : aiRecommendations.filter(recommendation => recommendation?.place).slice(0, 3);
+    const appliedFilter = recommendations[0]?.applied_filter;
+    const filterNote = appliedFilter && describePlaceFilter(appliedFilter);
+    const recommendedIds = new Set(aiRecommendations.map(recommendation => String(recommendation?.place?.id)));
+    const visibleResults = showSearchResults && !addMode && Array.isArray(baseResults)
+        ? baseResults.filter(place => !recommendedIds.has(String(place.id))) : [];
+    const siteResults = visibleResults.filter(place => place.isMarked !== false);
+    const amapResults = showSearchResults ? unmarkedExternalPlaces(externalSearch.results, [...(places || []), ...siteResults], currentMapCenter(mapRef)) : [];
+    const previewLoading = !Array.isArray(baseResults) && spLoading && !searchFailed;
+    const noAiResults = !aiThinking && aiRecommendations.length === 0;
+    const siteSearchFailed = searchFailed || (!hasSubmittedSearch && spError);
+    const noSearchResults = !siteSearchFailed && !visibleResults.length && !amapResults.length && noAiResults && !spLoading;
+    const showAiSearchHint = noAiResults && !hasSubmittedSearch && Array.isArray(spResults) && !spLoading;
+    const retrySiteSearch = () => (searchFailed ? submitSearch(searchTerm) : retrySpSearch());
+    const externalSearchDisabled = !mapReady || externalSearch.loading || externalSearch.loaded;
+    const externalSearchLabel = externalSearch.loading ? t('map:ui.search.externalLoading') : externalSearch.loaded ? t('map:ui.search.externalLoaded')
+        : externalSearch.error ? t('map:ui.search.externalRetry') : t('map:ui.search.findUnlisted');
+    const resultDistance = item => Number.isFinite(item.dist) ? tx('map:ui.distance', {
+        distance: item.dist < 1000 ? t('map:ui.metersShort', { dist: Math.round(item.dist) }) : t('map:ui.kilometersShort', { dist: (item.dist / 1000).toFixed(1) })
+    }) : '';
+    const resultSubtitle = item => item.address || item.category || markdownToPlainText(item.description) || '';
+    const recommendationDisplay = ({ place, match_percent, score, distance_km }, index) => {
+        const matchPercent = Number.isFinite(Number(match_percent)) ? Math.round(Number(match_percent)) : Math.round((Number(score) || 0) * 100);
+        const distanceKm = distance_km == null ? Number.NaN : Number(distance_km);
+        const distanceText = !Number.isFinite(distanceKm) ? '' : distanceKm < 1
+            ? t('map:ui.fromCenterMeters', { distance: Math.round(distanceKm * 1000) })
+            : t('map:ui.fromCenterKilometers', { distance: distanceKm.toFixed(1) });
+        return {
+            heading: tx('map:ui.recommendTitle', { counter: recommendations.length > 1 ? ` ${index + 1}/${recommendations.length}` : '' }),
+            badge: tx('map:ui.matchPercent', { matchPercent }),
+            subtitle: [place.category, place.per_person_cost ? t('map:ui.perPersonAbout', { per_person_cost: place.per_person_cost }) : '', distanceText].filter(Boolean).join(' · ')
+        };
+    };
+
+    const previewMatchesSearch = addMode || hasSubmittedSearch || !Array.isArray(spResults) || spResultTerm === searchTerm;
+    const nativeSearchEntries = [];
+    if (compactSearch && searchExpanded && showSearchResults && previewMatchesSearch && chromeOwner && !nativeOverlayActive && !nativeAlongRoute.active) {
+        const append = (id, kind, title, fields) => nativeSearchEntries.push({ id, kind, title, ...fields });
+        const appendPlaces = (source, title, items, external = false) => {
+            if (!items.length) return;
+            append(`${source}-heading`, 'heading', title);
+            items.forEach((place, index) => append(`${source}:${index}`, 'place', place.name || t('common:label.unnamedPlace'), {
+                place, subtitle: resultSubtitle(place), detail: resultDistance(place), badge: external ? t('map:ui.nav.amap') : ''
+            }));
+        };
+        if (addMode) {
+            if (externalSearch.loading) append('external-loading', 'loading', externalSearchLabel);
+            appendPlaces('external', t('map:ui.search.amapResults'), amapResults, true);
+            if (externalSearch.loaded && !amapResults.length) append('external-empty', 'message', t('map:ui.search.externalEmpty'));
+            if (externalSearch.error) {
+                append('external-error', 'error', externalSearch.error);
+                append('external-search', 'button', externalSearchLabel, { action: searchUnlistedPlaces, disabled: externalSearchDisabled });
+            }
+        } else {
+            if (aiThinking) append('ai-loading', 'loading', t('map:ui.search.loadingFun'));
+            if (filterNote) append('ai-filter', 'message', t('places:filter.aiAppliedTo', { filter: filterNote }));
+            recommendations.forEach((recommendation, index) => {
+                const { place, reason } = recommendation;
+                const { heading, badge, subtitle } = recommendationDisplay(recommendation, index);
+                append(`ai:${index}`, 'recommendation', place.name || t('common:label.unnamedPlace'), { place, detail: heading, badge, subtitle, reason });
+            });
+            if (previewLoading) {
+                append('site-loading', 'loading', t('map:ui.search.loading'));
+            } else {
+                if (siteSearchFailed) {
+                    append('site-error', 'error', t('map:ui.search.failed'));
+                    append('site-retry', 'button', t('map:ui.search.retry'), { action: retrySiteSearch, disabled: searching });
+                }
+                appendPlaces('site', t('map:ui.search.sitePlaces'), siteResults);
+                appendPlaces('external', t('map:ui.search.amapResults'), amapResults, true);
+                if (noSearchResults) append('site-empty', 'message', t('map:ui.search.noResults'));
+                if (showAiSearchHint) append('ai-hint', 'message', t('map:ui.search.aiHintMobile'));
+                if (externalSearch.error) append('external-error', 'error', externalSearch.error);
+                if (externalSearch.loaded && !amapResults.length) append('external-empty', 'message', t('map:ui.search.externalEmpty'));
+                append('external-search', 'button', externalSearchLabel, { action: searchUnlistedPlaces, disabled: externalSearchDisabled });
+            }
+        }
+    }
+    const nativeSearchIdentity = useRef({ key: '', token: 0, presentation: 0 });
+    const searchIdentityKey = nativeSearchEntries.length ? JSON.stringify([searchTerm, searchResetKey, addMode, feedback?.queryEpoch,
+        nativeSearchEntries.filter(entry => entry.place).map(entry => [entry.id, placeKey(entry.place)])]) : '';
+    if (nativeSearchIdentity.current.key !== searchIdentityKey) {
+        const { key, token, presentation } = nativeSearchIdentity.current;
+        nativeSearchIdentity.current = { key: searchIdentityKey, token: token + 1, presentation: presentation + (!key && searchIdentityKey ? 1 : 0) };
+    }
+    const nativeSearchCards = [];
+    const nativeSearchResults = nativeSearchEntries.length ? {
+        token: nativeSearchIdentity.current.token,
+        entries: nativeSearchEntries.map(entry => {
+            const { action, place, ...display } = entry;
+            if (Number.isSafeInteger(place?.id) && nativeSearchCards.length < 200) {
+                entry.cardId = `native:${nativeSearchIdentity.current.presentation}:${entry.id}:${place.id}`;
+                nativeSearchCards.push({ id: place.id, cardId: entry.cardId });
+                display.trackExposure = entry.trackExposure = !!feedback?.consent?.feedback;
+            }
+            return display;
+        })
+    } : null;
+
     // 非选点器的 MapView 只有 App 常驻的主地图：它持有原生会话，地图页被其他页面盖住时只收起原生控件
     const chrome = useMapChrome({
         enabled: layout.sheet && !pickerMode,
@@ -1440,7 +1562,8 @@ export default function MapUI(props) {
             text: searchTerm,
             textVersion: searchTextVersion,
             focusToken: nativeFocusRequest.token,
-            focus: nativeFocusRequest.focus
+            focus: nativeFocusRequest.focus,
+            results: nativeSearchResults
         } : undefined,
         sheet: chromeSheet,
         drawer: chromeDrawer,
@@ -1452,7 +1575,7 @@ export default function MapUI(props) {
         onSheet: handleNativeSheet,
         onDrawer: handleNativeDrawer
     });
-    // 原生控件接管后：网页工具栏、定位按钮与输入框不再渲染（也从读屏树中移除），网页只保留原生输入框上方的搜索结果
+    // 原生控件接管输入框。旧版 App 继续用网页结果框。
     const nativeChrome = chrome.mode === 'native';
     // 原生显示没有网页 Exposure 元素；只在原生弹窗实际可见并停留后记录曝光。
     useEffect(() => {
@@ -1532,8 +1655,14 @@ export default function MapUI(props) {
             }
         };
         el.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true });
-        return () => el.removeEventListener('pointerdown', onPointerDown, { capture: true });
-    }, [compactSearch, searchExpanded, nativeChrome, searchFocused]);
+        const nativeMap = chrome.searchResults && mapRef?.current?.isNativeMap ? mapRef.current : null;
+        const nativeMapTapEvents = ['click', 'markerTap', 'clusterTap'];
+        nativeMapTapEvents.forEach(event => nativeMap?.on(event, onPointerDown));
+        return () => {
+            el.removeEventListener('pointerdown', onPointerDown, { capture: true });
+            nativeMapTapEvents.forEach(event => nativeMap?.off(event, onPointerDown));
+        };
+    }, [compactSearch, searchExpanded, nativeChrome, searchFocused, chrome.searchResults, mapReady]);
 
     useEffect(() => () => window.clearTimeout(webBlurTimerRef.current), []);
 
@@ -1617,8 +1746,6 @@ export default function MapUI(props) {
         }
     };
 
-    const { results: spResults, loading: spLoading, error: spError, retry: retrySpSearch } = useSearchPanel(addMode ? '' : searchTerm, mapRef, backendUrl, mapReady, places, token);
-
     // Close detail and rating panels if popup closes
     useEffect(() => {
         if (!selectedPlace) {
@@ -1652,7 +1779,6 @@ export default function MapUI(props) {
         }
     };
 
-    const hasSubmittedSearch = Array.isArray(searchResults);
     const searchButtonLabel = hasSubmittedSearch
         ? (searchResultsVisible ? t('map:ui.collapseResults') : t('map:ui.expandResults'))
         : (tipText || t('common:action.search'));
@@ -1675,8 +1801,8 @@ export default function MapUI(props) {
         if (inputRef.current) inputRef.current.focus();
     };
 
-    const handleSelectSpItem = (item, event) => {
-        feedback?.record('click', 'search', item.id, {card_id:event?.currentTarget?.dataset.feedbackCard});
+    const handleSelectSpItem = (item, cardId, searchCards) => {
+        feedback?.record('click', 'search', item.id, { card_id: cardId, search_cards: searchCards });
         setSearchTerm(item.name || item.address);
         setSearchResultsVisible(false);
         if (compactSearch) {
@@ -1711,7 +1837,7 @@ export default function MapUI(props) {
                     return (
                         <Exposure feedback={feedback} placeId={item.id} surface="search" rank={rank}
                             key={item.id}
-                            onClick={(event) => handleSelectSpItem(item,event)}
+                            onClick={(event) => handleSelectSpItem(item, event.currentTarget.dataset.feedbackCard)}
                             style={{
                                 padding: '8px 12px',
                                 cursor: 'pointer',
@@ -1740,11 +1866,11 @@ export default function MapUI(props) {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, paddingRight: 8 }}>
-                                    {item.address || item.category || markdownToPlainText(item.description) || ''}
+                                    {resultSubtitle(item)}
                                 </span>
                                 {Number.isFinite(item.dist) && (
                                     <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                        {tx('map:ui.distance', { distance: item.dist < 1000 ? t('map:ui.metersShort', { dist: Math.round(item.dist) }) : t('map:ui.kilometersShort', { dist: (item.dist / 1000).toFixed(1) }) })}
+                                        {resultDistance(item)}
                                     </span>
                                 )}
                             </div>
@@ -1756,25 +1882,13 @@ export default function MapUI(props) {
     };
 
     const renderAiRecommendations = () => {
-        const recommendations = (Array.isArray(aiRecommendations) ? aiRecommendations : [])
-            .filter((recommendation) => recommendation?.place)
-            .slice(0, 3);
-        // AI 读出的筛选只用在推荐上（后端已按它挑过），在第一张卡片上方说明一句
-        const appliedFilter = recommendations[0]?.applied_filter;
-        const filterNote = appliedFilter && describePlaceFilter(appliedFilter);
         const cards = recommendations.map((recommendation, index) => {
             const place = recommendation.place;
-            const matchPercent = Number.isFinite(Number(recommendation.match_percent))
-                ? Math.round(Number(recommendation.match_percent))
-                : Math.round((Number(recommendation.score) || 0) * 100);
-            const distanceKm = recommendation.distance_km == null ? Number.NaN : Number(recommendation.distance_km);
-            const distanceText = Number.isFinite(distanceKm)
-                ? (distanceKm < 1 ? t('map:ui.fromCenterMeters', { distance: Math.round(distanceKm * 1000) }) : t('map:ui.fromCenterKilometers', { distance: distanceKm.toFixed(1) }))
-                : '';
+            const { heading, badge, subtitle } = recommendationDisplay(recommendation, index);
             return (
                 <Exposure feedback={feedback} placeId={place.id} surface="search" rank={index}
                     key={`ai-recommendation-${place.id ?? index}`}
-                    onClick={(event) => handleSelectSpItem(place,event)}
+                    onClick={(event) => handleSelectSpItem(place, event.currentTarget.dataset.feedbackCard)}
                     style={{
                         margin: `${index === 0 ? 10 : 0}px 10px 12px`,
                         padding: 12,
@@ -1790,7 +1904,7 @@ export default function MapUI(props) {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-text-primary)', fontWeight: 700, fontSize: 13 }}>
                             <span className="material-symbols-outlined" style={{ fontSize: 20, color: 'var(--theme-icon)' }}>restaurant_menu</span>
-                            {tx('map:ui.recommendTitle', { counter: recommendations.length > 1 ? ` ${index + 1}/${recommendations.length}` : '' })}
+                            {heading}
                         </div>
                         <span style={{
                             color: 'var(--color-text-primary)',
@@ -1801,12 +1915,12 @@ export default function MapUI(props) {
                             fontSize: 12,
                             fontWeight: 700,
                             whiteSpace: 'nowrap'
-                        }}>{tx('map:ui.matchPercent', { matchPercent })}</span>
+                        }}>{badge}</span>
                     </div>
                     <div style={{ marginTop: 8, fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>{place.name}</div>
-                    {(place.category || place.per_person_cost || distanceText) && (
+                    {subtitle && (
                         <div style={{ marginTop: 3, color: 'var(--color-text-secondary)', fontSize: 12 }}>
-                            {[place.category, place.per_person_cost ? t('map:ui.perPersonAbout', { per_person_cost: place.per_person_cost }) : '', distanceText].filter(Boolean).join(' · ')}
+                            {subtitle}
                         </div>
                     )}
                     <div style={{ marginTop: 8, color: 'var(--color-text-primary)', fontSize: 13, lineHeight: 1.55 }}>
@@ -2154,7 +2268,7 @@ export default function MapUI(props) {
     // 搜索建议与结果：placement 决定相对输入框的位置（窄屏向上展开）
     const renderSearchDropdown = (placement) => (
         <AnimatePresence>
-        {searchTerm && searchResultsVisible && (addMode || aiThinking || aiRecommendations.length > 0 || Array.isArray(searchResults) || searchFailed || spLoading || spError || Array.isArray(spResults)) && (
+        {showSearchResults && (
             <ScrollableView
                 key="search-results"
                 ref={setSearchListEl}
@@ -2199,45 +2313,36 @@ export default function MapUI(props) {
                 {!addMode && renderAiRecommendations()}
                 {(() => {
                     if (addMode) {
-                        const results = unmarkedExternalPlaces(externalSearch.results, places || [], currentMapCenter(mapRef));
                         return <>
                             {externalSearch.loading && <div role="status" style={{ padding: 12 }}>{t('map:ui.search.externalLoading')}</div>}
-                            {renderSpSection(t('map:ui.search.amapResults'), results, false, null)}
-                            {externalSearch.loaded && !results.length && <div role="status" style={{ padding: 12 }}>{t('map:ui.search.externalEmpty')}</div>}
+                            {renderSpSection(t('map:ui.search.amapResults'), amapResults, false, null)}
+                            {externalSearch.loaded && !amapResults.length && <div role="status" style={{ padding: 12 }}>{t('map:ui.search.externalEmpty')}</div>}
                             {externalSearch.error && <div role="alert" style={{ padding: 12 }}>
                                 {externalSearch.error}
                                 <Button size="sm" onClick={searchUnlistedPlaces}>{t('map:ui.search.externalRetry')}</Button>
                             </div>}
                         </>;
                     }
-                    const baseResults = Array.isArray(searchResults) ? searchResults : spResults;
-                    const recommendedIds = new Set(aiRecommendations.map((recommendation) => String(recommendation?.place?.id)));
-                    const visibleResults = Array.isArray(baseResults)
-                        ? baseResults.filter((place) => !recommendedIds.has(String(place.id)))
-                        : [];
-                    const siteResults = visibleResults.filter((place) => place.isMarked !== false);
-                    const amapResults = unmarkedExternalPlaces(externalSearch.results, [...(places || []), ...siteResults], currentMapCenter(mapRef));
-                    if (!Array.isArray(baseResults) && spLoading && !searchFailed) {
+                    if (previewLoading) {
                         return <div style={{ padding: 12, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>{t('map:ui.search.loading')}</div>;
                     }
                     // 请求失败与“没有结果”分开：提示连接问题，原位重试（提交过的搜索重新提交，输入预览重新请求）
-                    const failed = searchFailed || (!Array.isArray(searchResults) && spError);
                     return (
                         <>
-                            {failed && (
+                            {siteSearchFailed && (
                                 <div role="alert" style={{ padding: '12px 12px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 10, fontSize: 13, color: 'var(--color-text-secondary)' }}>
                                     <span>{t('map:ui.search.failed')}</span>
-                                    <Button type="button" variant="secondary" size="sm" onClick={() => (searchFailed ? submitSearch(searchTerm) : retrySpSearch())} disabled={searching}>
+                                    <Button type="button" variant="secondary" size="sm" onClick={retrySiteSearch} disabled={searching}>
                                         {t('map:ui.search.retry')}
                                     </Button>
                                 </div>
                             )}
                             {renderSpSection(t('map:ui.search.sitePlaces'), siteResults, false, null)}
                             {renderSpSection(t('map:ui.search.amapResults'), amapResults, false, null)}
-                            {!failed && !visibleResults.length && !amapResults.length && !aiThinking && aiRecommendations.length === 0 && !spLoading && (
+                            {noSearchResults && (
                                 <div style={{ padding: 12, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>{t('map:ui.search.noResults')}</div>
                             )}
-                            {!aiThinking && aiRecommendations.length === 0 && !Array.isArray(searchResults) && Array.isArray(spResults) && !spLoading && (
+                            {showAiSearchHint && (
                                 <div style={{ padding: '10px 12px 12px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 12 }}>
                                     {compactSearch ? t('map:ui.search.aiHintMobile') : t('map:ui.search.aiHint')}
                                 </div>
@@ -2246,10 +2351,10 @@ export default function MapUI(props) {
                                 {externalSearch.error && <p role="alert" style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-secondary)' }}>{externalSearch.error}</p>}
                                 {externalSearch.loaded && !amapResults.length && <p role="status" style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-muted)' }}>{t('map:ui.search.externalEmpty')}</p>}
                                 <Button type="button" onClick={searchUnlistedPlaces}
-                                    disabled={!mapReady || externalSearch.loading || externalSearch.loaded}
+                                    disabled={externalSearchDisabled}
                                     aria-busy={externalSearch.loading}
                                     style={{ width: '100%', textAlign: 'center', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-                                    {externalSearch.loading ? t('map:ui.search.externalLoading') : externalSearch.loaded ? t('map:ui.search.externalLoaded') : externalSearch.error ? t('map:ui.search.externalRetry') : t('map:ui.search.findUnlisted')}
+                                    {externalSearchLabel}
                                 </Button>
                             </div>
                         </>
@@ -2263,10 +2368,11 @@ export default function MapUI(props) {
     // 结果列表最多占到页眉下方：键盘弹出时 --app-height 随 WebView 缩小
     const compactDropdownMaxHeight = (bottomPx) => `min(60vh, calc(var(--app-height, 100vh) - var(--safe-top, 0px) - ${bottomPx + 88}px))`;
 
-    // iOS App 窄屏搜索。原生控件：输入框在原生层，网页只渲染其上方的结果；
+    // iOS App 窄屏搜索。旧原生壳的输入框在原生层，网页渲染其上方的结果；
     // 网页控件：与原生同样的布局——工具栏位置换成输入框，输入中头像位置换成“收起键盘”。
     const renderCompactSearch = () => {
         if (nativeChrome) {
+            if (chrome.searchResults) return null;
             const bottom = chrome.bottomOccupied + 8;
             return (
                 <div className="fm-map-search" style={{ position: 'absolute', zIndex: 2100, left: 12, right: 12, bottom, height: 0 }}>
@@ -2348,7 +2454,8 @@ export default function MapUI(props) {
                         : aboveBottomInset(platform === 'web' ? mobileFloatingBottom + (userFilter ? 52 : 0) : 52)}
                     drawer={chrome.drawerMotion}
                     searching={compactSearch && searchExpanded}
-                    perch={compactSearch && searchExpanded ? searchListEl : null} />
+                    perch={compactSearch && searchExpanded ? searchListEl : null}
+                    perchTop={chrome.searchResultsTop} />
             )}
 
             {addMode && !pickerMode && <Notice title={t('map:ui.addPlaceHint')} tone="warning"

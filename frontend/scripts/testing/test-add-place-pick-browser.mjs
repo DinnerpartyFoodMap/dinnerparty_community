@@ -34,7 +34,8 @@ const server = await createServer({ root, configFile: resolve(root, 'vite.config
         }
         const responses = {
             '/users/me': { user: { id: 'add-place-regression', username: '点选测试', is_banned: false } },
-            '/places/tiles/manifest': { v: 1, version: 'empty', generated_at: 1, count: 0, dict: '000000000000', levels: [{ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }, { tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }, { tile: 8, cell: 14, minZoom: 11, maxZoom: 12 }], leaf: { tile: 12, minZoom: 13 }, tiles: { 2: {}, 5: {}, 8: {}, 12: {} } }, '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': []
+            '/places/tiles/manifest': { v: 1, version: 'empty', generated_at: 1, count: 0, dict: '000000000000', levels: [{ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }, { tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }, { tile: 8, cell: 14, minZoom: 11, maxZoom: 12 }], leaf: { tile: 12, minZoom: 13 }, tiles: { 2: {}, 5: {}, 8: {}, 12: {} } }, '/places/tiles/000000000000/dict': { v: 1, tags: [], regions: [] }, '/places/overlay': { own: [], hidden_ids: [] }, '/api/favorites': [], '/categories': [],
+            '/api/places/search/fast': [{ id: 12, name: '站内咖啡店', longitude: 120.02, latitude: 30.02 }]
         };
         if (!Object.hasOwn(responses, pathname)) return next();
         res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(responses[pathname]));
@@ -142,6 +143,26 @@ try {
     await evaluate(`window.__native.emit('action', {actionId:'add',eventId:'cancel-add',revision:window.__native.state.revision})`);
     await waitFor(`!window.__native.state.search.expanded && !window.__native.state.items.some(item => item.id==='add' && item.selected)`);
     assert.equal(await evaluate(`!!document.querySelector('.fm-notice')`), false, 'cancel restores the toolbar and removes the notice');
+
+    await command('Page.navigate', { url: `http://127.0.0.1:${server.httpServer.address().port}/__add-place-pick?native=1&nativeResults=1` }, sessionId);
+    await waitFor(`window.__native?.visible && window.__native.state.items?.some(item => item.id==='search')`);
+    await evaluate(`window.__native.open()`);
+    await waitFor(`window.__native.state.search.expanded`);
+    const requestsBeforePreview = externalQueries.length;
+    await evaluate(`window.__native.input('咖啡')`);
+    await waitFor(`window.__native.state.search.results?.entries.some(row => row.title==='站内咖啡店')`);
+    assert.equal(await evaluate(`!!document.querySelector('.fm-search-results')`), false, 'capable iOS shells have exactly one result list');
+    assert.equal(externalQueries.length, requestsBeforePreview, 'normal native preview only searches the site');
+    await evaluate(`window.__native.emit('search', {type:'result', token:window.__native.state.search.results.token, rowId:'external-search'})`);
+    await waitFor(`window.__native.state.search.results?.entries.some(row => row.title==='高德新咖啡店')`);
+    assert.equal(externalQueries.length, requestsBeforePreview + 1, 'explicit native action uses the existing AMap provider');
+    await evaluate(`(() => {
+        const {token, entries} = window.__native.state.search.results;
+        const row = entries.find(entry => entry.title==='高德新咖啡店');
+        window.__native.emit('search', {type:'result', token, rowId:row.id});
+    })()`);
+    await waitFor(`window.__TEST_MAPS.at(-1).center.join(',') === '120.01,30.01' && window.__native.state.search.results === null`);
+
     await command('Page.navigate', { url: `http://127.0.0.1:${server.httpServer.address().port}/__add-place-pick?ios=1` }, sessionId);
     await waitFor(`!!document.querySelector('[data-tour="add"]')`);
     await evaluate(`document.querySelector('[data-tour="add"]').click()`);

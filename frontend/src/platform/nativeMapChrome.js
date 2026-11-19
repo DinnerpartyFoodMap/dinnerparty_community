@@ -40,10 +40,13 @@ import { t } from '../i18n/index.js';
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
 // 布局里的 drawer（更多功能展开 / 拖动 / 高度，底栏小伙伴起飞用）旧版原生不带，网页当作收起，也不升级版本。
+// 搜索结果框由 capabilities.searchResults 单独声明支持，旧版原生输入框仍配网页结果框。
 export const NATIVE_CHROME_PROTOCOL = 18;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
-export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close']);
+export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close', 'result', 'exposure']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
+const SEARCH_RESULT_KINDS = ['heading', 'message', 'loading', 'error', 'button', 'place', 'recommendation'];
+const SEARCH_RESULT_LIMIT = 300;
 export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces', 'random', 'filter', 'clusterMembers']);
 export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss']);
 export const NATIVE_DRAWER_EVENTS = Object.freeze(['select']);
@@ -189,7 +192,7 @@ export function nativeChromeLabels() {
 }
 
 /** 底部搜索栏状态：只传展示所需字段。textVersion 只在网页主动改写文本时递增，原生据此决定是否覆盖输入框。 */
-export function sanitizeSearch(search) {
+export function sanitizeSearch(search, supportsResults = false) {
     const s = search || {};
     return {
         expanded: !!s.expanded,
@@ -200,11 +203,30 @@ export function sanitizeSearch(search) {
         text: String(s.text || '').slice(0, NATIVE_SEARCH_TEXT_LIMIT),
         textVersion: toCounter(s.textVersion),
         focusToken: toCounter(s.focusToken),
-        focus: !!s.focus
+        focus: !!s.focus,
+        ...(supportsResults ? { results: sanitizeSearchResults(s.results) } : {})
     };
 }
 
 const clipText = (value, limit) => (value == null || value === '' ? undefined : String(value).slice(0, limit));
+
+function sanitizeSearchResults(results) {
+    if (!Array.isArray(results?.entries)) return null;
+    const entries = [];
+    const used = new Set();
+    for (const entry of results.entries) {
+        if (entries.length >= SEARCH_RESULT_LIMIT) break;
+        const id = clipText(entry?.id, 64);
+        const title = clipText(entry?.title, 240);
+        if (!id || !title || !SEARCH_RESULT_KINDS.includes(entry.kind) || used.has(id)) continue;
+        used.add(id);
+        entries.push({ id, kind: entry.kind, title,
+            subtitle: clipText(entry.subtitle, 300), detail: clipText(entry.detail, 80),
+            badge: clipText(entry.badge, 60), reason: clipText(entry.reason, 1000),
+            disabled: !!entry.disabled, trackExposure: !!entry.trackExposure });
+    }
+    return entries.length ? { token: toCounter(results.token), entries } : null;
+}
 
 /**
  * 原生面板快照：只允许白名单面板；行只带展示字段（标题、副标题、SF Symbol、语气、禁用），
@@ -367,7 +389,7 @@ export function readTourLayout(layout) {
     let chrome = null;
     for (const slot of Array.isArray(layout.slots) ? layout.slots : []) {
         // 菜单面板指引期间不显示，它的位置可能是旧的
-        if (!slot || slot.id === 'panel') continue;
+        if (!slot || slot.id === 'panel' || slot.id === 'searchResults') continue;
         const box = finiteRect(slot);
         if (!box) continue;
         if (slot.id === 'tour') rect = box;
@@ -376,6 +398,12 @@ export function readTourLayout(layout) {
             : box;
     }
     return { step: clipText(tour.step, 32) || '', rect, chrome, drawerOpen: !!tour.drawerOpen };
+}
+
+export function readSearchResultsTop(layout) {
+    if (!layout?.showing || !Array.isArray(layout.slots)) return null;
+    const box = finiteRect(layout.slots.find(slot => slot?.id === 'searchResults'));
+    return box ? Math.round(box.top) : null;
 }
 
 const CLOSED_DRAWER = Object.freeze({ open: false, dragging: false, height: 0 });
@@ -552,13 +580,15 @@ export class NativeMapChromeSession {
         this.pushChain = Promise.resolve();
         this.failures = 0;
         this.stableTimer = 0;
+        this.supportsSearchResults = false;
+        this.sentSearchResults = null;
     }
 
     _setMode(mode) {
         if (this.mode === mode) return;
         this.mode = mode;
         if (mode === 'web') setNativeOccupiedRects(this.ownerId, null);
-        this.onModeChange && this.onModeChange(mode);
+        this.onModeChange && this.onModeChange(mode, mode === 'native' && this.supportsSearchResults);
     }
 
     /** 尝试握手；失败时保持 Web 工具栏，返回 false。 */
@@ -582,6 +612,7 @@ export class NativeMapChromeSession {
                 return false;
             }
             if (this.stopped) return false;
+            this.supportsSearchResults = caps.searchResults === true;
 
             const sessionId = randomId('chrome');
             this.sessionId = sessionId;
@@ -679,6 +710,8 @@ export class NativeMapChromeSession {
         this.pushChain = this.pushChain.then(async () => {
             if (!this.sessionId || !this.plugin) return;
             const snapshot = this.snapshot || {};
+            const search = sanitizeSearch(snapshot.search, this.supportsSearchResults);
+            this.sentSearchResults = search.expanded ? search.results : null;
             this.revision += 1;
             const result = await withTimeout(this.plugin.setState({
                 sessionId: this.sessionId,
@@ -689,7 +722,7 @@ export class NativeMapChromeSession {
                 // 住民的「原生玻璃按钮」偏好：只决定 iOS 26 是否画玻璃，关掉仍是原生控件
                 glass: snapshot.glass !== false,
                 floatingGap: Number.isFinite(Number(snapshot.floatingGap)) ? Number(snapshot.floatingGap) : 14,
-                search: sanitizeSearch(snapshot.search),
+                search,
                 sheet: sanitizeSheet(snapshot.sheet),
                 drawer: sanitizeDrawer(snapshot.drawer),
                 skin: sanitizeSkin(snapshot.skin),
@@ -750,13 +783,22 @@ export class NativeMapChromeSession {
         }
     }
 
-    /** 原生输入框事件：只接受当前会话、白名单类型，文本截断后交给网页的搜索逻辑。 */
+    /** 原生搜索事件：只接受当前会话、白名单类型与当前结果列表的行。 */
     _handleSearch(event) {
         if (!event || this.mode !== 'native' || event.sessionId !== this.sessionId || event.ownerId !== this.ownerId) return;
         if (!NATIVE_SEARCH_EVENTS.includes(event.type)) return;
         const detail = { type: event.type };
         if (typeof event.text === 'string') detail.text = event.text.slice(0, NATIVE_SEARCH_TEXT_LIMIT);
         if (event.type === 'focus') detail.focused = !!event.focused;
+        if (event.type === 'result' || event.type === 'exposure') {
+            const results = this.sentSearchResults;
+            if (!results || results.token !== event.token || this.snapshot?.search?.results?.token !== event.token) return;
+            const row = results.entries.find(entry => entry.id === event.rowId);
+            if (!row || row.disabled) return;
+            if (event.type === 'exposure' ? !row.trackExposure : !['button', 'place', 'recommendation'].includes(row.kind)) return;
+            detail.token = event.token;
+            detail.rowId = row.id;
+        }
         try {
             this.onSearch && this.onSearch(detail);
         } catch (error) {

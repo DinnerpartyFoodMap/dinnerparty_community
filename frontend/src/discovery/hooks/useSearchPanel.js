@@ -5,32 +5,33 @@ import { currentMapCenter, distanceMeters } from '../externalSearch.js';
 // Input previews use our SQLite markers only. External POIs require an explicit action.
 // A failed request is reported as `error` (not as an empty result) and can be retried in place.
 export function useSearchPanel(searchTerm, mapRef, backendUrl, mapReady, places, token = null) {
-    const [results, setResults] = useState(null);
+    const [preview, setPreview] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
     const [attempt, setAttempt] = useState(0);
     useEffect(() => {
         const query = String(searchTerm || '').trim();
         setError(false);
-        if (!query || !mapReady) { setResults(null); setLoading(false); return undefined; }
+        if (!query || !mapReady) { setPreview(null); setLoading(false); return undefined; }
         const controller = new AbortController();
         let cancelled = false;
-        setResults(null); setLoading(true);
+        setPreview(null); setLoading(true);
         const timer = window.setTimeout(async () => {
             try {
                 const center = currentMapCenter(mapRef);
                 const data = await searchPlacesFast(backendUrl, { q: query, center, limit: 30, signal: controller.signal, token });
                 if (cancelled) return;
-                setResults((Array.isArray(data) ? data : []).map(place => {
+                const results = (Array.isArray(data) ? data : []).map(place => {
                     const distanceKm = place.distance_km == null ? NaN : Number(place.distance_km);
                     const dist = Number.isFinite(distanceKm) ? distanceKm * 1000 : distanceMeters(center, place);
                     return { ...place, isMarked: true, ...(Number.isFinite(dist) ? { dist } : {}) };
-                }));
+                });
+                setPreview({ term: searchTerm, results });
             } catch (error) {
                 if (!cancelled && error?.name !== 'AbortError') { console.warn('live fast search unavailable:', error.message || error); setError(true); }
             } finally { if (!cancelled) setLoading(false); }
         }, 300);
         return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
     }, [searchTerm, mapRef, backendUrl, mapReady, places, token, attempt]);
-    return { results, loading, error, retry: () => setAttempt((value) => value + 1) };
+    return { results: preview?.results ?? null, resultTerm: preview?.term, loading, error, retry: () => setAttempt((value) => value + 1) };
 }

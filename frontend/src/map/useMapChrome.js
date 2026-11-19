@@ -3,14 +3,14 @@
 // 地图页被其他页面盖住时（visible 为假）会话保留、原生控件收起，回到地图页不必重新握手。
 
 import { useEffect, useRef, useState } from 'react';
-import { NativeMapChromeSession, canUseNativeMapChrome, expectNativeMapChrome, getNativeChromeStatus, readDrawerLayout, readTourLayout, subscribeNativeChromeStatus } from '../platform/nativeMapChrome';
+import { NativeMapChromeSession, canUseNativeMapChrome, expectNativeMapChrome, getNativeChromeStatus, readDrawerLayout, readSearchResultsTop, readTourLayout, subscribeNativeChromeStatus } from '../platform/nativeMapChrome';
 import { useMotionPolicy } from '../motion/MotionProvider';
 
 let ownerSeq = 0;
 // 首次握手期间最多这么久不显示网页工具栏；超时仍未接管就先显示网页工具栏（之后接管会再切换一次）
 const WEB_HOLD_MS = 1500;
 // pending：本次启用后的首次握手还没有结果（成功、回退网页或等待超时）
-const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: true, tour: null, showing: false, drawerMotion: readDrawerLayout(null) });
+const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: true, tour: null, showing: false, drawerMotion: readDrawerLayout(null), searchResults: false, searchResultsTop: null });
 
 /**
  * @param {{ enabled: boolean, visible?: boolean, items: Array, theme: object, floatingGap?: number, search?: object, sheet?: object|null,
@@ -20,7 +20,8 @@ const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: t
  * items 中 sheetWhenNative 为真的按钮在原生模式下打开系统面板而不是网页浮层：不需要先收起工具栏等回执。
  * skin：原生控件的皮肤装饰（skins/nativeSkin.js 的 nativeSkinChrome），按当前深浅色取值。
  * tour：操作指引当前一步要原生指出的控件（{ step, target, drawer }，见 sanitizeTour），没有指引时为 null。
- * @returns {{ mode: 'web'|'native', bottomOccupied: number, connecting: boolean, holdWeb: boolean, tour: object|null, drawerMotion: object }}
+ * @returns {{ mode: 'web'|'native', bottomOccupied: number, connecting: boolean, holdWeb: boolean, tour: object|null,
+ *             drawerMotion: object, searchResults: boolean, searchResultsTop: number|null }}
  * tour（返回值）：原生回传的指引位置（readTourLayout），供指引挖空遮罩、摆放卡片。
  * drawerMotion：更多功能的展开、拖动与高度（readDrawerLayout），供底栏小伙伴起飞；网页控件时总是收起。
  * connecting：可以使用原生控件、握手还没有结果（成功或回退网页）；依赖当前按钮布局的界面（操作指引）等它结束。
@@ -59,17 +60,18 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
             onSearch: (event) => onSearchRef.current && onSearchRef.current(event),
             onSheet: (event) => onSheetRef.current && onSheetRef.current(event),
             onDrawer: (event) => onDrawerRef.current && onDrawerRef.current(event),
-            onModeChange: (mode) => setState((prev) => (prev.mode === mode ? prev : { ...prev, mode })),
+            onModeChange: (mode, searchResults) => setState((prev) => ({ ...prev, mode, searchResults })),
             onLayout: (layout) => setState((prev) => {
                 const bottom = Math.round(Number(layout.bottomOccupied) || 0);
                 const tourLayout = readTourLayout(layout);
                 const tourChanged = JSON.stringify(tourLayout) !== JSON.stringify(prev.tour);
                 const showing = !!layout.showing;
+                const searchResultsTop = readSearchResultsTop(layout);
                 const motion = readDrawerLayout(layout);
                 const motionChanged = motion.open !== prev.drawerMotion.open || motion.dragging !== prev.drawerMotion.dragging
                     || motion.height !== prev.drawerMotion.height;
-                if (prev.bottomOccupied === bottom && !tourChanged && prev.showing === showing && !motionChanged) return prev;
-                return { ...prev, bottomOccupied: bottom, tour: tourChanged ? tourLayout : prev.tour, showing,
+                if (prev.bottomOccupied === bottom && !tourChanged && prev.showing === showing && !motionChanged && prev.searchResultsTop === searchResultsTop) return prev;
+                return { ...prev, bottomOccupied: bottom, tour: tourChanged ? tourLayout : prev.tour, showing, searchResultsTop,
                     drawerMotion: motionChanged ? motion : prev.drawerMotion };
             })
         });
@@ -118,5 +120,6 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
     const connecting = active && state.mode !== 'native' && (state.pending || handshake === 'idle' || handshake === 'connecting');
     const native = state.mode === 'native';
     return { mode: state.mode, bottomOccupied: state.bottomOccupied, connecting, holdWeb, tour: native ? state.tour : null, showing: native && state.showing,
+        searchResults: native && state.searchResults, searchResultsTop: native && state.searchResults ? state.searchResultsTop : null,
         drawerMotion: native ? state.drawerMotion : INITIAL_STATE.drawerMotion };
 }

@@ -3,11 +3,12 @@ import { NATIVE_CHROME_PROTOCOL } from '../../src/platform/nativeMapChrome.js';
 
 // The actual Capacitor session and React map run here; only the native boundary
 // and map SDK are doubles. Swift rendering still needs an Xcode/device check.
-if (new URLSearchParams(location.search).has('native')) {
+const params = new URLSearchParams(location.search);
+if (params.has('native')) {
     const listeners = {};
     const plugin = {
         state: {},
-        async capabilities() { return { protocolVersion: NATIVE_CHROME_PROTOCOL }; },
+        async capabilities() { return { protocolVersion: NATIVE_CHROME_PROTOCOL, searchResults: params.has('nativeResults') }; },
         async attach(args) { this.state = { ...args }; return { ready: true }; },
         async addListener(name, callback) { (listeners[name] ||= new Set()).add(callback); return { remove: () => listeners[name].delete(callback) }; },
         emit(name, data) { listeners[name]?.forEach(fn => fn({ sessionId: this.state.sessionId, ownerId: this.state.ownerId, ...data })); },

@@ -39,6 +39,28 @@ struct MapChromeSearch: Equatable {
     /// 焦点请求：每个 token 只执行一次
     var focusToken = 0
     var focus = false
+    var results: MapChromeSearchResults?
+}
+
+struct MapChromeSearchResults: Equatable {
+    let token: Int
+    let entries: [MapChromeSearchResult]
+}
+
+struct MapChromeSearchResult: Identifiable, Equatable {
+    enum Kind: String {
+        case heading, message, loading, error, button, place, recommendation
+    }
+
+    let id: String
+    let kind: Kind
+    let title: String
+    let subtitle: String?
+    let detail: String?
+    let badge: String?
+    let reason: String?
+    let disabled: Bool
+    let trackExposure: Bool
 }
 
 /// 原生面板（系统 sheet）的一行：只做展示，点按后把 id 交给网页处理
@@ -337,6 +359,11 @@ final class MapChromeModel: ObservableObject {
     /// 网页刚请求聚焦、视图尚未执行：展开的第一帧就按输入中布局，不先闪出返回圆钮
     var hasPendingFocusRequest: Bool { search.focus && search.focusToken != appliedFocusToken }
 
+    var presentedSearchResults: MapChromeSearchResults? {
+        guard isShowing, tour == nil, searchExpanded, searchTextForBridge == search.text else { return nil }
+        return search.results
+    }
+
     /// 应当弹出的面板：网页要求显示、且这一次没有被用户关闭。
     /// 网页浮层打开时（控件收起）面板也暂时让位，否则会盖住网页浮层；浮层关闭后重新出现。操作指引期间同样让位。
     var presentedSheet: MapChromeSheet? {
@@ -425,7 +452,7 @@ final class MapChromeModel: ObservableObject {
             }
         }
         if drawerExpanded && !drawerAvailable { drawerExpanded = false }
-        let ids = Set(next.map(\.id)).union(["toolbar", "floating", "drawer", "panel", "tour"])
+        let ids = Set(next.map(\.id)).union(["toolbar", "floating", "drawer", "panel", "tour", "searchResults"])
         let pruned = frames.filter { ids.contains($0.key) }
         if pruned.count != frames.count {
             frames = pruned
@@ -469,6 +496,7 @@ final class MapChromeModel: ObservableObject {
         var rects = interactiveRects
         if drawerOpen, let drawer = frames["drawer"] { rects.append(drawer) }
         if presentedPanel != nil, let panel = frames["panel"] { rects.append(panel) }
+        if presentedSearchResults != nil, let results = frames["searchResults"] { rects.append(results) }
         if let grabber = grabberHitRect { rects.append(grabber) }
         return rects
     }
@@ -545,27 +573,42 @@ final class MapChromeModel: ObservableObject {
 
     // MARK: - 搜索输入
 
+    /// JS 按 UTF-16 计搜索长度；比较和回传用同一段文字，避免截断表情后结果框收不起旧查询或打不开新查询。
+    private var searchTextForBridge: String {
+        let units = searchText.utf16.prefix(Self.searchTextLimit)
+        if let last = units.last, (0xD800...0xDBFF).contains(last) {
+            return String(decoding: units.dropLast(), as: UTF16.self)
+        }
+        return String(decoding: units, as: UTF16.self)
+    }
+
     func updateSearchText(_ value: String) {
         let next = String(value.prefix(Self.searchTextLimit))
         guard next != searchText else { return }
         searchText = next
-        sendSearch("input", ["text": next])
+        sendSearch("input", ["text": searchTextForBridge])
     }
 
     func submitSearch() {
         guard !search.busy, !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         // 网页按当前模式处理提交：普通模式搜站内，添加地点时默认搜高德。
-        sendSearch("submit", ["text": searchText])
+        sendSearch("submit", ["text": searchTextForBridge])
     }
 
     func closeSearch() {
         sendSearch("close", [:])
     }
 
+    func sendSearchResult(_ type: String, rowId: String, token: Int) {
+        guard let results = presentedSearchResults, results.token == token,
+              let row = results.entries.first(where: { $0.id == rowId }), !row.disabled else { return }
+        sendSearch(type, ["rowId": rowId, "token": token])
+    }
+
     /// 焦点变化在控件收起时也要回传（输入框随浮层移出层级时会失去焦点）
     func searchFocusChanged(_ focused: Bool) {
         guard sessionId != nil else { return }
-        onSearchEvent?("focus", ["focused": focused, "text": searchText])
+        onSearchEvent?("focus", ["focused": focused, "text": searchTextForBridge])
     }
 
     private func sendSearch(_ type: String, _ data: [String: Any]) {

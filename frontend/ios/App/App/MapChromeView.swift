@@ -152,7 +152,7 @@ struct MapChromeView: View {
                             }
                         }
                         .overlay(alignment: .bottomTrailing) {
-                            // 搜索展开时让位给网页搜索结果
+                            // 搜索展开时让位给搜索结果
                             if showing && !searching {
                                 ChromeGlassContainer(spacing: 0) {
                                     MapChromeMorphingPanel(model: model, panel: panel, width: toolbarWidth, maxHeight: panelMaxHeight) {
@@ -207,6 +207,23 @@ struct MapChromeView: View {
                                         dock(revealed: revealed)
                                     }
                                 }
+                            }
+                        }
+                        .overlay(alignment: .top) {
+                            if let results = model.presentedSearchResults, toolbarTop > 40 {
+                                // 结果框在工具栏上方独立布局，不改变工具栏位置或键盘避让。
+                                Color.clear.frame(height: 0)
+                                    .overlay(alignment: .bottom) {
+                                        MapChromeSearchResultsView(results: results, accent: accent,
+                                            maxHeight: min((toolbarTop + Self.dockHeight) * 0.6, toolbarTop - 40)) { type, rowId, token in
+                                            model.sendSearchResult(type, rowId: rowId, token: token)
+                                        }
+                                        .onGeometryChange(for: CGRect.self, of: { proxy in
+                                            proxy.frame(in: .named(Self.coordinateSpaceName))
+                                        }, action: { model.setFrame("searchResults", $0) })
+                                        .onDisappear { model.clearFrame("searchResults") }
+                                    }
+                                    .offset(y: -8)
                             }
                         }
                         .overlay(alignment: .top) {
@@ -1042,6 +1059,154 @@ struct MapChromeSwipeHint: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+private struct MapChromeSearchResultsView: View {
+    let results: MapChromeSearchResults
+    let accent: Color
+    let maxHeight: CGFloat
+    let send: (String, String, Int) -> Void
+    @State private var contentHeight: CGFloat = .greatestFiniteMagnitude
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: FM.Radius.lg, style: .continuous)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(results.entries) { entry in
+                    MapChromeSearchResultRow(entry: entry, accent: accent, token: results.token, send: send)
+                }
+            }
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.never)
+        .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentSize.height }) { _, height in
+            if height > 0 { contentHeight = height.rounded(.up) }
+        }
+        .frame(height: min(maxHeight, contentHeight))
+        .background(FM.bgSurface, in: shape)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(FM.border, lineWidth: 1).allowsHitTesting(false))
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+    }
+}
+
+private struct MapChromeSearchResultRow: View {
+    let entry: MapChromeSearchResult
+    let accent: Color
+    let token: Int
+    let send: (String, String, Int) -> Void
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isVisible = false
+
+    var body: some View {
+        content
+            .onScrollVisibilityChange(threshold: 0.5) { isVisible = $0 }
+            .task(id: isVisible && entry.trackExposure && scenePhase == .active ? token : nil) {
+                guard isVisible, entry.trackExposure, scenePhase == .active else { return }
+                try? await Task.sleep(for: .milliseconds(800))
+                if !Task.isCancelled { send("exposure", entry.id, token) }
+            }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch entry.kind {
+        case .place, .recommendation:
+            Button { send("result", entry.id, token) } label: {
+                if entry.kind == .recommendation { recommendation } else { place }
+            }
+            .buttonStyle(.plain)
+        case .button:
+            Button { send("result", entry.id, token) } label: {
+                Text(entry.title).frame(maxWidth: .infinity, minHeight: 32)
+            }
+            .buttonStyle(.bordered)
+            .tint(accent)
+            .disabled(entry.disabled)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+        case .heading:
+            Text(entry.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(FM.textSecondary)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+        case .loading, .message, .error:
+            HStack(spacing: 8) {
+                if entry.kind == .loading {
+                    ProgressView().controlSize(.small).tint(accent).accessibilityHidden(true)
+                }
+                Text(entry.title)
+                    .font(.footnote)
+                    .foregroundStyle(entry.kind == .error ? FM.dangerText : FM.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+        }
+    }
+
+    private var place: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 7) {
+                Text(entry.title).font(.subheadline).lineLimit(2)
+                badge
+            }
+            HStack(spacing: 8) {
+                if let subtitle = entry.subtitle { Text(subtitle).lineLimit(1) }
+                Spacer(minLength: 0)
+                if let detail = entry.detail { Text(detail).fixedSize() }
+            }
+            .font(.caption)
+            .foregroundStyle(FM.textSecondary)
+        }
+        .foregroundStyle(FM.textPrimary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(entry.badge == nil ? Color.clear : accent.opacity(0.08))
+        .overlay(alignment: .bottom) { Divider() }
+        .contentShape(Rectangle())
+    }
+
+    private var recommendation: some View {
+        let shape = RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label(entry.detail ?? "", systemImage: "fork.knife").font(.caption.weight(.semibold))
+                Spacer(minLength: 0)
+                badge
+            }
+            Text(entry.title).font(.headline)
+            if let subtitle = entry.subtitle {
+                Text(subtitle).font(.caption).foregroundStyle(FM.textSecondary)
+            }
+            if let reason = entry.reason {
+                Text(reason).font(.footnote).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .foregroundStyle(FM.textPrimary)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(accent.opacity(0.06), in: shape)
+        .overlay(shape.strokeBorder(accent.opacity(0.5), lineWidth: 1))
+        .contentShape(shape)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+    }
+
+    @ViewBuilder private var badge: some View {
+        if let text = entry.badge {
+            Text(text)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(FM.textPrimary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(accent.opacity(0.16), in: Capsule())
+        }
     }
 }
 

@@ -33,10 +33,12 @@ export function useMapFeedback(base,token) {
     }, [token, updateConsent]);
     const beginSearch=useCallback(()=>{query.current=eventId();render.current=null;seen.current.clear();setQueryEpoch(n=>n+1);},[]);
     // Read the committed card order synchronously, before click handlers hide it.
-    const present=useCallback(()=>{
+    const present=useCallback(searchCards=>{
         if(!token||!consent?.feedback)return null;
-        const elements=Array.from(document.querySelectorAll('[data-feedback-surface="search"][data-feedback-place]')).slice(0,200);
-        const ids=elements.map(el=>Number(el.dataset.feedbackPlace)),cards=elements.map(el=>el.dataset.feedbackCard);
+        const entries=searchCards ?? Array.from(document.querySelectorAll('[data-feedback-surface="search"][data-feedback-place]'), el => ({
+            id: Number(el.dataset.feedbackPlace), cardId: el.dataset.feedbackCard
+        })).slice(0,200);
+        const ids=entries.map(entry=>entry.id),cards=entries.map(entry=>entry.cardId);
         const signature=JSON.stringify([ids,cards]);
         if(!render.current||render.current.signature!==signature||render.current.query!==query.current){
             render.current={id:eventId(),revision:eventId(),query:query.current,signature,ids,cards,impressions:new Map(),uploaded:false};
@@ -49,7 +51,7 @@ export function useMapFeedback(base,token) {
         if(placeId!==null&&place_id===null)return;
         let snapshot=null,context={};
         if(surface==='search'&&place_id!==null){
-            snapshot=present();const rank=extra.card_id?snapshot.cards.indexOf(extra.card_id):snapshot.ids.indexOf(place_id);
+            snapshot=present(extra.search_cards);const rank=extra.card_id?snapshot.cards.indexOf(extra.card_id):snapshot.ids.indexOf(place_id);
             if(rank<0||snapshot.ids[rank]!==place_id)return;
             const card=snapshot.cards[rank];
             if(!snapshot.impressions.has(card))snapshot.impressions.set(card,eventId());
@@ -58,7 +60,7 @@ export function useMapFeedback(base,token) {
             context={decision_id:snapshot.id,rank,impression_id:impression,impression_status:seen.current.has(impression)?'threshold_met':'clicked_before_threshold'};
         }
         // Attribution is supplied only by this rendered search or the explicit random draw.
-        const {card_id,...attributes}=extra;
+        const {card_id,search_cards,...attributes}=extra;
         queue.current.push({event:{id:eventId(),session_id:session.current,kind,surface,place_id,trigger:kind==='click'?'user':'unknown',contract_version:1,...attributes,...context},snapshot});
         if(queue.current.length>100)queue.current.shift();
     },[token,consent,present]);
