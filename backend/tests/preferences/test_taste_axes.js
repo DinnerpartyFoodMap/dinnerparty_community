@@ -175,6 +175,14 @@ async function main() {
         mode: 'transit',
         waypoints: []
     });
+    // 落地页里的 App 链接已经编码过名字，整体再编码一层：起终点名不能剩下 %E8... 一串
+    const doubleEncoded = new URL('https://static5.gaode.com/activity/x/index.html?schema='
+        + encodeURIComponent(`amapuri://drive/navi?slat=22.8&slon=113.5&sname=${encodeURIComponent(encodeURIComponent('起点 A'))}&dlat=23.5&dlon=113.6&dname=${encodeURIComponent('终点')}`));
+    const decodedNames = parseAmapRouteUrl(doubleEncoded);
+    assert.equal(decodedNames.origin.name, '起点 A');
+    assert.equal(decodedNames.destination.name, '终点');
+    assert.equal(parseAmapRouteUrl(new URL('https://uri.amap.com/navigation?from=113.5,22.8,%2525E8%2525B5%2525B7&to=113.6,23.5,100%25&mode=car')).origin.name, '起');
+    assert.equal(parseAmapRouteUrl(new URL('https://uri.amap.com/navigation?from=113.5,22.8,A&to=113.6,23.5,100%25&mode=car')).destination.name, '100%', 'a lone % stays as typed');
     for (const bad of ['https://gaode.com.evil.cn/x', 'https://evilgaode.com/x', 'https://evilamap.com/x']) {
         assert.equal(isAllowedAmapUrl(new URL(bad)), false, bad);
     }

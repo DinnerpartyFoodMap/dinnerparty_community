@@ -1,6 +1,6 @@
 # 账号与访问
 
-`GET /users/:id/profile` 支持匿名访问，返回住民名、头像 URL、观看者关系、城市、六类餐饮偏好，以及 `collection`、`recent`、`favorite` 三类预览，每类最多 5 个地点。收藏按公开设置返回，只有本人收到 `collection_visibility`。`favorite` 来自住民自己评为「均线之上」及以上的地点。`PUT /users/me/profile { widgets, hidden_widgets }` 保存地点栏的显隐，`hidden_widgets` 可包含 `recent`、`favorite`，缺省设置下两栏都显示。`widgets` 保留旧版第二栏选择，旧客户端只更新这个字段时会保留显隐设置。`PUT /users/me/taste { axis, level }` 保存自己的偏好等级，`null` 恢复自动推断。访客的偏好数据不含收藏明细。屏蔽对象的主页不返回小组件。`GET /users/me` 的 `rejected_place_count` 用于头像和创建地点栏提示。 [六类餐饮偏好](../../preferences/doc/TASTE_AXES.md)
+`GET /users/:id/profile` 支持匿名访问，返回住民名、头像 URL、观看者关系、城市、六类餐饮偏好，以及 `collection`、`recent`、`favorite` 三类预览，每类最多 5 个地点。收藏按公开设置返回，只有本人收到 `collection_visibility`。`favorite` 来自住民自己评为「均线之上」及以上的地点。`PUT /users/me/profile { widgets, hidden_widgets }` 保存地点栏的显隐。「我创建的地点」（`recent`）不能关闭（2026-11-20）：`hidden_widgets` 只保存 `favorite`，旧客户端发来的 `recent` 照常接受但不保存，旧数据里隐藏的 `recent` 读取时重新显示，访客也总能看到公开的创建地点。缺省设置下两栏都显示。`widgets` 保留旧版第二栏选择，旧客户端只更新这个字段时会保留显隐设置。`PUT /users/me/taste { axis, level }` 保存自己的偏好等级，`null` 恢复自动推断。访客的偏好数据不含收藏明细。屏蔽对象的主页不返回小组件。`GET /users/me` 的 `rejected_place_count` 用于头像和创建地点栏提示。 [六类餐饮偏好](../../preferences/doc/TASTE_AXES.md)
 
 `GET /users/:id/favorites` 读取完整清单，支持匿名查看公开收藏。`GET` 和 `PUT /api/favorites/visibility` 读取与更新本人的 `{ is_public }`。`User.favorites_public` 默认为公开，对既有和新增账户生效。收藏条目来自 `Favorite`，同好匹配开关独立。服务端应用本人身份、屏蔽、封禁和地点审核规则。
 

@@ -8,6 +8,13 @@ import {
     profileSelfLevels,
     profileWidgetOptions
 } from '../../../src/profile/profileViewModel.js';
+import {
+    buildCommunityPeople,
+    buildCommunitySettings,
+    buildCompanionViewModel,
+    communityEmptyState,
+    parseCommunityTags
+} from '../../../src/profile/communityViewModel.js';
 
 class FakePlugin {
     constructor() {
@@ -48,18 +55,121 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(pickNativeProfileValues('saveWidgets', { widgets: ['recent'], hiddenWidgets: ['favorite', 'favorite'] }),
         { widgets: ['recent'], hiddenWidgets: ['favorite'] });
     assert.equal(pickNativeProfileValues('saveWidgets', { widgets: ['recent'], hiddenWidgets: ['collection'] }), null);
+    // “我创建的地点”不能关闭：旧安装包发来的 recent 被丢掉
+    assert.deepEqual(pickNativeProfileValues('saveWidgets', { widgets: ['recent'], hiddenWidgets: ['recent', 'favorite'] }),
+        { widgets: ['recent'], hiddenWidgets: ['favorite'] });
     assert.equal(pickNativeProfileValues('saveWidgets', { widgets: [] }), null);
     assert.deepEqual(pickNativeProfileValues('setBlocked', { blocked: true }), { blocked: true });
     assert.equal(pickNativeProfileValues('setBlocked', { blocked: 'yes' }), null);
     assert.deepEqual(pickNativeProfileValues('setCollectionVisibility', { isPublic: false }), { isPublic: false });
     assert.equal(pickNativeProfileValues('setCollectionVisibility', { isPublic: 'false' }), null);
     assert.equal(pickNativeProfileValues('other', {}), null);
+    // 页面栈：同好里点开的住民、同好页与角色观察屋
+    assert.deepEqual(pickNativeProfileValues('setBlocked', { blocked: false, userId: 'u-2' }), { blocked: false, userId: 'u-2' });
+    assert.equal(pickNativeProfileValues('setBlocked', { blocked: true, userId: '' }), null);
+    assert.deepEqual(pickNativeProfileValues('loadProfile', { userId: 'u-2', extra: 1 }), { userId: 'u-2' });
+    assert.equal(pickNativeProfileValues('loadProfile', {}), null);
+    assert.deepEqual(pickNativeProfileValues('saveCommunitySettings', { discovery: true, feedback: false, research: true, tags: '面食，火锅', researchChoice: true, extra: 1 }),
+        { discovery: true, feedback: false, research: false, tags: '面食，火锅', researchChoice: true }, 'research needs feedback');
+    assert.equal(pickNativeProfileValues('saveCommunitySettings', { discovery: 'yes', feedback: true, research: true }), null);
+    assert.equal(pickNativeProfileValues('saveCommunitySettings', { discovery: true, feedback: true, research: true, tags: 3 }), null);
+    assert.equal(pickNativeProfileValues('saveCommunitySettings', { discovery: true, feedback: true, research: true, tags: 'x'.repeat(900) }).tags.length, 500);
+    assert.deepEqual(pickNativeProfileValues('setCompanionEnabled', { enabled: false }), { enabled: false });
+    assert.equal(pickNativeProfileValues('setCompanionEnabled', { enabled: 0 }), null);
+    assert.deepEqual(pickNativeProfileValues('chooseCompanion', { id: 'reimu' }), { id: 'reimu' });
+    assert.equal(pickNativeProfileValues('chooseCompanion', { id: '' }), null);
+    for (const type of ['loadCommunity', 'loadCommunitySettings', 'clearInteractions', 'loadCompanion', 'openSettings']) {
+        assert.deepEqual(pickNativeProfileValues(type, { anything: true }), {}, type);
+    }
+}
+
+// 同好与角色观察屋的视图模型（网页同好页与原生二级页共用）
+{
+    const many = Array.from({ length: 25 }, (_, index) => ({
+        id: `u${index}`, username: `同好${index}`, similarity: 0.9 - index / 100, confidence: '参考数据较多',
+        shared: index ? [] : ['共同标签：面食'], x: index === 1 ? 3 : 0.5, y: -0.2,
+        has_avatar: index === 2, avatar_url: index === 2 ? 'https://oss.example.com/a.webp' : null
+    }));
+    const people = buildCommunityPeople({ neighbors: many }, { backendUrl: 'https://api.example.com' });
+    assert.equal(people.length, 20, 'at most 20 residents, no paging');
+    assert.equal(people[0].name, '同好0');
+    assert.match(people[0].meta, /90%/);
+    assert.match(people[0].meta, /共同标签：面食/);
+    assert.equal(people[1].x, 1, 'coordinates stay inside the map');
+    assert.equal(people[2].avatarURL, 'https://oss.example.com/a.webp');
+    assert.equal(people[0].avatarURL, 'https://api.example.com/users/u0/avatar?fallback=default', 'no avatar → server default');
+    assert.match(people[0].accessible, /同好0/);
+    assert.equal(communityEmptyState({ profile_status: 'disabled' }).action, 'settings');
+    assert.equal(communityEmptyState({ profile_status: 'ready' }).action, '');
+    assert.ok(communityEmptyState({ profile_status: 'empty' }).title.length > 0);
+    assert.deepEqual(parseCommunityTags(' 面食，火锅,, 甜品 '), ['面食', '火锅', '甜品']);
+    assert.equal(parseCommunityTags(Array.from({ length: 30 }, (_, i) => `t${i}`).join(',')).length, 20);
+    const settings = buildCommunitySettings({ discovery: true, feedback: false, research: false, tags: ['面食', '火锅'] }, { retention_days: 90 });
+    assert.equal(settings.tags, '面食，火锅');
+    assert.match(settings.retention, /90/);
+    assert.equal(buildCommunitySettings(null), null);
+
+    const builtIn = buildCompanionViewModel({ active: 'stick-figure', satiety: 3, owned: [{ id: 'reimu', name: '灵梦' }] }, { enabled: true });
+    assert.deepEqual(builtIn.roles.map((role) => role.id), ['stick-figure', 'reimu']);
+    assert.equal(builtIn.active, 'stick-figure');
+    assert.equal(builtIn.name, '饭桶');
+    assert.equal(builtIn.satietyCount, 3);
+    assert.match(builtIn.satiety, /3/);
+    assert.equal(builtIn.preview, 'companions/dinnerparty-bot/preview.png');
+    assert.ok(!Object.hasOwn(builtIn, 'credit'));
+    const reimu = buildCompanionViewModel({ active: 'reimu', satiety: 0, owned: [{ id: 'reimu', name: '灵梦' }] }, { enabled: false });
+    assert.equal(reimu.name, '灵梦');
+    assert.equal(reimu.enabled, false);
+    assert.equal(reimu.preview, '');
+    assert.equal(buildCompanionViewModel({ active: 'gone', owned: [] }).active, 'stick-figure', 'unknown role falls back to the built-in one');
+}
+
+// 原生同好页的请求：读取、保存（带版本、整理标签、通知地图）、清除交互记录、失败时页面内显示原因
+{
+    const sent = [];
+    const published = [];
+    let consent = { discovery: true, feedback: true, research: true, tags: ['面食'], version: 3 };
+    const fakeRequest = async (base, token, path, options = {}) => {
+        sent.push([path, options.method || 'GET', options.body ? JSON.parse(options.body) : null, token]);
+        if (path === '/api/community/neighbors') return { profile_status: 'ready', neighbors: [{ id: 'u1', username: '同好', similarity: 0.5, shared: [] }] };
+        if (path === '/api/community/consent' && options.method === 'PUT') { consent = { ...JSON.parse(options.body), version: 4 }; return consent; }
+        if (path === '/api/community/consent') return consent;
+        if (path === '/api/community/feedback' && options.method === 'DELETE') return { ...consent, feedback: false, research: false };
+        if (path === '/api/community/feedback') return { retention_days: 90 };
+        throw new Error(`unexpected ${path}`);
+    };
+    const { createCommunityController } = await import('../../../src/profile/communityViewModel.js');
+    const controller = createCommunityController({
+        backendUrl: 'https://api.example.com', getToken: () => 'tok', getUser: () => ({ id: 'me', has_avatar: false }),
+        request: fakeRequest, publishMapConsent: (token, value) => published.push([token, value.version])
+    });
+    const loaded = await controller.load();
+    assert.equal(loaded.neighbors.status, 'ready');
+    assert.equal(loaded.neighbors.people[0].name, '同好');
+    assert.equal(loaded.me.avatarURL, 'https://api.example.com/users/me/avatar?fallback=default');
+    assert.equal(loaded.labels.tabSettings.length > 0, true);
+    assert.equal((await controller.loadSettings()).settings.tags, '面食');
+    const saved = await controller.save({ discovery: false, feedback: false, research: true, tags: ' 火锅，甜品 ', researchChoice: true });
+    const put = sent.find(([path, method]) => path === '/api/community/consent' && method === 'PUT')[2];
+    assert.deepEqual(put, { discovery: false, feedback: false, research: false, tags: ['火锅', '甜品'], version: 3, research_choice: true });
+    assert.deepEqual(published, [['tok', 4]]);
+    assert.equal(saved.settings.discovery, false);
+    assert.ok(saved.notice.length > 0);
+    assert.equal(saved.neighbors.status, 'ready');
+    const cleared = await controller.clear();
+    assert.equal(cleared.settings.feedback, false);
+    assert.equal(published.length, 2);
+    const failing = createCommunityController({
+        backendUrl: '', getToken: () => 'tok', getUser: () => null,
+        request: async () => { throw new Error('计算服务暂不可用'); }, publishMapConsent: () => {}
+    });
+    assert.deepEqual((await failing.load()).neighbors, { status: 'error', error: '计算服务暂不可用', people: [], empty: null });
 }
 
 // 视图模型：六轴按固定顺序补齐、小组件行带评价文案、自己填的选项
 {
     assert.equal(profileSelfLevels().length, 4);
-    assert.deepEqual(profileWidgetOptions().map((option) => option.id), ['recent', 'favorite']);
+    assert.deepEqual(profileWidgetOptions().map((option) => option.id), ['favorite'], 'only 最喜欢 can be hidden');
 
     const profile = {
         user: { id: 9, username: '幽幽子', has_avatar: true, avatar_url: 'https://oss.example.com/avatars/9-new.webp' },
@@ -126,6 +236,9 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(configured.hiddenWidgets, ['favorite']);
     assert.deepEqual(configured.sections.map((section) => section.kind), ['collection', 'recent']);
     assert.match(configured.labels.rejectedPlaces, /2 个未通过审核/);
+    const legacyHidden = buildProfileViewModel({ ...profile, hidden_widgets: ['recent'] }, { currentUser: { id: 9 }, tokenPresent: true });
+    assert.deepEqual(legacyHidden.hiddenWidgets, []);
+    assert.ok(legacyHidden.sections.some((section) => section.kind === 'recent'), 'created places always show');
     const blocked = buildProfileViewModel({ ...profile, relation: { blocked: true } });
     assert.deepEqual(blocked.sections, []);
     assert.equal(blocked.canOpenFavorites || blocked.canOpenLocations, false);
@@ -181,9 +294,46 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     await tick();
     assert.deepEqual(calls[2], ['setBlocked', { blocked: true }]);
 
+    // 同好、角色观察屋的回传对象原样转给原生；其他字段不转
+    plugin.emit('profileEvent', { id: session.id, type: 'loadCommunity', requestId: 'r4', values: {} });
+    await tick();
+    assert.deepEqual(calls[3], ['loadCommunity', {}]);
+
     plugin.openResolve({ id: session.id, action: 'openPlace', values: { placeId: 'p2' } });
     await started;
     assert.deepEqual(calls.at(-1), ['place', 'p2']);
+}
+
+{
+    const plugin = new FakePlugin();
+    const session = createNativeProfileSession(plugin, {}, {
+        onEvent: async (type) => (type === 'loadCompanion'
+            ? { ok: true, companion: { name: '饭桶' }, secret: 'x' }
+            : { ok: true, community: { neighbors: { people: [] } } }),
+        onBack: () => {}
+    });
+    const started = session.start();
+    await tick();
+    plugin.emit('profileEvent', { id: session.id, type: 'loadCompanion', requestId: 'c1', values: {} });
+    plugin.emit('profileEvent', { id: session.id, type: 'loadCommunity', requestId: 'c2', values: {} });
+    await tick();
+    assert.deepEqual(plugin.responded.find((item) => item.requestId === 'c1'), { id: session.id, requestId: 'c1', ok: true, message: '', companion: { name: '饭桶' } });
+    assert.deepEqual(plugin.responded.find((item) => item.requestId === 'c2').community, { neighbors: { people: [] } });
+
+    // update：主题、小伙伴单独推送时不能被当成读取失败
+    const updates = [];
+    plugin.update = async (payload) => { updates.push(payload); };
+    await session.update({ theme: { dark: true, primary: '#112233' } });
+    await session.update({ companion: { satietyCount: 4 } });
+    await session.update({});
+    await session.update({ error: 'x' });
+    assert.deepEqual(updates, [
+        { id: session.id, theme: { dark: true, primary: '#112233' } },
+        { id: session.id, companion: { satietyCount: 4 } },
+        { id: session.id, error: 'x' }
+    ]);
+    plugin.openResolve({ id: session.id, action: 'back' });
+    await started;
 }
 
 // 返回：open 以 back 结束
@@ -203,19 +353,25 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(calls, ['back']);
 }
 
-// 导航动作与返回分别交给网页路由
-for (const action of ['openFavorites', 'my-locations', 'settings', 'companion', 'logout']) {
+// 导航动作与返回分别交给网页路由；页面栈里别的住民的“查看全部”带上对方编号
+for (const [action, values, expected] of [
+    ['openFavorites', undefined, {}],
+    ['my-locations', { userId: 'u-2' }, { userId: 'u-2' }],
+    ['settings', undefined, {}],
+    ['companion', undefined, {}],
+    ['logout', { userId: '' }, {}]
+]) {
     const plugin = new FakePlugin();
     const calls = [];
     const session = createNativeProfileSession(plugin, {}, {
         onBack: () => calls.push('back'),
-        onAction: (value) => calls.push(value)
+        onAction: (value, extra) => calls.push([value, extra])
     });
     const started = session.start();
     await tick();
-    plugin.openResolve({ id: session.id, action });
+    plugin.openResolve({ id: session.id, action, values });
     await started;
-    assert.deepEqual(calls, [action]);
+    assert.deepEqual(calls, [[action, expected]]);
 }
 
 // 关闭与失败

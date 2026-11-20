@@ -11,12 +11,6 @@ export const MOTION = Object.freeze({
 /** 一次性动作的时长（秒），播完才切回循环；与动作文件的 Duration 一致（test:companion 核对） */
 export const ONE_SHOT_SECONDS = Object.freeze({ Land: 0.55, JumpOff: 0.85, Wake: 0.9, Feed: 1.58 });
 
-// Tororo 从 Cubism 2.1 转出，保留了旧版参数名。
-export const TORORO_PARAMETER_IDS = Object.freeze({
-    ParamAngleX: 'PARAM_ANGLE_X', ParamAngleY: 'PARAM_ANGLE_Y', ParamAngleZ: 'PARAM_ANGLE_Z',
-    ParamBodyAngleX: 'PARAM_BODY_ANGLE_X', ParamBodyAngleY: 'PARAM_BODY_ANGLE_Y', ParamBreath: 'PARAM_BREATH'
-});
-
 const SHARED_GROUPS = Object.values(MOTION);
 
 /**

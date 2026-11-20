@@ -7,9 +7,9 @@
         "FadeOutTime": 0.4,
         "Loop": true,
         "AreBeziersRestricted": true,
-        "CurveCount": 7,
-        "TotalSegmentCount": 27,
-        "TotalPointCount": 88,
+        "CurveCount": 13,
+        "TotalSegmentCount": 36,
+        "TotalPointCount": 121,
         "UserDataCount": 0,
         "TotalUserDataSize": 0
     },
@@ -59,7 +59,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_ANGLE_X",
+            "Id": "ParamAngleX",
             "Segments": [
                 0,
                 0,
@@ -74,7 +74,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_ANGLE_Y",
+            "Id": "ParamAngleY",
             "Segments": [
                 0,
                 6,
@@ -96,7 +96,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_ANGLE_Z",
+            "Id": "ParamAngleZ",
             "Segments": [
                 0,
                 -8,
@@ -132,7 +132,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_BODY_ANGLE_X",
+            "Id": "ParamBodyAngleX",
             "Segments": [
                 0,
                 0,
@@ -147,7 +147,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_BODY_ANGLE_Y",
+            "Id": "ParamBodyAngleY",
             "Segments": [
                 0,
                 0,
@@ -239,7 +239,58 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_BREATH",
+            "Id": "ParamBodyAngleZ",
+            "Segments": [
+                0,
+                3,
+                1,
+                0.2667,
+                3,
+                0.5333,
+                -3,
+                0.8,
+                -3,
+                1,
+                1.0667,
+                -3,
+                1.3333,
+                3,
+                1.6,
+                3,
+                1,
+                1.8667,
+                3,
+                2.1333,
+                -3,
+                2.4,
+                -3,
+                1,
+                2.6667,
+                -3,
+                2.9333,
+                3,
+                3.2,
+                3
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamBodyLean",
+            "Segments": [
+                0,
+                0,
+                1,
+                1.0667,
+                0,
+                2.1333,
+                0,
+                3.2,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamBreath",
             "Segments": [
                 0,
                 0.2,
@@ -257,6 +308,66 @@
                 0.2,
                 3.2,
                 0.2
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail11",
+            "Segments": [
+                0,
+                0,
+                1,
+                1.0667,
+                0,
+                2.1333,
+                0,
+                3.2,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail1Y",
+            "Segments": [
+                0,
+                0,
+                1,
+                1.0667,
+                0,
+                2.1333,
+                0,
+                3.2,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail21",
+            "Segments": [
+                0,
+                0,
+                1,
+                1.0667,
+                0,
+                2.1333,
+                0,
+                3.2,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail2Y",
+            "Segments": [
+                0,
+                0,
+                1,
+                1.0667,
+                0,
+                2.1333,
+                0,
+                3.2,
+                0
             ]
         }
     ]

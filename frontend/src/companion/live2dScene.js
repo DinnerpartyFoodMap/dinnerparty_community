@@ -17,13 +17,15 @@ function loadCore() {
     return coreReady;
 }
 
-function hasLightPixels(renderer) {
+function hasColoredPixels(renderer) {
     const { gl, width, height } = renderer;
     const pixels = new Uint8Array(width * height * 4);
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     for (let i = 0; i < pixels.length; i += 4) {
-        // 白猫有浅色毛发。首帧只有不透明黑色时，继续显示随包预览图。
-        if (pixels[i + 3] > 192 && pixels[i] > 140 && pixels[i + 1] > 140 && pixels[i + 2] > 140) return true;
+        // 内置角色有蓝色与粉色。纹理首帧未就绪或渲染成黑色时，继续显示随包预览图。
+        const high = Math.max(pixels[i], pixels[i + 1], pixels[i + 2]);
+        const low = Math.min(pixels[i], pixels[i + 1], pixels[i + 2]);
+        if (pixels[i + 3] > 192 && high - low > 12) return true;
     }
     return false;
 }
@@ -41,7 +43,7 @@ const FORCE = 3;
  * 叠加层在物理之后、模型更新之前（beforeModelUpdate）加到参数上；参数在帧末由 loadParameters 还原，不会累积。
  * 每层切换时按时间常数平滑过渡，模型没有的参数跳过。返回 set(层名, [[参数, 偏移]] | null)。
  */
-function attachPoses(model, parameterIds) {
+function attachPoses(model) {
     const core = model.internalModel.coreModel;
     const count = core.getParameterCount();
     const layers = new Map();
@@ -65,7 +67,7 @@ function attachPoses(model, parameterIds) {
             return;
         }
         layer.targets = entries.flatMap(([id, value]) => {
-            const index = core.getParameterIndex(parameterIds[id] ?? id);
+            const index = core.getParameterIndex(id);
             return index >= 0 && index < count ? [{ index, value }] : [];
         });
         layer.goal = 1;
@@ -99,7 +101,7 @@ function attachMotions(model) {
 }
 
 export async function mountLive2D(container, source, {
-    signal, reducedMotion = false, verifyColors = false, parameterIds = {}, anchor = [0.5, 0.5], onContextLost, onContextRestored
+    signal, reducedMotion = false, verifyColors = false, onContextLost, onContextRestored
 } = {}) {
     await loadCore();
     const { Live2DModel } = await import('pixi-live2d-display/cubism4');
@@ -117,22 +119,22 @@ export async function mountLive2D(container, source, {
             return null;
         }
         const fit = Math.min(width / model.width, height / model.height) * 0.94;
-        model.anchor.set(...anchor);
+        model.anchor.set(0.5);
         model.position.set(width / 2, height / 2);
         model.scale.set(fit);
         app.stage.addChild(model);
         container.appendChild(app.view);
         app.render();
-        if (verifyColors && !hasLightPixels(app.renderer)) {
+        if (verifyColors && !hasColoredPixels(app.renderer)) {
             await new Promise(resolve => requestAnimationFrame(resolve));
             if (signal?.aborted) throw new Error('Live2D initialization cancelled');
             app.render();
-            if (!hasLightPixels(app.renderer)) throw new Error('The companion did not render its light pixels');
+            if (!hasColoredPixels(app.renderer)) throw new Error('The companion texture did not render');
         }
         app.view.addEventListener('webglcontextlost', onContextLost);
         app.view.addEventListener('webglcontextrestored', onContextRestored);
         if (!reducedMotion) app.start();
-        const setPose = reducedMotion ? () => {} : attachPoses(model, parameterIds);
+        const setPose = reducedMotion ? () => {} : attachPoses(model);
         const motions = reducedMotion ? { has: () => false, loop: () => {}, play: () => false } : attachMotions(model);
         return {
             feed: () => motions.play('Feed'),

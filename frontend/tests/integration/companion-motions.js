@@ -2,10 +2,10 @@
 // 用官方 Cubism Core 与应用同一套运行时（pixi-live2d-display）逐帧推进每个动作，按时间排成一张表，检查姿态与循环接缝。
 // ?probe 改为逐个参数取极值，看这个模型哪些参数真的有形变。
 import { Application, Ticker } from 'pixi.js';
-import modelJson from '../../public/companions/stick-figure/stick-figure.model3.json';
+import { DEFAULT_COMPANION_MODEL } from '../../src/companion/defaultCompanion';
 import { loadSharedMotionTable, sharedMotionUrl, withSharedMotions } from '../../src/companion/sharedMotions';
 
-const MODEL = '/companions/stick-figure/stick-figure.model3.json';
+const MODEL = `${import.meta.env.BASE_URL}${DEFAULT_COMPANION_MODEL}`;
 // ?size=2 放大格子
 const SIZE = Number(new URLSearchParams(location.search).get('size')) || 1;
 const CELL = { width: Math.round(120 * SIZE), height: Math.round(142 * SIZE), label: 16 };
@@ -94,7 +94,8 @@ async function probe({ app, model, core }) {
 
 async function motions({ app, model }) {
     const query = new URLSearchParams(location.search);
-    const groups = (query.get('groups') || Object.keys(modelJson.FileReferences.Motions).join(',')).split(',');
+    const settings = model.internalModel.settings;
+    const groups = (query.get('groups') || Object.keys(settings.motions).join(',')).split(',');
     const frames = Number(query.get('frames')) || 8;
     const manager = model.internalModel.motionManager;
     manager.groups.idle = '__none__';
@@ -103,8 +104,8 @@ async function motions({ app, model }) {
         manager.stopAllMotions();
         // 先回到默认姿态，避免上一行的动作淡出影响这一行
         for (let i = 0; i < 90; i++) { model.update(1000 / 30); app.render(); }
-        const file = modelJson.FileReferences.Motions[group][0].File;
-        const json = await fetch(`/companions/stick-figure/${file}`).then(response => response.json());
+        const file = settings.motions[group][0].File;
+        const json = await fetch(settings.resolveURL(file)).then(response => response.json());
         const duration = json.Meta.Duration;
         await model.motion(group, 0, 3);
         const step = 1000 / 60;

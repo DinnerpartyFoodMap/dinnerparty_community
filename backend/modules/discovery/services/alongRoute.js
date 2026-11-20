@@ -35,6 +35,24 @@ function decodeJsonParam(value) {
     return null;
 }
 
+// 分享落地页与 App 链接常把起终点名再编码一层（内嵌链接整体编码后，名字成了 %25E8...），
+// searchParams 只解一层，名字会剩下 %E8... 一串。还像百分号编码时最多再解三层；解不开（单独的 %）保持原样。
+const PERCENT_ENCODED = /%[0-9a-f]{2}/i;
+
+function decodeRouteName(value) {
+    let current = String(value || '');
+    for (let attempt = 0; attempt < 3 && PERCENT_ENCODED.test(current); attempt += 1) {
+        try {
+            const decoded = decodeURIComponent(current);
+            if (decoded === current) break;
+            current = decoded;
+        } catch (error) {
+            break;
+        }
+    }
+    return current;
+}
+
 function normalizeCoordinate(lngValue, latValue, name = '') {
     if (lngValue == null || latValue == null || String(lngValue).trim() === '' || String(latValue).trim() === '') return null;
     const lng = Number(lngValue);
@@ -44,7 +62,7 @@ function normalizeCoordinate(lngValue, latValue, name = '') {
     return {
         lng: Number(lng.toFixed(6)),
         lat: Number(lat.toFixed(6)),
-        name: String(name || '').trim().slice(0, 120)
+        name: decodeRouteName(name).trim().slice(0, 120)
     };
 }
 
@@ -119,7 +137,7 @@ function parseAmapRouteUrl(value) {
     let origin = parsePosition(url.searchParams.get('from') || url.searchParams.get('start'));
     let destination = parsePosition(url.searchParams.get('to') || url.searchParams.get('dest'));
     if (destination && !destination.name && url.searchParams.get('destName')) {
-        destination.name = String(url.searchParams.get('destName')).trim().slice(0, 120);
+        destination.name = decodeRouteName(url.searchParams.get('destName')).trim().slice(0, 120);
     }
 
     if (!origin || !destination) {

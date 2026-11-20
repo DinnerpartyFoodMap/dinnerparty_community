@@ -7,9 +7,9 @@
         "FadeOutTime": 0.15,
         "Loop": false,
         "AreBeziersRestricted": true,
-        "CurveCount": 7,
-        "TotalSegmentCount": 21,
-        "TotalPointCount": 70,
+        "CurveCount": 13,
+        "TotalSegmentCount": 31,
+        "TotalPointCount": 106,
         "UserDataCount": 0,
         "TotalUserDataSize": 0
     },
@@ -52,7 +52,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_ANGLE_X",
+            "Id": "ParamAngleX",
             "Segments": [
                 0,
                 0,
@@ -67,7 +67,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_ANGLE_Y",
+            "Id": "ParamAngleY",
             "Segments": [
                 0,
                 0,
@@ -110,7 +110,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_ANGLE_Z",
+            "Id": "ParamAngleZ",
             "Segments": [
                 0,
                 0,
@@ -139,7 +139,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_BODY_ANGLE_X",
+            "Id": "ParamBodyAngleX",
             "Segments": [
                 0,
                 0,
@@ -154,7 +154,7 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_BODY_ANGLE_Y",
+            "Id": "ParamBodyAngleY",
             "Segments": [
                 0,
                 0,
@@ -190,7 +190,65 @@
         },
         {
             "Target": "Parameter",
-            "Id": "PARAM_BREATH",
+            "Id": "ParamBodyAngleZ",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.1067,
+                0,
+                0.2133,
+                4,
+                0.32,
+                4,
+                1,
+                0.4133,
+                4,
+                0.5067,
+                -3,
+                0.6,
+                -3,
+                1,
+                0.6833,
+                -3,
+                0.7667,
+                -2,
+                0.85,
+                -2
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamBodyLean",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.06,
+                0,
+                0.12,
+                -4,
+                0.18,
+                -4,
+                1,
+                0.2267,
+                -4,
+                0.2733,
+                -2,
+                0.32,
+                -2,
+                1,
+                0.4967,
+                -2,
+                0.6733,
+                0,
+                0.85,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamBreath",
             "Segments": [
                 0,
                 0,
@@ -215,6 +273,66 @@
                 0.6,
                 0.85,
                 0.6
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail11",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.2833,
+                0,
+                0.5667,
+                0,
+                0.85,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail1Y",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.2833,
+                0,
+                0.5667,
+                0,
+                0.85,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail21",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.2833,
+                0,
+                0.5667,
+                0,
+                0.85,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "ParamPartAnimalTail2Y",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.2833,
+                0,
+                0.5667,
+                0,
+                0.85,
+                0
             ]
         }
     ]

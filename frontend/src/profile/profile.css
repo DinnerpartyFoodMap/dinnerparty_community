@@ -1,7 +1,6 @@
 /* 住民主页（UserProfilePage.jsx） */
 .fm-profile__widget-heading,
-.fm-profile__visibility,
-.fm-profile__pagination {
+.fm-profile__visibility {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -32,8 +31,79 @@
     color: var(--color-text-secondary);
 }
 
-.fm-profile__pagination {
-    justify-content: center;
+/* 同好列表（ProfileCommunityPage.jsx）：与后台用户表相同的左对齐排版，左侧头像，上方住民名，下方相似度 */
+.fm-community__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+.fm-community__list li + li {
+    border-top: 1px solid var(--color-border);
+}
+.fm-community__list li:nth-child(even) .fm-community__row {
+    background: var(--color-bg-overlay);
+}
+.fm-community__row {
+    inline-size: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 10px 12px;
+    min-height: 60px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.fm-community__row:hover,
+.fm-community__list li:nth-child(even) .fm-community__row:hover {
+    background: var(--color-bg-overlay);
+}
+.fm-community__row:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: -2px;
+}
+.fm-community__avatar {
+    inline-size: 40px;
+    block-size: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--color-bg-overlay);
+}
+.fm-community__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+}
+.fm-community__text strong {
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.fm-community__text small {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+.fm-community__chevron {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+}
+.fm-community__map {
+    display: block;
+    max-inline-size: 420px;
+    margin-inline: auto;
 }
 .fm-profile-page {
     height: 100%;

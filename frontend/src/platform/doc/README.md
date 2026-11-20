@@ -59,7 +59,7 @@ Swift 的 `NativeBackGestureRegion` 统一两档，`UIPanGestureRecognizer` 在 
 `NativeAlongRoutePlugin.swift` 与 `NativeProfilePlugin.swift` 沿用“网页执行业务、原生只显示白名单快照”的模式：
 
 - 顺路吃：网页解析高德行程、规划路线、在地图上画线并查询沿途地点；原生 SwiftUI 面板只收集条件、显示网页格式化好的路线与地点。编排在 `src/discovery/alongRouteController.js`，会话与字段白名单在 `src/platform/nativeAlongRoute.js`，入口 `useNativeAlongRoute.js`。
-- 住民主页由原生显示头像、六轴雷达、收藏和第二栏小组件。网页执行屏蔽、偏好、小组件和收藏公开状态请求。同好列表和完整收藏使用共用网页页，返回保留对应主页或同好页码。 [视图模型](../../profile/profileViewModel.js) · [会话](../nativeProfile.js)
+- 住民主页由原生显示头像、六轴雷达、收藏和第二栏小组件。网页执行屏蔽、偏好、小组件和收藏公开状态请求。完整收藏使用共用网页页。2026-11-20 起同好、角色观察屋和同好点开的住民主页是主页页面栈里的原生二级页，住民设置叠在主页之上打开，主页都不先关闭（见 [住民主页](../../profile/doc/README.md#二级页2026-11-20)）。 [视图模型](../../profile/profileViewModel.js) · [会话](../nativeProfile.js)
 - 两者在 iOS 26+ 使用系统 Liquid Glass；更早系统退回 `regularMaterial`。插件不可用、打开失败或请求失败时回到网页顺路面板 / `UserProfilePage`，不静默成功。真机检查见 native/doc。
 
 ## 管理后台与日记原生页

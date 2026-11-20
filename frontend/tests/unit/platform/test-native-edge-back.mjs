@@ -103,6 +103,18 @@ assert.doesNotMatch(between(preview, 'case .began:', 'case .ended:'), /onEdgeBac
 assert.match(preview, /case \.ended:[\s\S]*NativeBackGestureRegion\.commits[\s\S]*onEdgeBack\?\(\)/);
 assert.match(preview, /case \.cancelled, \.failed:[\s\S]*restoreEdgePreview/);
 assert.match(profile, /screenPresenter\.dismiss\(host[\s\S]*?completeDismissal\(host\)/, 'removal ends the pending bridge session');
+// 2026-11-20：同好、角色观察屋、同好点开的住民主页推入主页自己的页面栈，主页不先关闭；
+// 推入后整页侧滑停用，左边缘交给系统跟手返回（返回途中露出主页）
+assert.match(contained, /var edgeEnabled = true \{\s*didSet \{ gesture\?\.isEnabled = edgeEnabled \}/);
+assert.match(contained, /gesture\.isEnabled = edgeEnabled\s*\n\s*view\.addGestureRecognizer\(gesture\)/);
+assert.match(profile, /navigator\.onDepthChange = \{[\s\S]*?screenPresenter\.edgeEnabled = depth == 0/);
+assert.match(profile, /NavigationStack\(path: \$navigator\.path\)/);
+for (const action of ['openCommunity', 'openCompanion']) {
+    const body = between(profile, `func ${action}() {`, '\n    }');
+    assert.match(body, /navigator\?\.open\(\./, `${action} pushes a page instead of closing the profile`);
+    assert.doesNotMatch(body, /close\(|onFinish/);
+}
+assert.match(between(profile, 'func openSettings() {', '\n    }\n'), /session\.request\("openSettings"/, 'settings open above the profile');
 
 // Translate only the foreground page. UIKit's containing view stays clear over the live previous page.
 const screenController = between(presentation, 'final class NativeScreenPresentationController', 'final class NativeScreenSlideAnimator');

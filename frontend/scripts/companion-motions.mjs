@@ -1,6 +1,6 @@
 // 小伙伴动作文件（motion3.json）生成器：node scripts/companion-motions.mjs 写入，加 --check 只核对。
 // 动作在下方 MOTIONS 里按关键帧写，相邻关键帧之间用 Cubism 编辑器默认的平滑贝塞尔（控制点在三分之一处、切线水平），
-// 生成的文件放在 public/companions/stick-figure/，并把动作组写进 model3.json。待机由 PSD2Live 导出的 idle 加上复位曲线得到。
+// 共享动作写入 public/companions/stick-figure/。内置角色保留自己的待机动作，并从共享动作生成其余状态。
 //
 // 这个模型只有头的转向/俯仰/歪头、身体的倾斜与前倾、比例、呼吸和眼睛开合有形变（眼睛 0 是闭眼弧线），
 // 手臂、嘴、眉毛、眼珠的参数存在但画面不变，所以动作只用前一组参数。
@@ -10,14 +10,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TORORO_PARAMETER_IDS } from '../src/companion/sharedMotions.js';
+import { DEFAULT_COMPANION_MODEL } from '../src/companion/defaultCompanion.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const MODEL_DIR = path.join(root, 'public/companions/stick-figure');
 const MODEL_FILE = path.join(MODEL_DIR, 'stick-figure.model3.json');
-const TORORO_MODEL = '../tororo/tororo.model3.json';
+const BUILT_IN_MODEL = path.relative(MODEL_DIR, path.join(root, 'public', DEFAULT_COMPANION_MODEL));
+const BUILT_IN_DIR = path.dirname(BUILT_IN_MODEL);
 const IDLE_SOURCE = 'stick-figure.idle.motion3.json';
 const FEED_SOURCE = 'stick-figure.feed.motion3.json';
+const SPIRIT_PARAMS = ['ParamPartAnimalTail11', 'ParamPartAnimalTail1Y', 'ParamPartAnimalTail21', 'ParamPartAnimalTail2Y'];
 /** 模型曲线：眼睛开合（1 睁开、0 闭上），作用于模型 EyeBlink 组里的参数 */
 export const EYE_BLINK = 'EyeBlink';
 const EYE_PARAMS = ['ParamEyeLOpen', 'ParamEyeROpen'];
@@ -227,23 +229,25 @@ export function adaptExport(source, { extra = {}, fadeIn, fadeOut, loop }) {
     return { Version: 3, Meta: meta({ duration, fadeIn, fadeOut, loop }, sorted), Curves: sorted };
 }
 
-function addTororoMotions(files) {
-    const model = JSON.parse(fs.readFileSync(path.join(MODEL_DIR, TORORO_MODEL), 'utf8'));
-    const groups = model.FileReferences.Motions;
-    groups[STANDBY.group] = groups.Idle;
+function addBuiltInMotions(files) {
+    const model = JSON.parse(fs.readFileSync(path.join(MODEL_DIR, BUILT_IN_MODEL), 'utf8'));
+    const { DisplayInfo, Motions: groups } = model.FileReferences;
+    const display = JSON.parse(fs.readFileSync(path.join(MODEL_DIR, BUILT_IN_DIR, DisplayInfo), 'utf8'));
+    const parameters = new Set(display.Parameters.map(({ Id }) => Id));
+    const spirits = SPIRIT_PARAMS.filter((id) => parameters.has(id));
     for (const [group, { file: source }] of [[FEED.group, FEED], ...Object.entries(MOTIONS)]) {
         const motion = files[source];
-        const curves = motion.Curves.flatMap((item) => {
-            if (item.Target === 'Model') return [item];
-            const id = TORORO_PARAMETER_IDS[item.Id];
-            return id ? [{ ...item, Id: id }] : [];
-        });
         const { Duration: duration, FadeInTime: fadeIn, FadeOutTime: fadeOut, Loop: loop } = motion.Meta;
+        const curves = motion.Curves.filter(({ Target, Id }) => Target !== 'Parameter' || parameters.has(Id));
+        // 两只小幽灵的专用姿态由待机驱动，换到其他动作时回到原位。
+        for (const id of spirits) {
+            curves.push(curve(id, bezierSegments([[0, 0], [duration, 0]])));
+        }
         const file = `motion/companion.${group.toLowerCase()}.motion3.json`;
-        files[`../tororo/${file}`] = { Version: 3, Meta: meta({ duration, fadeIn, fadeOut, loop }, curves), Curves: curves };
+        files[path.join(BUILT_IN_DIR, file)] = { Version: 3, Meta: meta({ duration, fadeIn, fadeOut, loop }, curves), Curves: curves };
         groups[group] = [{ File: file }];
     }
-    files[TORORO_MODEL] = model;
+    files[BUILT_IN_MODEL] = model;
 }
 
 /** 生成全部文件内容：{ 文件名: 文本 }，包括改写动作组后的 model3.json */
@@ -268,7 +272,7 @@ export function buildAll() {
         ...Object.fromEntries(Object.entries(MOTIONS).map(([group, motion]) => [group, [{ File: motion.file }]]))
     };
     files[path.basename(MODEL_FILE)] = model;
-    addTororoMotions(files);
+    addBuiltInMotions(files);
     return Object.fromEntries(Object.entries(files).map(([name, json]) => [name, `${JSON.stringify(json, null, 4)}\n`]));
 }
 
@@ -290,7 +294,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
         console.log('companion motions up to date');
     } else {
         const files = Object.entries(buildAll());
-        for (const [name, text] of files) fs.writeFileSync(path.join(MODEL_DIR, name), text);
+        for (const [name, text] of files) {
+            const file = path.join(MODEL_DIR, name);
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, text);
+        }
         console.log(`wrote ${files.length} companion motion and model files`);
     }
 }

@@ -12,6 +12,8 @@ const { avatarColumns, avatarFields } = require('./userAvatar');
 const PROFILE_WIDGETS = Object.freeze(['collection', 'recent', 'favorite']);
 const DEFAULT_WIDGETS = Object.freeze(['collection', 'recent']);
 const CHOOSABLE_WIDGETS = ['recent', 'favorite'];
+// 能隐藏的小组件：“我创建的地点”（recent）始终显示（2026-11-20）。旧客户端仍可能把 recent 放进隐藏列表，接受但不保存
+const HIDEABLE_WIDGETS = ['favorite'];
 const WIDGET_PLACE_LIMIT = 5;
 
 /** 兼容旧的两个组件选择，优先保留原第二栏里仍可选的组件。 */
@@ -33,7 +35,7 @@ function readWidgetSettings(value) {
     const hidden = Array.isArray(stored?.hidden_widgets) ? stored.hidden_widgets : [];
     return {
         widgets: normalizeWidgets(stored?.widgets ?? stored),
-        hidden_widgets: CHOOSABLE_WIDGETS.filter((kind) => hidden.includes(kind))
+        hidden_widgets: HIDEABLE_WIDGETS.filter((kind) => hidden.includes(kind))
     };
 }
 
@@ -86,7 +88,7 @@ async function getUserProfile(userId, viewer = null, database = db._raw) {
     if (relation.blocked) return profile;
     const collection = getFavoriteCollection(user.id, viewer?.id, { limit: WIDGET_PLACE_LIMIT, database });
     profile.content.collection = collection ? [{ id: 'favorites', title: '我的收藏', total: collection.total, places: collection.places }] : [];
-    if (relation.self || !profile.hidden_widgets.includes('recent')) profile.content.recent = recentPlaces(user.id, relation.self ? user.id : null, database);
+    profile.content.recent = recentPlaces(user.id, relation.self ? user.id : null, database);
     if (relation.self || !profile.hidden_widgets.includes('favorite')) profile.content.favorite = favoritePlaces(user.id, database);
     if (relation.self && collection) profile.collection_visibility = collection.is_public;
     return profile;
@@ -101,7 +103,7 @@ function saveProfileWidgets(userId, widgets, hiddenWidgets, database = db._raw) 
     }
     const settings = readWidgetSettings(database.prepare('SELECT profile_widgets FROM User WHERE id = ?').get(userId)?.profile_widgets);
     settings.widgets = normalizeWidgets(widgets);
-    if (hiddenWidgets !== undefined) settings.hidden_widgets = CHOOSABLE_WIDGETS.filter((kind) => hiddenWidgets.includes(kind));
+    if (hiddenWidgets !== undefined) settings.hidden_widgets = HIDEABLE_WIDGETS.filter((kind) => hiddenWidgets.includes(kind));
     database.prepare('UPDATE User SET profile_widgets = ? WHERE id = ?').run(JSON.stringify(settings), userId);
     return settings;
 }

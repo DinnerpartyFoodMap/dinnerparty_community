@@ -77,3 +77,7 @@ AI 搜索卡片上的推荐语由 services/recommendationReason.js 按 [recommen
 - 同一次搜索的几张卡取组里相邻的模板，相邻两条的开头要不一样。
 
 排序公式与已有实验原文：[地点搜索](placeSearch.md)。推荐公式：[随机美食](randomRecommendation.md)。外部资料沿用原文，不是本次新核验。测试见 [案例库](TEST_CASES.md)。历史 `2566978`，待办 DSC-01 / DSC-02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+
+## 顺路吃链接里的起终点名
+
+`services/alongRoute.js` 的 `parseAmapRouteUrl` 从高德分享链接（`from`/`to`、`slat`…`sname`/`dname`、落地页内嵌的 `amapuri://` 链接、`r`、`vianames`）读起终点名。分享落地页常把已经编码过名字的 App 链接整体再编码一层，`searchParams` 只解一层，名字会剩下 `%E8%B5%B7…` 一串（2026-11-20 用户报告）。`decodeRouteName` 在名字仍像百分号编码时最多再解三层，解不开（例如单独的 `%`）保持原样。

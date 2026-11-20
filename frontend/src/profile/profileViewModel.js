@@ -7,6 +7,8 @@ import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { t } from '../i18n/index.js';
 
 export const PROFILE_WIDGET_KINDS = Object.freeze(['recent', 'favorite']);
+// “调整小组件”里能关闭的：“我创建的地点”（recent）始终显示，只有“最喜欢”可以隐藏（后端同样只保存 favorite）
+export const HIDEABLE_PROFILE_WIDGETS = Object.freeze(['favorite']);
 
 // 文案键写成字面量，i18n 检查才能覆盖
 const WIDGET_TITLE = {
@@ -21,12 +23,12 @@ const WIDGET_EMPTY = {
 };
 
 export function profileWidgetOptions() {
-    return PROFILE_WIDGET_KINDS.map((id) => ({ id, title: profileWidgetTitle(id, true) }));
+    return HIDEABLE_PROFILE_WIDGETS.map((id) => ({ id, title: profileWidgetTitle(id, true) }));
 }
 
 export function hiddenProfileWidgets(profile) {
     const hidden = profile?.hidden_widgets;
-    return Array.isArray(hidden) ? PROFILE_WIDGET_KINDS.filter((kind) => hidden.includes(kind)) : [];
+    return Array.isArray(hidden) ? HIDEABLE_PROFILE_WIDGETS.filter((kind) => hidden.includes(kind)) : [];
 }
 
 export function profileRejectedPlaceCount(profile, currentUser) {

@@ -66,7 +66,9 @@ async function main(){
     assert.ok(Math.abs(result.neighbors[0].similarity-0.8)<1e-6);
     assert.equal(result.neighbors[0].confidence,'参考数据较少');
     assert.deepEqual(result.neighbors[0].shared,[]);
-    assert.deepEqual(Object.keys(result.neighbors[0]).sort(),['id','username','similarity','x','y','confidence','shared'].sort());
+    assert.deepEqual(Object.keys(result.neighbors[0]).sort(),['id','username','avatar_url','has_avatar','similarity','x','y','confidence','shared'].sort());
+    assert.deepEqual([result.neighbors[0].has_avatar,result.neighbors[0].avatar_url],[false,null],'neighbors carry avatar fields for the list and star map');
+    assert.equal(require('../../modules/community/services/communityPreferences').NEIGHBOR_LIMIT,20,'only the 20 most similar residents are shown');
     // A resident the viewer blocked disappears from the viewer's matches only.
     sql.prepare('INSERT INTO UserBlock(user_id,blocked_id) VALUES(?,?)').run(viewer,peer);
     assert.deepEqual((await call('GET','/neighbors')).neighbors,[]);
@@ -100,6 +102,12 @@ async function main(){
     await call('DELETE','/feedback');
     assert.equal(evidence.buildRatingEvidence({userIds:[viewer]}).events.length,0,'cleared favorite mirrors must not reappear from original behavior rows in a new export');
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM UserBehaviorEvent WHERE user_id=?').get(viewer).n,retained,'clearing feedback preserves original profile business inputs');
+    // Only the 20 most similar residents are returned (list and star map share them, no paging).
+    const crowdViewer=user('人多的住民');vector(crowdViewer);
+    const crowd=Array.from({length:22},(_,index)=>{const id=user(`同好${index}`);vector(id,[1,(index+1)/10]);return id;});
+    const top=(await call('GET','/neighbors',undefined,crowdViewer)).neighbors;
+    assert.equal(top.length,20);
+    assert.deepEqual(top.map(p=>p.id),crowd.slice(0,20),'the closest twenty, most similar first');
     console.log('Community tests passed: vector-only matching, optional collections, opt-outs, legacy/new defaults, private data boundary, default feedback.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{

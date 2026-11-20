@@ -17,7 +17,7 @@ flowchart TD
     Enabled -->|是| Profile[检查自身画像 ready]
     Profile --> People[取开启发现且未封禁的其他用户]
     People --> Compatible[同模型 / 维度 / 算法的正余弦相似度]
-    Compatible --> Result[返回前 30 位与自愿公开标签解释]
+    Compatible --> Result[返回前 20 位、头像与自愿公开标签解释]
     Mode -->|反馈| Version[核对当前同意版本与请求幂等 ID]
     Version --> Log[保存展示或抽取快照]
     Log --> Event[核对候选与行为类型后记录事件]
@@ -32,7 +32,7 @@ flowchart TD
 | 搜索曝光记录 propensity=null | 观察日志不能当已知随机策略概率；离线评估必须区分 |
 | 公告/评论/聚餐沿用现有路由 | 当前规模无需增加空抽象；业务增长后再提取服务 |
 
-同好入口位于本人住民主页。Web 与 App 共用每页 5 人的同好列表，点按进入对方主页。公开收藏从住民主页读取，与 `discovery` 独立。旧 `/api/community/collections` 仅供旧版客户端兼容。关闭收藏公开后，旧公开读取接口也不再返回内容。 [主页接口](../../accounts/doc/README.md)
+同好入口位于本人住民主页。`GET /api/community/neighbors` 只返回最相似的 20 位（`NEIGHBOR_LIMIT`），每位带最新的 `avatar_url` / `has_avatar`（与 `userAvatar.js` 规则相同），列表与星图一次显示全部、不分页，星图用头像代替圆点。iOS App 的同好是原生二级页，网页与 Android 是 `ProfileCommunityPage`，点按都进入对方主页。公开收藏从住民主页读取，与 `discovery` 独立。旧 `/api/community/collections` 仅供旧版客户端兼容。关闭收藏公开后，旧公开读取接口也不再返回内容。 [主页接口](../../accounts/doc/README.md)
 
 `npm run test:community` 覆盖收藏可见性、同好、90 天保留与随机抽取决策链。
 

@@ -63,11 +63,7 @@
     }
   },
   "community": {
-    "openProfile": "查看 {{name}} 的住民主页",
-    "pagination": "同好分页",
-    "previous": "上一页",
-    "next": "下一页",
-    "page": "第 {{current}} / {{total}} 页"
+    "openProfile": "查看 {{name}} 的住民主页"
   },
   "widgets": {
     "edit": "调整小组件",

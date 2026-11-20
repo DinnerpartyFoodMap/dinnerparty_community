@@ -1,15 +1,21 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useId, useState } from 'react';
 import Button from '../components/primitives/Button';
 import Segmented from '../components/forms/Segmented';
-import { t, tx } from '../i18n/index.js';
+import { t } from '../i18n/index.js';
 import { publishMapConsent, request } from '../journey/feedback';
 import { Empty, Notice } from '../journey/shared';
+import { resolveAvatarUrl } from '../auth/avatarUrl.js';
+import defaultAvatar from '../img/default.png';
 import { ProfileShell } from './UserProfilePage';
+import { communityEmptyState, COMMUNITY_MAP_EXTENT, neighborMeta } from './communityViewModel';
 import '../journey/journey.css';
+import './profile.css';
 
-const PAGE_SIZE = 5;
+// 星图里头像的半径（与坐标同一单位；后端坐标在半径 0.95 的圆内）
+const MAP_AVATAR_RADIUS = 0.1;
 
-export default function ProfileCommunityPage({ backendUrl, token, onOpenProfile, onBack, page, onPageChange }) {
+// 同好最多 20 人（后端只返回最相似的 20 位），列表与星图都一次显示全部，不分页。
+export default function ProfileCommunityPage({ backendUrl, token, currentUser, onOpenProfile, onBack }) {
     const [neighbors, setNeighbors] = useState(null);
     const [neighborError, setNeighborError] = useState('');
     const [neighborRequest, setNeighborRequest] = useState(0);
@@ -64,21 +70,17 @@ export default function ProfileCommunityPage({ backendUrl, token, onOpenProfile,
         setNeighborRequest((requestId) => requestId + 1);
         setStats(await api('/feedback'));
         setSaved(t('journey:community.settingsSaved'));
-        onPageChange?.(1);
     });
 
-    const list = neighbors?.neighbors || [];
-    const pageCount = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
-    const currentPage = Math.min(pageCount, Math.max(1, Number(page) || 1));
-    const rows = list.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+    const people = (neighbors?.neighbors || []).slice(0, 20);
+    const avatar = (person) => resolveAvatarUrl(person, backendUrl, { defaultUrl: defaultAvatar });
 
     const empty = () => {
-        if (neighbors.profile_status === 'disabled') return <Empty title={t('journey:community.empty.disabledTitle')}>
-            {t('journey:community.empty.disabledHint')}
-            <div className="jw-actions"><Button onClick={() => selectSection('settings')}>{t('journey:community.empty.goToSettings')}</Button></div>
+        const state = communityEmptyState(neighbors);
+        return <Empty title={state.title}>
+            {state.hint}
+            {state.action === 'settings' && <div className="jw-actions"><Button onClick={() => selectSection('settings')}>{state.actionLabel}</Button></div>}
         </Empty>;
-        if (neighbors.profile_status === 'ready') return <Empty title={t('journey:community.empty.noMatchTitle')}>{t('journey:community.empty.noMatchHint')}</Empty>;
-        return <Empty title={t('journey:community.empty.notEnoughTitle')}>{t('journey:community.empty.notEnoughHint')}</Empty>;
     };
 
     return <ProfileShell onBack={onBack} title={t('journey:common.feature.community')}>
@@ -87,30 +89,26 @@ export default function ProfileCommunityPage({ backendUrl, token, onOpenProfile,
                 options={[["neighbors", t('journey:common.feature.community')], ['settings', t('journey:community.tab.settings')]]} />
             {error && <Notice tone="error" onClose={() => setError('')}>{error}</Notice>}
             {saved && <Notice tone="success" onClose={() => setSaved('')}>{saved}</Notice>}
-            {section === 'neighbors' && (neighbors ? (rows.length ? <>
+            {section === 'neighbors' && (neighbors ? (people.length ? <>
                 <Segmented size="sm" label={t('journey:community.viewModeLabel')} value={view} onChange={setView}
                     options={[["list", t('journey:community.viewMode.list')], ['map', t('journey:community.viewMode.map')]]} />
-                {view === 'map' ? <svg viewBox="-1.2 -1.2 2.4 2.4" className="jw-taste" role="group" aria-label={t('journey:community.mapLabel')}>
-                    {[0.35, 0.65, 0.95].map((radius) => <circle key={radius} r={radius} fill="none" stroke="currentColor" strokeOpacity=".15" strokeWidth=".008" />)}
-                    <circle r=".07" fill="var(--theme-primary)" /><text y=".17" textAnchor="middle" fontSize=".09" fill="currentColor">{t('journey:community.me')}</text>
-                    {rows.map((person) => <g key={person.id} role="button" tabIndex="0" aria-label={t('profile:community.openProfile', { name: person.username })}
-                        onClick={() => onOpenProfile(person.id)} onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenProfile(person.id); }
-                        }}>
-                        <circle cx={person.x} cy={person.y} r=".045" fill="var(--theme-secondary)" /><title>{person.username}</title>
-                    </g>)}
-                </svg> : rows.map((person) => <button type="button" className="jw-entry" key={person.id} onClick={() => onOpenProfile(person.id)}>
-                    <span className="jw-avatar jw-avatar--empty" aria-hidden="true">{person.username.slice(0, 1)}</span>
-                    <span className="jw-entry__body"><strong>{person.username}</strong><small>{tx('journey:community.neighborMeta', {
-                        similarity: Math.round(person.similarity * 100), confidence: person.confidence,
-                        value: person.shared.length ? ` · ${person.shared.join(' · ')}` : ''
-                    })}</small></span>
-                </button>)}
-                {pageCount > 1 && <nav className="fm-profile__pagination" aria-label={t('profile:community.pagination')}>
-                    <Button variant="secondary" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>{t('profile:community.previous')}</Button>
-                    <span aria-live="polite">{t('profile:community.page', { current: currentPage, total: pageCount })}</span>
-                    <Button variant="secondary" disabled={currentPage >= pageCount} onClick={() => onPageChange(currentPage + 1)}>{t('profile:community.next')}</Button>
-                </nav>}
+                {view === 'map'
+                    ? <CommunityStarMap people={people} me={resolveAvatarUrl(currentUser, backendUrl, { defaultUrl: defaultAvatar })}
+                        avatar={avatar} onOpenProfile={onOpenProfile} />
+                    : <ul className="fm-community__list">
+                        {people.map((person) => <li key={person.id}>
+                            <button type="button" className="fm-community__row" onClick={() => onOpenProfile(person.id)}
+                                aria-label={t('profile:community.openProfile', { name: person.username })}>
+                                <img className="fm-community__avatar" src={avatar(person)} alt=""
+                                    onError={(event) => { event.currentTarget.src = defaultAvatar; }} />
+                                <span className="fm-community__text">
+                                    <strong>{person.username}</strong>
+                                    <small>{neighborMeta(person)}</small>
+                                </span>
+                                <span className="material-symbols-outlined fm-community__chevron" aria-hidden="true">chevron_right</span>
+                            </button>
+                        </li>)}
+                    </ul>}
             </> : empty()) : neighborError ? <div className="jw-stack">
                 <p role="alert">{neighborError}</p>
                 <Button variant="secondary" onClick={() => setNeighborRequest((requestId) => requestId + 1)}>{t('profile:retry')}</Button>
@@ -137,4 +135,31 @@ export default function ProfileCommunityPage({ backendUrl, token, onOpenProfile,
             </> : !error && <p role="status">{t('common:status.loading')}</p>)}
         </div>
     </ProfileShell>;
+}
+
+/** 以我为中心的偏好星图：越相似离中心越近；每位同好显示头像（圆形裁切 + 辅色描边），点按进入主页。 */
+function CommunityStarMap({ people, me, avatar, onOpenProfile }) {
+    const clipId = `fm-community-clip-${useId().replace(/:/g, '')}`;
+    const extent = COMMUNITY_MAP_EXTENT;
+    const r = MAP_AVATAR_RADIUS;
+    const open = (event, id) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenProfile(id); }
+    };
+    return <svg viewBox={`${-extent} ${-extent} ${extent * 2} ${extent * 2}`} className="jw-taste fm-community__map" role="group" aria-label={t('journey:community.mapLabel')}>
+        <defs>
+            <clipPath id={clipId} clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5" /></clipPath>
+        </defs>
+        {[0.35, 0.65, 0.95].map((radius) => <circle key={radius} r={radius} fill="none" stroke="currentColor" strokeOpacity=".15" strokeWidth=".008" />)}
+        {people.map((person) => <g key={person.id} role="button" tabIndex="0" aria-label={t('profile:community.openProfile', { name: person.username })}
+            onClick={() => onOpenProfile(person.id)} onKeyDown={(event) => open(event, person.id)}>
+            <title>{person.username}</title>
+            <circle cx={person.x} cy={person.y} r={r + 0.012} fill="var(--theme-secondary)" />
+            <image href={avatar(person)} x={person.x - r} y={person.y - r} width={r * 2} height={r * 2}
+                clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
+        </g>)}
+        {/* 我画在最上层：同好挨得近时也不会盖住中心 */}
+        <circle r={r * 1.25 + 0.012} fill="var(--theme-primary)" />
+        <image href={me} x={-r * 1.25} y={-r * 1.25} width={r * 2.5} height={r * 2.5} clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
+        <text y={r * 1.25 + 0.11} textAnchor="middle" fontSize=".085" fill="currentColor" paintOrder="stroke" stroke="var(--color-bg-surface)" strokeWidth=".025">{t('journey:community.me')}</text>
+    </svg>;
 }

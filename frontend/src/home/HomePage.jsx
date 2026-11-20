@@ -129,7 +129,7 @@ export default function HomePage() {
             <a className="home__skip" href="#main">{t('home:skipLink')}</a>
             <header className="home__header home__container">
                 <a className="home__brand" href="/home/" aria-label={t('home:title')}>
-                    <img src="/logo.png" alt="" width="40" height="40" />
+                    <img src="/favicon.png" alt="" width="40" height="40" />
                     <span>{t('home:title')}<span className="home__brand-en">DINNERPARTY FOOD MAP</span></span>
                 </a>
                 <nav className="home__nav" aria-label={t('home:nav.label')}>
@@ -188,7 +188,6 @@ export default function HomePage() {
                     </div>
                     {android?.notes && preferred === 'android' && <p className="home__notes">{android.notes}</p>}
                     {ios?.notes && preferred === 'ios' && <p className="home__notes">{ios.notes}</p>}
-                    <p className="home__notes">{t('companion:sampleCredit')}</p>
                 </section>
             </main>
             <footer className="home__footer home__container">

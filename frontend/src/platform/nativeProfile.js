@@ -1,8 +1,16 @@
 // iOS 原生住民主页（NativeProfilePlugin.swift）的网页侧会话。
 // 网页取 profile、执行屏蔽 / 偏好 / 小组件请求；原生只显示网页整理好的文案与雷达数据。
-// 原生经 profileEvent 发来 setTasteLevel / saveWidgets / setBlocked，网页按 requestId 用 respond 回传最新视图模型。
+// 原生经 profileEvent 发来请求，网页按 requestId 用 respond 回传最新视图模型（profile / community / companion）。
+// 2026-11-20 起同好、角色观察屋与同好点开的其他住民主页都是原生主页里推入的二级页（不再先关闭主页）：
+// loadProfile 读取页面栈里别的住民（values.userId），loadCommunity* / saveCommunitySettings / clearInteractions 驱动同好页，
+// loadCompanion / setCompanionEnabled / chooseCompanion 驱动角色观察屋，openSettings 让网页在主页之上打开原生住民设置。
+// openCommunity / settings / companion 三个结束动作只留给旧安装包。
 export const PROFILE_ACTIONS = Object.freeze(['back', 'openPlace', 'openCommunity', 'openFavorites', 'my-locations', 'settings', 'companion', 'logout']);
-export const PROFILE_EVENTS = Object.freeze(['setTasteLevel', 'saveWidgets', 'setBlocked', 'setCollectionVisibility', 'reload']);
+export const PROFILE_EVENTS = Object.freeze([
+    'setTasteLevel', 'saveWidgets', 'setBlocked', 'setCollectionVisibility', 'reload',
+    'loadProfile', 'loadCommunity', 'loadCommunitySettings', 'saveCommunitySettings', 'clearInteractions',
+    'loadCompanion', 'setCompanionEnabled', 'chooseCompanion', 'openSettings'
+]);
 const TASTE_AXES = ['homestyle', 'noodles', 'hotpotBbq', 'dessert', 'drinks', 'foreign'];
 const WIDGET_KINDS = ['collection', 'recent', 'favorite'];
 let sequence = 0;
@@ -27,18 +35,48 @@ export function pickNativeProfileValues(type, values) {
         if (widgets.length < 1) return null;
         if (values.hiddenWidgets === undefined) return { widgets };
         if (!Array.isArray(values.hiddenWidgets) || values.hiddenWidgets.some((kind) => kind !== 'recent' && kind !== 'favorite')) return null;
-        const hiddenWidgets = ['recent', 'favorite'].filter((kind) => values.hiddenWidgets.includes(kind));
+        // “我创建的地点”不能关闭：旧安装包仍可能发来 recent，丢掉
+        const hiddenWidgets = ['favorite'].filter((kind) => values.hiddenWidgets.includes(kind));
         return { widgets, hiddenWidgets };
     }
     if (type === 'setBlocked') {
-        return typeof values.blocked === 'boolean' ? { blocked: values.blocked } : null;
+        if (typeof values.blocked !== 'boolean') return null;
+        // 页面栈里别的住民：带上对方编号；不带时是会话打开的那位
+        if (values.userId === undefined) return { blocked: values.blocked };
+        const userId = clip(values.userId, 64);
+        return userId ? { blocked: values.blocked, userId } : null;
     }
     if (type === 'setCollectionVisibility') {
         return typeof values.isPublic === 'boolean' ? { isPublic: values.isPublic } : null;
     }
-    if (type === 'reload') return {};
+    if (type === 'loadProfile') {
+        const userId = clip(values.userId, 64);
+        return userId ? { userId } : null;
+    }
+    if (type === 'saveCommunitySettings') {
+        if (['discovery', 'feedback', 'research'].some((key) => typeof values[key] !== 'boolean')) return null;
+        if (values.tags !== undefined && typeof values.tags !== 'string') return null;
+        return {
+            discovery: values.discovery,
+            feedback: values.feedback,
+            research: values.feedback && values.research,
+            tags: clip(values.tags, 500),
+            researchChoice: values.researchChoice === true
+        };
+    }
+    if (type === 'setCompanionEnabled') {
+        return typeof values.enabled === 'boolean' ? { enabled: values.enabled } : null;
+    }
+    if (type === 'chooseCompanion') {
+        const id = clip(values.id, 64);
+        return id ? { id } : null;
+    }
+    if (['reload', 'loadCommunity', 'loadCommunitySettings', 'clearInteractions', 'loadCompanion', 'openSettings'].includes(type)) return {};
     return null;
 }
+
+/** 回传原生的视图模型：只转发这几个对象 */
+const RESPONSE_MODELS = ['profile', 'community', 'companion'];
 
 // 每次打开都有独立 id：关闭旧主页不会收起新主页，异步完成后不再处理已经离开的主页。
 export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, onOpenPlace, onOpenCommunity, onAction, onError, retryDelay = 100 }) {
@@ -71,7 +109,9 @@ export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, 
             ok: !!result?.ok,
             message: String(result?.message || '').slice(0, 200)
         };
-        if (result?.profile && typeof result.profile === 'object') payload.profile = result.profile;
+        for (const key of RESPONSE_MODELS) {
+            if (result?.[key] && typeof result[key] === 'object') payload[key] = result[key];
+        }
         try { await plugin.respond?.(payload); } catch { /* 原生主页已关闭 */ }
     };
 
@@ -105,19 +145,27 @@ export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, 
                 } else if (result.action === 'back') {
                     onBack?.();
                 } else {
-                    onAction?.(result.action);
+                    // 页面栈里别的住民的“查看全部”带上对方编号
+                    const userId = clip(result.values && result.values.userId, 64);
+                    onAction?.(result.action, userId ? { userId } : {});
                 }
             } catch (error) {
                 removeListener();
                 if (!stopped) onError?.(error);
             }
         },
-        /** 打开后才读到的主页数据（profile）或读取失败的原因（error） */
-        async update({ profile, error } = {}) {
+        /**
+         * 打开后才读到的主页数据（profile）或读取失败的原因（error）；
+         * 打开期间主题（theme：住民设置里改了明暗 / 主题色）或小伙伴状态（companion）变化时也经这里推给原生。
+         */
+        async update({ profile, error, theme, companion } = {}) {
             if (stopped) return;
             const payload = { id };
             if (profile && typeof profile === 'object') payload.profile = profile;
-            else payload.error = String(error || '').slice(0, 200);
+            else if (error !== undefined) payload.error = String(error || '').slice(0, 200);
+            if (theme && typeof theme === 'object') payload.theme = theme;
+            if (companion && typeof companion === 'object') payload.companion = companion;
+            if (Object.keys(payload).length === 1) return;
             try { await plugin.update?.(payload); } catch { /* 原生主页已关闭 */ }
         },
         async stop() {

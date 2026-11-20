@@ -4,14 +4,19 @@ import UIKit
 
 /// 本地 Capacitor 插件：iOS 原生住民主页（/users/:id）。
 ///
-/// open({ id, userId, theme, labels, loading, profile, selfLevels, widgetOptions }) -> { id, action: back|openPlace, values }
-/// update({ id, profile? , error? }) -> {}：页面先滑入显示加载中，网页读到主页数据（或失败原因）后补上
-/// respond({ id, requestId, ok, message, profile }) -> {}
+/// open({ id, userId, theme, labels, loading, profile, selfLevels, widgetOptions }) -> { id, action, values }
+/// update({ id, profile?, error?, theme?, companion? }) -> {}：页面先滑入显示加载中，网页读到主页数据（或失败原因）后补上；
+///   打开期间改了明暗 / 主题色（theme）或小伙伴状态（companion）也经这里推来
+/// respond({ id, requestId, ok, message, profile?, community?, companion? }) -> {}
 /// close({ id }) -> {}
-/// 事件 profileEvent：{ id, type: setTasteLevel|saveWidgets|setBlocked|reload, requestId, values }
+/// 事件 profileEvent：{ id, type, requestId, values }
+///   主页：setTasteLevel | saveWidgets | setBlocked | setCollectionVisibility | reload | openSettings
+///   页面栈：loadProfile（同好里点开的住民） | loadCommunity | loadCommunitySettings | saveCommunitySettings | clearInteractions
+///          | loadCompanion | setCompanionEnabled | chooseCompanion
 ///
-/// 网页取 profile、执行屏蔽 / 偏好 / 小组件请求，并把六轴、小组件与文案整理成可直接显示的快照；
-/// 原生只显示与收集输入，不访问后端、不持有凭证。
+/// 主页自带页面栈（NavigationStack）：同好、角色观察屋和同好里点开的其他住民主页都推入在主页之上，
+/// 返回时系统侧滑就能看到下面的主页；住民设置由网页在主页之上打开（NativeSettingsPlugin），主页不关闭。
+/// 网页取数据、执行请求，并把六轴、小组件、同好与小伙伴整理成可直接显示的快照；原生只显示与收集输入，不访问后端、不持有凭证。
 @objc(NativeProfilePlugin)
 public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeProfilePlugin"
@@ -26,7 +31,8 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     private var host: UIViewController?
     private var pending: CAPPluginCall?
     private var requestID: String?
-    private var model: NativeProfileModel?
+    private var session: NativeProfileSession?
+    private var navigator: NativeProfileNavigator?
     private var activeFinish: (action: String, values: [String: Any])?
     private var presenting = false
     private var queuedFinish: (action: String, values: [String: Any], animated: Bool)?
@@ -49,26 +55,39 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
                   presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else {
                 call.reject("Another screen is being presented", "BUSY"); return
             }
-            let model = NativeProfileModel(call: call) { [weak self] payload in
+            let session = NativeProfileSession(call: call) { [weak self] payload in
                 guard let self, self.requestID == id else { return }
                 var data = payload
                 data["id"] = id
                 self.notifyListeners("profileEvent", data: data)
             }
-            model.onFinish = { [weak self] action, values in
+            session.onFinish = { [weak self] action, values in
                 guard let self, self.requestID == id else { return }
                 self.finish(action: action, values: values)
             }
-            let host = UIHostingController(rootView: NativeProfileView(model: model))
-            host.overrideUserInterfaceStyle = model.dark ? .dark : .light
+            let root = NativeProfileModel(session: session, userId: nil,
+                                          profile: call.getObject("profile") ?? [:],
+                                          loading: call.getBool("loading", false))
+            let navigator = NativeProfileNavigator(session: session, root: root)
+            // 推入二级页后，左边缘交给系统的跟手返回（回到主页）；只有主页本身时才由整页侧滑关闭
+            navigator.onDepthChange = { [weak self] depth in
+                self?.screenPresenter.edgeEnabled = depth == 0
+            }
+            let host = UIHostingController(rootView: NativeProfileRootView(navigator: navigator, session: session))
+            host.overrideUserInterfaceStyle = session.dark ? .dark : .light
             host.view.backgroundColor = FM.UI.bgBase
             host.view.accessibilityViewIsModal = true
+            session.onDarkChange = { [weak host] dark in
+                host?.overrideUserInterfaceStyle = dark ? .dark : .light
+            }
+            self.screenPresenter.edgeEnabled = true
             self.screenPresenter.onEdgeBack = { [weak self] in
                 guard let self, !self.presenting, self.activeFinish == nil else { return false }
                 self.finish(action: "back")
                 return true
             }
-            self.model = model
+            self.session = session
+            self.navigator = navigator
             self.host = host
             self.pending = call
             self.requestID = id
@@ -91,28 +110,39 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// 打开时还没有主页数据：网页读到后补上，读取失败时给出原因（页面显示“重试”）
+    /// 打开时还没有主页数据：网页读到后补上，读取失败时给出原因（页面显示“重试”）。
+    /// 打开期间的主题、小伙伴变化也从这里来。
     @objc func update(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             defer { call.resolve() }
-            guard call.getString("id") == self.requestID, let model = self.model else { return }
+            guard call.getString("id") == self.requestID, let session = self.session, let navigator = self.navigator else { return }
+            if let theme = call.getObject("theme") {
+                session.applyTheme(theme)
+            }
+            if let companion = call.getObject("companion") {
+                navigator.loadedCompanion?.apply(companion)
+            }
             if let profile = call.getObject("profile") {
-                model.applyProfile(profile)
-            } else {
-                model.applyLoadError(String((call.getString("error") ?? "").prefix(200)))
+                navigator.root.applyProfile(profile)
+            } else if let error = call.getString("error") {
+                navigator.root.applyLoadError(String(error.prefix(200)))
             }
         }
     }
 
-    /// 网页处理完偏好 / 小组件 / 屏蔽请求后回传最新视图模型
+    /// 网页处理完请求后回传最新视图模型（主页 / 同好 / 小伙伴）
     @objc func respond(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             defer { call.resolve() }
             guard let id = call.getString("id"), id == self.requestID,
                   let requestId = call.getString("requestId") else { return }
-            self.model?.finish(requestId: requestId, ok: call.getBool("ok", false),
-                               message: String((call.getString("message") ?? "").prefix(200)),
-                               profile: call.getObject("profile") ?? [:])
+            var payload: JSObject = [:]
+            for key in ["profile", "community", "companion"] {
+                if let object = call.getObject(key) { payload[key] = object }
+            }
+            self.session?.finish(requestId: requestId, ok: call.getBool("ok", false),
+                                 message: String((call.getString("message") ?? "").prefix(200)),
+                                 payload: payload)
         }
     }
 
@@ -136,11 +166,12 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
         let result = activeFinish ?? (action: "back", values: [:])
         let call = pending
         let id = requestID
-        model?.cancelPending()
+        session?.cancelAll()
         self.host = nil
         pending = nil
         requestID = nil
-        model = nil
+        session = nil
+        navigator = nil
         activeFinish = nil
         presenting = false
         queuedFinish = nil
@@ -151,7 +182,172 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
-// MARK: - 状态
+// MARK: - 会话（主题、文案与请求）
+
+struct NativeProfileLevelOption: Identifiable {
+    let id: Int
+    let label: String
+}
+
+struct NativeProfileWidgetOption: Identifiable {
+    let id: String
+    let title: String
+}
+
+/// 一次打开的主页会话：页面栈里的每一页共用主题、基础文案和到网页的请求通道。
+/// 请求按 requestId 等网页 respond，超时按失败处理；关闭时全部作废。
+final class NativeProfileSession: ObservableObject {
+    @Published private(set) var dark: Bool
+    @Published private(set) var tint: Color
+    /// 住民设置的辅色（标签、次要强调）
+    @Published private(set) var secondary: Color
+    let baseLabels: [String: String]
+    let selfLevels: [NativeProfileLevelOption]
+    let widgetOptions: [NativeProfileWidgetOption]
+    var onFinish: ((String, [String: Any]) -> Void)?
+    var onDarkChange: ((Bool) -> Void)?
+
+    private let send: ([String: Any]) -> Void
+    private var pending: [String: (work: DispatchWorkItem, completion: (Bool, String, JSObject) -> Void)] = [:]
+
+    init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
+        self.send = send
+        let theme = call.getObject("theme") ?? [:]
+        dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
+        let colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String)
+        tint = colors.primary
+        secondary = colors.secondary
+        let labels = Self.strings(call.getObject("labels"))
+        baseLabels = labels
+        let autoLabel = Self.text(labels, "auto", "按评价自动推断")
+        selfLevels = (call.getArray("selfLevels", JSObject.self) ?? []).compactMap { item -> NativeProfileLevelOption? in
+            guard let id = (item["id"] as? NSNumber)?.intValue, (1...4).contains(id) else { return nil }
+            return NativeProfileLevelOption(id: id, label: item["label"] as? String ?? "\(id)")
+        } + [NativeProfileLevelOption(id: 0, label: autoLabel)]
+        widgetOptions = (call.getArray("widgetOptions", JSObject.self) ?? []).compactMap { item -> NativeProfileWidgetOption? in
+            guard let id = item["id"] as? String, !id.isEmpty else { return nil }
+            return NativeProfileWidgetOption(id: String(id.prefix(32)), title: item["title"] as? String ?? id)
+        }
+    }
+
+    static func strings(_ object: JSObject?) -> [String: String] {
+        var out: [String: String] = [:]
+        for (key, value) in object ?? [:] {
+            if let text = value as? String { out[key] = text }
+        }
+        return out
+    }
+
+    static func text(_ labels: [String: String], _ key: String, _ fallback: String) -> String {
+        guard let value = labels[key], !value.isEmpty else { return fallback }
+        return value
+    }
+
+    /// 住民设置里改了明暗或主题色（设置页叠在主页上，返回时主页已是新的样子）
+    func applyTheme(_ theme: JSObject) {
+        let colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String)
+        tint = colors.primary
+        secondary = colors.secondary
+        if let next = theme["dark"] as? Bool, next != dark {
+            dark = next
+            onDarkChange?(next)
+        }
+    }
+
+    /// 发给网页一个请求；completion(ok, message, payload) 在主线程回调，超时视为失败（message 为空）
+    @discardableResult
+    func request(_ type: String, values: [String: Any] = [:], timeout seconds: Double = 20,
+                 completion: @escaping (Bool, String, JSObject) -> Void) -> String {
+        let requestId = UUID().uuidString
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let entry = self.pending.removeValue(forKey: requestId) else { return }
+            entry.completion(false, "", [:])
+        }
+        pending[requestId] = (work, completion)
+        send(["type": type, "requestId": requestId, "values": values])
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        return requestId
+    }
+
+    func finish(requestId: String, ok: Bool, message: String, payload: JSObject) {
+        guard let entry = pending.removeValue(forKey: requestId) else { return }
+        entry.work.cancel()
+        entry.completion(ok, message, payload)
+    }
+
+    func cancelAll() {
+        pending.values.forEach { $0.work.cancel() }
+        pending.removeAll()
+    }
+
+    /// 结束整个主页（打开地点、退出登录、返回地图等）
+    func close(_ action: String, _ values: [String: Any] = [:]) {
+        onFinish?(action, values)
+    }
+}
+
+// MARK: - 页面栈
+
+enum NativeProfileRoute: Hashable {
+    case community
+    case companion
+    /// 同好里点开的住民主页
+    case profile(String)
+}
+
+final class NativeProfileNavigator: ObservableObject {
+    @Published var path: [NativeProfileRoute] = [] {
+        didSet {
+            if path.count != oldValue.count { onDepthChange?(path.count) }
+        }
+    }
+    let root: NativeProfileModel
+    var onDepthChange: ((Int) -> Void)?
+
+    private let session: NativeProfileSession
+    private var profiles: [String: NativeProfileModel] = [:]
+    private var communityModel: NativeCommunityModel?
+    private var companionModel: NativeCompanionModel?
+
+    init(session: NativeProfileSession, root: NativeProfileModel) {
+        self.session = session
+        self.root = root
+        root.navigator = self
+    }
+
+    func open(_ route: NativeProfileRoute) {
+        guard path.last != route else { return }
+        path.append(route)
+    }
+
+    var community: NativeCommunityModel {
+        if let communityModel { return communityModel }
+        let model = NativeCommunityModel(session: session)
+        model.navigator = self
+        communityModel = model
+        return model
+    }
+
+    var companion: NativeCompanionModel {
+        if let companionModel { return companionModel }
+        let model = NativeCompanionModel(session: session)
+        companionModel = model
+        return model
+    }
+
+    /// 观察屋打开过才需要接收推来的小伙伴状态
+    var loadedCompanion: NativeCompanionModel? { companionModel }
+
+    func profile(_ userId: String) -> NativeProfileModel {
+        if let model = profiles[userId] { return model }
+        let model = NativeProfileModel(session: session, userId: userId, profile: [:], loading: true)
+        model.navigator = self
+        profiles[userId] = model
+        return model
+    }
+}
+
+// MARK: - 主页状态
 
 final class NativeProfileModel: ObservableObject {
     struct ProfileAxis: Identifiable {
@@ -185,16 +381,6 @@ final class NativeProfileModel: ObservableObject {
         let groups: [WidgetGroup]
     }
 
-    struct LevelOption: Identifiable {
-        let id: Int
-        let label: String
-    }
-
-    struct WidgetOption: Identifiable {
-        let id: String
-        let title: String
-    }
-
     struct ProfileView {
         let name: String
         let avatarURL: URL?
@@ -214,8 +400,8 @@ final class NativeProfileModel: ObservableObject {
         let sections: [WidgetSection]
         let axes: [ProfileAxis]
         let labels: [String: String]
-        let levelOptions: [LevelOption]
-        let widgetOptions: [WidgetOption]
+        let levelOptions: [NativeProfileLevelOption]
+        let widgetOptions: [NativeProfileWidgetOption]
     }
 
     @Published private(set) var view: ProfileView
@@ -229,45 +415,26 @@ final class NativeProfileModel: ObservableObject {
     /// 读取失败的原因：显示在页面里，可以重试
     @Published private(set) var loadError: String? = nil
 
-    let dark: Bool
-    let tint: Color
-    /// 住民设置的辅色（标签、次要强调）
-    let secondary: Color
-    var onFinish: ((String, [String: Any]) -> Void)?
+    /// nil：会话打开的那位住民（根页）；否则是同好里点开、推入页面栈的住民
+    let userId: String?
+    weak var navigator: NativeProfileNavigator?
+    let session: NativeProfileSession
+    private var requested = false
 
-    private let selfLevels: [LevelOption]
-    private let widgetOptions: [WidgetOption]
-    private let baseLabels: [String: String]
-    private let send: ([String: Any]) -> Void
-    private var pendingRequest: (id: String, type: String, blocked: Bool, work: DispatchWorkItem)?
+    var isRoot: Bool { userId == nil }
 
-    init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
-        self.send = send
-        let theme = call.getObject("theme") ?? [:]
-        dark = (theme["dark"] as? Bool) ?? call.getBool("dark", false)
-        let colors = NativeThemeColors(primary: theme["primary"] as? String, secondary: theme["secondary"] as? String)
-        tint = colors.primary
-        secondary = colors.secondary
-        baseLabels = Self.strings(call.getObject("labels"))
-        let autoLabel = Self.text(baseLabels, "auto", "按评价自动推断")
-        selfLevels = (call.getArray("selfLevels", JSObject.self) ?? []).compactMap { item -> LevelOption? in
-            guard let id = (item["id"] as? NSNumber)?.intValue, (1...4).contains(id) else { return nil }
-            return LevelOption(id: id, label: item["label"] as? String ?? "\(id)")
-        } + [LevelOption(id: 0, label: autoLabel)]
-        widgetOptions = (call.getArray("widgetOptions", JSObject.self) ?? []).compactMap { item -> WidgetOption? in
-            guard let id = item["id"] as? String, !id.isEmpty else { return nil }
-            return WidgetOption(id: String(id.prefix(32)), title: item["title"] as? String ?? id)
-        }
-        let profile = call.getObject("profile") ?? [:]
-        let labels = baseLabels.merging(Self.strings(profile["labels"] as? JSObject)) { _, new in new }
-        view = Self.parse(profile, labels: labels, selfLevels: selfLevels, widgetOptions: widgetOptions)
-        loading = call.getBool("loading", false)
+    init(session: NativeProfileSession, userId: String?, profile: JSObject, loading: Bool) {
+        self.session = session
+        self.userId = userId
+        let labels = session.baseLabels.merging(NativeProfileSession.strings(profile["labels"] as? JSObject)) { _, new in new }
+        view = Self.parse(profile, labels: labels, selfLevels: session.selfLevels, widgetOptions: session.widgetOptions)
+        self.loading = loading
     }
 
     func applyProfile(_ profile: JSObject) {
-        let labels = baseLabels.merging(Self.strings(profile["labels"] as? JSObject)) { _, new in new }
+        let labels = session.baseLabels.merging(NativeProfileSession.strings(profile["labels"] as? JSObject)) { _, new in new }
         withAnimation(.easeOut(duration: 0.2)) {
-            view = Self.parse(profile, labels: labels, selfLevels: selfLevels, widgetOptions: widgetOptions)
+            view = Self.parse(profile, labels: labels, selfLevels: session.selfLevels, widgetOptions: session.widgetOptions)
             loading = false
             loadError = nil
         }
@@ -280,28 +447,33 @@ final class NativeProfileModel: ObservableObject {
         }
     }
 
-    /// 读取失败后重试：网页重新读取，结果仍经 update 回来
+    /// 推入页面栈的住民：第一次出现时读取
+    func loadIfNeeded() {
+        guard userId != nil, !requested else { return }
+        requested = true
+        reload()
+    }
+
+    /// 读取失败后重试：根页由网页重新读取、结果经 update 回来；页面栈里的住民直接读取
     func reload() {
         loadError = nil
         loading = true
-        send(["type": "reload", "requestId": UUID().uuidString, "values": [String: Any]()])
-    }
-
-    private static func strings(_ object: JSObject?) -> [String: String] {
-        var out: [String: String] = [:]
-        for (key, value) in object ?? [:] {
-            if let text = value as? String { out[key] = text }
+        guard let userId else {
+            session.request("reload") { _, _, _ in }
+            return
         }
-        return out
-    }
-
-    private static func text(_ labels: [String: String], _ key: String, _ fallback: String) -> String {
-        guard let value = labels[key], !value.isEmpty else { return fallback }
-        return value
+        session.request("loadProfile", values: ["userId": userId]) { [weak self] ok, message, payload in
+            guard let self else { return }
+            if ok, let profile = payload["profile"] as? JSObject {
+                self.applyProfile(profile)
+            } else {
+                self.applyLoadError(message)
+            }
+        }
     }
 
     private static func parse(_ object: JSObject, labels: [String: String],
-                              selfLevels: [LevelOption], widgetOptions: [WidgetOption]) -> ProfileView {
+                              selfLevels: [NativeProfileLevelOption], widgetOptions: [NativeProfileWidgetOption]) -> ProfileView {
         let axes = (object["axes"] as? JSArray ?? []).compactMap { entry -> ProfileAxis? in
             guard let item = entry as? JSObject,
                   let key = item["key"] as? String, !key.isEmpty else { return nil }
@@ -340,7 +512,7 @@ final class NativeProfileModel: ObservableObject {
         let avatar = object["avatarURL"] as? String ?? ""
         return ProfileView(
             name: object["name"] as? String ?? "住民",
-            avatarURL: URL(string: avatar).flatMap { $0.scheme == "https" ? $0 : nil },
+            avatarURL: NativeProfileImage.httpsURL(avatar),
             city: object["city"] as? String ?? "",
             canEditTaste: (object["canEditTaste"] as? Bool) ?? false,
             canEditWidgets: (object["canEditWidgets"] as? Bool) ?? false,
@@ -363,7 +535,7 @@ final class NativeProfileModel: ObservableObject {
     }
 
     func text(_ key: String, _ fallback: String) -> String {
-        Self.text(view.labels, key, fallback)
+        NativeProfileSession.text(view.labels, key, fallback)
     }
 
     var selectedAxisValue: ProfileAxis? {
@@ -393,17 +565,29 @@ final class NativeProfileModel: ObservableObject {
 
     private func start(_ type: String, values: [String: Any], blocked: Bool = false, timeout seconds: Double = 20) {
         guard !busy else { return }
-        let requestId = UUID().uuidString
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.pendingRequest?.id == requestId else { return }
-            self.pendingRequest = nil
-            self.busy = false
-            self.alertMessage = self.text("tasteSaveFailed", "保存失败，请稍后重试")
-        }
-        pendingRequest = (requestId, type, blocked, work)
         busy = true
-        send(["type": type, "requestId": requestId, "values": values])
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        var values = values
+        if let userId, type == "setBlocked" { values["userId"] = userId }
+        session.request(type, values: values, timeout: seconds) { [weak self] ok, message, payload in
+            self?.complete(type: type, blocked: blocked, ok: ok, message: message, payload: payload)
+        }
+    }
+
+    private func complete(type: String, blocked: Bool, ok: Bool, message: String, payload: JSObject) {
+        busy = false
+        guard ok else {
+            alertMessage = message.isEmpty ? text("tasteSaveFailed", "保存失败，请稍后重试") : message
+            return
+        }
+        if let profile = payload["profile"] as? JSObject, !profile.isEmpty {
+            let labels = view.labels.merging(NativeProfileSession.strings(profile["labels"] as? JSObject)) { _, new in new }
+            view = Self.parse(profile, labels: labels, selfLevels: session.selfLevels, widgetOptions: session.widgetOptions)
+        }
+        if type == "saveWidgets" { editingHiddenWidgets = nil }
+        // 屏蔽成功后网页已打开举报入口：收起主页，让举报表显示在地图页上。
+        if type == "setBlocked" && blocked {
+            session.close("back")
+        }
     }
 
     func setTasteLevel(_ key: String, _ level: Int?) {
@@ -414,8 +598,8 @@ final class NativeProfileModel: ObservableObject {
 
     func saveWidgets() {
         guard let hidden = editingHiddenWidgets else { return }
-        let widgets = view.widgets.isEmpty ? widgetOptions.prefix(1).map(\.id) : view.widgets
-        let hiddenWidgets = widgetOptions.map(\.id).filter { hidden.contains($0) }
+        let widgets = view.widgets.isEmpty ? Array(view.widgetOptions.prefix(1).map(\.id)) : view.widgets
+        let hiddenWidgets = view.widgetOptions.map(\.id).filter { hidden.contains($0) }
         start("saveWidgets", values: ["widgets": widgets, "hiddenWidgets": hiddenWidgets])
     }
 
@@ -427,104 +611,440 @@ final class NativeProfileModel: ObservableObject {
         start("setCollectionVisibility", values: ["isPublic": isPublic])
     }
 
+    /// 同好、角色观察屋：推入页面栈，主页留在下面
     func openCommunity() {
-        onFinish?("openCommunity", [:])
-    }
-
-    func openFavorites() {
-        onFinish?("openFavorites", [:])
-    }
-
-    func openLocations() {
-        onFinish?("my-locations", [:])
-    }
-
-    func openSettings() {
-        onFinish?("settings", [:])
+        navigator?.open(.community)
     }
 
     func openCompanion() {
-        onFinish?("companion", [:])
+        navigator?.open(.companion)
+    }
+
+    /// 住民设置：网页在主页之上打开原生设置；网页处理不了时退回旧流程（收起主页后打开设置）
+    func openSettings() {
+        session.request("openSettings", timeout: 15) { [weak self] ok, _, _ in
+            if !ok { self?.session.close("settings") }
+        }
+    }
+
+    private var ownerValues: [String: Any] {
+        guard let userId else { return [:] }
+        return ["userId": userId]
+    }
+
+    func openFavorites() {
+        session.close("openFavorites", ownerValues)
+    }
+
+    func openLocations() {
+        session.close("my-locations", ownerValues)
     }
 
     func logout() {
-        onFinish?("logout", [:])
+        session.close("logout")
     }
 
     func openPlace(_ id: String) {
-        onFinish?("openPlace", ["placeId": id])
+        session.close("openPlace", ["placeId": id])
     }
 
     func requestClose() {
-        onFinish?("back", [:])
+        session.close("back")
+    }
+}
+
+// MARK: - 同好状态
+
+final class NativeCommunityModel: ObservableObject {
+    enum Tab: Hashable { case neighbors, settings }
+    enum ViewMode: Hashable { case list, map }
+
+    struct Person: Identifiable {
+        let id: String
+        let name: String
+        let avatarURL: URL?
+        let meta: String
+        /// 星图坐标：以我为中心，越相似离中心越近（-1…1）
+        let x: CGFloat
+        let y: CGFloat
+        let accessible: String
     }
 
-    func finish(requestId: String, ok: Bool, message: String, profile: JSObject) {
-        guard let entry = pendingRequest, entry.id == requestId else { return }
-        entry.work.cancel()
-        pendingRequest = nil
+    struct EmptyState {
+        let title: String
+        let hint: String
+        let opensSettings: Bool
+        let actionLabel: String
+    }
+
+    @Published var tab: Tab = .neighbors {
+        didSet { if tab == .settings { loadSettingsIfNeeded() } }
+    }
+    @Published var viewMode: ViewMode = .list
+    @Published private(set) var loading = false
+    @Published private(set) var loaded = false
+    @Published private(set) var loadError: String?
+    @Published private(set) var people: [Person] = []
+    @Published private(set) var empty: EmptyState?
+    @Published private(set) var meAvatar: URL?
+    @Published private(set) var labels: [String: String] = [:]
+
+    // 发现设置（可编辑的副本，保存时整份交给网页）
+    @Published var discovery = true
+    @Published var feedback = true {
+        didSet { if !feedback { research = false } }
+    }
+    @Published var research = true
+    @Published var tags = ""
+    @Published var researchChoice = false
+    @Published private(set) var settingsHint = ""
+    @Published private(set) var retention = ""
+    @Published private(set) var settingsLoaded = false
+    @Published private(set) var settingsLoading = false
+    @Published private(set) var settingsError: String?
+    @Published private(set) var busy = false
+    /// 保存成功、清除完成或失败原因（弹出提示）
+    @Published var notice: String?
+
+    weak var navigator: NativeProfileNavigator?
+    private let session: NativeProfileSession
+
+    init(session: NativeProfileSession) {
+        self.session = session
+    }
+
+    func text(_ key: String, _ fallback: String) -> String {
+        NativeProfileSession.text(labels, key, fallback)
+    }
+
+    func loadIfNeeded() {
+        guard !loaded, !loading else { return }
+        load()
+    }
+
+    func load() {
+        loading = true
+        loadError = nil
+        session.request("loadCommunity") { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.loading = false
+            guard ok, let community = payload["community"] as? JSObject else {
+                self.loadError = message.isEmpty ? self.text("loadFailed", "同好加载失败，请稍后重试") : message
+                return
+            }
+            self.apply(community)
+            self.loaded = true
+        }
+    }
+
+    func apply(_ object: JSObject) {
+        if let labels = object["labels"] as? JSObject {
+            self.labels.merge(NativeProfileSession.strings(labels)) { _, new in new }
+        }
+        if let me = object["me"] as? JSObject {
+            meAvatar = NativeProfileImage.httpsURL(me["avatarURL"] as? String ?? "")
+        }
+        if let neighbors = object["neighbors"] as? JSObject {
+            if (neighbors["status"] as? String) == "error" {
+                let message = neighbors["error"] as? String ?? ""
+                loadError = message.isEmpty ? text("loadFailed", "同好加载失败，请稍后重试") : message
+                people = []
+                empty = nil
+            } else {
+                loadError = nil
+                people = (neighbors["people"] as? JSArray ?? []).prefix(20).compactMap { raw -> Person? in
+                    guard let item = raw as? JSObject,
+                          let id = item["id"] as? String, !id.isEmpty else { return nil }
+                    let name = item["name"] as? String ?? ""
+                    let clamp = { (value: Any?) -> CGFloat in
+                        CGFloat(max(-1, min(1, (value as? NSNumber)?.doubleValue ?? 0)))
+                    }
+                    return Person(id: id, name: name,
+                                  avatarURL: NativeProfileImage.httpsURL(item["avatarURL"] as? String ?? ""),
+                                  meta: item["meta"] as? String ?? "",
+                                  x: clamp(item["x"]), y: clamp(item["y"]),
+                                  accessible: item["accessible"] as? String ?? name)
+                }
+                if let state = neighbors["empty"] as? JSObject {
+                    empty = EmptyState(title: state["title"] as? String ?? "",
+                                       hint: state["hint"] as? String ?? "",
+                                       opensSettings: (state["action"] as? String) == "settings",
+                                       actionLabel: state["actionLabel"] as? String ?? "")
+                } else {
+                    empty = nil
+                }
+            }
+        }
+        if let settings = object["settings"] as? JSObject {
+            discovery = (settings["discovery"] as? Bool) ?? discovery
+            feedback = (settings["feedback"] as? Bool) ?? feedback
+            research = feedback && ((settings["research"] as? Bool) ?? research)
+            tags = settings["tags"] as? String ?? tags
+            settingsHint = settings["hint"] as? String ?? settingsHint
+            retention = settings["retention"] as? String ?? retention
+            researchChoice = false
+            settingsLoaded = true
+            settingsError = nil
+        }
+        if let notice = object["notice"] as? String, !notice.isEmpty {
+            self.notice = notice
+        }
+    }
+
+    func loadSettingsIfNeeded() {
+        guard !settingsLoaded, !settingsLoading else { return }
+        loadSettings()
+    }
+
+    func loadSettings() {
+        settingsLoading = true
+        settingsError = nil
+        session.request("loadCommunitySettings") { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.settingsLoading = false
+            guard ok, let community = payload["community"] as? JSObject else {
+                self.settingsError = message.isEmpty ? self.text("settingsFailed", "发现设置加载失败，请稍后重试") : message
+                return
+            }
+            self.apply(community)
+        }
+    }
+
+    func saveSettings() {
+        guard !busy else { return }
+        busy = true
+        let values: [String: Any] = [
+            "discovery": discovery,
+            "feedback": feedback,
+            "research": feedback && research,
+            "tags": String(tags.prefix(500)),
+            "researchChoice": researchChoice
+        ]
+        session.request("saveCommunitySettings", values: values) { [weak self] ok, message, payload in
+            self?.finishWrite(ok: ok, message: message, payload: payload)
+        }
+    }
+
+    func clearInteractions() {
+        guard !busy else { return }
+        busy = true
+        session.request("clearInteractions") { [weak self] ok, message, payload in
+            self?.finishWrite(ok: ok, message: message, payload: payload)
+        }
+    }
+
+    private func finishWrite(ok: Bool, message: String, payload: JSObject) {
         busy = false
-        guard ok else {
-            alertMessage = message.isEmpty ? text("tasteSaveFailed", "保存失败，请稍后重试") : message
+        guard ok, let community = payload["community"] as? JSObject else {
+            notice = message.isEmpty ? text("saveFailed", "保存失败，请稍后重试") : message
             return
         }
-        if !profile.isEmpty {
-            let labels = view.labels.merging(Self.strings(profile["labels"] as? JSObject)) { _, new in new }
-            view = Self.parse(profile, labels: labels, selfLevels: selfLevels, widgetOptions: widgetOptions)
-        }
-        if entry.type == "saveWidgets" { editingHiddenWidgets = nil }
-        // 屏蔽成功后网页已打开举报入口：收起主页，让举报表显示在地图页上。
-        if entry.type == "setBlocked" && entry.blocked {
-            onFinish?("back", [:])
+        apply(community)
+    }
+
+    func showSettings() {
+        withAnimation(.snappy) { tab = .settings }
+    }
+
+    func openProfile(_ id: String) {
+        navigator?.open(.profile(id))
+    }
+}
+
+// MARK: - 角色观察屋状态
+
+final class NativeCompanionModel: ObservableObject {
+    struct Role: Identifiable, Equatable {
+        let id: String
+        let name: String
+    }
+
+    @Published private(set) var loaded = false
+    @Published private(set) var loading = false
+    @Published private(set) var loadError: String?
+    @Published private(set) var enabled = true
+    @Published private(set) var roles: [Role] = []
+    @Published private(set) var activeId = ""
+    @Published private(set) var name = ""
+    @Published private(set) var satiety = ""
+    @Published private(set) var hint = ""
+    /// 内置角色的静态预览（安装包里的网页资源）；额外角色没有预览时用图标
+    @Published private(set) var preview: UIImage?
+    @Published private(set) var busy = false
+    /// 饱食度上涨一次加一：页面上冒一颗爱心
+    @Published private(set) var fedPulse = 0
+    @Published var alertMessage: String?
+    @Published private(set) var labels: [String: String] = [:]
+
+    private var satietyCount = 0
+    private var previewPath = ""
+    private let session: NativeProfileSession
+
+    init(session: NativeProfileSession) {
+        self.session = session
+    }
+
+    func text(_ key: String, _ fallback: String) -> String {
+        NativeProfileSession.text(labels, key, fallback)
+    }
+
+    /// 每次进入都读一次最新状态（切换角色、投喂可能发生在别处）
+    func load() {
+        guard !loading else { return }
+        loading = true
+        if !loaded { loadError = nil }
+        session.request("loadCompanion") { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.loading = false
+            if ok, let companion = payload["companion"] as? JSObject {
+                self.apply(companion)
+            } else if !self.loaded {
+                self.loadError = message.isEmpty ? self.text("loadFailed", "角色观察屋加载失败，请稍后重试") : message
+            }
         }
     }
 
-    func cancelPending() {
-        pendingRequest?.work.cancel()
-        pendingRequest = nil
-        busy = false
+    func apply(_ object: JSObject) {
+        if let labels = object["labels"] as? JSObject {
+            self.labels.merge(NativeProfileSession.strings(labels)) { _, new in new }
+        }
+        enabled = (object["enabled"] as? Bool) ?? enabled
+        roles = (object["roles"] as? JSArray ?? []).compactMap { raw -> Role? in
+            guard let item = raw as? JSObject, let id = item["id"] as? String, !id.isEmpty else { return nil }
+            return Role(id: id, name: item["name"] as? String ?? id)
+        }
+        activeId = object["active"] as? String ?? activeId
+        name = object["name"] as? String ?? name
+        satiety = object["satiety"] as? String ?? satiety
+        hint = object["hint"] as? String ?? ""
+        let count = (object["satietyCount"] as? NSNumber)?.intValue ?? satietyCount
+        if loaded && count > satietyCount { fedPulse += 1 }
+        satietyCount = count
+        let path = object["preview"] as? String ?? ""
+        if path != previewPath {
+            previewPath = path
+            preview = NativeProfileImage.bundled(path)
+        }
+        loaded = true
+        loadError = nil
+    }
+
+    func setEnabled(_ value: Bool) {
+        guard !busy, value != enabled else { return }
+        busy = true
+        let previous = enabled
+        enabled = value
+        session.request("setCompanionEnabled", values: ["enabled": value]) { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.busy = false
+            if ok, let companion = payload["companion"] as? JSObject {
+                self.apply(companion)
+            } else {
+                self.enabled = previous
+                self.alertMessage = message.isEmpty ? self.text("saveFailed", "保存失败，请稍后重试") : message
+            }
+        }
+    }
+
+    func choose(_ id: String) {
+        guard !busy, id != activeId else { return }
+        busy = true
+        session.request("chooseCompanion", values: ["id": id]) { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.busy = false
+            if ok, let companion = payload["companion"] as? JSObject {
+                self.apply(companion)
+            } else {
+                self.alertMessage = message.isEmpty ? self.text("switchFailed", "切换角色失败，请重试") : message
+            }
+        }
+    }
+}
+
+/// 图片地址：网络图片只接受 https；内置角色预览从安装包的网页资源（public/）读取
+enum NativeProfileImage {
+    static func httpsURL(_ value: String) -> URL? {
+        URL(string: value).flatMap { $0.scheme == "https" ? $0 : nil }
+    }
+
+    static func bundled(_ path: String) -> UIImage? {
+        guard !path.isEmpty, !path.contains(".."), !path.hasPrefix("/"),
+              path.range(of: "^[A-Za-z0-9_./-]+$", options: .regularExpression) != nil else { return nil }
+        let url = Bundle.main.bundleURL.appendingPathComponent("public").appendingPathComponent(path)
+        return UIImage(contentsOfFile: url.path)
     }
 }
 
 // MARK: - 页面
 
-private struct NativeProfileView: View {
-    @ObservedObject var model: NativeProfileModel
+/// 主页和它的二级页共用一个 NavigationStack：推入时主页留在下面，系统侧滑返回时露出主页。
+private struct NativeProfileRootView: View {
+    @ObservedObject var navigator: NativeProfileNavigator
+    @ObservedObject var session: NativeProfileSession
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    if model.loading {
-                        ProgressView()
-                            .controlSize(.large)
-                            .frame(maxWidth: .infinity, minHeight: 240)
-                            .accessibilityLabel(Text(model.text("loading", "加载中")))
-                    } else if let error = model.loadError {
-                        NativePageCard(padding: 16) {
-                            VStack(spacing: 12) {
-                                Text(error)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                                Button(model.text("retry", "重试")) { model.reload() }
-                                    .buttonStyle(.bordered)
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                    } else {
-                        loadedContent
-                    }
+        NavigationStack(path: $navigator.path) {
+            NativeProfilePage(model: navigator.root, session: session)
+                .navigationDestination(for: NativeProfileRoute.self) { route in
+                    destination(route)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
+        }
+        .preferredColorScheme(session.dark ? .dark : .light)
+        .nativeThemeColors(primary: session.tint, secondary: session.secondary)
+    }
+
+    @ViewBuilder
+    private func destination(_ route: NativeProfileRoute) -> some View {
+        switch route {
+        case .community:
+            NativeCommunityView(model: navigator.community, session: session)
+        case .companion:
+            NativeCompanionView(model: navigator.companion, session: session)
+        case .profile(let userId):
+            NativeProfilePage(model: navigator.profile(userId), session: session)
+        }
+    }
+}
+
+private struct NativeProfilePage: View {
+    @ObservedObject var model: NativeProfileModel
+    @ObservedObject var session: NativeProfileSession
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                if model.loading {
+                    ProgressView()
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                        .accessibilityLabel(Text(model.text("loading", "加载中")))
+                } else if let error = model.loadError {
+                    NativePageCard(padding: 16) {
+                        VStack(spacing: 12) {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button(model.text("retry", "重试")) { model.reload() }
+                                .buttonStyle(.bordered)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                } else {
+                    loadedContent
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .nativePageBackground()
-            .navigationTitle(model.text("title", "住民主页"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .nativePageBackground()
+        .navigationTitle(model.text("title", "住民主页"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 根页没有上一页：左上返回关闭整个主页。推入的住民主页用系统返回（可侧滑），回到同好
+            if model.isRoot {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         model.requestClose()
@@ -532,17 +1052,16 @@ private struct NativeProfileView: View {
                         Image(systemName: "chevron.backward")
                             .font(.headline)
                     }
-                    .tint(model.tint.fmReadableText)
+                    .tint(session.tint.fmReadableText)
                     .accessibilityLabel(Text(model.text("back", "返回")))
                 }
             }
-            .sheet(isPresented: Binding(get: { model.editingHiddenWidgets != nil }, set: { if !$0 { model.editingHiddenWidgets = nil } })) {
-                widgetEditor
-                    .presentationDetents([.medium, .large])
-            }
         }
-        .preferredColorScheme(model.dark ? .dark : .light)
-        .nativeThemeColors(primary: model.tint, secondary: model.secondary)
+        .onAppear { model.loadIfNeeded() }
+        .sheet(isPresented: Binding(get: { model.editingHiddenWidgets != nil }, set: { if !$0 { model.editingHiddenWidgets = nil } })) {
+            widgetEditor
+                .presentationDetents([.medium, .large])
+        }
         .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
             Button(model.text("ok", "好"), role: .cancel) {}
         }
@@ -601,7 +1120,7 @@ private struct NativeProfileView: View {
                         } label: {
                             Text(model.text("community", "同好"))
                                 .font(.subheadline.weight(.medium))
-                                .foregroundStyle(model.tint.fmReadableText)
+                                .foregroundStyle(session.tint.fmReadableText)
                                 .padding(.horizontal, 12)
                                 .frame(minHeight: 44)
                                 .contentShape(Rectangle())
@@ -651,7 +1170,7 @@ private struct NativeProfileView: View {
                 NativeTasteRadar(
                     axes: model.view.axes,
                     selected: model.selectedAxis,
-                    accent: model.tint
+                    accent: session.tint
                 ) { key in
                     model.toggleAxis(key)
                 }
@@ -671,25 +1190,25 @@ private struct NativeProfileView: View {
                     Text(axis.description)
                         .font(.subheadline)
                     if model.view.canEditTaste {
-                    Text(model.text("selfTitle", "自己填"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    NativeFlowLayout(spacing: 8, lineSpacing: 8) {
-                        ForEach(model.view.levelOptions) { option in
-                            let selected = (option.id == 0 && axis.selfLevel == nil)
-                                || (option.id != 0 && axis.selfLevel == option.id)
-                            Button {
-                                let level: Int? = option.id == 0 ? nil : option.id
-                                model.setTasteLevel(axis.key, level)
-                            } label: {
-                                Text(option.label)
-                                    .font(.caption)
-                                    .nativeChip(selected: selected, tint: model.tint)
+                        Text(model.text("selfTitle", "自己填"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        NativeFlowLayout(spacing: 8, lineSpacing: 8) {
+                            ForEach(model.view.levelOptions) { option in
+                                let selected = (option.id == 0 && axis.selfLevel == nil)
+                                    || (option.id != 0 && axis.selfLevel == option.id)
+                                Button {
+                                    let level: Int? = option.id == 0 ? nil : option.id
+                                    model.setTasteLevel(axis.key, level)
+                                } label: {
+                                    Text(option.label)
+                                        .font(.caption)
+                                        .nativeChip(selected: selected, tint: session.tint)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(model.busy)
                             }
-                            .buttonStyle(.plain)
-                            .disabled(model.busy)
                         }
-                    }
                     }
                 }
             }
@@ -721,7 +1240,7 @@ private struct NativeProfileView: View {
                                 set: { model.setCollectionVisibility($0) }
                             ))
                             .font(.caption)
-                            .tint(model.tint)
+                            .tint(session.tint)
                             .fixedSize()
                             .disabled(model.busy)
                         }
@@ -750,8 +1269,9 @@ private struct NativeProfileView: View {
                 }
             }
         }
-        // 与 iOS 主屏幕“编辑小组件”相同的位置：所有小组件下面居中一枚胶囊按钮
-        if model.view.canEditWidgets {
+        // 与 iOS 主屏幕“编辑小组件”相同的位置：所有小组件下面居中一枚胶囊按钮。
+        // “我创建的地点”始终显示，只有“最喜欢”可以关闭（网页只下发可关闭的选项）
+        if model.view.canEditWidgets && !model.view.widgetOptions.isEmpty {
             Button {
                 model.beginEditingWidgets()
             } label: {
@@ -762,7 +1282,7 @@ private struct NativeProfileView: View {
                     .nativeGlassSurface(cornerRadius: FM.Radius.full)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(model.tint)
+            .foregroundStyle(session.tint)
             .frame(maxWidth: .infinity)
             .padding(.top, 4)
         }
@@ -774,7 +1294,7 @@ private struct NativeProfileView: View {
             Button(action: action) {
                 Text(title)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(model.tint.fmReadableText)
+                    .foregroundStyle(session.tint.fmReadableText)
                     .padding(.leading, 10)
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
@@ -825,7 +1345,7 @@ private struct NativeProfileView: View {
                             get: { !(model.editingHiddenWidgets?.contains(option.id) ?? false) },
                             set: { model.setWidgetVisible(option.id, isVisible: $0) }
                         ))
-                        .tint(model.tint)
+                        .tint(session.tint)
                         .disabled(model.busy)
                     }
                 }
@@ -843,14 +1363,14 @@ private struct NativeProfileView: View {
                         ProgressView()
                     } else {
                         Button(model.text("save", "保存")) { model.saveWidgets() }
-                            .tint(model.tint.fmReadableText)
+                            .tint(session.tint.fmReadableText)
                             .font(.body.weight(.semibold))
                     }
                 }
             }
         }
-        .nativeThemeColors(primary: model.tint, secondary: model.secondary)
-        .preferredColorScheme(model.dark ? .dark : .light)
+        .nativeThemeColors(primary: session.tint, secondary: session.secondary)
+        .preferredColorScheme(session.dark ? .dark : .light)
     }
 
     private func placeRow(_ row: NativeProfileModel.ProfilePlaceRow) -> some View {
@@ -859,7 +1379,7 @@ private struct NativeProfileView: View {
         } label: {
             HStack(spacing: 10) {
                 Group {
-                    if let url = URL(string: row.image), url.scheme == "https" {
+                    if let url = NativeProfileImage.httpsURL(row.image) {
                         AsyncImage(url: url) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
@@ -894,6 +1414,432 @@ private struct NativeProfileView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: 同好页
+
+/// 同好：导航栏中间是系统分段控件（iOS 26 为可拖动的液态玻璃），下面两页可以左右滑动切换。
+private struct NativeCommunityView: View {
+    @ObservedObject var model: NativeCommunityModel
+    @ObservedObject var session: NativeProfileSession
+
+    var body: some View {
+        TabView(selection: $model.tab) {
+            neighborsPage
+                .tag(NativeCommunityModel.Tab.neighbors)
+            settingsPage
+                .tag(NativeCommunityModel.Tab.settings)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .background(FM.bgBase.ignoresSafeArea())
+        .navigationTitle(model.text("title", "同好"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker(model.text("tabsLabel", "同好页面"), selection: $model.tab.animation(.snappy)) {
+                    Text(model.text("tabNeighbors", "同好")).tag(NativeCommunityModel.Tab.neighbors)
+                    Text(model.text("tabSettings", "发现设置")).tag(NativeCommunityModel.Tab.settings)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+            }
+        }
+        .onAppear { model.loadIfNeeded() }
+        .alert(model.notice ?? "", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
+            Button(model.text("ok", "好"), role: .cancel) {}
+        }
+    }
+
+    private var neighborsPage: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                if model.loading && !model.loaded {
+                    ProgressView()
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                        .accessibilityLabel(Text(model.text("loading", "加载中")))
+                } else if let error = model.loadError {
+                    NativePageCard(padding: 16) {
+                        VStack(spacing: 12) {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button(model.text("retry", "重试")) { model.load() }
+                                .buttonStyle(.bordered)
+                                .disabled(model.loading)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                } else if let empty = model.empty {
+                    NativePageCard(padding: 16) {
+                        VStack(spacing: 8) {
+                            Text(empty.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(empty.hint)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            if empty.opensSettings {
+                                Button(empty.actionLabel) { model.showSettings() }
+                                    .buttonStyle(.borderedProminent)
+                                    .padding(.top, 4)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                } else if model.loaded {
+                    Picker(model.text("viewModeLabel", "显示方式"), selection: $model.viewMode.animation(.snappy)) {
+                        Text(model.text("viewList", "列表")).tag(NativeCommunityModel.ViewMode.list)
+                        Text(model.text("viewMap", "星图")).tag(NativeCommunityModel.ViewMode.map)
+                    }
+                    .pickerStyle(.segmented)
+                    if model.viewMode == .map {
+                        NativeCommunityStarMap(
+                            people: model.people,
+                            me: model.meAvatar,
+                            meLabel: model.text("me", "我"),
+                            label: model.text("mapLabel", "以我为中心的偏好星图"),
+                            accent: session.tint,
+                            secondary: session.secondary,
+                            onOpen: model.openProfile
+                        )
+                        .padding(.top, 4)
+                    } else {
+                        neighborList
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+        }
+    }
+
+    /// 与后台用户管理相同的排版：左侧头像，右边上方住民名、下方相似度
+    private var neighborList: some View {
+        NativePageCard(padding: 0) {
+            VStack(spacing: 0) {
+                ForEach(Array(model.people.enumerated()), id: \.element.id) { index, person in
+                    if index > 0 {
+                        Divider().padding(.leading, 66)
+                    }
+                    Button {
+                        model.openProfile(person.id)
+                    } label: {
+                        HStack(spacing: 12) {
+                            AvatarImage(url: person.avatarURL)
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(person.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(person.meta)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 60)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityHint(Text(person.accessible))
+                }
+            }
+        }
+    }
+
+    private var settingsPage: some View {
+        Form {
+            if model.settingsLoading && !model.settingsLoaded {
+                Section {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 120)
+                }
+                .listRowBackground(FM.bgSurface)
+            } else if let error = model.settingsError, !model.settingsLoaded {
+                Section {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button(model.text("retry", "重试")) { model.loadSettings() }
+                }
+                .listRowBackground(FM.bgSurface)
+            } else if model.settingsLoaded {
+                Section {
+                    TextField(model.text("tagsLabel", "兴趣标签（逗号分隔，最多 20 个）"), text: $model.tags, axis: .vertical)
+                        .lineLimit(1...4)
+                } header: {
+                    Text(model.text("tagsLabel", "兴趣标签（逗号分隔，最多 20 个）"))
+                }
+                .listRowBackground(FM.bgSurface)
+                Section {
+                    Toggle(isOn: $model.discovery) {
+                        Text(model.text("discovery", "允许使用我的用户向量匹配同好，并向其他住民展示住民名和共同标签"))
+                            .font(.subheadline)
+                    }
+                    Toggle(isOn: $model.feedback) {
+                        Text(model.text("feedback", "记录搜索、可见结果、点选、收藏、纠错及定位推断的到访；定位采样仅在前台进行"))
+                            .font(.subheadline)
+                    }
+                    Toggle(isOn: Binding(get: { model.research }, set: { model.research = $0; model.researchChoice = true })) {
+                        Text(model.text("research", "允许将这些交互记录用于改进用户体验"))
+                            .font(.subheadline)
+                    }
+                    .disabled(!model.feedback)
+                } footer: {
+                    Text([model.settingsHint, model.retention].filter { !$0.isEmpty }.joined(separator: "\n"))
+                }
+                .listRowBackground(FM.bgSurface)
+                Section {
+                    Button {
+                        model.saveSettings()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if model.busy {
+                                ProgressView()
+                            } else {
+                                Text(model.text("saveSettings", "保存设置"))
+                                    .font(.body.weight(.semibold))
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(model.busy)
+                    Button {
+                        model.clearInteractions()
+                    } label: {
+                        Text(model.text("clearInteractions", "清除交互记录"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(model.busy)
+                }
+                .listRowBackground(FM.bgSurface)
+            }
+        }
+        .tint(session.tint)
+        .nativePageBackground()
+        .onAppear { if model.tab == .settings { model.loadSettingsIfNeeded() } }
+    }
+}
+
+/// 以我为中心的偏好星图：越相似离中心越近，每位同好显示头像（辅色描边），点按进入主页。全部同好一次显示，不分页。
+/// 坐标与网页星图相同：画布 [-1.2, 1.2]，同好在半径 0.95 的圆内。
+private struct NativeCommunityStarMap: View {
+    let people: [NativeCommunityModel.Person]
+    let me: URL?
+    let meLabel: String
+    let label: String
+    let accent: Color
+    let secondary: Color
+    let onOpen: (String) -> Void
+
+    private let extent: CGFloat = 1.2
+    private let rings: [CGFloat] = [0.35, 0.65, 0.95]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let unit = side / (extent * 2)
+            let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            let diameter = max(30, unit * 0.2)
+            ZStack {
+                Circle()
+                    .fill(FM.bgSurface)
+                    .overlay(Circle().strokeBorder(FM.border, lineWidth: 1))
+                    .frame(width: side, height: side)
+                    .position(center)
+                ForEach(rings, id: \.self) { ring in
+                    Circle()
+                        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                        .frame(width: ring * 2 * unit, height: ring * 2 * unit)
+                        .position(center)
+                }
+                ForEach(people) { person in
+                    Button {
+                        onOpen(person.id)
+                    } label: {
+                        AvatarImage(url: person.avatarURL)
+                            .frame(width: diameter, height: diameter)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(secondary, lineWidth: 2))
+                            .frame(width: max(44, diameter), height: max(44, diameter))
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: center.x + person.x * unit, y: center.y + person.y * unit)
+                    .accessibilityLabel(Text(person.accessible))
+                }
+                // 我画在最上层：同好挨得近时也不会盖住中心
+                VStack(spacing: 2) {
+                    AvatarImage(url: me)
+                        .frame(width: diameter * 1.25, height: diameter * 1.25)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(accent, lineWidth: 2.5))
+                    Text(meLabel)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 4)
+                        .background(FM.bgSurface.opacity(0.85), in: Capsule())
+                }
+                .position(x: center.x, y: center.y + 8)
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(label))
+    }
+}
+
+// MARK: 角色观察屋
+
+/// 原生角色观察屋：开关、当前角色（内置角色用静态预览）、饱食度与切换角色。
+/// Live2D 动画只在网页与地图底栏；iOS 不提供兑换码（App Store 3.1.1），这里没有兑换表单。
+private struct NativeCompanionView: View {
+    @ObservedObject var model: NativeCompanionModel
+    @ObservedObject var session: NativeProfileSession
+    @State private var heart = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                if !model.loaded {
+                    if let error = model.loadError {
+                        NativePageCard(padding: 16) {
+                            VStack(spacing: 12) {
+                                Text(error)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                Button(model.text("retry", "重试")) { model.load() }
+                                    .buttonStyle(.bordered)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    } else {
+                        ProgressView()
+                            .controlSize(.large)
+                            .frame(maxWidth: .infinity, minHeight: 240)
+                            .accessibilityLabel(Text(model.text("loading", "加载中")))
+                    }
+                } else {
+                    NativePageCard(padding: 14) {
+                        Toggle(isOn: Binding(get: { model.enabled }, set: { model.setEnabled($0) })) {
+                            Text(model.text("enabled", "开启角色观察屋"))
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .tint(session.tint)
+                        .disabled(model.busy)
+                    }
+                    if model.enabled {
+                        room
+                        if model.roles.count > 1 {
+                            roleChoices
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+        }
+        .nativePageBackground()
+        .navigationTitle(model.text("title", "角色观察屋"))
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { model.load() }
+        .onChange(of: model.fedPulse) { _, _ in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { heart = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                withAnimation(.easeOut(duration: 0.3)) { heart = false }
+            }
+        }
+        .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
+            Button(model.text("ok", "好"), role: .cancel) {}
+        }
+    }
+
+    private var room: some View {
+        NativePageCard(padding: 16) {
+            VStack(spacing: 10) {
+                ZStack(alignment: .topTrailing) {
+                    Circle()
+                        .fill(session.secondary.opacity(0.14))
+                        .frame(width: 188, height: 188)
+                    Group {
+                        if let image = model.preview {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                        } else {
+                            Image(systemName: "pawprint.fill")
+                                .font(.system(size: 56))
+                                .foregroundStyle(session.secondary)
+                        }
+                    }
+                    .frame(width: 172, height: 172)
+                    .frame(width: 188, height: 188)
+                    if heart {
+                        Image(systemName: "heart.fill")
+                            .font(.title)
+                            .foregroundStyle(FM.danger)
+                            .transition(.scale.combined(with: .opacity))
+                            .accessibilityLabel(Text(model.text("fed", "吃饱了一点！")))
+                    }
+                }
+                .accessibilityHidden(model.preview == nil)
+                Text(model.name)
+                    .font(.headline)
+                Label(model.satiety, systemImage: "fork.knife")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.updatesFrequently)
+                if !model.hint.isEmpty {
+                    Text(model.hint)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var roleChoices: some View {
+        NativePageCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.text("role", "角色"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+                NativeFlowLayout(spacing: 8, lineSpacing: 8) {
+                    ForEach(model.roles) { role in
+                        let selected = role.id == model.activeId
+                        Button {
+                            model.choose(role.id)
+                        } label: {
+                            Text(role.name)
+                                .font(.subheadline)
+                                .nativeChip(selected: selected, tint: session.tint)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.busy)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1012,11 +1958,5 @@ private struct NativeTasteRadar: View {
             context.fill(path, with: .color(accent))
             context.stroke(path, with: .color(accent), lineWidth: 2 * scale)
         }
-    }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
     }
 }

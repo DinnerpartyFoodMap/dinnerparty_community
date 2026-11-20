@@ -2,8 +2,8 @@
 // 坐标：x 是小伙伴左边缘相对地图左边缘的像素；y（lift）是脚底离地面（工具栏上沿）的高度。
 import { MOTION } from './sharedMotions.js';
 
-/** 小伙伴的显示尺寸（与 companion.css 的 .fm-companion-roam 一致） */
-export const BOX = Object.freeze({ width: 46, height: 55 });
+/** 底栏小伙伴的显示与行走占位尺寸。 */
+export const BOX = Object.freeze({ width: 54, height: 65 });
 /** 离屏幕左边、按钮的最小距离 */
 export const MARGIN = 8;
 

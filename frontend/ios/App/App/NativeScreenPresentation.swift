@@ -266,9 +266,15 @@ final class NativeScreenPresenter: NSObject, UIGestureRecognizerDelegate {
 /// 住民主页是桥接控制器上的全屏子页。只有子页位移，底下的地图 / 列表始终保留原来的视图层级。
 final class NativeContainedScreenPresenter: NSObject, UIGestureRecognizerDelegate {
     private weak var host: UIViewController?
+    private weak var gesture: UIPanGestureRecognizer?
     private var tracking = false
     private var transitioning = false
     var onEdgeBack: (() -> Bool)?
+    /// 只在主页本身时启用：主页里推入二级页（同好、角色观察屋等）后，左边缘交给系统导航的跟手返回，
+    /// 两个手势不能同时响应（与住民设置的 edgeGesture 相同）
+    var edgeEnabled = true {
+        didSet { gesture?.isEnabled = edgeEnabled }
+    }
 
     func present(_ host: UIViewController, from parent: UIViewController, completion: @escaping () -> Void) {
         self.host = host
@@ -282,7 +288,9 @@ final class NativeContainedScreenPresenter: NSObject, UIGestureRecognizerDelegat
         let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleEdge(_:)))
         gesture.maximumNumberOfTouches = 1
         gesture.delegate = self
+        gesture.isEnabled = edgeEnabled
         view.addGestureRecognizer(gesture)
+        self.gesture = gesture
         view.transform = animate ? CGAffineTransform(translationX: view.bounds.width, y: 0) : .identity
         parent.view.addSubview(view)
         host.didMove(toParent: parent)

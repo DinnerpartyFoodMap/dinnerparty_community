@@ -138,6 +138,9 @@ export default function App() {
     const lastPathRef = useRef(pathname);
     const webPageUnderProfile = useRef(null);
     const companionEntry = useRef(null);
+    // iOS：从原生住民主页打开的原生住民设置叠在主页之上（{ userId, index }），主页留在下面，返回时侧滑就能看到
+    const settingsOverProfile = useRef(null);
+    const settingsBackWaiter = useRef(null);
     const pageDirectionRef = useRef('push');
     const siteNoticeRef = useRef(null);
     const [noticeLayout, setNoticeLayout] = useState({ top: 12, banTop: 84 });
@@ -621,7 +624,6 @@ export default function App() {
     const selfProfile = !!user && String(user.id) === profileUserId;
     const showProfileCommunity = selfProfile && !!token && profileTab === 'community';
     const showProfileFavorites = !!profileUserId && profileTab === 'favorites';
-    const profileCommunityPage = Number.parseInt(profileSearch.get('page'), 10) || 1;
     // iOS 原生住民主页：网页不渲染 UserProfilePage，地图保持挂载，原生页以系统面板从地图上弹出
     const nativeProfileFailed = nativeProfileFailedId != null && String(nativeProfileFailedId) === String(profileUserId);
     const nativeProfileActive = !!profileUserId && !showProfileCommunity && !showProfileFavorites && !nativeProfileFailed && supportsNativeProfile();
@@ -648,6 +650,35 @@ export default function App() {
         await goPath('/', { replace: true });
         if (getCurrentPath() === '/') setProfileListRequest({ kind, user: { id: userId, name } });
     }, [goPath]);
+    const openSettingsFromProfile = useCallback(() => {
+        if (!user) return false;
+        settingsOverProfile.current = { userId: String(user.id), index: currentNavigationIndex() + 1 };
+        goPath('/settings');
+        return true;
+    }, [goPath, user?.id]);
+    const backFromSettings = useCallback(() => {
+        const entry = settingsOverProfile.current;
+        if (!(entry && entry.index === currentNavigationIndex() && canGoBack())) return goPath('/');
+        // 等回到主页的这一帧渲染完再交回原生设置的会话：先交回的话设置会被当成“打不开”而换成网页设置，连带把主页收起
+        return new Promise((resolve) => {
+            const done = () => {
+                if (settingsBackWaiter.current === done) settingsBackWaiter.current = null;
+                resolve();
+            };
+            settingsBackWaiter.current = done;
+            setTimeout(done, 1500);
+            window.history.back();
+        });
+    }, [goPath]);
+    useEffect(() => {
+        if (pathname !== '/settings') settingsBackWaiter.current?.();
+    }, [pathname]);
+    // 原生住民设置叠在原生主页之上：同一个 NativeProfileHost 保持挂载，主页会话不中断
+    const stackedProfileId = nativeSettingsActive && settingsOverProfile.current
+        && settingsOverProfile.current.index === currentNavigationIndex()
+        && String(user?.id) === settingsOverProfile.current.userId && supportsNativeProfile()
+        ? settingsOverProfile.current.userId : null;
+    const nativeProfileHostId = nativeProfileActive ? profileUserId : stackedProfileId;
     const handleProfileAction = useCallback((action, userId, name) => {
         if (action === 'favorites' || action === 'my-locations') return openProfileList(action, userId, name);
         if (!user || !token || String(user.id) !== String(userId)) return;
@@ -658,7 +689,6 @@ export default function App() {
     useEffect(() => {
         if (showProfileFavorites) void openProfileList('favorites', profileUserId);
     }, [openProfileList, profileUserId, showProfileFavorites]);
-    const changeProfileCommunityPage = (page) => goPath(`/users/${encodeURIComponent(profileUserId)}?tab=community&page=${page}`, { replace: true });
     const backFromProfile = useCallback(() => {
         if (canGoBack()) window.history.back();
         else goPath('/');
@@ -849,8 +879,8 @@ export default function App() {
         );
 
         if (showProfileCommunity) return (
-            <ProfileCommunityPage key={`community-${profileUserId}`} backendUrl={BACKEND_URL} token={token}
-                onOpenProfile={openProfile} onBack={backFromProfileTab} page={profileCommunityPage} onPageChange={changeProfileCommunityPage} />
+            <ProfileCommunityPage key={`community-${profileUserId}`} backendUrl={BACKEND_URL} token={token} currentUser={user}
+                onOpenProfile={openProfile} onBack={backFromProfileTab} />
         );
         if (showProfileFavorites) return null;
         if (profileUserId) return nativeProfileActive ? null : (
@@ -1053,10 +1083,11 @@ export default function App() {
     const pagePath = coveredWebPage?.path ?? pathname;
     const pageKey = pageElement ? pagePath : null;
     useLayoutEffect(() => {
-        if (!nativeProfileActive) {
+        // 住民设置叠在主页上时不算离开主页：返回主页后仍保留主页底下的网页（如地点列表）
+        if (!nativeProfileActive && !stackedProfileId) {
             webPageUnderProfile.current = currentPage ? { element: currentPage, path: pathname, index: navigationIndex } : null;
         }
-    }, [currentPage, nativeProfileActive, navigationIndex, pathname]);
+    }, [currentPage, nativeProfileActive, stackedProfileId, navigationIndex, pathname]);
     // 层级方向：更深为 push，更浅为 pop（返回）
     if (lastPathRef.current !== pathname) {
         pageDirectionRef.current = navigationDirection(lastPathRef.current, pathname);
@@ -1115,7 +1146,7 @@ export default function App() {
                                 onRequireAuth={() => setShowAuth(true)}
                                 onOpenDinners={() => goPath('/dinners')}
                                 onOpenJourney={openJourney}
-                                companion={showMapPage && !profileUserId && companionEnabled && user?.map_settings?.companion_roaming !== false ? companion.state : null}
+                                companion={isAuth && showMapPage && !profileUserId && companionEnabled && user?.map_settings?.companion_roaming !== false ? companion.state : null}
                                 onOpenAdmin={() => goPath('/admin')}
                                 onOpenPosterExport={() => {
                                     if (!isAuth) {
@@ -1136,7 +1167,7 @@ export default function App() {
                                 exhibitionOpen={exhibitionOpen}
                                 onCloseExhibition={closeExhibition}
                                 mapPageActive={showMapPage || nativeSettingsActive}
-                                nativeOverlayActive={nativeProfileActive || nativeAdminActive || nativeJourneyActive}
+                                nativeOverlayActive={!!nativeProfileHostId || nativeAdminActive || nativeJourneyActive}
                                 mapPreviewActive={mapBackPreview}
                             />
                         </div>
@@ -1150,7 +1181,7 @@ export default function App() {
                         {nativeSettingsActive && (
                             <Settings
                                 user={user}
-                                onBack={() => goPath("/")}
+                                onBack={backFromSettings}
                                 backendUrl={BACKEND_URL}
                                 token={token}
                                 onUpdateUser={handleLoginSuccess}
@@ -1167,22 +1198,28 @@ export default function App() {
                             />
                         )}
 
-                        {/* 原生住民主页：不占网页页面，地图留在下方；屏蔽 / 偏好 / 小组件请求仍由网页执行 */}
-                        {nativeProfileActive && (
+                        {/* 原生住民主页：不占网页页面，地图留在下方；屏蔽 / 偏好 / 小组件请求仍由网页执行。
+                            同好、角色观察屋是主页里推入的原生二级页；住民设置叠在主页之上时主页保持挂载 */}
+                        {nativeProfileHostId && (
                             <NativeProfileHost
-                                userId={profileUserId}
+                                userId={nativeProfileHostId}
                                 backendUrl={BACKEND_URL}
                                 token={token}
                                 currentUser={user}
                                 dark={dark}
                                 themeColor={getThemeColor()}
+                                companion={companion.state}
+                                companionEnabled={companionEnabled}
+                                onCompanionUpdate={companion.update}
+                                onCompanionEnabledChange={setCompanionEnabled}
                                 onBack={backFromProfile}
                                 onOpenPlace={openPlaceOnMap}
                                 onOpenCommunity={openProfileCommunity}
+                                onOpenSettings={openSettingsFromProfile}
                                 onAction={handleProfileAction}
                                 onOpenFeedback={openFeedback}
                                 onRequireAuth={() => setShowAuth(true)}
-                                onUnavailable={() => setNativeProfileFailedId(profileUserId)}
+                                onUnavailable={() => setNativeProfileFailedId(nativeProfileHostId)}
                             />
                         )}
 

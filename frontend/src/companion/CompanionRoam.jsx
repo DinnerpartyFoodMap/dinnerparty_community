@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import CompanionFigure from './CompanionFigure';
 import { companionLift } from './companionFlight';
 import { CompanionActor } from './companionActor';
+import { BOX } from './companionBehavior';
 import { CompanionDirector } from './companionDirector';
 import { subscribeCompanionActivity } from './companionActivity';
 import { useMotionFlags } from '../motion/MotionProvider';
@@ -101,7 +102,7 @@ export default function CompanionRoam({ backendUrl, token, companion, bottom, dr
         director.current?.geometryChanged();
     }, [column?.left, column?.top, column?.right, column?.bottom, column === null, bottom, searching]);
 
-    return <div className="fm-companion-roam" ref={roam} aria-hidden="true" style={{ bottom }}>
+    return <div className="fm-companion-roam" ref={roam} aria-hidden="true" style={{ bottom, width: BOX.width, height: BOX.height }}>
         <div className="fm-companion-roam__x" ref={layers.x}>
             <span className="fm-companion-roam__shadow" ref={layers.shadow} />
             <div className="fm-companion-roam__fly" ref={layers.fly}>

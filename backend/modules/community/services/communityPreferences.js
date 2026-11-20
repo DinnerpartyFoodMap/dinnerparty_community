@@ -2,6 +2,9 @@ const { createHash } = require('crypto');
 const { sql, now } = require('../../journeys/services/journeyStore');
 const { getUserPreference } = require('../../preferences/services/userPreferenceService');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
+const { avatarColumns, avatarFields } = require('../../accounts/services/userAvatar');
+// 同好只显示最相似的 20 位（列表与星图共用，不分页）
+const NEIGHBOR_LIMIT = 20;
 function consent(userId) {
     sql.prepare(`INSERT OR IGNORE INTO MapConsent(user_id,feedback,research,discovery,tags,version,updated_at)
         SELECT id,1,1,1,'[]',0,? FROM User WHERE id=?`).run(now(), userId);
@@ -39,12 +42,13 @@ async function neighbors(userId) {
     const current=consent(userId);
     const owner=sql.prepare('SELECT is_banned FROM User WHERE id=?').get(userId);
     if(!owner||owner.is_banned||!current.discovery)return {neighbors:[],profile_status:'disabled',signal_count:0,algorithm};
-    const visible=new Map(sql.prepare(`SELECT u.id,u.username,c.tags FROM User u JOIN MapConsent c ON c.user_id=u.id
+    const visible=new Map(sql.prepare(`SELECT u.id,u.username,c.tags,${avatarColumns('u')} FROM User u JOIN MapConsent c ON c.user_id=u.id
         WHERE c.discovery=1 AND COALESCE(u.is_banned,0)=0 AND ${notBlockedSql('u.id')}`).all(userId).map(u=>[u.id,u]));
     const disclosed=results.filter(r=>visible.has(r.id)).map(r=>{
         const user=visible.get(r.id),tags=JSON.parse(user.tags);
-        return {...r,username:user.username,shared:current.tags.filter(t=>tags.includes(t)).slice(0,3).map(t=>`共同标签：${t}`)};
+        // 头像与住民名都取最新的一行（列表与星图用头像代替圆点）
+        return {...r,username:user.username,...avatarFields(user),shared:current.tags.filter(t=>tags.includes(t)).slice(0,3).map(t=>`共同标签：${t}`)};
     });
-    return { neighbors: disclosed.sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id)).slice(0, 30), profile_status: 'ready', signal_count: mine.vector_place_count, algorithm };
+    return { neighbors: disclosed.sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id)).slice(0, NEIGHBOR_LIMIT), profile_status: 'ready', signal_count: mine.vector_place_count, algorithm };
 }
-module.exports = { consent, neighbors };
+module.exports = { consent, neighbors, NEIGHBOR_LIMIT };

@@ -8,15 +8,19 @@ import { normalizeSkinPack, resolveSkinSlots, collectPacks, registerSkinPacks, c
 import { skinCssVariables, applySkinToRoot } from '../../../src/skins/apply.js';
 import { activateSkin, getActiveSkinId, getRequestedSkinId, skinSlot, subscribeSkin } from '../../../src/skins/skinStore.js';
 import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../../../src/skins/nativeSkin.js';
+import { DEFAULT_COMPANION_MODEL, DEFAULT_COMPANION_PREVIEW } from '../../../src/companion/defaultCompanion.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const packsDir = path.join(root, 'src/skins/packs');
 
-const builtInCompanion = path.join(root, 'public/companions/tororo');
-const { FileReferences } = JSON.parse(fs.readFileSync(path.join(builtInCompanion, 'tororo.model3.json'), 'utf8'));
+const builtInModel = path.join(root, 'public', DEFAULT_COMPANION_MODEL);
+const builtInCompanion = path.dirname(builtInModel);
+const { FileReferences } = JSON.parse(fs.readFileSync(builtInModel, 'utf8'));
 assert.equal(fs.readFileSync(path.join(builtInCompanion, FileReferences.Moc)).subarray(0, 4).toString(), 'MOC3');
-for (const file of [...FileReferences.Textures, FileReferences.Physics, FileReferences.Pose, 'preview.png',
-    ...Object.values(FileReferences.Motions).flat().map((motion) => motion.File)]) {
+assert.ok(fs.statSync(path.join(root, 'public', DEFAULT_COMPANION_PREVIEW)).size > 0, '静态预览随默认角色包内置');
+for (const file of [...FileReferences.Textures, FileReferences.Physics, FileReferences.DisplayInfo, FileReferences.Pose,
+    ...(FileReferences.Expressions || []).map(({ File }) => File),
+    ...Object.values(FileReferences.Motions).flat().map(({ File }) => File)].filter(Boolean)) {
     assert.ok(fs.statSync(path.join(builtInCompanion, file)).size > 0, `${file} 随默认角色包内置`);
 }
 assert.ok(FileReferences.Motions.Idle.length && FileReferences.Motions.Feed.length, '默认角色含待机和投喂动作');

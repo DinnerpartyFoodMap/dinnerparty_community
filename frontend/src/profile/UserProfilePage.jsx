@@ -6,7 +6,7 @@ import { useTips } from '../components/feedback/Tips';
 import { useConfirm } from '../components/feedback/Confirm';
 import TasteRadar from './TasteRadar';
 import { axisLabel, normalizeTaste, SELF_LEVELS, selfLevelLabel, axisValueWord } from './tasteAxes';
-import { hiddenProfileWidgets, PROFILE_WIDGET_KINDS, profileRejectedPlaceCount, profileWidgetEmpty, profileWidgetTitle } from './profileViewModel';
+import { hiddenProfileWidgets, HIDEABLE_PROFILE_WIDGETS, PROFILE_WIDGET_KINDS, profileRejectedPlaceCount, profileWidgetEmpty, profileWidgetTitle } from './profileViewModel';
 import { fetchUserProfile, saveFavoriteVisibility, saveProfileWidgets, saveTasteLevel, setUserBlocked } from '../api/client';
 import { userReportPrefill } from '../feedback/feedbackTypes';
 import { formatAverage, ratingTierFor, tierForAverage, tierLabel } from '../places/rating';
@@ -182,7 +182,7 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                         onViewAll={kind === 'recent' && onAction ? () => onAction('my-locations', user.id, user.username) : undefined} />)}
                     {self && token && <div className="fm-profile__widgets-bar">
                         {editingWidgets ? <>
-                            {PROFILE_WIDGET_KINDS.map((kind) => <label key={kind} className="fm-profile__widget-toggle">
+                            {HIDEABLE_PROFILE_WIDGETS.map((kind) => <label key={kind} className="fm-profile__widget-toggle">
                                 <input type="checkbox" checked={!editingWidgets.includes(kind)} disabled={busy}
                                     onChange={(event) => {
                                         const visible = event.target.checked;

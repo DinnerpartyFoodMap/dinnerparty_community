@@ -65,12 +65,16 @@ async function main() {
     assert.deepEqual(ids((await call(profileUrl, owner)).data.content.recent), [2, 1], 'the owner preview includes the same pending places as the map list');
     const widgetSettingsUrl = '/users/me/profile';
     assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: profile.widgets, hidden_widgets: ['recent', 'collection'] })).status, 400);
-    assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: profile.widgets, hidden_widgets: ['recent'] })).status, 200);
+    // “我创建的地点”不能关闭：旧客户端发来的 recent 被接受但不保存
+    assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: profile.widgets, hidden_widgets: ['recent', 'favorite'] })).status, 200);
     assert.equal((await call(widgetSettingsUrl, owner, 'PUT', { widgets: ['collection', 'favorite'] })).status, 200);
     const adjusted = (await call(profileUrl)).data;
     assert.deepEqual(adjusted.widgets, ['collection', 'favorite']);
-    assert.deepEqual(adjusted.hidden_widgets, ['recent'], 'old clients preserve the visibility preference');
-    assert.equal(adjusted.content.recent, undefined, 'hidden widget contents are omitted for visitors');
+    assert.deepEqual(adjusted.hidden_widgets, ['favorite'], 'old clients preserve the favorite visibility preference, never recent');
+    assert.deepEqual(ids(adjusted.content.recent), [1], 'created places always show, even after an old client tried to hide them');
+    assert.equal(adjusted.content.favorite, undefined, 'hidden widget contents are omitted for visitors');
+    sql.prepare('UPDATE User SET profile_widgets = ? WHERE id = ?').run(JSON.stringify({ widgets: ['collection', 'recent'], hidden_widgets: ['recent'] }), owner);
+    assert.deepEqual((await call(profileUrl)).data.hidden_widgets, [], 'a stored hidden recent widget is shown again');
     assert.deepEqual(ids(profile.content.collection[0].places), [3, 1]);
     assert.equal(profile.collection_visibility, undefined);
     assert.equal((await call(profileUrl, owner)).data.collection_visibility, true);

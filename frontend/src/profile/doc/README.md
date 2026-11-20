@@ -2,9 +2,9 @@
 
 路由 `/users/:id`（`App.jsx` 的 `parseProfileIdFromPath`），页面 `UserProfilePage.jsx`，数据来自 `GET /users/:id/profile`（后端 `modules/accounts/services/userProfile.js`）。
 
-- 头栏左侧显示圆形头像、住民名与上次定位所在的城市。自己主页的「同好」在整个头栏右侧，进入 `?tab=community`。列表与星图每页最多显示 5 人，点按进入对方主页，返回恢复页码。
+- 头栏左侧显示圆形头像、住民名与上次定位所在的城市。自己主页的「同好」在整个头栏右侧，进入 `?tab=community`（`ProfileCommunityPage.jsx`）。同好只有最相似的 20 位（后端截断），列表与星图都一次显示全部，不分页。列表与后台用户管理相同排版：左侧头像，右边上方住民名、下方相似度（`neighborMeta`）。星图以我的头像为中心，每位同好画成头像（辅色描边），越相似离中心越近。点按进入对方主页。两处共用的整理在 `communityViewModel.js`。
 - 「餐饮偏好」雷达独立成栏（`TasteRadar.jsx`）。有值的轴画实心点，有效零值也画点。相邻已知轴连线并填色。点轴名查看偏好描述，自己的主页可调整等级。算法见 [六类餐饮偏好](../../../../backend/modules/preferences/doc/TASTE_AXES.md)。
-- 地点栏依次显示收藏、最近创建和最喜欢，各预览最多 5 个地点。「我创建的地点」与地图列表采用相同的可见性，本人可看到审核中的地点，访客只看到已公开的地点。最喜欢来自住民自己评「均线之上」及以上的地点。本人可切换收藏公开状态，访客只能看到公开收藏。居中的「调整小组件」可分别隐藏或恢复两个地点栏，收藏固定显示。设置由 `PUT /users/me/profile` 保存。
+- 地点栏依次显示收藏、最近创建和最喜欢，各预览最多 5 个地点。「我创建的地点」与地图列表采用相同的可见性，本人可看到审核中的地点，访客只看到已公开的地点。最喜欢来自住民自己评「均线之上」及以上的地点。本人可切换收藏公开状态，访客只能看到公开收藏。居中的「调整小组件」只能隐藏或恢复「最喜欢」：收藏和「我创建的地点」固定显示（2026-11-20，`HIDEABLE_PROFILE_WIDGETS`；后端也只保存 `favorite`，旧数据里隐藏的 `recent` 重新显示）。设置由 `PUT /users/me/profile` 保存。
 - 收藏和创建地点栏的「查看全部」统一在右下角，点击回到地图打开对应的列表弹窗。收藏使用公开收藏接口，创建地点复用按住民筛选面板。旧的 `?tab=favorites` 链接也会打开地图收藏弹窗。
 - 本人的「住民与地图设置」「角色观察屋」「暂离幻想乡」放在小组件按钮下方。
 - 屏蔽与举报在这里（App Store 1.2）：看别人时“屏蔽并举报”（确认 → 屏蔽 → 打开预填的举报表），已屏蔽时“解除屏蔽”，小组件不显示。地图上住民地点列表里原来的“屏蔽并举报”改为“查看主页”。
@@ -17,4 +17,14 @@
 
 ## iOS 原生住民主页（2026-10-30）
 
-iOS App 的住民主页由桥接控制器上的原生 SwiftUI 全屏子页呈现。侧滑只移动主页，地图或同好列表保留在下方，拖回取消时保持主页会话。网页加载主页并执行屏蔽、偏好、收藏可见性与小组件请求。原生接口不可用时使用网页主页。桥接测试纳入 `test:native-panels`。 [原生主页](../../../ios/App/App/NativeProfilePlugin.swift) · [视图模型](../profileViewModel.js) · [会话](../../platform/nativeProfile.js) · [真机验收](../../../native/doc/README.md)
+iOS App 的住民主页由桥接控制器上的原生 SwiftUI 全屏子页呈现。侧滑只移动主页，地图或网页列表保留在下方，拖回取消时保持主页会话。网页加载主页并执行屏蔽、偏好、收藏可见性与小组件请求。原生接口不可用时使用网页主页。桥接测试纳入 `test:native-panels`。 [原生主页](../../../ios/App/App/NativeProfilePlugin.swift) · [视图模型](../profileViewModel.js) · [会话](../../platform/nativeProfile.js) · [真机验收](../../../native/doc/README.md)
+
+### 二级页（2026-11-20）
+
+主页自带页面栈（SwiftUI `NavigationStack`）。打开二级页时主页不关闭，二级页占满全屏，返回时系统侧滑途中就能看到下面的主页。推入二级页后主页自己的整页侧滑停用（`NativeContainedScreenPresenter.edgeEnabled`），左边缘交给系统返回。
+
+- **同好**：原生页。导航栏中间是系统分段控件「同好 / 发现设置」（iOS 26 为可拖动的液态玻璃），下面两页也能左右滑动切换。同好页有列表 / 星图两种显示，排版与网页相同；发现设置页的标签、三个开关、保存与清除交互记录与网页同好页一致。点同好推入对方的主页（同一个原生页面，数据经 `loadProfile` 读取），屏蔽成功后整个主页收起，让举报表显示在地图上。
+- **角色观察屋**：原生页（不再打开 `/settings/companions` 网页）。开关「开启角色观察屋」、当前角色、饱食度、打卡投喂说明与切换角色。内置角色显示随安装包发布的静态预览（`companion/defaultCompanion.js` 的 `DEFAULT_COMPANION_PREVIEW`，原生从安装包的 `public/` 读取），额外角色显示图标；Live2D 动画只在网页观察屋和地图底栏。iOS 没有兑换表单（App Store 3.1.1）。投喂后饱食度上涨时冒一颗爱心。
+- **住民与地图设置**：仍是原生设置插件，网页收到 `openSettings` 后在主页之上打开 `/settings`，`App.jsx` 记下这一层（`settingsOverProfile`），设置打开期间同一个 `NativeProfileHost` 保持挂载。设置的返回改为 `history.back()`，等回到主页的那一帧渲染完才交回原生设置会话。在设置里改了明暗、主题色、住民名或头像，主页会重新上色或重新读取。设置里再进入网页子页（主题皮肤、手机号）时主页收起，与以前相同。
+
+网页侧的请求、白名单与回传见 [会话](../../platform/nativeProfile.js) 与 [`useNativeProfile.js`](../useNativeProfile.js)。旧安装包仍以 `openCommunity` / `settings` / `companion` 结束主页，网页按原来的路由处理。
