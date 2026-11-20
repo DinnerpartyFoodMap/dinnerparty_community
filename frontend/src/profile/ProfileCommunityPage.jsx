@@ -149,19 +149,19 @@ function CommunityStarMap({ people, me, avatar, onOpenProfile }) {
     const open = (event, id) => {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenProfile(id); }
     };
-    return <svg viewBox={`${-extent} ${-extent} ${extent * 2} ${extent * 2}`} className="jw-taste fm-community__map" role="group" aria-label={t('journey:community.mapLabel')}>
+    return <svg viewBox={`${-extent} ${-extent} ${extent * 2} ${extent * 2}`} className="fm-community__map" role="group" aria-label={t('journey:community.mapLabel')}>
         <defs>
             <clipPath id={clipId} clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5" /></clipPath>
         </defs>
         {COMMUNITY_MAP_RINGS.map((radius) => <circle key={radius} r={radius} fill="none" stroke="currentColor" strokeOpacity=".15" strokeWidth=".008" />)}
         {people.map((person, index) => {
             const { x, y } = layout[index];
-            return <g key={person.id} role="button" tabIndex="0" aria-label={t('profile:community.openProfile', { name: person.username })}
+            return <g key={person.id} className="fm-community__person" role="button" tabIndex="0" aria-label={t('profile:community.openProfile', { name: person.username })}
                 onClick={() => onOpenProfile(person.id)} onKeyDown={(event) => open(event, person.id)}>
                 <title>{person.username}</title>
-                {/* 透明的大圆是点按区域（与同好间距相同），头像本身小一些 */}
+                {/* 透明的大圆是点按区域（与同好间距相同），头像本身小一些；悬停/按下只改头像描边，不画这个大圆 */}
                 <circle cx={x} cy={y} r={0.15} fill="transparent" />
-                <circle cx={x} cy={y} r={r + 0.012} fill="var(--theme-secondary)" />
+                <circle className="fm-community__ring" cx={x} cy={y} r={r + 0.012} fill="var(--theme-secondary)" />
                 <image href={avatar(person)} x={x - r} y={y - r} width={r * 2} height={r * 2}
                     clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
             </g>;

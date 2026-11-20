@@ -102,8 +102,29 @@
 }
 .fm-community__map {
     display: block;
+    inline-size: 100%;
     max-inline-size: 420px;
+    aspect-ratio: 1;
     margin-inline: auto;
+    background: var(--color-bg-surface);
+    border-radius: 50%;
+    /* 手机浏览器默认的点按高亮会把整张星图盖成一个灰色大圆，反馈改由头像描边给出 */
+    -webkit-tap-highlight-color: transparent;
+}
+.fm-community__person {
+    cursor: pointer;
+    outline: none;
+}
+.fm-community__ring {
+    stroke: transparent;
+    stroke-width: .012;
+}
+.fm-community__person:hover .fm-community__ring,
+.fm-community__person:focus-visible .fm-community__ring {
+    stroke: var(--color-text-primary);
+}
+.fm-community__person:active .fm-community__ring {
+    fill: var(--theme-primary);
 }
 .fm-profile-page {
     height: 100%;
