@@ -6,7 +6,7 @@ const requireAdmin = require("../../admin/middleware/adminAuth");
 const { insertAdminAction } = require("../../admin/services/adminAudit");
 const { queuePlaceVectorSync } = require('../../preferences/services/placeVectorService');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
-const { createPlaceRequest } = require('../services/placeRequestService');
+const { createPlaceRequest, PLACE_REQUEST_FIELDS } = require('../services/placeRequestService');
 const { normalizePlaceCoordinates, normalizePlaceDescription } = require('../services/placeService');
 const { reviewCreationRequestSync } = require('../services/placeModeration');
 const { wakeNotificationWorker } = require('../services/placeNotifications');
@@ -76,11 +76,8 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
         throw reviewFailure(400, 'INVALID_PLACE_REQUEST_PAYLOAD', '提议内容解析失败');
     }
 
-    const keys = Object.keys(proposed).filter((key) => [
-        'name', 'description', 'latitude', 'longitude', 'category',
-        'exterior_images', 'menu_images', 'per_person_cost', 'creator_id',
-        'updated_time', 'updated_by'
-    ].includes(key));
+    // 只接受内容字段：所有者（creator_id）和最近修改人 / 时间由服务端决定，旧申请里夹带的一律忽略
+    const keys = Object.keys(proposed).filter((key) => PLACE_REQUEST_FIELDS.includes(key));
     if (!keys.length) throw reviewFailure(400, 'EMPTY_PLACE_REQUEST', '无可应用的变更');
     // Requests filed before coordinates were validated may still point outside the map.
     const coordinates = normalizePlaceCoordinates(proposed);
@@ -94,9 +91,12 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
     }
 
     const semanticChanged = keys.some((key) => ['name', 'description', 'category', 'per_person_cost'].includes(key));
+    // 卡片的「最近修改」跟直接编辑一致：记成申请人（账号已删除则保留原值）
     const sets = [
         ...keys.map((key) => `${key} = ?`),
-        ...(semanticChanged ? ['has_vector = 0'] : [])
+        ...(semanticChanged ? ['has_vector = 0'] : []),
+        'updated_time = CURRENT_TIMESTAMP',
+        'updated_by = COALESCE(?, updated_by)'
     ].join(', ');
     const values = keys.map((key) => {
         if (['exterior_images', 'menu_images'].includes(key)) {
@@ -109,7 +109,7 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
     const intent=reqRow.edit_rating?JSON.parse(reqRow.edit_rating):null;
     if(keys.some(key=>JSON.stringify(beforePlace?.[key]??null)!==JSON.stringify(proposed[key]??null)))require('../services/placeEditRating').commitEditRating(reqRow.requester_id,reqRow.place_id,intent);
     const placeUpdate = db._raw.prepare(`UPDATE Place SET ${sets} WHERE id = ?`)
-        .run(...values, reqRow.place_id);
+        .run(...values, reqRow.requester_id || null, reqRow.place_id);
     if (placeUpdate.changes !== 1) {
         throw reviewFailure(409, 'PLACE_REQUEST_TARGET_MISSING', '申请对应的地点已不存在');
     }

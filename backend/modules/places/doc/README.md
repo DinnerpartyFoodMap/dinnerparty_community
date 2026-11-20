@@ -53,6 +53,8 @@ flowchart TD
     Review --> Approval[事务更新地点与申请状态]
 ```
 
+修改申请（`placeRequestService.js`）只接受内容字段（名称、描述、坐标、分类、图片、人均），所有者 `creator_id` 和最近修改人 / 时间不能经申请修改，提交时剔除、批准时忽略。同一住民对同一地点只保留最新一条待审修改：再次提交时，之前未审的修改申请标成 `superseded`（保留在管理页历史里，不能再审）；新增复核和打卡申请不受影响。新申请按当时的地点内容生成，被取代申请里未重复填写的改动不会保留。批准后和直接编辑一样把 `updated_by` 记成申请人、`updated_time` 更新为批准时间，地点卡片的「最近修改」随之变化。
+
 `GET /places/random` 的推荐算法在 discovery；`/places/:id/diaries` 的公开日记读取在 journeys。不要因为 URL 包含 places 就在本模块复制这两类规则。位置修改包含前端交互，代码主要位于 frontend，后端仍校验更新输入。
 
 | 选择 | 当前实现 | 对照 |
