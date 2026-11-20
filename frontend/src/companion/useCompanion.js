@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchCompanionState } from '../skins/skinApi';
 
+// 默认角色的持久化标识，替换内置模型时沿用，以保留选择与投喂记录。
 export const DEFAULT_COMPANION = 'stick-figure';
 // fed_at 上次投喂、adopted_at 领养时间（底栏小伙伴的饿 / 饱，见 companionBehavior.js）
 const DEFAULT = { active: DEFAULT_COMPANION, satiety: 0, owned: [], fed_at: null, adopted_at: null };

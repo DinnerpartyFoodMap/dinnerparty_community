@@ -273,7 +273,7 @@ iOS 原生：半屏面板用 `NativeSheetHeader`；地图玻璃面板、店卡�
 frontend/src/styles/tokens.json       ← 唯一来源（字体、颜色含 light/dark、主题色默认值、阴影、圆角、间距、字号、字重、层级）
         │  npm run tokens（scripts/build-design-tokens.mjs）
         ├─► src/styles/tokens.generated.css   :root 与 :root[data-theme='dark'] 的 CSS 变量，经 tokens.css 的 @import 由 main.jsx 引入
-        ├─► src/styles/tokens.system.css      静态页用：引入上一份，深色改由 prefers-color-scheme 切换（下载、协议、隐私、技术支持页）
+        ├─► src/styles/tokens.system.css      协议、隐私、技术支持页使用：引入上一份，由 prefers-color-scheme 切换深浅
         └─► ios/App/App/DesignTokens.swift    enum FM：FM.bgBase（Color）、FM.UI.bgBase（UIColor）、FM.Radius.lg、FM.Space.s4
 ```
 

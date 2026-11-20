@@ -12,14 +12,14 @@ import { nativeImageSource, nativeSkinChrome, nativeSkinIcon } from '../../../sr
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const packsDir = path.join(root, 'src/skins/packs');
 
-const builtInCompanion = path.join(root, 'public/companions/stick-figure');
-const { FileReferences } = JSON.parse(fs.readFileSync(path.join(builtInCompanion, 'stick-figure.model3.json'), 'utf8'));
+const builtInCompanion = path.join(root, 'public/companions/tororo');
+const { FileReferences } = JSON.parse(fs.readFileSync(path.join(builtInCompanion, 'tororo.model3.json'), 'utf8'));
 assert.equal(fs.readFileSync(path.join(builtInCompanion, FileReferences.Moc)).subarray(0, 4).toString(), 'MOC3');
-for (const file of [...FileReferences.Textures, FileReferences.Physics,
+for (const file of [...FileReferences.Textures, FileReferences.Physics, FileReferences.Pose, 'preview.png',
     ...Object.values(FileReferences.Motions).flat().map((motion) => motion.File)]) {
     assert.ok(fs.statSync(path.join(builtInCompanion, file)).size > 0, `${file} 随默认角色包内置`);
 }
-assert.ok(FileReferences.Motions.Idle.length && FileReferences.Motions.Feed.length, '默认火柴人含待机和投喂动作');
+assert.ok(FileReferences.Motions.Idle.length && FileReferences.Motions.Feed.length, '默认角色含待机和投喂动作');
 
 // 槽位定义自洽
 assert.equal(new Set(SKIN_SLOT_KEYS).size, SKIN_SLOT_KEYS.length, '槽位不重复');

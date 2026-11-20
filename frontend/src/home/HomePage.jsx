@@ -188,6 +188,7 @@ export default function HomePage() {
                     </div>
                     {android?.notes && preferred === 'android' && <p className="home__notes">{android.notes}</p>}
                     {ios?.notes && preferred === 'ios' && <p className="home__notes">{ios.notes}</p>}
+                    <p className="home__notes">{t('companion:sampleCredit')}</p>
                 </section>
             </main>
             <footer className="home__footer home__container">

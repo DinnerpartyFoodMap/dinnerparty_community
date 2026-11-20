@@ -1,15 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { loadCompanionPack } from './companionPack';
+import { TORORO_PARAMETER_IDS } from './sharedMotions';
 import { DEFAULT_COMPANION } from './useCompanion';
 import { t } from '../i18n';
 import './companion.css';
 
-const builtIn = `${import.meta.env.BASE_URL}companions/stick-figure/stick-figure.model3.json`;
-const drawing = `${import.meta.env.BASE_URL}companions/stick-figure/preview.svg`;
-
-export function StickFigureDrawing() {
-    return <img className="fm-companion__drawing" src={drawing} alt="" />;
-}
+const tororo = `${import.meta.env.BASE_URL}companions/tororo/`;
+// 模型画布比猫的可见区域大，用锚点把身子居中并让爪子靠近底栏。
+const tororoAnchor = [0.37, 0.38];
 
 /**
  * mood：'aloft' 时飞在空中的姿态（抬头、略向后仰），null 为平常。只在 Live2D 动起来时有效。
@@ -38,12 +36,14 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
         setLoading(!isDefault);
         setReady(false);
         setError(false);
-        const source = isDefault ? Promise.resolve(builtIn) : loadCompanionPack(backendUrl, token, id, { signal });
+        const source = isDefault ? Promise.resolve(`${tororo}tororo.model3.json`) : loadCompanionPack(backendUrl, token, id, { signal });
         Promise.all([source, import('./live2dScene')]).then(async ([url, { mountLive2D }]) => {
             if (signal.aborted || !container.current) return;
             const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             const stage = await mountLive2D(container.current, url, {
                 signal, reducedMotion, verifyColors: isDefault,
+                parameterIds: isDefault ? TORORO_PARAMETER_IDS : undefined,
+                anchor: isDefault ? tororoAnchor : undefined,
                 onContextLost: () => setReady(false),
                 onContextRestored: () => setRetry(count => count + 1)
             });
@@ -79,7 +79,7 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
 
     return <div className="fm-companion">
         <div className="fm-companion__stage">
-            {!ready && <StickFigureDrawing />}
+            {!ready && <img className="fm-companion__drawing" src={`${tororo}preview.png`} alt="" />}
             <div className="fm-companion__canvas" ref={container} aria-hidden="true" style={{ visibility: ready ? 'visible' : 'hidden' }} />
             {fed && <span className="fm-companion__heart" title={t('companion:fed')} aria-hidden="true">♥</span>}
         </div>

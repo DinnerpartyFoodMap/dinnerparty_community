@@ -1,4 +1,4 @@
-// 内置火柴人的动作文件（scripts/companion-motions.mjs 生成）：与生成器一致、计数正确、别的角色也能用。
+// 小伙伴的动作文件与生成器一致，文件计数、Tororo 参数和动作时长正确。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,5 +34,19 @@ for (const group of Object.values(MOTION)) {
 }
 
 for (const [group, seconds] of Object.entries(ONE_SHOT_SECONDS)) assert.equal(read(group).Meta.Duration, seconds, `${group} 时长与状态机一致`);
+
+const tororoDir = path.join(MODEL_DIR, '../tororo');
+const tororo = JSON.parse(fs.readFileSync(path.join(tororoDir, 'tororo.model3.json'), 'utf8'));
+const tororoRefs = tororo.FileReferences;
+const tororoParameters = new Set(JSON.parse(fs.readFileSync(path.join(tororoDir, tororoRefs.DisplayInfo), 'utf8')).Parameters.map(({ Id }) => Id));
+const tororoMotion = (group) => JSON.parse(fs.readFileSync(path.join(tororoDir, tororoRefs.Motions[group][0].File), 'utf8'));
+for (const group of Object.values(MOTION)) assert.ok(tororoRefs.Motions[group]?.length, `Tororo 有 ${group} 组`);
+assert.deepEqual(tororoRefs.Motions.Standby, tororoRefs.Motions.Idle, 'Tororo 待机沿用官方动作');
+for (const group of Object.values(MOTION).filter((group) => group !== MOTION.standby)) {
+    const { Curves } = tororoMotion(group);
+    assert.ok(Curves.some(({ Id }) => Id === 'PARAM_ANGLE_X'), `${group} 使用 Tororo 的旧版头部参数`);
+    assert.ok(Curves.every(({ Id, Target }) => Target !== 'Parameter' || tororoParameters.has(Id)), `${group} 仅驱动 Tororo 已有的参数`);
+}
+for (const [group, seconds] of Object.entries(ONE_SHOT_SECONDS)) assert.equal(tororoMotion(group).Meta.Duration, seconds, `Tororo ${group} 时长与状态机一致`);
 
 console.log('companion motions ok');

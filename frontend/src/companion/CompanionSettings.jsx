@@ -41,6 +41,7 @@ export default function CompanionSettings({ backendUrl, token, companion, update
                 <strong>{active.name}</strong>
                 <p className="fm-companion-room__satiety" aria-live="polite">{t('companion:satiety', { count: companion.satiety })}</p>
                 <p>{t('companion:unlockHint')}</p>
+                {active.id === DEFAULT_COMPANION && <p>{t('companion:sampleCredit')}</p>}
             </section>
             <div className="fm-companion-room__choices" aria-label={t('companion:role')}>
                 {roles.map((role) => <Button key={role.id} variant={role.id === active.id ? 'primary' : 'secondary'}

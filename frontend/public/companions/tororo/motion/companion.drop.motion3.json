@@ -1,0 +1,151 @@
+{
+    "Version": 3,
+    "Meta": {
+        "Duration": 0.6,
+        "Fps": 30,
+        "FadeInTime": 0.1,
+        "FadeOutTime": 0.15,
+        "Loop": true,
+        "AreBeziersRestricted": true,
+        "CurveCount": 7,
+        "TotalSegmentCount": 11,
+        "TotalPointCount": 40,
+        "UserDataCount": 0,
+        "TotalUserDataSize": 0
+    },
+    "Curves": [
+        {
+            "Target": "Model",
+            "Id": "EyeBlink",
+            "Segments": [
+                0,
+                1,
+                1,
+                0.2,
+                1,
+                0.4,
+                1,
+                0.6,
+                1
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "PARAM_ANGLE_X",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.2,
+                0,
+                0.4,
+                0,
+                0.6,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "PARAM_ANGLE_Y",
+            "Segments": [
+                0,
+                16,
+                1,
+                0.1,
+                16,
+                0.2,
+                19,
+                0.3,
+                19,
+                1,
+                0.4,
+                19,
+                0.5,
+                16,
+                0.6,
+                16
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "PARAM_ANGLE_Z",
+            "Segments": [
+                0,
+                -5,
+                1,
+                0.05,
+                -5,
+                0.1,
+                5,
+                0.15,
+                5,
+                1,
+                0.2,
+                5,
+                0.25,
+                -5,
+                0.3,
+                -5,
+                1,
+                0.35,
+                -5,
+                0.4,
+                5,
+                0.45,
+                5,
+                1,
+                0.5,
+                5,
+                0.55,
+                -5,
+                0.6,
+                -5
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "PARAM_BODY_ANGLE_X",
+            "Segments": [
+                0,
+                0,
+                1,
+                0.2,
+                0,
+                0.4,
+                0,
+                0.6,
+                0
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "PARAM_BODY_ANGLE_Y",
+            "Segments": [
+                0,
+                4,
+                1,
+                0.2,
+                4,
+                0.4,
+                4,
+                0.6,
+                4
+            ]
+        },
+        {
+            "Target": "Parameter",
+            "Id": "PARAM_BREATH",
+            "Segments": [
+                0,
+                1,
+                1,
+                0.2,
+                1,
+                0.4,
+                1,
+                0.6,
+                1
+            ]
+        }
+    ]
+}

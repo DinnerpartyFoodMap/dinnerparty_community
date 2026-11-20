@@ -1,7 +1,8 @@
 {
   "title": "角色观察屋",
   "enabled": "开启角色观察屋",
-  "defaultName": "小火柴人",
+  "defaultName": "Tororo",
+  "sampleCredit": "本作品的角色在运用株式会社Live2D的著作物素材样本时依据了株式会社Live2D规定的协议。本作品完全根据制作者的自我裁量制作而成。",
   "role": "角色",
   "redeemTarget": "兑换内容",
   "satiety": "饱食度 {{count}}",

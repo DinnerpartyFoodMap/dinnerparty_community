@@ -1,4 +1,4 @@
-// 小伙伴各状态用到的动作组。额外角色（资源包）没有的组用内置火柴人的动作补上：
+// 小伙伴各状态用到的动作组。额外角色（资源包）没有的组用原火柴人动作补上：
 // 这些动作只驱动标准参数（头的转向/俯仰/歪头、身体角度、呼吸、眼睛开合，另有火柴人自己的 ParamBodyLean），
 // 其他模型没有的参数会被运行时忽略。角色自己有同名组时用角色自己的；Standby 没有时先用角色的 Idle。
 
@@ -10,6 +10,12 @@ export const MOTION = Object.freeze({
 
 /** 一次性动作的时长（秒），播完才切回循环；与动作文件的 Duration 一致（test:companion 核对） */
 export const ONE_SHOT_SECONDS = Object.freeze({ Land: 0.55, JumpOff: 0.85, Wake: 0.9, Feed: 1.58 });
+
+// Tororo 从 Cubism 2.1 转出，保留了旧版参数名。
+export const TORORO_PARAMETER_IDS = Object.freeze({
+    ParamAngleX: 'PARAM_ANGLE_X', ParamAngleY: 'PARAM_ANGLE_Y', ParamAngleZ: 'PARAM_ANGLE_Z',
+    ParamBodyAngleX: 'PARAM_BODY_ANGLE_X', ParamBodyAngleY: 'PARAM_BODY_ANGLE_Y', ParamBreath: 'PARAM_BREATH'
+});
 
 const SHARED_GROUPS = Object.values(MOTION);
 

@@ -17,20 +17,19 @@ function loadCore() {
     return coreReady;
 }
 
-function hasStickFigureColors(renderer) {
+function hasLightPixels(renderer) {
     const { gl, width, height } = renderer;
     const pixels = new Uint8Array(width * height * 4);
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     for (let i = 0; i < pixels.length; i += 4) {
-        // 内置火柴人的脸和围巾有暖色。首帧只有不透明黑色时，继续显示随包线稿。
-        if (pixels[i + 3] > 192 && pixels[i] > 140 && pixels[i] - pixels[i + 2] > 12) return true;
+        // 白猫有浅色毛发。首帧只有不透明黑色时，继续显示随包预览图。
+        if (pixels[i + 3] > 192 && pixels[i] > 140 && pixels[i + 1] > 140 && pixels[i + 2] > 140) return true;
     }
     return false;
 }
 
 // 叠加姿态：参数 id 与偏移量（标准参数的角度单位，各模型通用），叠加在正在播放的动作之上，动作照常。
 // aloft：飞在空中，抬头、身体略向后仰。facing：朝走路方向转头、转身、往那边弯（乘以方向 ±1）。
-// 内置火柴人只有头身角度、前倾、比例、呼吸和眼睛有形变，手臂、嘴、眉毛参数改了画面也不变，所以不用。
 const MOODS = {
     aloft: [['ParamAngleY', 16], ['ParamBodyLean', -4]]
 };
@@ -42,7 +41,7 @@ const FORCE = 3;
  * 叠加层在物理之后、模型更新之前（beforeModelUpdate）加到参数上；参数在帧末由 loadParameters 还原，不会累积。
  * 每层切换时按时间常数平滑过渡，模型没有的参数跳过。返回 set(层名, [[参数, 偏移]] | null)。
  */
-function attachPoses(model) {
+function attachPoses(model, parameterIds) {
     const core = model.internalModel.coreModel;
     const count = core.getParameterCount();
     const layers = new Map();
@@ -66,7 +65,7 @@ function attachPoses(model) {
             return;
         }
         layer.targets = entries.flatMap(([id, value]) => {
-            const index = core.getParameterIndex(id);
+            const index = core.getParameterIndex(parameterIds[id] ?? id);
             return index >= 0 && index < count ? [{ index, value }] : [];
         });
         layer.goal = 1;
@@ -99,7 +98,9 @@ function attachMotions(model) {
     };
 }
 
-export async function mountLive2D(container, source, { signal, reducedMotion = false, verifyColors = false, onContextLost, onContextRestored } = {}) {
+export async function mountLive2D(container, source, {
+    signal, reducedMotion = false, verifyColors = false, parameterIds = {}, anchor = [0.5, 0.5], onContextLost, onContextRestored
+} = {}) {
     await loadCore();
     const { Live2DModel } = await import('pixi-live2d-display/cubism4');
     if (signal?.aborted) return null;
@@ -116,22 +117,22 @@ export async function mountLive2D(container, source, { signal, reducedMotion = f
             return null;
         }
         const fit = Math.min(width / model.width, height / model.height) * 0.94;
-        model.anchor.set(0.5);
+        model.anchor.set(...anchor);
         model.position.set(width / 2, height / 2);
         model.scale.set(fit);
         app.stage.addChild(model);
         container.appendChild(app.view);
         app.render();
-        if (verifyColors && !hasStickFigureColors(app.renderer)) {
+        if (verifyColors && !hasLightPixels(app.renderer)) {
             await new Promise(resolve => requestAnimationFrame(resolve));
             if (signal?.aborted) throw new Error('Live2D initialization cancelled');
             app.render();
-            if (!hasStickFigureColors(app.renderer)) throw new Error('Stick figure did not render its colors');
+            if (!hasLightPixels(app.renderer)) throw new Error('The companion did not render its light pixels');
         }
         app.view.addEventListener('webglcontextlost', onContextLost);
         app.view.addEventListener('webglcontextrestored', onContextRestored);
         if (!reducedMotion) app.start();
-        const setPose = reducedMotion ? () => {} : attachPoses(model);
+        const setPose = reducedMotion ? () => {} : attachPoses(model, parameterIds);
         const motions = reducedMotion ? { has: () => false, loop: () => {}, play: () => false } : attachMotions(model);
         return {
             feed: () => motions.play('Feed'),

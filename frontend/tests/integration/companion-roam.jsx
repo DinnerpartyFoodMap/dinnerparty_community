@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import CompanionRoam from '../../src/companion/CompanionRoam';
+import { DEFAULT_COMPANION } from '../../src/companion/useCompanion';
 import { MotionProvider } from '../../src/motion/MotionProvider';
 import '../../src/styles/tokens.css';
 
@@ -14,7 +15,7 @@ const director = () => window.__foodmapCompanion;
 function Harness() {
     const [fedAt, setFedAt] = useState(() => iso(Date.now() - 10 * HOUR));
     const [drawer, setDrawer] = useState(false);
-    const companion = { active: 'stick-figure', satiety: 3, owned: [], fed_at: fedAt, adopted_at: iso(Date.now() - 99 * HOUR) };
+    const companion = { active: DEFAULT_COMPANION, satiety: 3, owned: [], fed_at: fedAt, adopted_at: iso(Date.now() - 99 * HOUR) };
     const button = (label, onClick) => <button type="button" data-test={label} onClick={onClick}>{label}</button>;
     return <MotionProvider>
         <div style={{ position: 'fixed', inset: 0, background: '#dfe8dc', overflow: 'hidden' }}>

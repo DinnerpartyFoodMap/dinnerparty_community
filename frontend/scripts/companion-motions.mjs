@@ -1,4 +1,4 @@
-// 内置火柴人的动作文件（motion3.json）生成器：node scripts/companion-motions.mjs 写入，加 --check 只核对。
+// 小伙伴动作文件（motion3.json）生成器：node scripts/companion-motions.mjs 写入，加 --check 只核对。
 // 动作在下方 MOTIONS 里按关键帧写，相邻关键帧之间用 Cubism 编辑器默认的平滑贝塞尔（控制点在三分之一处、切线水平），
 // 生成的文件放在 public/companions/stick-figure/，并把动作组写进 model3.json。待机由 PSD2Live 导出的 idle 加上复位曲线得到。
 //
@@ -10,10 +10,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TORORO_PARAMETER_IDS } from '../src/companion/sharedMotions.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const MODEL_DIR = path.join(root, 'public/companions/stick-figure');
 const MODEL_FILE = path.join(MODEL_DIR, 'stick-figure.model3.json');
+const TORORO_MODEL = '../tororo/tororo.model3.json';
 const IDLE_SOURCE = 'stick-figure.idle.motion3.json';
 const FEED_SOURCE = 'stick-figure.feed.motion3.json';
 /** 模型曲线：眼睛开合（1 睁开、0 闭上），作用于模型 EyeBlink 组里的参数 */
@@ -225,6 +227,25 @@ export function adaptExport(source, { extra = {}, fadeIn, fadeOut, loop }) {
     return { Version: 3, Meta: meta({ duration, fadeIn, fadeOut, loop }, sorted), Curves: sorted };
 }
 
+function addTororoMotions(files) {
+    const model = JSON.parse(fs.readFileSync(path.join(MODEL_DIR, TORORO_MODEL), 'utf8'));
+    const groups = model.FileReferences.Motions;
+    groups[STANDBY.group] = groups.Idle;
+    for (const [group, { file: source }] of [[FEED.group, FEED], ...Object.entries(MOTIONS)]) {
+        const motion = files[source];
+        const curves = motion.Curves.flatMap((item) => {
+            if (item.Target === 'Model') return [item];
+            const id = TORORO_PARAMETER_IDS[item.Id];
+            return id ? [{ ...item, Id: id }] : [];
+        });
+        const { Duration: duration, FadeInTime: fadeIn, FadeOutTime: fadeOut, Loop: loop } = motion.Meta;
+        const file = `motion/companion.${group.toLowerCase()}.motion3.json`;
+        files[`../tororo/${file}`] = { Version: 3, Meta: meta({ duration, fadeIn, fadeOut, loop }, curves), Curves: curves };
+        groups[group] = [{ File: file }];
+    }
+    files[TORORO_MODEL] = model;
+}
+
 /** 生成全部文件内容：{ 文件名: 文本 }，包括改写动作组后的 model3.json */
 export function buildAll() {
     const read = (name) => JSON.parse(fs.readFileSync(path.join(MODEL_DIR, name), 'utf8'));
@@ -247,6 +268,7 @@ export function buildAll() {
         ...Object.fromEntries(Object.entries(MOTIONS).map(([group, motion]) => [group, [{ File: motion.file }]]))
     };
     files[path.basename(MODEL_FILE)] = model;
+    addTororoMotions(files);
     return Object.fromEntries(Object.entries(files).map(([name, json]) => [name, `${JSON.stringify(json, null, 4)}\n`]));
 }
 
@@ -267,7 +289,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
         }
         console.log('companion motions up to date');
     } else {
-        for (const [name, text] of Object.entries(buildAll())) fs.writeFileSync(path.join(MODEL_DIR, name), text);
-        console.log(`wrote ${Object.keys(MOTIONS).length + 2} motions and the model3.json motion groups`);
+        const files = Object.entries(buildAll());
+        for (const [name, text] of files) fs.writeFileSync(path.join(MODEL_DIR, name), text);
+        console.log(`wrote ${files.length} companion motion and model files`);
     }
 }

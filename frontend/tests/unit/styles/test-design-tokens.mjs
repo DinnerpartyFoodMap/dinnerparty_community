@@ -23,13 +23,14 @@ assert.match(read('index.html'), /font-family:\s*var\(--font-sans\)/);
 assert.match(read('src/main.jsx'), /import ["']\.\/styles\/tokens\.css["']/);
 assert.match(read('src/styles/tokens.css'), /@import '\.\/tokens\.generated\.css';/);
 
-// 静态页引用同一份令牌：协议、隐私、技术支持、下载页跟随系统深浅，备案页只有浅色
+// 协议、隐私、技术支持页通过共享令牌跟随系统深浅，备案页使用浅色令牌。
 for (const page of ['terms/index.html', 'privacy/index.html', 'support/index.html']) {
     assert.ok(read(page).includes('href="/src/styles/tokens.system.css"'), `${page} 要引用 tokens.system.css`);
     assert.ok(!/prefers-color-scheme:\s*dark\)\s*\{\s*:root/.test(read(page)), `${page} 不应再自带深色色值`);
 }
 assert.ok(read('beian/index.html').includes('href="/src/styles/tokens.generated.css"'));
-assert.match(read('src/home/main.jsx'), /import '\.\.\/styles\/tokens\.system\.css';/);
+
+assert.ok(read('home/index.html').includes('<meta name="color-scheme" content="light">'), '/home 要声明固定浅色模式');
 
 // Swift 文件加入了 Xcode 工程，重新生成工程时补丁脚本也会补上
 const pbxproj = read('ios/App/App.xcodeproj/project.pbxproj');
