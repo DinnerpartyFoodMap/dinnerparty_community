@@ -172,7 +172,9 @@ async function main() {
     fs.writeFileSync(companionCatalogPath, JSON.stringify({ companions: [] }));
     const retired = await request('/api/skins/companions/me', 'GET', null, 'alice');
     assert.equal(retired.status, 200);
-    assert.deepEqual(retired.body, { active: 'stick-figure', satiety: 0, owned: [] });
+    const { adopted_at: retiredAdopted, ...retiredState } = retired.body;
+    assert.deepEqual(retiredState, { active: 'stick-figure', satiety: 0, fed_at: null, owned: [] });
+    assert.match(retiredAdopted, /^\d{4}-\d{2}-\d{2}T/);
     assert.deepEqual(feedCompanionSync(ids.alice), { active: 'stick-figure', satiety: 1 });
     fs.writeFileSync(companionCatalogPath, companionCatalog);
     const restored = await request('/api/skins/companions/me', 'GET', null, 'alice');
@@ -181,7 +183,8 @@ async function main() {
     assert.deepEqual(feedCompanionSync(ids.alice), { active: 'fox', satiety: 2 });
     db._raw.prepare('DELETE FROM UserCompanion WHERE user_id=? AND companion_id=?').run(ids.alice, 'fox');
     const unowned = await request('/api/skins/companions/me', 'GET', null, 'alice');
-    assert.deepEqual(unowned.body, { active: 'stick-figure', satiety: 1, owned: [] });
+    assert.deepEqual([unowned.body.active, unowned.body.satiety, unowned.body.owned], ['stick-figure', 1, []]);
+    assert.match(unowned.body.fed_at, /^\d{4}-\d{2}-\d{2}T/, '喂过的角色带上次投喂时间');
     assert.deepEqual(feedCompanionSync(ids.alice), { active: 'stick-figure', satiety: 2 });
 
     skins.resetFailuresForTesting();

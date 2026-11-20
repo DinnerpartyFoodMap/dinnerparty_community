@@ -41,6 +41,7 @@ import { getRuntimeConfig } from "../platform/runtimeConfig";
 import { subscribeSkin } from "../skins/skinStore";
 import { t } from "../i18n/index.js";
 import { userReportPrefill } from "../feedback/feedbackTypes";
+import { noteCompanionActivity } from "../companion/companionActivity";
 
 const DEFAULT_CENTER = MapUtils.DEFAULT_CENTER;
 const DEFAULT_ZOOM = MapUtils.DEFAULT_ZOOM;
@@ -1446,6 +1447,20 @@ export default function MapView({
                 map.off('dragstart', onUserInput);
             } catch (e) { /* 地图已销毁 */ }
             for (const type of ['pointerdown', 'wheel']) window.removeEventListener(type, onUserInput, inputOptions);
+        };
+    }, [mapReady]);
+
+    // 地图被拖动、缩放：算作一次操作，底栏小伙伴不睡、睡着的醒来（iOS 原生底图的手势不经过网页的触摸事件）
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!mapReady || !map) return undefined;
+        map.on('movestart', noteCompanionActivity);
+        map.on('dragstart', noteCompanionActivity);
+        return () => {
+            try {
+                map.off('movestart', noteCompanionActivity);
+                map.off('dragstart', noteCompanionActivity);
+            } catch (e) { /* 地图已销毁 */ }
         };
     }, [mapReady]);
 

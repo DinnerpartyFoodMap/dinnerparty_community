@@ -95,7 +95,7 @@ const createTransaction = db._raw.transaction(({ userId, placeId, requestId, inp
     if (todaysPlaces.some(item => item.place_id === placeId)) fail(409, 'CHECK_IN_DUPLICATE', '今天已经在这里打过卡了');
     if (todaysPlaces.length >= MAX_PER_DAY) fail(429, 'CHECK_IN_QUOTA', '每日最多打卡 5 家店');
 
-    const companion = feedCompanionSync(userId);
+    const companion = feedCompanionSync(userId, undefined, now);
     const ratingBaseRevision = score === null ? 0 : db._raw.prepare('SELECT revision FROM RatingStream WHERE user_id=? AND place_id=?')
         .get(userId, placeId)?.revision || 0;
     const row = { id: randomUUID(), user_id: userId, place_id: placeId, created_at_ms: now,

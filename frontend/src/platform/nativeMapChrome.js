@@ -400,6 +400,24 @@ export function readTourLayout(layout) {
     return { step: clipText(tour.step, 32) || '', rect, chrome, drawerOpen: !!tour.drawerOpen };
 }
 
+/**
+ * 右侧浮动按钮组（列表 / 筛选 / 定位，placement 为 floating 的按钮）的外框，WebView 视口 CSS 像素；
+ * 原生控件收起、搜索中（浮动按钮让位）或还没回传位置时为 null。底栏小伙伴爬这组按钮。
+ */
+export function readFloatingRect(layout, ids) {
+    if (!layout?.showing || !Array.isArray(layout.slots) || !ids?.length) return null;
+    let box = null;
+    for (const slot of layout.slots) {
+        if (!slot || !ids.includes(slot.id)) continue;
+        const rect = finiteRect(slot);
+        if (!rect) continue;
+        box = box
+            ? { left: Math.min(box.left, rect.left), top: Math.min(box.top, rect.top), right: Math.max(box.right, rect.right), bottom: Math.max(box.bottom, rect.bottom) }
+            : rect;
+    }
+    return box && Object.fromEntries(Object.entries(box).map(([key, value]) => [key, Math.round(value)]));
+}
+
 export function readSearchResultsTop(layout) {
     if (!layout?.showing || !Array.isArray(layout.slots)) return null;
     const box = finiteRect(layout.slots.find(slot => slot?.id === 'searchResults'));

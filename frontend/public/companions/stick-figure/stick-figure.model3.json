@@ -2,19 +2,86 @@
     "Version": 3,
     "FileReferences": {
         "Moc": "stick-figure.moc3",
-        "Textures": ["stick-figure.png"],
+        "Textures": [
+            "stick-figure.png"
+        ],
         "Physics": "stick-figure.physics3.json",
         "Motions": {
-            "Idle": [{ "File": "stick-figure.idle.motion3.json" }],
-            "Feed": [{ "File": "stick-figure.feed.motion3.json" }],
-            "Blink": [{ "File": "stick-figure.blink.motion3.json" }]
+            "Idle": [
+                {
+                    "File": "stick-figure.idle.motion3.json"
+                }
+            ],
+            "Blink": [
+                {
+                    "File": "stick-figure.blink.motion3.json"
+                }
+            ],
+            "Feed": [
+                {
+                    "File": "stick-figure.nod.motion3.json"
+                }
+            ],
+            "Standby": [
+                {
+                    "File": "stick-figure.standby.motion3.json"
+                }
+            ],
+            "Wander": [
+                {
+                    "File": "stick-figure.wander.motion3.json"
+                }
+            ],
+            "Drop": [
+                {
+                    "File": "stick-figure.drop.motion3.json"
+                }
+            ],
+            "Land": [
+                {
+                    "File": "stick-figure.land.motion3.json"
+                }
+            ],
+            "Climb": [
+                {
+                    "File": "stick-figure.climb.motion3.json"
+                }
+            ],
+            "JumpOff": [
+                {
+                    "File": "stick-figure.jumpoff.motion3.json"
+                }
+            ],
+            "Sleep": [
+                {
+                    "File": "stick-figure.sleep.motion3.json"
+                }
+            ],
+            "Wake": [
+                {
+                    "File": "stick-figure.wake.motion3.json"
+                }
+            ],
+            "Hungry": [
+                {
+                    "File": "stick-figure.hungry.motion3.json"
+                }
+            ],
+            "Full": [
+                {
+                    "File": "stick-figure.full.motion3.json"
+                }
+            ]
         }
     },
     "Groups": [
         {
             "Target": "Parameter",
             "Name": "EyeBlink",
-            "Ids": ["ParamEyeLOpen", "ParamEyeROpen"]
+            "Ids": [
+                "ParamEyeLOpen",
+                "ParamEyeROpen"
+            ]
         }
     ]
 }

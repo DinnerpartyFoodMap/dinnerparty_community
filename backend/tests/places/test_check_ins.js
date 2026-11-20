@@ -30,7 +30,9 @@ async function main() {
     const first = submit(1, cmd(1, { fix: { ...fix, lat: move(49.99) } }));
     assert.equal(first.satiety, 1);
     assert.equal(submit(1, cmd(1), now + 90000).id, first.id);
-    assert.deepEqual(companions.getCompanionState('a'), { active: 'stick-figure', satiety: 1 });
+    const fedOnce = companions.getCompanionState('a');
+    assert.deepEqual([fedOnce.active, fedOnce.satiety, fedOnce.fed_at], ['stick-figure', 1, new Date(now).toISOString()], '记下投喂时间');
+    assert.match(fedOnce.adopted_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, '内置角色从注册算领养');
     assert.throws(() => submit(1, cmd('other')), { code: 'CHECK_IN_DUPLICATE' });
     submit(2, cmd(2, { fix: { ...fix, source: 'native', timestamp: now - 0.25 } }));
     for (let id = 3; id <= 5; id++) submit(id);
@@ -44,9 +46,26 @@ async function main() {
         .run('a', 'test-character', new Date(now).toISOString());
     companions.setActiveCompanion('a', 'test-character');
     assert.equal(submit(6, cmd(6, { fix: { ...fix, timestamp: now + 2000 } }), now + 2000).satiety, 1);
-    assert.deepEqual(companions.getCompanionState('a'), { active: 'test-character', satiety: 1 });
+    assert.deepEqual(companions.getCompanionState('a'), { active: 'test-character', satiety: 1,
+        fed_at: new Date(now + 2000).toISOString(), adopted_at: new Date(now).toISOString() }, '额外角色从兑换算领养');
     companions.setActiveCompanion('a', 'stick-figure');
     assert.equal(companions.getCompanionState('a').satiety, 5);
+    {
+        const Database = require('better-sqlite3');
+        const old = new Database(':memory:');
+        old.exec(`CREATE TABLE User (id TEXT PRIMARY KEY, created_time DATETIME);
+            CREATE TABLE CompanionSatiety (user_id TEXT NOT NULL, companion_id TEXT NOT NULL, satiety INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(user_id, companion_id));
+            CREATE TABLE PlaceCheckIn (id TEXT PRIMARY KEY, user_id TEXT, companion_id TEXT, created_at_ms INTEGER);
+            INSERT INTO CompanionSatiety VALUES ('u', 'stick-figure', 2), ('u', 'fox', 1), ('v', 'stick-figure', 0);
+            INSERT INTO PlaceCheckIn VALUES ('1', 'u', 'stick-figure', 100), ('2', 'u', 'stick-figure', 300), ('3', 'u', 'fox', 200);`);
+        companions.initCompanionStateSchema(old);
+        const fed = old.prepare('SELECT user_id, companion_id, fed_at_ms FROM CompanionSatiety ORDER BY user_id, companion_id').all()
+            .map((row) => `${row.user_id}/${row.companion_id}=${row.fed_at_ms}`);
+        assert.deepEqual(fed, ['u/fox=200', 'u/stick-figure=300', 'v/stick-figure=null'], '旧库按打卡记录回填上次投喂');
+        companions.initCompanionStateSchema(old);
+        old.close();
+    }
     db._raw.prepare("UPDATE Place SET description='原有介绍' WHERE id=1").run();
     const image = { bytes: Buffer.from('example bytes'), contentType: 'image/png' };
     const reviewed = checkIns.createCheckIn('b', 1, cmd('reviewed', { description: '一份补充', score: 4 }), now, [image, image]);

@@ -3,14 +3,14 @@
 // 地图页被其他页面盖住时（visible 为假）会话保留、原生控件收起，回到地图页不必重新握手。
 
 import { useEffect, useRef, useState } from 'react';
-import { NativeMapChromeSession, canUseNativeMapChrome, expectNativeMapChrome, getNativeChromeStatus, readDrawerLayout, readSearchFieldBottom, readSearchResultsTop, readTourLayout, subscribeNativeChromeStatus } from '../platform/nativeMapChrome';
+import { NativeMapChromeSession, canUseNativeMapChrome, expectNativeMapChrome, getNativeChromeStatus, readDrawerLayout, readFloatingRect, readSearchFieldBottom, readSearchResultsTop, readTourLayout, subscribeNativeChromeStatus } from '../platform/nativeMapChrome';
 import { useMotionPolicy } from '../motion/MotionProvider';
 
 let ownerSeq = 0;
 // 首次握手期间最多这么久不显示网页工具栏；超时仍未接管就先显示网页工具栏（之后接管会再切换一次）
 const WEB_HOLD_MS = 1500;
 // pending：本次启用后的首次握手还没有结果（成功、回退网页或等待超时）
-const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: true, tour: null, showing: false, drawerMotion: readDrawerLayout(null), searchResults: false, searchResultsTop: null, searchFieldBottom: null });
+const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: true, tour: null, showing: false, drawerMotion: readDrawerLayout(null), searchResults: false, searchResultsTop: null, searchFieldBottom: null, floatingRect: null });
 
 /**
  * @param {{ enabled: boolean, visible?: boolean, items: Array, theme: object, floatingGap?: number, search?: object, sheet?: object|null,
@@ -21,9 +21,10 @@ const INITIAL_STATE = Object.freeze({ mode: 'web', bottomOccupied: 0, pending: t
  * skin：原生控件的皮肤装饰（skins/nativeSkin.js 的 nativeSkinChrome），按当前深浅色取值。
  * tour：操作指引当前一步要原生指出的控件（{ step, target, drawer }，见 sanitizeTour），没有指引时为 null。
  * @returns {{ mode: 'web'|'native', bottomOccupied: number, connecting: boolean, holdWeb: boolean, tour: object|null,
- *             drawerMotion: object, searchResults: boolean, searchResultsTop: number|null, searchFieldBottom: number|null }}
+ *             drawerMotion: object, searchResults: boolean, searchResultsTop: number|null, searchFieldBottom: number|null, floatingRect: object|null }}
  * tour（返回值）：原生回传的指引位置（readTourLayout），供指引挖空遮罩、摆放卡片。
  * drawerMotion：更多功能的展开、拖动与高度（readDrawerLayout），供底栏小伙伴起飞；网页控件时总是收起。
+ * floatingRect：右侧浮动按钮组的外框（readFloatingRect），底栏小伙伴爬它；网页控件时为 null。
  * connecting：可以使用原生控件、握手还没有结果（成功或回退网页）；依赖当前按钮布局的界面（操作指引）等它结束。
  * holdWeb：预计原生会接管、首次握手还没有结果：网页工具栏先不显示，免得启动时先闪一下网页工具栏再换成原生控件。
  */
@@ -51,6 +52,9 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
     const snapshot = { items: resolvedItems, theme, glass: policy.nativeGlass !== false, floatingGap, search, sheet: nativeMode ? sheet : null, drawer: nativeMode ? drawer : null, skin, tour: nativeMode ? tour : null };
     const snapshotRef = useRef(snapshot);
     snapshotRef.current = snapshot;
+    // 浮动按钮的 id：布局回传时据此取按钮组外框
+    const floatingIdsRef = useRef([]);
+    floatingIdsRef.current = items.filter((item) => item.placement === 'floating').map((item) => item.id);
 
     useEffect(() => {
         if (!active) return undefined;
@@ -69,12 +73,15 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
                 const searchResultsTop = readSearchResultsTop(layout);
                 const searchFieldBottom = readSearchFieldBottom(layout);
                 const motion = readDrawerLayout(layout);
+                // 更多功能展开 / 拖动时浮动按钮随抽屉上移（小伙伴这时在空中），不跟着重新渲染
+                const floatingRect = motion.open || motion.dragging ? prev.floatingRect : readFloatingRect(layout, floatingIdsRef.current);
+                const floatingChanged = JSON.stringify(floatingRect) !== JSON.stringify(prev.floatingRect);
                 const motionChanged = motion.open !== prev.drawerMotion.open || motion.dragging !== prev.drawerMotion.dragging
                     || motion.height !== prev.drawerMotion.height;
                 if (prev.bottomOccupied === bottom && !tourChanged && prev.showing === showing && !motionChanged
-                    && prev.searchResultsTop === searchResultsTop && prev.searchFieldBottom === searchFieldBottom) return prev;
+                    && prev.searchResultsTop === searchResultsTop && prev.searchFieldBottom === searchFieldBottom && !floatingChanged) return prev;
                 return { ...prev, bottomOccupied: bottom, tour: tourChanged ? tourLayout : prev.tour, showing, searchResultsTop, searchFieldBottom,
-                    drawerMotion: motionChanged ? motion : prev.drawerMotion };
+                    floatingRect: floatingChanged ? floatingRect : prev.floatingRect, drawerMotion: motionChanged ? motion : prev.drawerMotion };
             })
         });
         sessionRef.current = session;
@@ -124,5 +131,6 @@ export function useMapChrome({ enabled, visible = true, items, theme, floatingGa
     return { mode: state.mode, bottomOccupied: state.bottomOccupied, connecting, holdWeb, tour: native ? state.tour : null, showing: native && state.showing,
         searchResults: native && state.searchResults, searchResultsTop: native && state.searchResults ? state.searchResultsTop : null,
         searchFieldBottom: native ? state.searchFieldBottom : null,
+        floatingRect: native ? state.floatingRect : null,
         drawerMotion: native ? state.drawerMotion : INITIAL_STATE.drawerMotion };
 }

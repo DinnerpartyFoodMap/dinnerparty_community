@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchCompanionState } from '../skins/skinApi';
 
 export const DEFAULT_COMPANION = 'stick-figure';
-const DEFAULT = { active: DEFAULT_COMPANION, satiety: 0, owned: [] };
+// fed_at 上次投喂、adopted_at 领养时间（底栏小伙伴的饿 / 饱，见 companionBehavior.js）
+const DEFAULT = { active: DEFAULT_COMPANION, satiety: 0, owned: [], fed_at: null, adopted_at: null };
 
 export function useCompanion(backendUrl, token) {
     const [data, setData] = useState(null);

@@ -33,7 +33,7 @@ flowchart TD
 
 ## 角色与远程皮肤兑换
 
-管理页发码时选择一个角色或一套皮肤，账号权益仍在兑换事务中与次数一起写入。`InviteCode.companion_id` 及 `UserCompanion` 保存角色的码和持有状态，`CompanionSelection` 与 `CompanionSatiety` 保存当前角色和饱食度。历史皮肤码、`UserSkin` 和原皮肤接口仍可用。共同的 `POST /api/skins/redeem-resource` 返回 `type`、`unlocked`、`already_owned` 及对应资源状态。`GET /api/skins/companions/me` 读取持有、当前角色及饱食度，`PUT /api/skins/companions/active` 接受 `companion_id`。内置 `stick-figure` 可直接选用。
+管理页发码时选择一个角色或一套皮肤，账号权益仍在兑换事务中与次数一起写入。`InviteCode.companion_id` 及 `UserCompanion` 保存角色的码和持有状态，`CompanionSelection` 与 `CompanionSatiety` 保存当前角色和饱食度。历史皮肤码、`UserSkin` 和原皮肤接口仍可用。共同的 `POST /api/skins/redeem-resource` 返回 `type`、`unlocked`、`already_owned` 及对应资源状态。`GET /api/skins/companions/me` 读取持有、当前角色及饱食度，另带 `fed_at`（上次投喂，ISO，没喂过为 null；`CompanionSatiety.fed_at_ms` 在打卡投喂时写入，旧库补列时按 `PlaceCheckIn` 回填）与 `adopted_at`（内置角色为注册时间、额外角色为兑换时间），只给本人，供底栏小伙伴判断饿和饱，`PUT /api/skins/companions/active` 接受 `companion_id`。内置 `stick-figure` 可直接选用。
 
 ## 远程资源包
 

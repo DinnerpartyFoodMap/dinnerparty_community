@@ -2458,13 +2458,15 @@ export default function MapUI(props) {
             <div className="fm-statusbar-occluder" data-map-occluder="" aria-hidden="true" />
             {isNarrow && mapReady && !chrome.connecting && (!nativeChrome || chrome.showing)
                 && props.companion && !pickerMode && !selectedPlace && !addMode && !openSheetId && !mobileMoreOpen && !nativeOverlayActive && (
+                // 游走、发呆、爬右侧按钮（网页按钮标了 data-companion-perch）、睡觉等见 companion/companionDirector.js；
                 // 上拉更多功能或显示搜索结果时飞起，收起时落回
                 <CompanionRoam backendUrl={backendUrl} token={token} companion={props.companion}
                     bottom={companionBottom}
                     drawer={chrome.drawerMotion}
                     searching={companionSearching}
                     perch={chrome.searchResults ? null : searchListEl}
-                    perchTop={nativeSearchResults ? chrome.searchResultsTop : null} />
+                    perchTop={nativeSearchResults ? chrome.searchResultsTop : null}
+                    column={companionSearching ? null : nativeChrome ? chrome.floatingRect : undefined} />
             )}
 
             {addMode && !pickerMode && <Notice title={t('map:ui.addPlaceHint')} tone="warning"
@@ -2667,14 +2669,14 @@ export default function MapUI(props) {
             />}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
-                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(mobileFloatingBottom + 52), zIndex: 2000, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div data-native-cluster-occluder="" data-companion-perch="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(mobileFloatingBottom + 52), zIndex: 2000, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {listToggleButton(26)}
                     {filterButton(26)}
                 </div>
             )}
 
             {!hideNonSearchButtons && isNarrow && !pickerMode && !webChromeHidden && !(compactSearch && searchExpanded) && (
-                <div data-native-cluster-occluder="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(mobileFloatingBottom), zIndex: 2000 }}>
+                <div data-native-cluster-occluder="" data-companion-perch="" style={{ position: 'absolute', right: 12, bottom: aboveBottomInset(mobileFloatingBottom), zIndex: 2000 }}>
                     <Tooltip text={locating ? t('map:ui.locating') : t('map:ui.locateTooltip')} placement="top">
                         <div style={{ display: 'inline-block' }}>
                             <Button

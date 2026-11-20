@@ -7,7 +7,7 @@ import { randomFoodChromeSheet } from '../../../src/discovery/randomFoodSheet.js
 globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 globalThis.document = { visibilityState: 'visible', addEventListener() { } };
 
-const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, readDrawerLayout, readSearchFieldBottom, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
+const { NativeMapChromeSession, nextNativeSheetIdentity, sanitizeItems, sanitizeSearch, sanitizeSheet, sanitizeDrawer, sanitizeSkin, sanitizeSkinImage, sanitizeTour, readTourLayout, readDrawerLayout, readFloatingRect, readSearchFieldBottom, NATIVE_CHROME_PROTOCOL, NATIVE_SHEETS, NATIVE_CHROME_ACTIONS } = await import("../../../src/platform/nativeMapChrome.js");
 const { registerOverlay, getOverlayEntries } = await import("../../../src/components/overlay/overlayStack.js");
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -509,6 +509,20 @@ for (const supported of [false, true]) {
     assert.deepEqual(readDrawerLayout({ showing: true, drawer: { open: 'yes', dragging: 1, height: 300 } }), closedDrawer, '只认布尔值');
     assert.deepEqual(readDrawerLayout({ showing: true, drawer: { open: true, height: 1e9 } }).height, 2000, '高度封顶');
     assert.deepEqual(readDrawerLayout(null), closedDrawer);
+
+    // 右侧浮动按钮组的外框（底栏小伙伴爬它）：只取浮动按钮的 slot，合成一个框
+    const floatingLayout = { showing: true, slots: [
+        { id: 'toolbar', x: 12, y: 740, width: 366, height: 72 },
+        { id: 'listView', x: 328, y: 576, width: 50, height: 50 },
+        { id: 'filter', x: 328, y: 626, width: 50, height: 50 },
+        { id: 'locate', x: 328.4, y: 676, width: 50, height: 50 },
+        { id: 'broken', x: 'a', y: 0, width: 1, height: 1 }
+    ] };
+    assert.deepEqual(readFloatingRect(floatingLayout, ['listView', 'filter', 'locate']), { left: 328, top: 576, right: 378, bottom: 726 });
+    assert.deepEqual(readFloatingRect(floatingLayout, ['locate']), { left: 328, top: 676, right: 378, bottom: 726 });
+    assert.equal(readFloatingRect({ ...floatingLayout, showing: false }, ['locate']), null, '原生控件收起');
+    assert.equal(readFloatingRect(floatingLayout, []), null);
+    assert.equal(readFloatingRect({ showing: true, slots: [{ id: 'toolbar', x: 0, y: 0, width: 1, height: 1 }] }, ['locate']), null, '还没回传');
 
     // v6 更多功能（工具栏上滑）：没有可显示的行时不下发，行数封顶
     assert.equal(sanitizeDrawer(null), null);

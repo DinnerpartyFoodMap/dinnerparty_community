@@ -28,46 +28,73 @@ function hasStickFigureColors(renderer) {
     return false;
 }
 
-// 姿态：参数 id 与偏移比例（正数按最大值、负数按最小值算，模型不同范围也不同），叠加在待机动作之上，待机的晃动照常。
-// aloft：飞在空中，抬头、身体略向后仰。内置火柴人只给头身角度、前倾、比例与呼吸做了形变，
-// 手臂、嘴、眉毛、眼珠参数不会改变画面，所以不用。
+// 叠加姿态：参数 id 与偏移量（标准参数的角度单位，各模型通用），叠加在正在播放的动作之上，动作照常。
+// aloft：飞在空中，抬头、身体略向后仰。facing：朝走路方向转头、转身、往那边弯（乘以方向 ±1）。
+// 内置火柴人只有头身角度、前倾、比例、呼吸和眼睛有形变，手臂、嘴、眉毛参数改了画面也不变，所以不用。
 const MOODS = {
-    aloft: [['ParamAngleY', 0.55], ['ParamBodyLean', -0.4]]
+    aloft: [['ParamAngleY', 16], ['ParamBodyLean', -4]]
 };
-const MOOD_EASE_MS = 140;
+const FACING = [['ParamAngleX', 18], ['ParamBodyAngleX', 4], ['ParamBodyLean', 2]];
+const POSE_EASE_MS = 160;
+const FORCE = 3;
 
 /**
- * 姿态叠加在物理之后、模型更新之前（beforeModelUpdate）；参数在帧末由 loadParameters 还原，不会累积。
- * 切换时按时间常数平滑过渡。模型没有的参数跳过。
+ * 叠加层在物理之后、模型更新之前（beforeModelUpdate）加到参数上；参数在帧末由 loadParameters 还原，不会累积。
+ * 每层切换时按时间常数平滑过渡，模型没有的参数跳过。返回 set(层名, [[参数, 偏移]] | null)。
  */
-function attachMoods(model) {
+function attachPoses(model) {
     const core = model.internalModel.coreModel;
     const count = core.getParameterCount();
-    const resolve = (name) => (MOODS[name] || []).flatMap(([id, fraction]) => {
-        const index = core.getParameterIndex(id);
-        if (index < 0 || index >= count) return [];
-        const value = fraction >= 0 ? core.getParameterMaximumValue(index) * fraction : core.getParameterMinimumValue(index) * -fraction;
-        return [{ index, value }];
-    });
-    const state = { targets: [], blend: 0, goal: 0, last: 0 };
-    const apply = () => {
+    const layers = new Map();
+    let last = 0;
+    model.internalModel.on('beforeModelUpdate', () => {
         const now = performance.now();
-        const dt = state.last ? Math.min(100, now - state.last) : 16;
-        state.last = now;
-        state.blend += (state.goal - state.blend) * (1 - Math.exp(-dt / MOOD_EASE_MS));
-        if (state.blend < 0.001) return;
-        for (const { index, value } of state.targets) {
-            core.addParameterValueByIndex(index, value * state.blend);
+        const dt = last ? Math.min(100, now - last) : 16;
+        last = now;
+        for (const layer of layers.values()) {
+            layer.blend += (layer.goal - layer.blend) * (1 - Math.exp(-dt / POSE_EASE_MS));
+            if (layer.blend < 0.001) continue;
+            for (const { index, value } of layer.targets) core.addParameterValueByIndex(index, value * layer.blend);
         }
+    });
+    return (name, entries) => {
+        const layer = layers.get(name) || { targets: [], blend: 0, goal: 0 };
+        layers.set(name, layer);
+        if (!entries) {
+            // 淡出时沿用原来的目标
+            layer.goal = 0;
+            return;
+        }
+        layer.targets = entries.flatMap(([id, value]) => {
+            const index = core.getParameterIndex(id);
+            return index >= 0 && index < count ? [{ index, value }] : [];
+        });
+        layer.goal = 1;
     };
-    model.internalModel.on('beforeModelUpdate', apply);
-    return (name) => {
-        if (name && MOODS[name]) {
-            state.targets = resolve(name);
-            state.goal = 1;
-        } else {
-            // 淡出时沿用上一组目标
-            state.goal = 0;
+}
+
+/**
+ * 动作控制：loop 把一个组设为待机组并立刻切过去（播完自动重播，用来表示持续的状态），
+ * play 播一次（播完回到当前循环组）。模型没有的组：loop 退回 Idle，play 不播。
+ */
+function attachMotions(model) {
+    const manager = model.internalModel.motionManager;
+    const groups = model.internalModel.settings.motions || {};
+    const has = (group) => Array.isArray(groups[group]) && groups[group].length > 0;
+    let current = manager.groups.idle;
+    return {
+        has,
+        loop(group) {
+            const target = has(group) ? group : has('Idle') ? 'Idle' : null;
+            if (!target || target === current) return;
+            current = target;
+            manager.groups.idle = target;
+            model.motion(target, 0, FORCE).catch(() => {});
+        },
+        play(group) {
+            if (!has(group)) return false;
+            model.motion(group, 0, FORCE).catch(() => {});
+            return true;
         }
     };
 }
@@ -104,10 +131,16 @@ export async function mountLive2D(container, source, { signal, reducedMotion = f
         app.view.addEventListener('webglcontextlost', onContextLost);
         app.view.addEventListener('webglcontextrestored', onContextRestored);
         if (!reducedMotion) app.start();
-        const setMood = reducedMotion ? () => {} : attachMoods(model);
+        const setPose = reducedMotion ? () => {} : attachPoses(model);
+        const motions = reducedMotion ? { has: () => false, loop: () => {}, play: () => false } : attachMotions(model);
         return {
-            feed: () => !reducedMotion && model.motion('Feed', 0, 3).catch(() => {}),
-            setMood,
+            feed: () => motions.play('Feed'),
+            setMood: (name) => setPose('mood', MOODS[name] || null),
+            // 朝向：1 画面右侧，-1 左侧，0 正面
+            face: (direction) => setPose('facing', direction ? FACING.map(([id, value]) => [id, value * Math.sign(direction)]) : null),
+            loop: motions.loop,
+            play: motions.play,
+            hasMotion: motions.has,
             destroy: () => {
                 app.view.removeEventListener('webglcontextlost', onContextLost);
                 app.view.removeEventListener('webglcontextrestored', onContextRestored);

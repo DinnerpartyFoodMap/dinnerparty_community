@@ -11,12 +11,18 @@ export function StickFigureDrawing() {
     return <img className="fm-companion__drawing" src={drawing} alt="" />;
 }
 
-/** mood：'aloft' 时飞在空中的姿态（抬头、略向后仰），null 为平常。只在 Live2D 动起来时有效。 */
-export default function CompanionFigure({ backendUrl, token, companion, showStatus = false, mood = null }) {
+/**
+ * mood：'aloft' 时飞在空中的姿态（抬头、略向后仰），null 为平常。只在 Live2D 动起来时有效。
+ * onScene(scene | null)：Live2D 就绪 / 卸载时交出场景（loop / play / face / setMood），底栏小伙伴由状态机控制动作；
+ * reactToFeed：饱食度上涨时自己点头冒爱心（观察屋里用；底栏由状态机庆祝，传 false）。
+ */
+export default function CompanionFigure({ backendUrl, token, companion, showStatus = false, mood = null, onScene = null, reactToFeed = true }) {
     const container = useRef(null);
     const scene = useRef(null);
     const moodRef = useRef(mood);
     moodRef.current = mood;
+    const onSceneRef = useRef(onScene);
+    onSceneRef.current = onScene;
     const last = useRef(companion.satiety);
     const [loading, setLoading] = useState(false);
     const [ready, setReady] = useState(false);
@@ -44,12 +50,14 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
             if (signal.aborted) { stage?.destroy(); return; }
             scene.current = stage;
             stage?.setMood(moodRef.current);
+            if (stage) onSceneRef.current?.(stage);
             setReady(!!stage);
         }).catch(() => { if (!signal.aborted && !isDefault) setError(true); }).finally(() => {
             if (!signal.aborted) setLoading(false);
         });
         return () => {
             controller.abort();
+            if (scene.current) onSceneRef.current?.(null);
             scene.current?.destroy();
             scene.current = null;
         };
@@ -62,7 +70,7 @@ export default function CompanionFigure({ backendUrl, token, companion, showStat
     useEffect(() => {
         const previous = last.current;
         last.current = companion.satiety;
-        if (companion.satiety <= previous) { setFed(false); return undefined; }
+        if (!reactToFeed || companion.satiety <= previous) { setFed(false); return undefined; }
         scene.current?.feed();
         setFed(true);
         const timer = setTimeout(() => setFed(false), 1200);

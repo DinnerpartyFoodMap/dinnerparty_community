@@ -8,16 +8,71 @@
 
 `npm run build` 和 `npm run build:mobile` 在构建前从 Live2D 官方地址准备 Cubism Core。生成的供应商运行时位于 `src/companion/runtime/`，由 Git 忽略并在构建时一起打包。已准备过 Core 的构建可以离线运行。开发时可先执行 `node scripts/prepare-live2d-core.mjs` 再启动 Vite。发版时按 [Live2D SDK 发布许可](https://www.live2d.com/en/sdk/license/) 核对项目适用的条款。
 
-## 底栏飞行
+## 底栏状态
 
-底栏角色由 `CompanionRoam.jsx` 渲染，飞行逻辑在 `companionFlight.js`。
-- 左右走仍用 CSS 动画。
-- 在 iOS 原生控件里上拉「更多功能」时，手指一动角色就起飞：先飞到展开高度再加 40px（拖动时工具栏最多被拉过这么多），松手展开后落到工具栏上沿悬停。从展开状态往下拖时原地等着，收起后落回原位继续走。抽屉状态来自原生布局的 `drawer`（见 [平台文档](../../platform/doc/README.md)），旧版 App 不带这一项，角色不飞。
-- 窄屏 App 展开搜索时，小伙伴先站在输入框上。结果列表出现后才飞到列表上沿，随列表高度移动。
-- 起飞会冲过一点再回到位置，身体先拉长；落下越落越快，着地时压扁再弹回；在空中悬停时上下浮动。地面影子随高度变小变淡。Live2D 在空中抬头、略向后仰（`live2dScene.js` 的 `MOODS`，叠加在待机动作上）。内置火柴人只对头身角度、前倾、比例和呼吸做了形变；手臂、嘴、眉毛、眼珠的参数存在，但不会改变画面。想要举手、张嘴，需要在原稿里补这些形变后重新导出。
-- 减弱动态效果时不飞，而是淡出后在新位置淡入。
+底栏角色由 `CompanionRoam.jsx` 渲染。`companionDirector.js` 是状态机，`companionBehavior.js` 放触发规则和数值，`companionActor.js` 负责移动。
 
-所有位移都用 Web Animations 改 transform，不写 style 或 class。原因是 iOS 原生底图会监听整页属性的变化，重新采样触摸区域（`map/nativeMapView.js`），每帧写属性会让它反复全屏采样。暂停和继续行走也通过动画对象控制，不切换 class。测试：`npm run test:companion`。
+| 状态 | 什么时候 | 做什么 |
+| --- | --- | --- |
+| standby 发呆 | 刚落地或走完一段，2.5–6 秒（饿了 4–9 秒，饱了 2–5 秒） | 播 `Standby`；饿了播 `Hungry`，饱了一半时间播 `Full` |
+| wandering 游走 | 发呆结束 | 在地面上走 40–180px，不走到右侧按钮底下；朝走的方向转头。速度 26px/s，饿了 14、饱了 32 |
+| climb 攀爬 | 发呆结束时概率 35%（饱了 60%）；饿着不爬，两次至少隔 90 秒，按钮组从地面附近开始才爬 | 走到按钮组左侧，一下一下往上拉（`Climb`），翻到顶上站在中间待 12–28 秒 |
+| jumpoff 跳下 | 在按钮上待够时间 | 蹲下、往左跳出 40–90px（`JumpOff`），着地压扁（`Land`） |
+| drop 掉落 | 页面首次出现；更多功能或搜索收起后从空中落回；站着的按钮没了（隐藏、搜索），或爬到一半被打断 | 越落越快（`Drop`），着地压扁（`Land`） |
+| sleep 睡觉 | 没有操作：白天 150 秒，饿着 90 秒，夜里（本机 23:00–7:00）30 秒 | 就地睡下（`Sleep`），头顶冒 z；触摸、按键、拖地图时醒来（`Wake`、轻蹦一下） |
+| hungry 饿 | 距上次投喂超过 48 小时；没喂过时从领养算（内置角色按注册时间，额外角色按兑换时间） | 发呆时耷拉着、半睁眼、左右张望，肚子叫时抖一下；走得慢，不爬 |
+| full 饱 | 投喂后 3 小时内 | 新的投喂补一次庆祝：点头、冒爱心、蹦两下，再晃着笑（`Full`）；之后走得快、更爱爬 |
+
+- **飞：** 在 iOS 原生控件里上拉「更多功能」时，手指一动就起飞。
+  - 先飞到展开高度再加 40px（拖动时工具栏最多被拉过这么多），松手展开后落到工具栏上沿悬停。
+  - 从展开状态往下拖时原地等着，收起后落回。
+  - 抽屉状态来自原生布局的 `drawer`（见 [平台文档](../../platform/doc/README.md)），旧版 App 不带这一项，角色不飞。
+  - 窄屏 App 展开搜索时，先站在输入框上，结果列表出现后再飞到列表上沿。
+  - 飞的时候打断其他状态，睡着的先醒；起飞前把位置收回地面范围，避开随抽屉上移的按钮。
+- **数据来源：** 上次投喂时间和领养时间来自 `GET /api/skins/companions/me` 的 `fed_at`、`adopted_at`。庆祝过的那次投喂记在 localStorage，同一次投喂只庆祝一次。
+- **操作信号：** 来自页面的触摸、按键、滚轮，以及 MapView 转发的地图拖动和缩放（`companionActivity.js`）。iOS 原生底图上的手势不经过网页的触摸事件。
+- **右侧按钮组：**
+  - iOS 原生控件：取原生回传的浮动按钮位置（`useMapChrome` 的 `floatingRect`）。
+  - 网页控件：取标了 `data-companion-perch` 的按钮。
+- **同一次页面里：** 记住位置，卡片关掉后从原处继续。
+- **减弱动态效果：** 不走、不爬、不睡，换位置时淡出再淡入。
+
+真机验收项见 [TEST_CASES.md](TEST_CASES.md)。
+
+所有位移都用 Web Animations 改 transform 和 opacity，不写 style、不切换 class，也不增删节点。原因是 iOS 原生底图会监听整页属性和节点的变化，重新采样触摸区域（`map/nativeMapView.js`），每帧写属性会让它反复全屏采样。z、爱心和影子是常驻节点，只靠动画显示。测试：`npm run test:companion`。
+
+## 动作文件
+
+- **生成方式：** 各状态的 Live2D 动作由 `scripts/companion-motions.mjs` 按关键帧生成（`npm run companion:motions`）。
+  - 输出到 `public/companions/stick-figure/`，同时写入 model3.json 的动作组。
+  - `Standby` 和 `Feed`（nod）由 PSD2Live 导出的 idle、feed 改写而来，原文件保留。
+  - 改动作时改脚本里的 `MOTIONS` 再生成。`test:companion` 会核对文件与脚本一致。
+- **可用参数：** 内置火柴人只有头的转向、俯仰、歪头，身体的倾斜、前倾、比例、呼吸和眼睛开合有形变（眼睛为 0 时是闭眼弧线）。手臂、嘴、眉毛、眼珠的参数存在但不改变画面，所以动作不用它们。想要举手、张嘴，需要在原稿里补这些形变后重新导出。
+- **复位：** 动作没写到的参数会停在上一个动作的值上，所以每个动作都驱动整组姿态参数。
+- **眼睛：** 眼睛写成模型曲线 `EyeBlink`，由各模型自己的 `EyeBlink` 组决定驱动哪些参数。运行时只从开头连续读取模型曲线，所以模型曲线必须排在参数曲线前面。
+- **叠加层：** 循环动作由运行时设为待机组反复播放；朝向和飞行姿态是叠加层（`live2dScene.js` 的 `FACING`、`MOODS`，单位是角度）。
+
+## 其他角色用这些动作
+
+- **补动作组：** 额外角色没有的动作组，加载资源包时用内置动作补上（`sharedMotions.js` 的 `withSharedMotions`，文件放在角色目录的 `companion-shared/` 下）。
+  - 角色自己有同名组时用角色自己的。
+  - 没有 `Standby` 时先用角色的 `Idle`。
+- **适用范围：** 这些动作只驱动标准参数（`ParamAngleX/Y/Z`、`ParamBodyAngleX/Y/Z`、`ParamBreath` 和 `EyeBlink` 组），模型没有的参数会被忽略。火柴人专有的 `ParamBodyLean` 在别的模型上不起作用。
+- **验证（2026-11-20）：** 用 84 个第三方 Cubism 3 模型（moc v1，动作都在一个无名组里）验证过。
+  - 每个模型补上 11 个组后都能启动，播放时画面都有变化。
+  - 其中一个模型左眼参数叫 `ParamEyeLOpen1`，靠 `EyeBlink` 组同样闭眼。
+  - Cubism Viewer 5.3 打开补过动作的模型，日志没有错误。
+
+## 预览
+
+`npm run dev` 后打开下面两个页面，都用与应用相同的运行时（Cubism Core + pixi-live2d-display）。
+
+- `/tests/integration/companion-motions.html`：每个动作按时间排成一张表。
+  - `?groups=Sleep,Full&size=2` 选择动作组、放大格子。
+  - `?probe` 看各参数的形变。
+  - `?model=<model3.json 地址>` 换别的模型，缺的组按资源包同样的方式补上。
+  - `?check=<返回 model3.json 地址数组的地址>` 逐个检查一批模型。
+- `/tests/integration/companion-roam.html`（窄窗口）：真的底栏小伙伴，配假的工具栏和右侧按钮，按钮把它推到投喂、饿、上拉更多功能、爬、睡等状态。开发时状态机挂在 `window.__foodmapCompanion`。
 
 ## 额外角色
 

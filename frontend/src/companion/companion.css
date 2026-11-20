@@ -10,17 +10,22 @@
 .fm-companion-settings { max-width: 640px; margin-inline: auto; }
 .fm-companion-settings__toggle { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; cursor: pointer; }
 .fm-companion-settings__toggle input { width: 22px; height: 22px; accent-color: var(--theme-primary); }
-.fm-companion-roam { display: none; position: absolute; z-index: 1990; left: 9%; width: 46px; height: 55px; pointer-events: none; }
+/* 底栏小伙伴（CompanionRoam.jsx）：外层固定在地图左下角的地面上，位置全由各层的 Web Animations 决定（companionActor.js），
+   这里只放静态样式，不能有会随状态切换的 class。尺寸与 companionBehavior.js 的 BOX 一致 */
+.fm-companion-roam { display: none; position: absolute; z-index: 1990; left: 0; width: 46px; height: 55px; pointer-events: none; }
 .fm-companion-roam .fm-companion, .fm-companion-roam .fm-companion__stage { width: 100%; height: 100%; }
-/* 飞行的三层（companionFlight.js）：上下位移 > 拉长压扁（以脚底为原点）> 悬停浮动；影子留在地面 */
-.fm-companion-roam__fly, .fm-companion-roam__body, .fm-companion-roam__bob { width: 100%; height: 100%; }
+/* 左右 > 上下 > 拉长压扁（以脚底为原点）> 悬停浮动、走路颠步；影子在左右层里、留在所站的面上 */
+.fm-companion-roam__x, .fm-companion-roam__fly, .fm-companion-roam__body, .fm-companion-roam__bob { position: relative; width: 100%; height: 100%; }
+.fm-companion-roam__x { position: absolute; inset: 0; }
 .fm-companion-roam__body { transform-origin: 50% 100%; }
 .fm-companion-roam__shadow { position: absolute; left: 50%; bottom: -1px; width: 28px; height: 6px; margin-left: -14px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.22), transparent); }
+.fm-companion-roam__heart, .fm-companion-roam__z { position: absolute; opacity: 0; line-height: 1; }
+.fm-companion-roam__heart { right: 2px; top: -4px; font-size: 13px; color: var(--theme-primary-text); }
+.fm-companion-roam__z { right: 4px; top: 2px; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); }
 @media (max-width: 768px) {
-    .fm-companion-roam { display: block; animation: fm-companion-walk 24s ease-in-out infinite alternate; }
+    .fm-companion-roam { display: block; }
 }
-@keyframes fm-companion-walk { 0%, 12% { left: 9%; } 75%, 100% { left: 62%; } }
 @keyframes fm-companion-heart { from { transform: translateY(8px); opacity: 1; } to { transform: translateY(-18px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-    .fm-companion-roam, .fm-companion__heart { animation: none; }
+    .fm-companion__heart { animation: none; }
 }
