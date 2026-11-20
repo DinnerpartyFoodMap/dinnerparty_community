@@ -9,7 +9,7 @@ Copyright (C) 2026 dinnerparty 核心开发者（bl3x3、Chenan-LightFox、lofur
 - 你可以按 AGPL-3.0-only 使用、修改、再分发本项目的代码。
 - 如果你修改了本项目，并把修改版作为网络服务提供给他人（例如自己部署一个修改过的站点），AGPL 第 13 条要求你向这些用户提供修改版的完整源代码。
 - 自行部署时，请把 `frontend/.env.*` 中的备案号、域名、高德 / CARTO key 换成你自己的。这些 key 只授权官方站点使用。
-- AGPL 不授予项目名称和标识的使用权。分发修改版时，请不要让人误以为它是官方版本。
+- AGPL 不授予项目名称和标识的使用权，也不包括下文列出的美术素材和 Live2D 模型。分发修改版时，请换用自己的素材，不要让人误以为它是官方版本。
 
 ## 版权与另行授权
 
@@ -23,7 +23,8 @@ AGPL 只覆盖本仓库中由项目作者编写的源代码和文档。下列内
 
 | 内容 | 说明 |
 |---|---|
-| 图片、图标、启动图等美术素材，包括 `frontend/src/img/`、`frontend/public/favicon.*`、`frontend/android/app/src/main/res/`、`frontend/ios/App/App/Assets.xcassets/` 下的图片 | 涉及东方Project 角色的形象，版权归上海爱丽丝幻乐团（ZUN）及各自的绘制者 |
+| 图片、图标、启动图、插画、默认头像等美术素材，包括 `frontend/src/img/`、`frontend/public/favicon.*`、`frontend/public/home/`、`backend/modules/accounts/assets/`、`frontend/android/app/src/main/res/`、`frontend/ios/App/App/Assets.xcassets/` 下的图片，以及主题皮肤（`frontend/src/skins/packs/`）中的图片 | 著作权归饭联地图开发团队所有。涉及东方Project 角色的，角色本身的权利归上海爱丽丝幻乐团（ZUN） |
+| Live2D 模型：`frontend/public/companions/` 下的模型（`.moc3`）、纹理、物理与显示设置（`*.physics3.json`、`*.cdi3.json`、`*.model3.json`）和预览图，以及 `frontend/src/companion/art/` 下的原画 | 著作权归饭联地图开发团队所有。动作文件（`*.motion3.json`）由 `frontend/scripts/companion-motions.mjs` 生成，和该脚本一样适用 AGPL |
 | `frontend/src/img/qrcode.png` | 东方饭联 QQ 群二维码，仅供本项目使用 |
 | `frontend/public/ghs.png` | 公安机关互联网站安全备案图标 |
 | `frontend/public/fonts/material-symbols-outlined.woff2` | Google Material Symbols，Apache License 2.0 |

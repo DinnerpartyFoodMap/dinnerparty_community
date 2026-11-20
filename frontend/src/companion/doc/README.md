@@ -6,6 +6,8 @@
 
 默认角色饭桶的模型、纹理、动作和静态预览在 `frontend/public/companions/dinnerparty-bot/`，随 Web 和 Capacitor 安装包发布。账号继续用 `stick-figure` 记录默认角色的选择、饱食度及打卡投喂。模型加载失败或 WebGL 上下文丢失时显示静态预览，上下文恢复时重新加载。
 
+模型、纹理、预览图和 `art/` 下的原画属于饭联地图开发团队，不在 AGPL 范围内（见 [LICENSING.md](../../../../LICENSING.md)）。新增或更换角色时同步更新那里的列表。只有脚本生成的动作文件随脚本适用 AGPL。
+
 `npm run build` 和 `npm run build:mobile` 在构建前从 Live2D 官方地址准备 Cubism Core。生成的供应商运行时位于 `src/companion/runtime/`，由 Git 忽略并在构建时一起打包。已准备过 Core 的构建可以离线运行。开发时可先执行 `node scripts/prepare-live2d-core.mjs` 再启动 Vite。发版时按 [Live2D SDK 发布许可](https://www.live2d.com/en/sdk/license/) 核对项目适用的条款。
 
 ## 底栏状态
