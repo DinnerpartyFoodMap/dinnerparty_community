@@ -239,6 +239,14 @@ assert.ok(sawSplit && sawMerge, '夹具没有覆盖拆分与合并');
     assert.deepEqual(merge.exit, ['place:44']);
     assert.deepEqual(merge.enter, []);
 
+    // 街区级缺块时的匿名聚合也要沿用同格关系，明细补到后在原地拆开。
+    const fallback = tileSnap([...coarseRows, own], 13, leaf);
+    const fallbackParent = fallback.visibleNodes.find((node) => node.kind === 'cluster');
+    const recovery = planTransition(fallback, fine);
+    assert.deepEqual(recovery.splitFrom, new Map([['place:42', fallbackParent.key], ['place:43', fallbackParent.key]]));
+    assert.deepEqual(recovery.reuse, new Map([['place:41', 'place:41']]));
+    assert.deepEqual(recovery.enter, ['place:44']);
+
     const regionRows = expandAggregateTile({ z: 5, cell: 12, cells: [[0, 0, 3, 3, [row, row]]] }, dict, '16/16');
     const cityRows = expandAggregateTile({ z: 8, cell: 14, cells: [[0, 0, 3, 3, [row]], [3, 0, 3, 3, [row]]] }, dict, '128/128');
     const regionView = tileSnap(regionRows, 10, region);

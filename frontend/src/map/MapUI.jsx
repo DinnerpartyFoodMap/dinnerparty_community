@@ -8,6 +8,10 @@ import PlaceDetailPanel, { PlaceCardDetails, parseImages as parsePlaceImages } f
 import Markdown from "../components/markdown/Markdown";
 import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
 import PlaceCheckInPanel from "../places/components/PlaceCheckInPanel";
+import usePlaceCheckIn from "../places/hooks/usePlaceCheckIn";
+import { ratingChromeSheet, ratingSheetAction } from "../places/ratingChromeSheet";
+import { checkInChromeSheet, checkInSheetAction } from "../places/checkInChromeSheet";
+import { chooseRating, withdrawRating } from "../places/ratingActions";
 import RatingPredictionValue from "../places/components/RatingPredictionValue";
 import CompanionRoam from '../companion/CompanionRoam';
 import usePlaceRating from "../places/hooks/usePlaceRating";
@@ -407,14 +411,36 @@ export default function MapUI(props) {
     const markerCheckInCount = Number(selectedPlace?.checkin_count) || 0;
     const checkInCount = checkInResult?.place_id === ratingPlaceId && checkInResult.previousCount === markerCheckInCount
         ? checkInResult.checkin_count : markerCheckInCount;
+    const checkInSeq = useRef(0);
     const openCheckIn = () => {
         if (!canCheckIn) return;
         if (!isAuthenticated) { onRequireAuth?.(); return; }
-        setCheckInTarget({ placeId: ratingPlaceId, token });
+        // 每次打开都是新的一次（清空上次的表单）
+        checkInSeq.current += 1;
+        setCheckInTarget({ placeId: ratingPlaceId, token, seq: checkInSeq.current });
     };
+    const closeCheckIn = () => setCheckInTarget(null);
+    // 打卡表单状态：网页面板与 iOS 原生玻璃面板共用（usePlaceCheckIn）；原生面板要已选照片的小缩略图
+    const checkIn = usePlaceCheckIn({
+        sessionKey: checkInOpen ? `${checkInTarget.placeId}|${checkInTarget.seq}` : null,
+        placeId: checkInOpen ? checkInTarget.placeId : null,
+        backendUrl,
+        token,
+        thumbnails: getPlatform() === 'ios',
+        onSuccess: (result) => {
+            setCheckInResult({ ...result, previousCount: markerCheckInCount });
+            placeRating.reload();
+        }
+    });
+    // iOS 原生评价面板：上一次评价 / 撤回失败的说明（网页面板用 toast；原生面板盖住了 toast，写在面板提示里）。按地点隔离
+    const [ratingNotice, setRatingNotice] = useState(null);
+    const ratingNoticeText = ratingNotice && ratingNotice.placeId === ratingPlaceId ? ratingNotice.text : null;
     const visitEvidence = useVisitEvidence({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!nativeOverlayActive&&!pickerMode&&!currentUser?.is_banned&&!checkInOpen,onVisited:()=>setRatingOpen(true)});
     useDetailInterest({place:selectedPlace,backendUrl,token:isAuthenticated?token:null,enabled:!!feedback?.consent?.feedback&&chromeOwner&&!pickerMode&&!currentUser?.is_banned});
-    const openRating = () => setRatingOpen(true);
+    const openRating = () => {
+        setRatingNotice(null);
+        setRatingOpen(true);
+    };
     // 举报：打开预填好的意见反馈表（类型“不良信息举报”、地点名、编号与链接），住民接着写原因；高德临时地点没有收录，不能举报
     const canReportPlace = !!(onOpenFeedback && ratingPlaceId != null);
     // 新增地点审核中 / 未通过：其他住民看不到这类地点，能打开它的只有创建者和管理员，卡片上提示一句
@@ -1185,6 +1211,9 @@ export default function MapUI(props) {
         : (exhibitionOpen && exhibition && !pickerMode) ? 'exhibition'
         // 聚合成员列表（“此处有 N 家店”）：选中其中一家后关闭，让位给地点卡片
         : (clusterMembers && !pickerMode) ? 'clusterMembers'
+        // 从店卡打开的评价、打卡：玻璃面板暂时代替店卡，关闭后店卡重新出现（设计参考 11.1）
+        : (ratingOpen && ratingPlaceId != null && !pickerMode) ? 'rating'
+        : (checkInOpen && !pickerMode) ? 'checkIn'
         : (selectedPlace && !pickerMode) ? 'place'
         : (favoritesOwner && !pickerMode) ? 'favorites'
         // 住民的地点列表：选中其中一个地点后让位给地点卡片
@@ -1314,6 +1343,13 @@ export default function MapUI(props) {
         };
         const closeIcon = nativeIcon('cardActions.close');
         if (closeIcon.image) Object.assign(chromeSheet, { closeImage: closeIcon.image, closeImageTemplate: closeIcon.imageTemplate });
+    } else if (openSheetId === 'rating') {
+        chromeSheet = ratingChromeSheet({
+            place: preloadedRatingPlace, rating: placeRating, isAuthenticated, banned: !!currentUser?.is_banned,
+            notice: ratingNoticeText, iconFor: nativeIcon
+        });
+    } else if (openSheetId === 'checkIn') {
+        chromeSheet = checkInChromeSheet({ place: selectedPlace, checkIn });
     } else if (openSheetId === 'userPlaces') {
         chromeSheet = userPlacesChromeSheet(userFilter);
     } else if (openSheetId === 'clusterMembers') {
@@ -1385,8 +1421,33 @@ export default function MapUI(props) {
         else runMobileMoreAction(entry.run);
     };
 
-    const handleNativeSheet = ({ type, sheetId, token, rowId }) => {
+    const handleNativeSheet = ({ type, sheetId, token, rowId, text }) => {
         if (sheetId !== sheetTokenRef.current.id || token !== sheetTokenRef.current.token) return;
+        if (sheetId === 'rating') {
+            if (type === 'dismiss') { setRatingOpen(false); return; }
+            const action = type === 'select' ? ratingSheetAction(rowId) : null;
+            const banned = !!currentUser?.is_banned;
+            // 失败写进面板提示；成功时清掉旧提示（选中格本身就是结果）
+            const placeId = ratingPlaceId;
+            const notify = (message, tone) => setRatingNotice(tone === 'danger' ? { placeId, text: message } : null);
+            if (action?.type === 'rate') chooseRating(placeRating, action.score, { isAuthenticated, banned, onRequireAuth, notify });
+            else if (action?.type === 'withdraw' && !banned) withdrawRating(placeRating, { notify });
+            else if (action?.type === 'login') onRequireAuth?.();
+            else if (action?.type === 'retry') { setRatingNotice(null); placeRating.reload(); }
+            return;
+        }
+        if (sheetId === 'checkIn') {
+            // 提交、选图期间原生不让关闭；万一收到也不打断进行中的请求
+            if (type === 'dismiss') { if (!checkIn.pending) closeCheckIn(); return; }
+            if (type === 'input') { if (rowId === 'description') checkIn.setDescription(text); return; }
+            const action = checkInSheetAction(rowId);
+            if (action?.type === 'score') checkIn.toggleScore(action.score);
+            else if (action?.type === 'removePhoto') checkIn.removePhoto(action.id);
+            else if (action?.type === 'addPhotos') checkIn.choosePhotos();
+            else if (action?.type === 'submit') checkIn.submit();
+            else if (action?.type === 'done') closeCheckIn();
+            return;
+        }
         if (sheetId === 'favorites') {
             if (type === 'dismiss') setFavoritesOwner(null);
             const place = type === 'select' && favoritePlaces.find((item) => favoriteRowId(item) === rowId);
@@ -3515,8 +3576,9 @@ export default function MapUI(props) {
                             <Button onClick={()=>void visitEvidence.answer('later')}>{t('map:rating.visitLater')}</Button>
                         </div>
                     </ResponsivePanel>
+                    {/* iOS 原生控件接管时，评价与打卡改用原生玻璃面板（ratingChromeSheet / checkInChromeSheet），网页面板不打开 */}
                     <PlaceRatingPanel
-                        open={ratingOpen && ratingPlaceId != null}
+                        open={ratingOpen && ratingPlaceId != null && !nativeChrome}
                         onClose={() => setRatingOpen(false)}
                         place={preloadedRatingPlace}
                         rating={placeRating}
@@ -3525,11 +3587,7 @@ export default function MapUI(props) {
                         onRequireAuth={onRequireAuth}
                         showTip={showTip}
                     />
-                    {checkInOpen && <PlaceCheckInPanel place={selectedPlace} token={token} backendUrl={backendUrl}
-                        onClose={() => setCheckInTarget(null)} onSuccess={result => {
-                            setCheckInResult({ ...result, previousCount: markerCheckInCount });
-                            placeRating.reload();
-                        }} />}
+                    <PlaceCheckInPanel open={checkInOpen && !nativeChrome} place={selectedPlace} checkIn={checkIn} onClose={closeCheckIn} />
                 </>
             )}
 

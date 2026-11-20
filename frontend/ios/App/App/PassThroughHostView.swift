@@ -25,6 +25,9 @@ final class PassThroughHostView: UIView {
         guard rects.contains(where: { $0.insetBy(dx: -slop, dy: -slop).contains(point) }) else {
             // 操作指引期间：触摸交给网页的指引层，不收起指引展开的更多功能
             if model.tour != nil { return nil }
+            // 面板提交中（v19 打卡）：面板外的触摸由宿主吃掉，不关闭面板、也不交给地图
+            // （点地图会换店或关掉店卡，连带取消进行中的打卡）
+            if model.presentedPanel?.locked == true { return self }
             // 展开更多功能时碰到地图：收起（触摸照常交给地图，拖动、缩放不受影响）
             if model.drawerOpen {
                 let model = self.model

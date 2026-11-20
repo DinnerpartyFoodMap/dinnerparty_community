@@ -137,7 +137,7 @@ export class NativeMarkerLayer {
             const logical = this._resolveZoom(zoom);
             if (logical === null) return;
             const viewBounds = readViewBounds(this.map);
-            const refining = this.cameraMoving && logical === this.logicalZoom && this.snapshot.engine === this.engine
+            const refining = this.cameraMoving && this.snapshot.engine === this.engine
                 && shouldRefineMarkerAnchors(this.snapshot, zoom, this.cameraStartZoom);
             if (refining || logical !== this.logicalZoom || (viewBounds && !boundsContains(this.snapshot.coverageBounds, viewBounds))) {
                 this._commit('live', refining);
@@ -215,7 +215,7 @@ export class NativeMarkerLayer {
             transitionVersion: ++this.version
         });
         const plan = planTransition(this.snapshot, next);
-        stabilizeMarkerAnchors(this.snapshot, next, plan, { refining, selectedKey: this.selectedKey });
+        stabilizeMarkerAnchors(this.snapshot, next, plan, { zoom, refining, selectedKey: this.selectedKey });
         this.snapshot = next;
         const nodes = next.visibleNodes.map(nativeNode);
         const signature = nodesSignature(nodes);

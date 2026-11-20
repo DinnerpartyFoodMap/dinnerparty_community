@@ -8,6 +8,7 @@
     "rating": "评分（选填）",
     "photos": "添加照片（{{count}} / 3）",
     "gallery": "打卡照片",
+    "photoItem": "照片 {{index}}",
     "count": "打卡 {{count}} 次",
     "review": "补充描述和照片审核后会显示在地点卡片中。",
     "success": "打卡成功，已投喂小伙伴。",

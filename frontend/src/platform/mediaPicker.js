@@ -280,6 +280,35 @@ export async function prepareImageForUpload(file, limits = UPLOAD_LIMITS.placeIm
     return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
 }
 
+/**
+ * 方形小缩略图（JPEG data URL）：iOS 原生面板显示已选照片用（打卡），文件本身仍由网页上传。
+ * 取中间的正方形，边长不超过 size；解码失败时返回 null（原生改用图标）。
+ */
+export async function imageThumbnailDataUrl(file, { size = 160, quality = 0.72 } = {}) {
+    let decoded = null;
+    try {
+        decoded = await decodeImage(file);
+        const width = decoded.width || decoded.naturalWidth;
+        const height = decoded.height || decoded.naturalHeight;
+        const side = Math.min(width, height);
+        if (!side) return null;
+        const out = Math.max(1, Math.min(size, side));
+        const canvas = document.createElement('canvas');
+        canvas.width = out;
+        canvas.height = out;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; // PNG 透明区域转 JPEG 时避免变黑（画布填充，design-token-ignore）
+        ctx.fillRect(0, 0, out, out);
+        ctx.drawImage(decoded, (width - side) / 2, (height - side) / 2, side, side, 0, 0, out, out);
+        const url = canvas.toDataURL('image/jpeg', quality);
+        return url.startsWith('data:image/jpeg;base64,') ? url : null;
+    } catch (error) {
+        return null;
+    } finally {
+        if (decoded && typeof decoded.close === 'function') decoded.close();
+    }
+}
+
 /** 便捷组合：选择并处理图片。单张处理失败会抛出 MediaError。 */
 export async function pickPreparedImages(options = {}, limits = UPLOAD_LIMITS.placeImage) {
     const files = await pickImages(options);

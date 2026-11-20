@@ -4,11 +4,12 @@ import SkinIcon from "../../skins/SkinIcon";
 import RatingPredictionValue from './RatingPredictionValue';
 import { t, tx } from "../../i18n/index.js";
 import {
-    RATING_TIERS, FEW_RATINGS, ratingTierFor, tierForAverage, tierLabel, tierHint, formatAverage, ratingDisplay
+    RATING_TIERS, FEW_RATINGS, tierForAverage, tierLabel, tierHint, formatAverage, ratingDisplay
 } from "../rating";
+import { chooseRating, withdrawRating } from '../ratingActions';
 
 // 评价面板：公开估计、本人预测和低分风险提示，下半部分选自己的评价。
-// 宽屏为居中对话框，窄屏为底部面板；iOS 原生地点卡片打开它时，原生面板暂时让位。
+// 宽屏为居中对话框，窄屏为底部面板；iOS 原生控件接管时改用原生玻璃面板（ratingChromeSheet），这里不显示。
 export default function PlaceRatingPanel({ open, onClose, place, rating, isAuthenticated, banned, onRequireAuth, showTip }) {
     return (
         <ResponsivePanel
@@ -48,30 +49,9 @@ function RatingBody({ place, rating, isAuthenticated, banned, onRequireAuth, sho
     const distribution = summary.distribution;
     const maxCount = distribution ? Math.max(1, ...Object.values(distribution)) : 1;
 
-    const choose = async (score) => {
-        if (!isAuthenticated) {
-            onRequireAuth && onRequireAuth();
-            return;
-        }
-        if (banned || rating.saving) return;
-        try {
-            await rating.submit(score);
-            showTip && showTip(t('map:rating.panel.saved', { tier: tierLabel(ratingTierFor(score)) }));
-        } catch (error) {
-            showTip && showTip(error.committed?error.message:t('map:rating.panel.saveFailed', { message: error.message || error }));
-            if (error && error.status === 429) rating.reload();
-        }
-    };
-
-    const withdraw = async () => {
-        if (rating.saving) return;
-        try {
-            await rating.withdraw();
-            showTip && showTip(t('map:rating.panel.withdrawn'));
-        } catch (error) {
-            showTip && showTip(error.committed?error.message:t('map:rating.panel.saveFailed', { message: error.message || error }));
-        }
-    };
+    const notify = showTip ? (text) => showTip(text) : undefined;
+    const choose = (score) => chooseRating(rating, score, { isAuthenticated, banned, onRequireAuth, notify });
+    const withdraw = () => withdrawRating(rating, { notify });
 
     return (
         <div style={{ padding: '4px 20px 20px', color: 'var(--color-text-primary)' }}>

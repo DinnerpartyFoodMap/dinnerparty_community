@@ -7,11 +7,11 @@ import { Empty, Notice } from '../journey/shared';
 import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import defaultAvatar from '../img/default.png';
 import { ProfileShell } from './UserProfilePage';
-import { communityEmptyState, COMMUNITY_MAP_EXTENT, neighborMeta } from './communityViewModel';
+import { communityEmptyState, COMMUNITY_MAP_EXTENT, COMMUNITY_MAP_RINGS, layoutCommunityMap, neighborMeta } from './communityViewModel';
 import '../journey/journey.css';
 import './profile.css';
 
-// 星图里头像的半径（与坐标同一单位；后端坐标在半径 0.95 的圆内）
+// 星图里头像的半径（与坐标同一单位；同好间距至少 0.31，见 layoutCommunityMap）
 const MAP_AVATAR_RADIUS = 0.1;
 
 // 同好最多 20 人（后端只返回最相似的 20 位），列表与星图都一次显示全部，不分页。
@@ -137,11 +137,15 @@ export default function ProfileCommunityPage({ backendUrl, token, currentUser, o
     </ProfileShell>;
 }
 
-/** 以我为中心的偏好星图：越相似离中心越近；每位同好显示头像（圆形裁切 + 辅色描边），点按进入主页。 */
+/**
+ * 以我为中心的偏好星图：按相似度排名分三圈，越相似越靠里，同圈等距排开，20 人也互不遮挡（layoutCommunityMap）；
+ * 每位同好显示头像（圆形裁切 + 辅色描边），点按进入主页。
+ */
 function CommunityStarMap({ people, me, avatar, onOpenProfile }) {
     const clipId = `fm-community-clip-${useId().replace(/:/g, '')}`;
     const extent = COMMUNITY_MAP_EXTENT;
     const r = MAP_AVATAR_RADIUS;
+    const layout = layoutCommunityMap(people);
     const open = (event, id) => {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenProfile(id); }
     };
@@ -149,17 +153,24 @@ function CommunityStarMap({ people, me, avatar, onOpenProfile }) {
         <defs>
             <clipPath id={clipId} clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5" /></clipPath>
         </defs>
-        {[0.35, 0.65, 0.95].map((radius) => <circle key={radius} r={radius} fill="none" stroke="currentColor" strokeOpacity=".15" strokeWidth=".008" />)}
-        {people.map((person) => <g key={person.id} role="button" tabIndex="0" aria-label={t('profile:community.openProfile', { name: person.username })}
-            onClick={() => onOpenProfile(person.id)} onKeyDown={(event) => open(event, person.id)}>
-            <title>{person.username}</title>
-            <circle cx={person.x} cy={person.y} r={r + 0.012} fill="var(--theme-secondary)" />
-            <image href={avatar(person)} x={person.x - r} y={person.y - r} width={r * 2} height={r * 2}
-                clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
-        </g>)}
-        {/* 我画在最上层：同好挨得近时也不会盖住中心 */}
-        <circle r={r * 1.25 + 0.012} fill="var(--theme-primary)" />
-        <image href={me} x={-r * 1.25} y={-r * 1.25} width={r * 2.5} height={r * 2.5} clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
-        <text y={r * 1.25 + 0.11} textAnchor="middle" fontSize=".085" fill="currentColor" paintOrder="stroke" stroke="var(--color-bg-surface)" strokeWidth=".025">{t('journey:community.me')}</text>
+        {COMMUNITY_MAP_RINGS.map((radius) => <circle key={radius} r={radius} fill="none" stroke="currentColor" strokeOpacity=".15" strokeWidth=".008" />)}
+        {people.map((person, index) => {
+            const { x, y } = layout[index];
+            return <g key={person.id} role="button" tabIndex="0" aria-label={t('profile:community.openProfile', { name: person.username })}
+                onClick={() => onOpenProfile(person.id)} onKeyDown={(event) => open(event, person.id)}>
+                <title>{person.username}</title>
+                {/* 透明的大圆是点按区域（与同好间距相同），头像本身小一些 */}
+                <circle cx={x} cy={y} r={0.15} fill="transparent" />
+                <circle cx={x} cy={y} r={r + 0.012} fill="var(--theme-secondary)" />
+                <image href={avatar(person)} x={x - r} y={y - r} width={r * 2} height={r * 2}
+                    clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
+            </g>;
+        })}
+        {/* 我画在最上层，不拦点按 */}
+        <g pointerEvents="none">
+            <circle r={r * 1.25 + 0.012} fill="var(--theme-primary)" />
+            <image href={me} x={-r * 1.25} y={-r * 1.25} width={r * 2.5} height={r * 2.5} clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
+            <text y={r * 1.25 + 0.11} textAnchor="middle" fontSize=".085" fill="currentColor" paintOrder="stroke" stroke="var(--color-bg-surface)" strokeWidth=".025">{t('journey:community.me')}</text>
+        </g>
     </svg>;
 }

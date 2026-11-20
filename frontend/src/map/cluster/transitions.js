@@ -146,6 +146,19 @@ function coarseCellKey(place, zoom) {
     return tileOf(Number(place.longitude), Number(place.latitude), zoom).join('/');
 }
 
+function missingFallbackCells(prev, next, previousMembers) {
+    if (prev.markerBand?.kind !== 'leaf' || next.markerBand?.kind !== 'leaf' || next.queryMode !== 'nearby') return null;
+    const parents = new Map();
+    let zoom;
+    for (const [member, nodeKey] of previousMembers) {
+        const cell = prev.engine.placeByKey.get(member)?.aggregateCell;
+        if (!cell || next.engine.placeByKey.has(member)) continue;
+        zoom = cell[0]; // 明细档只用同一级城市瓦片补位。
+        parents.set(`${cell[1]}/${cell[2]}`, nodeKey);
+    }
+    return parents.size ? { zoom, parents } : null;
+}
+
 function markerDistanceSquared(a, b) {
     const dx = Math.abs(worldX(a[0], 0) - worldX(b[0], 0));
     const dy = worldY(a[1], 0) - worldY(b[1], 0);
@@ -239,25 +252,42 @@ function planData(plan, prev, next, options) {
         planMarkerBand(plan, prev, next, remainingPrev, remainingNext, direction, options.memberBudget);
         return;
     }
-    // 2. 普通数据变化按成员交集分类，超出预算时退回渐变。
+    // 2. 普通数据变化按成员交集分类。明细档补块时，新增的真实地点也可匹配被替换的匿名格。
     const prevMemberMap = buildMemberToNode({ ...prev, visibleNodes: remainingPrev }, options.memberBudget);
     if (!prevMemberMap) return;
 
+    const fallback = missingFallbackCells(prev, next, prevMemberMap);
     const nextToPrev = new Map();
     const prevToNext = new Map();
+    const stableCandidates = new Set();
     let total = 0;
     for (const node of remainingNext) {
         total += node.count;
         if (total > options.memberBudget) return;
-        const hits = new Set();
+        const hits = new Map();
+        let replacesFallback = false;
         for (const member of next.engine.memberKeys(node)) {
-            const prevKey = prevMemberMap.get(member);
-            if (prevKey) hits.add(prevKey);
+            let prevKey = prevMemberMap.get(member);
+            if (!prevKey && fallback && !prev.engine.placeByKey.has(member)) {
+                const place = next.engine.placeByKey.get(member);
+                if (place && !place.aggregateCell) {
+                    prevKey = fallback.parents.get(coarseCellKey(place, fallback.zoom));
+                    if (prevKey) replacesFallback = true;
+                }
+            }
+            if (prevKey) hits.set(prevKey, (hits.get(prevKey) || 0) + 1);
         }
-        for (const prevKey of hits) linkNodes(nextToPrev, prevToNext, node.key, prevKey);
+        for (const [prevKey, count] of hits) {
+            linkNodes(nextToPrev, prevToNext, node.key, prevKey);
+            if (replacesFallback && count === node.count && count === prev.nodeByKey.get(prevKey).count) {
+                stableCandidates.add(node.key);
+            }
+        }
     }
     planRelations(plan, nextToPrev, prevToNext);
-
+    for (const key of stableCandidates) {
+        if (plan.reuse.has(key)) plan.keepAnchor.add(key);
+    }
 }
 
 /**

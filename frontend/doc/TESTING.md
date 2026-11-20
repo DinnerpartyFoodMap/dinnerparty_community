@@ -28,7 +28,7 @@
 | npm run test:web-layout-browser | 真实地图与列表/雷达：遮挡命中、按钮位置、更多入口、500m 与中心请求参数 |
 | npm run test:ios-back-browser | 真实页面与浮层返回：进度、取消、确认框二次侧滑、内部页与外壳、预览事件；不替代 UIKit 真机 |
 | npm run test:overlay | backdropPress 点击/触摸守卫；不代表每个弹层均有浏览器覆盖 |
-| npm run test:rating | 评分展示规则与请求封装；组件生命周期另需交互测试 |
+| npm run test:rating | 评分展示规则与请求封装、iOS 原生评价 / 打卡面板快照与行 id（test-native-place-sheets）；组件生命周期另需交互测试 |
 | npm run test:native-chrome | JS 地图控件（协议 v17）与设置桥接会话、清洗和请求响应；实际顺序包含两个测试文件 |
 | npm run test:companion | 底栏小伙伴：起飞高度与飞行计划；发呆、游走、爬按钮、跳下、掉落、睡觉、饿、饱的触发规则与状态机（假时钟、假演员）；位移层只用 animate；给别的角色补动作；动作文件与生成器一致、计数正确。实际动画和 Live2D 要在预览页（companion-motions.html、companion-roam.html）或真机看 |
 | npm run test:journey-text | 原文片段分配与重叠逻辑；完整日记在浏览器/后端测试 |

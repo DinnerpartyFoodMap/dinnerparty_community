@@ -126,3 +126,11 @@
 - 草稿页合成一列，副标题以状态开头；待确认与修改中的草稿也能左滑删除。历史版本的恢复按钮改为「恢复此版本」，公开日记恢复后提示公开内容待更新。
 - `NativeJourneyPlugin.swift`：素材页的可见性一行只在网页发送 `visibility` 标签时显示（新网页不再发送）。Swift 未编译。
 - 验证：`test:native-panels` 新增核对页 smoke（草稿列表、选店、搜索、重复确认与公开请求体）。
+
+## 店卡的评价与打卡玻璃面板（2026-11-20，控件协议 v19）
+
+- **协议 18 → 19**：店卡的「评价」与「打卡」此前打开网页面板（原生控件让位、网页 `ResponsivePanel` 的玻璃 CSS），外观与其他原生弹窗不一致。现在是与筛选、收藏同一种 SwiftUI 玻璃面板（`MapChromeMorphingPanel` + `MapChromeMenuPanel`），面板白名单加 `rating` / `checkIn`，在 `openSheetId` 里排在店卡之前：店卡收起、面板从右侧按钮组展开，关闭后店卡重新出现。
+- **新分组样式**：`stat`（评价档位大字，行标题按语气着色、副标题是分数）、`note`（语气浅底的提示块：低分风险、预计你会给，`subtitleEmphasis` 等于分数时放大）、`bars`（分布条，行 `value` 0–1、`badge` 是人数）、`grid`（两列选项格，行 `selected`，样式同添加地点表单的评价）、`photos`（方形缩略图，`badge: "remove"` 时右上角画移除标记，没有图片的行是虚线框的添加按钮）、`input`（多行输入框 `field`，文字以原生为准，改动经 sheet 事件 `type: "input"` 回传 `rowId` 与 `text`，网页的回声不覆盖输入）。行语气加 `success`，提示语气加 `success`；评价、打卡、随机美食的 `actions` 画成并排胶囊按钮。
+- **提交中锁定**：面板 `locked` 时关闭钮禁用、下滑不跟手、`dismissSheet` 不执行，`PassThroughHostView` 吃掉面板外的触摸（点地图会换店或关掉店卡，连带取消进行中的打卡）。
+- 网页：`places/ratingChromeSheet.js`、`places/checkInChromeSheet.js`、`places/ratingActions.js`（网页评价面板也用）、`places/hooks/usePlaceCheckIn.js`（打卡状态从 `PlaceCheckInPanel` 移出，两种面板共用）、`mediaPicker.imageThumbnailDataUrl`。网页面板只在网页工具栏时打开。
+- 网页与 Swift 同时升级；`test:native-chrome` 对照 v19、面板白名单、新样式的清洗、输入事件与 Swift 源码里的样式分支，`test:rating` 的 test-native-place-sheets 覆盖两个快照与行 id。未验证：Swift 未编译，外观、键盘避让与提交中锁定需真机检查（[原生案例](../native/doc/README.md)）。

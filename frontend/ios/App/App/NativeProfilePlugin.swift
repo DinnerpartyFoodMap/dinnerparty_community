@@ -685,6 +685,8 @@ final class NativeCommunityModel: ObservableObject {
     @Published private(set) var loaded = false
     @Published private(set) var loadError: String?
     @Published private(set) var people: [Person] = []
+    /// 星图的三圈半径（网页 COMMUNITY_MAP_RINGS 下发；同好就排在这三圈上）
+    @Published private(set) var rings: [CGFloat] = [0.38, 0.69, 1]
     @Published private(set) var empty: EmptyState?
     @Published private(set) var meAvatar: URL?
     @Published private(set) var labels: [String: String] = [:]
@@ -765,6 +767,9 @@ final class NativeCommunityModel: ObservableObject {
                                   x: clamp(item["x"]), y: clamp(item["y"]),
                                   accessible: item["accessible"] as? String ?? name)
                 }
+                let ringValues = (neighbors["rings"] as? JSArray ?? []).compactMap { ($0 as? NSNumber).map { CGFloat($0.doubleValue) } }
+                    .filter { $0 > 0 && $0 <= 1 }
+                if !ringValues.isEmpty { rings = Array(ringValues.prefix(4)) }
                 if let state = neighbors["empty"] as? JSObject {
                     empty = EmptyState(title: state["title"] as? String ?? "",
                                        hint: state["hint"] as? String ?? "",
@@ -1498,6 +1503,7 @@ private struct NativeCommunityView: View {
                     if model.viewMode == .map {
                         NativeCommunityStarMap(
                             people: model.people,
+                            rings: model.rings,
                             me: model.meAvatar,
                             meLabel: model.text("me", "我"),
                             label: model.text("mapLabel", "以我为中心的偏好星图"),
@@ -1634,10 +1640,12 @@ private struct NativeCommunityView: View {
     }
 }
 
-/// 以我为中心的偏好星图：越相似离中心越近，每位同好显示头像（辅色描边），点按进入主页。全部同好一次显示，不分页。
-/// 坐标与网页星图相同：画布 [-1.2, 1.2]，同好在半径 0.95 的圆内。
+/// 以我为中心的偏好星图：每位同好显示头像（辅色描边），点按进入主页。全部同好一次显示，不分页。
+/// 坐标由网页 layoutCommunityMap 排好：按相似度排名分三圈，越相似越靠里，同圈等距排开，任意两人圆心至少相距 0.31
+/// （约 44pt，点按区域互不重叠）。画布 [-1.2, 1.2]，与网页星图相同。
 private struct NativeCommunityStarMap: View {
     let people: [NativeCommunityModel.Person]
+    let rings: [CGFloat]
     let me: URL?
     let meLabel: String
     let label: String
@@ -1646,14 +1654,15 @@ private struct NativeCommunityStarMap: View {
     let onOpen: (String) -> Void
 
     private let extent: CGFloat = 1.2
-    private let rings: [CGFloat] = [0.35, 0.65, 0.95]
 
     var body: some View {
         GeometryReader { proxy in
             let side = min(proxy.size.width, proxy.size.height)
             let unit = side / (extent * 2)
             let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
-            let diameter = max(30, unit * 0.2)
+            // 头像约 0.2 个单位（至少 28pt）；点按区域到 44pt 为止，但不超过同好间距（0.31），相邻两人的点按区域不会重叠
+            let diameter = max(28, unit * 0.2)
+            let hit = max(diameter, min(44, unit * 0.31))
             ZStack {
                 Circle()
                     .fill(FM.bgSurface)
@@ -1674,7 +1683,7 @@ private struct NativeCommunityStarMap: View {
                             .frame(width: diameter, height: diameter)
                             .clipShape(Circle())
                             .overlay(Circle().stroke(secondary, lineWidth: 2))
-                            .frame(width: max(44, diameter), height: max(44, diameter))
+                            .frame(width: hit, height: hit)
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)

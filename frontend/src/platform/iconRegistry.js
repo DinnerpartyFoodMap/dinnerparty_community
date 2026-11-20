@@ -36,6 +36,9 @@ const ICONS = Object.freeze({
     diaries: ['auto_stories', 'book.pages'],
     comments: ['chat_bubble', 'text.bubble'],
     details: ['info', 'info.circle'],
+    addPhoto: ['add_photo_alternate', 'photo.badge.plus'],
+    photo: ['image', 'photo'],
+    riskWarning: ['warning', 'exclamationmark.triangle'],
     // 评价四档（设计参考 1.4）
     thumbUp: ['thumb_up', 'hand.thumbsup'],
     thumbUpFill: ['thumb_up', 'hand.thumbsup.fill'],

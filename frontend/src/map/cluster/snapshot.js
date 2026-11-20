@@ -2,6 +2,7 @@
 // 快照一次性提交给标记层；动画只是在两份快照之间过渡，不会产生“半份”状态。
 
 export const DEFAULT_HYSTERESIS = 0.15;
+const ANCHOR_REFINEMENT_ZOOM = 0.25;
 
 /**
  * 地图可以停在任意小数缩放，但聚类拓扑只按整数逻辑缩放切换。
@@ -106,16 +107,24 @@ function matchesCoordinate(a, b) {
 }
 
 export function shouldRefineMarkerAnchors(snapshot, zoom, startZoom) {
-    return snapshot?.hasRefinableAnchors && zoom - startZoom >= DEFAULT_HYSTERESIS;
+    return zoom > Math.max(startZoom, snapshot?.refineAfterZoom ?? Infinity);
 }
 
 function markerPrecision(node, snapshot) {
     if (node.kind === 'place') return node.place?.aggregateCell?.[0] ?? Infinity;
-    return snapshot.markerBand?.cell ?? Infinity;
+    if (snapshot.markerBand?.kind === 'aggregate') return snapshot.markerBand.cell;
+    let precision = Infinity;
+    if (snapshot.markerBand?.kind === 'leaf') {
+        for (const key of snapshot.engine.memberKeys(node)) {
+            const place = snapshot.engine.placeByKey.get(key);
+            precision = Math.min(precision, place?.aggregateCell?.[0] ?? Infinity);
+        }
+    }
+    return precision;
 }
 
 /** 保留未拆合标记已显示的坐标。索引和地点数据仍使用瓦片原坐标。 */
-export function stabilizeMarkerAnchors(prev, next, plan, { refining = false, selectedKey = null } = {}) {
+export function stabilizeMarkerAnchors(prev, next, plan, { zoom, refining = false, selectedKey = null } = {}) {
     if (!prev || prev.queryMode !== next.queryMode) return;
     for (const [index, node] of next.visibleNodes.entries()) {
         const previous = prev.nodeByKey.get(plan.reuse.get(node.key));
@@ -125,17 +134,33 @@ export function stabilizeMarkerAnchors(prev, next, plan, { refining = false, sel
         if (matchesCoordinate(previous.coordinate, node.coordinate)) continue;
 
         const anchorPrecision = previous.anchorPrecision ?? markerPrecision(previous, prev);
-        const morePrecise = markerPrecision(node, next) > anchorPrecision;
         const detail = node.kind === 'place' && !node.place?.aggregate;
-        // 后续继续放大时采用更细的坐标；选中地点时立即使用精确位置。
-        if ((refining && morePrecise && carried && !plan.keepAnchor.has(node.key)) || (detail && selectedKey === node.key)) {
+        if (detail && selectedKey === node.key) {
             plan.reanchor.add(node.key);
             continue;
         }
-        const anchored = { ...node, coordinate: previous.coordinate, sourceCoordinate: node.coordinate, anchorPrecision };
+
+        let coordinate = previous.coordinate;
+        let refinement = null;
+        if (markerPrecision(node, next) > anchorPrecision) {
+            refinement = (carried && previous.anchorRefinement)
+                || { startZoom: zoom, lastZoom: zoom, startCoordinate: coordinate };
+            // 放大时按相机缩放进度逐步修正；静止、平移和缩小时保留最近显示的位置。
+            if (refining && carried && !plan.keepAnchor.has(node.key) && zoom > refinement.lastZoom) {
+                const progress = (zoom - refinement.startZoom) / ANCHOR_REFINEMENT_ZOOM;
+                plan.reanchor.add(node.key);
+                if (progress >= 1) continue;
+                coordinate = node.coordinate.map((target, axis) => {
+                    const start = refinement.startCoordinate[axis];
+                    return start + (target - start) * progress;
+                });
+                refinement = { ...refinement, lastZoom: zoom };
+            }
+            next.refineAfterZoom = Math.min(next.refineAfterZoom ?? Infinity, refinement.lastZoom);
+        }
+        const anchored = { ...node, coordinate, sourceCoordinate: node.coordinate, anchorPrecision, anchorRefinement: refinement };
         next.visibleNodes[index] = anchored;
         next.nodeByKey.set(node.key, anchored);
-        if (morePrecise) next.hasRefinableAnchors = true;
     }
 }
 

@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 
-/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 18）。
+/// 本地 Capacitor 插件：网页与原生地图控件之间的桥接协议（protocolVersion 19）。
 ///
 /// capabilities() -> { protocolVersion, systemVersion, accessibility, searchResults }
 /// attach({ sessionId, ownerId }) -> { ready }
@@ -12,9 +12,10 @@ import Capacitor
 ///   sheet: null | { id, token, title, subtitle?, subtitleExpanded?: [string], message?, messageTone?, size: fit|list|card, leading?: row, detail?, detailMarkdown?, caption?,
 ///                   image?: https, paragraphs?: [{ id, title?, text, markdown? }],
 ///                   actions?: [row], sections: [{ id, title?, footer?, style?, rows: [row] }], gallery?: [{ id, title?, images: [https], thumbnails?: [https] }],
-///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row, focusRow? }
+///                   closeImage?, closeImageTemplate?, subtitleAction?: row, captionAction?: row, focusRow?, locked? }
+///   section.style: list | footnote | chips | menu | range | stat | note | bars | grid | input | photos；input 时带 field: { id, value, placeholder?, maxLength, disabled }
 ///   drawer: null | { sections: [section] }
-///   row: { id, title, subtitle?, subtitleEmphasis?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands? }
+///   row: { id, title, subtitle?, subtitleEmphasis?, symbol?, image?, imageTemplate?, tone?, disabled?, keepsOpen?, expands?, badge?, value?, selected? }
 ///   skin: { avatarFrame?: { image, scale }, ornamentStart? / ornamentEnd?: { image, width, height, x, y },
 ///           pedestal?: { image, width, height, y }, selectedColor?: #RRGGBB }
 ///   tour: null | { step, target?, drawer }
@@ -25,7 +26,7 @@ import Capacitor
 ///
 /// 事件：action / search / sheet / drawer / layout / sessionLost / accessibilityChanged / availabilityChanged
 ///   search: { sessionId, ownerId, type: input|submit|focus|close|result|exposure, text?, focused?, token?, rowId? }
-///   sheet: { sessionId, ownerId, type: select|dismiss, sheetId, token, rowId? }
+///   sheet: { sessionId, ownerId, type: select|dismiss|input, sheetId, token, rowId?, text? }
 ///   drawer: { sessionId, ownerId, type: select, rowId }
 ///   layout: { sessionId, showing, occupiedRects, slots: [{ id, x, y, width, height }], bottomOccupied, viewport, safeArea,
 ///             drawer: { open, dragging, height }, tour?: { step, drawerOpen } }（指引中的目标位置是 id 为 "tour" 的 slot）
@@ -54,6 +55,9 @@ import Capacitor
 ///   setState 的 glass 是住民的「原生玻璃按钮」偏好：iOS 26 且为真时画 Liquid Glass，否则用不透明的 regularMaterial。
 /// - v18：聚合成员列表（clusterMembers，list 样式的玻璃面板，同收藏、住民的地点列表）：点聚合拆不开时打开，
 ///   点一行回传地点 key，下滑、点地图或关闭只收起列表。此前是网页面板，底色与玻璃和其他原生面板不一致。
+/// - v19：店卡的评价（rating）与打卡（checkIn）也是玻璃面板（此前是网页面板）。分组新增样式 stat（档位大字）、note（提示块）、
+///   bars（分布条，行 value 0–1）、grid（两列选项格，行 selected）、input（多行输入框 field，改动经 sheet 事件 type "input"
+///   回传 rowId = field.id 与 text）、photos（缩略图行）；行语气 success、提示语气 success；面板 locked（提交中）时不能关闭。
 /// - 动作使用固定白名单；原生不执行任意 JavaScript。旧 session、过期 owner 的调用被拒绝。
 /// - 原生按钮触发会打开浮层的动作时先本地收起，再发事件；网页回执“没有打开浮层”或超时未回执时恢复。
 /// - 本地会话健康超时：前台持续收不到心跳时先收起并禁用原生层，并通知网页重新握手，
@@ -73,11 +77,13 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "dispose", returnType: CAPPluginReturnPromise)
     ]
 
-    static let protocolVersion = 18
+    static let protocolVersion = 19
     /// 皮肤图片地址的长度上限（base64 data URL）
     static let skinImageLimit = 300_000
     static let allowedActions: Set<String> = ["more", "favorites", "journey", "random", "add", "search", "alongRoute", "account", "locate", "filter", "listView"]
-    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces", "random", "filter", "clusterMembers"]
+    static let allowedSheets: Set<String> = ["account", "favorites", "place", "exhibition", "userPlaces", "random", "filter", "clusterMembers", "rating", "checkIn"]
+    /// v19 面板输入框的最长文字（打卡的补充描述）
+    static let sheetInputLimit = 1000
     /// 单个面板最多的行数（收藏列表）
     static let sheetRowLimit = 300
     /// 心跳超时（秒）；网页每 1.5 秒发一次
@@ -417,7 +423,8 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
             subtitleAction: parseSingleRow(raw["subtitleAction"]),
             captionAction: parseSingleRow(raw["captionAction"]),
             detailFooterAction: parseSingleRow(raw["detailFooterAction"]),
-            focusRow: clip(raw["focusRow"], 80)
+            focusRow: clip(raw["focusRow"], 80),
+            locked: (raw["locked"] as? Bool) ?? false
         )
     }
 
@@ -450,18 +457,42 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
         var sections: [MapChromeSheetSection] = []
         let rawSections = ((raw as? JSArray) ?? []).compactMap { $0 as? JSObject }
         for (index, rawSection) in rawSections.prefix(8).enumerated() {
+            let rawStyle = rawSection["style"] as? String
+            let field = rawStyle == "input" ? parseField(rawSection["field"]) : nil
+            // v19 样式：未知样式与缺了输入框的 input 按普通列表处理
+            let style: String = {
+                if rawStyle == "input" { return field == nil ? "list" : "input" }
+                if let rawStyle, ["stat", "note", "bars", "grid", "photos"].contains(rawStyle) { return rawStyle }
+                return "list"
+            }()
             sections.append(MapChromeSheetSection(
                 id: clip(rawSection["id"], 32) ?? "section-\(index)",
                 title: clip(rawSection["title"], 40),
                 footer: clip(rawSection["footer"], 120),
-                footnote: (rawSection["style"] as? String) == "footnote",
-                chips: (rawSection["style"] as? String) == "chips",
-                menu: (rawSection["style"] as? String) == "menu",
+                footnote: rawStyle == "footnote",
+                chips: rawStyle == "chips",
+                menu: rawStyle == "menu",
                 rows: parseRows(rawSection["rows"], budget: &budget),
-                range: (rawSection["style"] as? String) == "range" ? parseRange(rawSection["range"]) : nil
+                range: rawStyle == "range" ? parseRange(rawSection["range"]) : nil,
+                style: style,
+                field: field
             ))
         }
         return sections
+    }
+
+    /// v19 多行输入框：id 必填，长度上限不超过 sheetInputLimit
+    private static func parseField(_ raw: JSValue?) -> MapChromeSheetField? {
+        guard let object = raw as? JSObject, let id = clip(object["id"], 32) else { return nil }
+        let requested = (object["maxLength"] as? NSNumber)?.intValue ?? sheetInputLimit
+        let maxLength = Swift.max(1, Swift.min(sheetInputLimit, requested))
+        return MapChromeSheetField(
+            id: id,
+            value: String(((object["value"] as? String) ?? "").prefix(maxLength)),
+            placeholder: clip(object["placeholder"], 60),
+            maxLength: maxLength,
+            disabled: (object["disabled"] as? Bool) ?? false
+        )
     }
 
     /// v15 双头拉杆：数值不合法时丢弃整段
@@ -503,7 +534,11 @@ public class NativeMapChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 image: skinImage(rawRow["image"]),
                 imageTemplate: (rawRow["imageTemplate"] as? Bool) ?? false,
                 badge: clip(rawRow["badge"], 8),
-                subtitleEmphasis: clip(rawRow["subtitleEmphasis"], 12)
+                subtitleEmphasis: clip(rawRow["subtitleEmphasis"], 12),
+                value: numberValue(rawRow["value"]).flatMap { number -> Double? in
+                    number.isFinite ? Double(Swift.min(1, Swift.max(0, number))) : nil
+                },
+                selected: (rawRow["selected"] as? Bool) ?? false
             ))
         }
         return rows

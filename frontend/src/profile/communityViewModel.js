@@ -4,9 +4,51 @@ import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { DEFAULT_COMPANION, DEFAULT_COMPANION_PREVIEW } from '../companion/defaultCompanion.js';
 import { t } from '../i18n/index.js';
 
-/** 星图坐标的范围：后端 x、y 落在半径 0.95 的圆内，画布取 [-1.2, 1.2] 留出头像的位置 */
+/** 星图画布的范围：同好在半径 1 以内，画布取 [-1.2, 1.2] 留出头像的位置 */
 export const COMMUNITY_MAP_EXTENT = 1.2;
+/** 星图上的三圈（网页与原生画的参考圆也是这三圈）：按相似度排名，最相似的三分之一在内圈，依次向外 */
+export const COMMUNITY_MAP_RINGS = Object.freeze([0.38, 0.69, 1]);
+/**
+ * 任意两位同好圆心的最小距离（坐标单位）。手机上星图约 340pt 宽，1 个单位约 143pt，0.31 约 44pt：
+ * 每个头像的点按区域（原生 44pt）都不重叠。相邻两圈也正好相差 0.31。
+ */
+export const COMMUNITY_MAP_SEPARATION = 0.31;
 const TAG_LIMIT = 20;
+
+const ringCapacity = (radius) => Math.max(1, Math.floor(Math.PI / Math.asin(Math.min(1, COMMUNITY_MAP_SEPARATION / (2 * radius)))));
+const roundCoordinate = (value) => Math.round(value * 10000) / 10000;
+
+/**
+ * 星图坐标（2026-11-20）。后端按相似度给的半径（0.15 + 0.8 × (1 − 相似度)）在大家都很相似时全挤在中心附近，
+ * 头像叠在一起点不到。这里按相似度排名把同好平均分到三圈（越相似越靠里，一圈放不下就往外挪），同一圈等距排开；
+ * 先后顺序沿用后端 x、y 的方向（按住民编号散列，换设备也一样）。同圈间距与相邻两圈的差都不小于
+ * COMMUNITY_MAP_SEPARATION，所以 20 人里任意两人都分得开。list 须已按相似度从高到低排好（后端就是这样返回的）。
+ */
+export function layoutCommunityMap(list) {
+    const people = Array.isArray(list) ? list : [];
+    const ringCount = COMMUNITY_MAP_RINGS.length;
+    const rings = COMMUNITY_MAP_RINGS.map(() => []);
+    people.forEach((person, rank) => {
+        let ring = Math.min(ringCount - 1, Math.floor(rank * ringCount / people.length));
+        while (ring < ringCount - 1 && rings[ring].length >= ringCapacity(COMMUNITY_MAP_RINGS[ring])) ring += 1;
+        const x = Number(person?.x);
+        const y = Number(person?.y);
+        const angle = Number.isFinite(x) && Number.isFinite(y) && (x || y) ? Math.atan2(y, x) : rank * 2.399963;
+        rings[ring].push({ rank, angle });
+    });
+    const out = new Array(people.length);
+    rings.forEach((members, ring) => {
+        if (!members.length) return;
+        const radius = COMMUNITY_MAP_RINGS[ring];
+        members.sort((a, b) => a.angle - b.angle || a.rank - b.rank);
+        const step = (2 * Math.PI) / members.length;
+        members.forEach((member, index) => {
+            const angle = members[0].angle + index * step;
+            out[member.rank] = { x: roundCoordinate(radius * Math.cos(angle)), y: roundCoordinate(radius * Math.sin(angle)) };
+        });
+    });
+    return out;
+}
 
 export function neighborMeta(person) {
     const shared = Array.isArray(person?.shared) ? person.shared : [];
@@ -26,15 +68,11 @@ export function communityEmptyState(data) {
     return { title: t('journey:community.empty.notEnoughTitle'), hint: t('journey:community.empty.notEnoughHint'), action: '', actionLabel: '' };
 }
 
-const clampCoordinate = (value) => {
-    const number = Number(value);
-    return Number.isFinite(number) ? Math.max(-1, Math.min(1, number)) : 0;
-};
-
-/** GET /api/community/neighbors 的结果 → 列表与星图共用的行（最多 20 人，不分页） */
+/** GET /api/community/neighbors 的结果 → 列表与星图共用的行（最多 20 人，不分页；x、y 是 layoutCommunityMap 排好的星图坐标） */
 export function buildCommunityPeople(data, { backendUrl } = {}) {
-    const list = Array.isArray(data?.neighbors) ? data.neighbors : [];
-    return list.slice(0, 20).map((person) => {
+    const list = (Array.isArray(data?.neighbors) ? data.neighbors : []).slice(0, 20);
+    const layout = layoutCommunityMap(list);
+    return list.map((person, index) => {
         const name = String(person.username || '');
         return {
             id: String(person.id),
@@ -42,8 +80,8 @@ export function buildCommunityPeople(data, { backendUrl } = {}) {
             // 没有头像时由服务器返回默认头像（原生只接受 https 地址）
             avatarURL: resolveAvatarUrl(person, backendUrl, { serverFallback: true }),
             meta: neighborMeta(person),
-            x: clampCoordinate(person.x),
-            y: clampCoordinate(person.y),
+            x: layout[index].x,
+            y: layout[index].y,
             accessible: t('profile:community.openProfile', { name })
         };
     });
@@ -104,7 +142,7 @@ export function createCommunityController({ backendUrl, getToken, getUser, reque
         try {
             const data = await api('/neighbors');
             const people = buildCommunityPeople(data, { backendUrl });
-            return { status: 'ready', error: '', people, empty: people.length ? null : communityEmptyState(data) };
+            return { status: 'ready', error: '', people, rings: [...COMMUNITY_MAP_RINGS], empty: people.length ? null : communityEmptyState(data) };
         } catch (error) {
             return { status: 'error', error: String(error?.message || t('profile:loadFailed')).slice(0, 200), people: [], empty: null };
         }

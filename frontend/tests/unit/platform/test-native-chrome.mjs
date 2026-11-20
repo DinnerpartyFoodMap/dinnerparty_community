@@ -377,7 +377,25 @@ for (const supported of [false, true]) {
     assert.equal('interactive' in sanitizeSheet({ id: 'place', interactive: true }), false, 'v6 由 card 决定地图是否可操作');
 
     // v9 可点的副标题与地址行：与面板行相同的白名单字段，非对象丢弃
-    assert.equal(NATIVE_CHROME_PROTOCOL, 18);
+    assert.equal(NATIVE_CHROME_PROTOCOL, 19);
+    // v19 评价 / 打卡面板：新分组样式、输入框、分布条长度、选中项、锁定与成功提示
+    const v19 = sanitizeSheet({ id: 'checkIn', locked: 1, messageTone: 'success', sections: [
+        { id: 'description', style: 'input', field: { id: 'description', value: 'x'.repeat(1200), maxLength: 5000, placeholder: 'p'.repeat(80), disabled: 1, evil: 1 } },
+        { id: 'broken', style: 'input', field: { value: 'no id' } },
+        { id: 'bars', style: 'bars', rows: [{ id: 'a', value: 1.7 }, { id: 'b', value: -2 }, { id: 'c', value: 'x' }, { id: 'd', value: '' }, { id: 'e', value: 0.25 }] },
+        { id: 'grid', style: 'grid', rows: [{ id: 'g1', selected: true, tone: 'success' }, { id: 'g2', selected: 'yes' }] },
+        { id: 'stat', style: 'stat' }, { id: 'note', style: 'note' }, { id: 'photos', style: 'photos' }, { id: 'odd', style: 'evil' }
+    ] });
+    assert.equal(v19.locked, undefined, 'locked 只认 true');
+    assert.equal(sanitizeSheet({ id: 'checkIn', locked: true }).locked, true);
+    assert.equal(v19.messageTone, 'success');
+    assert.deepEqual(v19.sections.map((item) => item.style), ['input', 'list', 'bars', 'grid', 'stat', 'note', 'photos', 'list'], '缺 id 的输入框与未知样式按普通列表');
+    assert.deepEqual(v19.sections[0].field, { id: 'description', value: 'x'.repeat(1000), placeholder: 'p'.repeat(60), maxLength: 1000, disabled: true });
+    assert.equal('field' in v19.sections[1], false);
+    assert.deepEqual(v19.sections[2].rows.map((row) => row.value), [1, 0, undefined, undefined, 0.25], '长度夹在 0–1，无效值不下发');
+    assert.deepEqual(v19.sections[3].rows.map((row) => [row.selected, row.tone]), [[true, 'success'], [undefined, undefined]]);
+    assert.equal('selected' in sanitizeSheet({ id: 'rating', sections: [{ rows: [{ id: 'r' }] }] }).sections[0].rows[0], false, '没选中时不带字段');
+    assert.equal(sanitizeSheet({ id: 'rating', title: '评价' }).id, 'rating');
     // v16 地区下拉菜单（menu 分组）与地点卡片展开后的几行副标题（最多 3 行，空行丢弃）
     const menuSheet = sanitizeSheet({ id: 'filter', size: 'list', sections: [{ id: 'region-province', style: 'menu', rows: [{ id: 'region:province:', title: '不限', tone: 'accent' }] }] });
     assert.equal(menuSheet.sections[0].style, 'menu');
@@ -399,6 +417,13 @@ for (const supported of [false, true]) {
     assert.equal(Number(swift.match(/static let protocolVersion = (\d+)/)[1]), NATIVE_CHROME_PROTOCOL);
     assert.deepEqual(swiftSet('allowedSheets'), [...NATIVE_SHEETS].sort());
     assert.deepEqual(swiftSet('allowedActions'), [...NATIVE_CHROME_ACTIONS].sort());
+    // v19 分组样式：Swift 解析与面板渲染都认这几种（静态对照，Swift 未在此编译）
+    const sheetsSwift = readFileSync(new URL('../../../ios/App/App/MapChromeSheets.swift', import.meta.url), 'utf8');
+    assert.ok(swift.includes('["stat", "note", "bars", "grid", "photos"].contains(rawStyle)'), 'Swift 解析 v19 分组样式');
+    for (const style of ['stat', 'note', 'bars', 'grid', 'photos', 'input']) {
+        assert.ok(sheetsSwift.includes(`section.style == "${style}"`), `Swift 面板渲染 ${style} 分组`);
+    }
+    assert.ok(sheetsSwift.includes('sendSheetInput') || readFileSync(new URL('../../../ios/App/App/MapChromeModel.swift', import.meta.url), 'utf8').includes('onSheetEvent?("input"'), 'Swift 回传输入事件');
     const linked = sanitizeSheet({ id: 'exhibition', size: 'card', subtitle: '场馆', caption: '场馆',
         subtitleAction: { id: 'venue', title: '查看', symbol: 'mappin.and.ellipse', coords: [1, 2] }, captionAction: 'venue' });
     assert.deepEqual(linked.subtitleAction, { id: 'venue', title: '查看', subtitle: undefined, symbol: 'mappin.and.ellipse', tone: undefined, disabled: false, keepsOpen: false, expands: false });
@@ -576,11 +601,20 @@ for (const supported of [false, true]) {
     // v11 住民的地点列表
     emitSheet({ type: 'select', sheetId: 'userPlaces', token: 3, rowId: 'place-7' });
     emitSheet({ type: 'dismiss', sheetId: 'userPlaces', token: 3 });
+    // v19 打卡的输入框：文字可为空、截断到 1000 字；缺行 id 或文字不是字符串时忽略
+    emitSheet({ type: 'input', sheetId: 'checkIn', token: 4, rowId: 'description', text: '' });
+    emitSheet({ type: 'input', sheetId: 'checkIn', token: 4, rowId: 'description', text: 'y'.repeat(1500) });
+    emitSheet({ type: 'input', sheetId: 'checkIn', token: 4, text: 'no row' });
+    emitSheet({ type: 'input', sheetId: 'checkIn', token: 4, rowId: 'description', text: 42 });
+    emitSheet({ type: 'select', sheetId: 'rating', token: 5, rowId: 'rate:4' });
     assert.deepEqual(events, [
         { type: 'select', sheetId: 'account', token: 2, rowId: 'settings' },
         { type: 'dismiss', sheetId: 'account', token: 2 },
         { type: 'select', sheetId: 'userPlaces', token: 3, rowId: 'place-7' },
-        { type: 'dismiss', sheetId: 'userPlaces', token: 3 }
+        { type: 'dismiss', sheetId: 'userPlaces', token: 3 },
+        { type: 'input', sheetId: 'checkIn', token: 4, rowId: 'description', text: '' },
+        { type: 'input', sheetId: 'checkIn', token: 4, rowId: 'description', text: 'y'.repeat(1000) },
+        { type: 'select', sheetId: 'rating', token: 5, rowId: 'rate:4' }
     ], '缺行 id、未知类型、非白名单面板、旧会话的事件被忽略');
 
     const emitDrawer = (extra) => plugin.emit('drawer', { sessionId: plugin.state.session, ownerId: 'map-sheet', ...extra });
@@ -600,7 +634,7 @@ for (const supported of [false, true]) {
 }
 
 // ---- 能力不足 / 协议不符 / 没有布局：保持 Web，不留下原生会话 ----
-for (const options of [{ protocol: 16 }, { protocol: 1 }, { protocol: 2 }, { protocol: 3 }, { protocol: 4 }, { protocol: 5 }, { protocol: 999 }, { noLayout: true }]) {
+for (const options of [{ protocol: 18 }, { protocol: 16 }, { protocol: 1 }, { protocol: 2 }, { protocol: 3 }, { protocol: 4 }, { protocol: 5 }, { protocol: 999 }, { noLayout: true }]) {
     const plugin = new FakePlugin(options);
     const { session, modes } = makeSession(plugin);
     assert.equal(await session.start({ items }), false, JSON.stringify(options));

@@ -632,6 +632,15 @@ const canvas = {
     tileMap.emit('moveend');
     tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
     tileMap.emit('movestart');
+    tileMap.zoom = 13.075;
+    tileMap.emit('mapmove');
+    const intermediate = tileMap.last('nodes')[1].find((node) => node.id === 'place:103');
+    assert.ok(intermediate.lng > Math.min(detail.lng, leafPlaces[2].longitude)
+        && intermediate.lng < Math.max(detail.lng, leafPlaces[2].longitude), '继续放大的中间帧逐步接近明细位置');
+    const refinementFrames = tileMap.count('nodes');
+    tileMap.zoom = 13.02;
+    tileMap.emit('mapmove');
+    assert.equal(tileMap.count('nodes'), refinementFrames, '手势短暂缩回时标记不沿修正轨迹倒退');
     tileMap.zoom = 13.3;
     tileMap.emit('mapmove');
     const [, refinedNodes, refinePlan] = tileMap.last('nodes');
@@ -645,6 +654,27 @@ const canvas = {
     const coarseWithExactAnchor = tileMap.last('nodes')[1].find((node) => !node.cluster);
     assert.deepEqual([coarseWithExactAnchor.lng, coarseWithExactAnchor.lat], [refined.lng, refined.lat], '已知精确位置的点缩小时保持在原处');
     tileLayer.destroy();
+
+    // 街区级先显示缺块的匿名点，明细瓦片在同级到达时，名称和点击对象原地更新。
+    const fallbackMap = new FakeMap();
+    const fallbackClicks = [];
+    const fallbackLayer = new NativeMarkerLayer(fallbackMap, { onPlaceClick: (place) => fallbackClicks.push(place.id) });
+    fallbackMap.zoom = 13;
+    fallbackLayer.update({ places: [leafPlaces[0], aggregatePlaces[2]], markerBand: leafBand });
+    const fallback = fallbackMap.last('nodes')[1].find((node) => node.id === aggregatePlaces[2].aggregateKey);
+    fallbackLayer.update({ places: [leafPlaces[0], leafPlaces[2]], markerBand: leafBand });
+    const [, recoveredNodes, recoveryPlan] = fallbackMap.last('nodes');
+    const recovered = recoveredNodes.find((node) => node.id === 'place:103');
+    assert.equal(recoveryPlan.reuse.get(recovered.id), fallback.id, '明细补到时沿用同格匿名标记');
+    assert.equal(recovered.name, '丙');
+    assert.deepEqual([recovered.lng, recovered.lat], [fallback.lng, fallback.lat], '补到名称时保留匿名点已显示的位置');
+    fallbackMap.emit('markerTap', { id: recovered.id });
+    assert.deepEqual(fallbackClicks, [103]);
+    fallbackLayer.setSelectedKey(recovered.id);
+    const selected = fallbackMap.last('nodes')[1].find((node) => node.id === recovered.id);
+    assert.ok(Math.abs(selected.lng - leafPlaces[2].longitude) < 1e-7
+        && Math.abs(selected.lat - leafPlaces[2].latitude) < 1e-7, '选中时采用明细坐标');
+    fallbackLayer.destroy();
 
     // 上一次停在 13 级，回捏到 12 级时才收到明细，仍保留画面上的匿名聚合。
     const reverseMap = new FakeMap();

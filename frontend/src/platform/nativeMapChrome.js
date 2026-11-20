@@ -37,23 +37,32 @@ import { t } from '../i18n/index.js';
 // 版本不一致时回退 Web，避免旧 App 静默丢掉搜索框或面板。
 // v18 聚合成员列表也使用原生面板（clusterMembers，list 样式，同收藏、住民的地点列表）：点聚合拆不开（最大缩放、相机放不大）时打开，
 // 点一行回传地点 key（place:<id>），关闭只收起列表。
+// v19 店卡的评价（rating）与打卡（checkIn）也使用原生玻璃面板，此前是网页面板。分组新增样式：
+// "stat"（评价档位大字：行标题按 tone 着色、副标题为分数）、"note"（tone 浅底的提示块）、"bars"（分布条：行 value 0–1、badge 为人数）、
+// "grid"（两列选项格：行 selected 为当前选中）、"input"（多行输入框：分组 field { id, value, placeholder, maxLength, disabled }，
+// 输入经 sheet 事件 type "input" 回传 rowId = field.id 与 text）、"photos"（缩略图行：行 image 为缩略图，点按回传行 id）；
+// 行语气新增 "success"，提示语气新增 "success"；面板 locked 时（提交中）关闭钮、下滑与点地图都不关闭面板。
 // labels（原生自带的固定文案：读屏标签、“简介”等）旧版原生会忽略，仍用自带的中文，因此不需要升级协议版本。
 // 同理，正文段落的 markdown（展会简介、信息的行内 Markdown）旧版原生忽略，仍显示纯文本 text。
 // 布局里的 drawer（更多功能展开 / 拖动 / 高度，底栏小伙伴起飞用）旧版原生不带，网页当作收起，也不升级版本。
 // 搜索结果框由 capabilities.searchResults 单独声明支持，旧版原生输入框仍配网页结果框。
-export const NATIVE_CHROME_PROTOCOL = 18;
+export const NATIVE_CHROME_PROTOCOL = 19;
 export const NATIVE_CHROME_ACTIONS = Object.freeze(['more', 'favorites', 'journey', 'random', 'add', 'search', 'alongRoute', 'account', 'locate', 'filter', 'listView']);
 export const NATIVE_SEARCH_EVENTS = Object.freeze(['input', 'submit', 'focus', 'close', 'result', 'exposure']);
 export const NATIVE_SEARCH_TEXT_LIMIT = 100;
 const SEARCH_RESULT_KINDS = ['heading', 'message', 'loading', 'error', 'button', 'place', 'recommendation'];
 const SEARCH_RESULT_LIMIT = 300;
-export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces', 'random', 'filter', 'clusterMembers']);
-export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss']);
+export const NATIVE_SHEETS = Object.freeze(['account', 'favorites', 'place', 'exhibition', 'userPlaces', 'random', 'filter', 'clusterMembers', 'rating', 'checkIn']);
+export const NATIVE_SHEET_EVENTS = Object.freeze(['select', 'dismiss', 'input']);
+// v19 面板输入框（打卡的补充描述）的最长文字
+export const NATIVE_SHEET_INPUT_LIMIT = 1000;
 export const NATIVE_DRAWER_EVENTS = Object.freeze(['select']);
 // 操作指引的目标：上滑展开更多功能（工具栏本身）
 export const NATIVE_TOUR_DRAWER = 'drawer';
 const SHEET_ROW_LIMIT = 300;
-const SHEET_TONES = ['danger', 'muted', 'warning', 'accent', 'include', 'exclude', 'link'];
+const SHEET_TONES = ['danger', 'muted', 'warning', 'accent', 'include', 'exclude', 'link', 'success'];
+const SHEET_MESSAGE_TONES = ['loading', 'danger', 'success'];
+const SECTION_STYLES = ['footnote', 'chips', 'menu', 'stat', 'note', 'bars', 'grid', 'photos'];
 const SHEET_ACTION_LIMIT = 6;
 const SHEET_SIZES = ['fit', 'list', 'card'];
 
@@ -243,7 +252,9 @@ export function sanitizeSheet(sheet) {
         // 展开（全屏详情）时代替 subtitle 的几行副标题（地点卡片：评分（人数） | 人均，下一行标签）；旧版原生忽略，仍显示 subtitle
         subtitleExpanded: sanitizeSubtitleLines(sheet.subtitleExpanded),
         message: clipText(sheet.message, 120),
-        messageTone: sheet.messageTone === 'loading' || sheet.messageTone === 'danger' ? sheet.messageTone : undefined,
+        messageTone: SHEET_MESSAGE_TONES.includes(sheet.messageTone) ? sheet.messageTone : undefined,
+        // v19 提交中：关闭钮、下滑与点地图都不关闭面板（旧版原生没有这两个面板，不会收到）
+        ...(sheet.locked === true ? { locked: true } : null),
         // card：地点卡片两段停靠（摘要时地图可操作）；list：半屏 / 全屏列表；fit：按内容高度的菜单
         size: SHEET_SIZES.includes(sheet.size) ? sheet.size : 'fit',
         leading: sheet.leading ? sanitizeSheetRows([sheet.leading], { rows: 1 })[0] : undefined,
@@ -451,15 +462,33 @@ export function readDrawerLayout(layout) {
 function sanitizeSections(list, budget) {
     return (Array.isArray(list) ? list : []).slice(0, 8).map((section, index) => {
         const range = section && section.style === 'range' ? sanitizeRange(section.range) : null;
+        const field = section && section.style === 'input' ? sanitizeField(section.field) : null;
         return {
             id: clipText(section && section.id, 32) || `section-${index}`,
             title: clipText(section && section.title, 40),
             footer: clipText(section && section.footer, 120),
-            style: range ? 'range' : (section && ['footnote', 'chips', 'menu'].includes(section.style) ? section.style : 'list'),
+            style: range ? 'range' : field ? 'input' : (section && SECTION_STYLES.includes(section.style) ? section.style : 'list'),
             rows: sanitizeSheetRows(section && section.rows, budget),
-            ...(range ? { range } : null)
+            ...(range ? { range } : null),
+            ...(field ? { field } : null)
         };
     });
+}
+
+/** v19 多行输入框：只有 id、当前文字、占位与长度上限；原生输入后经 input 事件回传 */
+function sanitizeField(field) {
+    if (!field || typeof field !== 'object') return null;
+    const id = clipText(field.id, 32);
+    if (!id) return null;
+    const limit = Number(field.maxLength);
+    const maxLength = Number.isFinite(limit) && limit >= 1 ? Math.min(NATIVE_SHEET_INPUT_LIMIT, Math.round(limit)) : NATIVE_SHEET_INPUT_LIMIT;
+    return {
+        id,
+        value: typeof field.value === 'string' ? field.value.slice(0, maxLength) : '',
+        placeholder: clipText(field.placeholder, 60),
+        maxLength,
+        disabled: !!field.disabled
+    };
 }
 
 /** v15 双头拉杆：整数范围，low ≤ high 且都落在 [min, max]；文案只是短字符串 */
@@ -536,6 +565,7 @@ function sanitizeSheetRows(list, budget) {
         const badge = clipText(row.badge, 8);
         const subtitle = clipText(row.subtitle, 80);
         const subtitleEmphasis = clipText(row.subtitleEmphasis, 12);
+        const value = Number(row.value);
         rows.push({
             id,
             title: clipText(row.title, 60) || id,
@@ -548,7 +578,10 @@ function sanitizeSheetRows(list, budget) {
             keepsOpen: !!row.keepsOpen,
             expands: !!row.expands,
             // v12：小红点（"dot"）或小标签
-            ...(badge ? { badge } : null)
+            ...(badge ? { badge } : null),
+            // v19：分布条的长度（0–1）与选项格的选中项
+            ...(row.value != null && row.value !== '' && Number.isFinite(value) ? { value: Math.min(1, Math.max(0, value)) } : null),
+            ...(row.selected === true ? { selected: true } : null)
         });
     }
     return rows;
@@ -569,7 +602,7 @@ export class NativeMapChromeSession {
      * @param {{ ownerId: string, onAction: (actionId: string) => (boolean|void),
      *           onModeChange: (mode: 'web'|'native') => void, onLayout?: (layout: object) => void,
      *           onSearch?: (event: { type: 'input'|'submit'|'focus'|'close', text?: string, focused?: boolean }) => void,
-     *           onSheet?: (event: { type: 'select'|'dismiss', sheetId: string, token: number, rowId?: string }) => void,
+     *           onSheet?: (event: { type: 'select'|'dismiss'|'input', sheetId: string, token: number, rowId?: string, text?: string }) => void,
      *           onDrawer?: (event: { type: 'select', rowId: string }) => void,
      *           plugin?: object, available?: boolean, timing?: object }} options
      * plugin / available / timing 仅供测试注入。
@@ -836,10 +869,15 @@ export class NativeMapChromeSession {
         if (!event || this.mode !== 'native' || event.sessionId !== this.sessionId || event.ownerId !== this.ownerId) return;
         if (!NATIVE_SHEET_EVENTS.includes(event.type) || !NATIVE_SHEETS.includes(event.sheetId)) return;
         const detail = { type: event.type, sheetId: event.sheetId, token: toCounter(event.token) };
-        if (event.type === 'select') {
+        if (event.type === 'select' || event.type === 'input') {
             const rowId = clipText(event.rowId, 64);
             if (!rowId) return;
             detail.rowId = rowId;
+        }
+        // v19 输入框：文字可以为空（删光），但必须是字符串
+        if (event.type === 'input') {
+            if (typeof event.text !== 'string') return;
+            detail.text = event.text.slice(0, NATIVE_SHEET_INPUT_LIMIT);
         }
         try {
             this.onSheet && this.onSheet(detail);

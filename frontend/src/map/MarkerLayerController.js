@@ -274,7 +274,7 @@ export class MarkerLayerController {
             transitionVersion: this.version + 1
         });
         const plan = planTransition(this.snapshot, next);
-        stabilizeMarkerAnchors(this.snapshot, next, plan, { refining, selectedKey: this.selectedKey });
+        stabilizeMarkerAnchors(this.snapshot, next, plan, { zoom, refining, selectedKey: this.selectedKey });
         this._apply(plan, next, reason);
         this._pushMetric('commits', { reason, kind: plan.kind, nodes: next.visibleNodes.length, ms: performance.now() - started });
     }

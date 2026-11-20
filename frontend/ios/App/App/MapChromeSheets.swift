@@ -203,7 +203,7 @@ struct MapChromeSheetRoot: View {
     }
 }
 
-/// 住民菜单 / 我的收藏 / 随机美食的正文。玻璃外壳由 MapChromeMorphingPanel 持有并缩回右侧按钮。
+/// 住民菜单 / 我的收藏 / 随机美食 / 筛选 / 评价 / 打卡的正文。玻璃外壳由 MapChromeMorphingPanel 持有并缩回右侧按钮。
 /// 不再用 UIKit 系统面板：iOS 26 半屏面板的系统玻璃比工具栏的 Glass.regular 更厚、更亮，两者看起来不一致。
 /// 交互与系统面板一致：右上角关闭、拖住顶部下滑关闭、点地图关闭（PassThroughHostView）；内容超出可用高度时滚动。
 struct MapChromeMenuPanel: View {
@@ -255,6 +255,7 @@ struct MapChromeMenuPanel: View {
                 }
                 .scrollDisabled(!scrolls)
                 .scrollBounceBehavior(.basedOnSize)
+                .scrollDismissesKeyboard(.interactively)
                 .frame(height: min(contentHeight, bodyLimit))
                 // 从店卡回到收藏：滚到刚才点开的那一行（内容高度量出来、可以滚动之后）
                 .onChange(of: scrolls) { _, canScroll in
@@ -273,7 +274,8 @@ struct MapChromeMenuPanel: View {
     private var dismissGesture: some Gesture {
         DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .updating($gestureOffset) { value, state, _ in
-                // 只跟随向下拖；向上拖带阻尼
+                // 只跟随向下拖；向上拖带阻尼。提交中（locked）不能下滑关闭，面板不跟手
+                guard !sheet.locked else { return }
                 let y = value.translation.height
                 state = y >= 0 ? y : y * 0.15
             }
@@ -349,6 +351,9 @@ struct MapChromeMenuPanel: View {
         NativeCloseButton(label: model.text("close", "关闭")) {
             model.dismissSheet()
         }
+        // v19 提交中（打卡）不能关闭
+        .disabled(sheet.locked)
+        .opacity(sheet.locked ? 0.45 : 1)
     }
 
     private var content: some View {
@@ -384,21 +389,10 @@ struct MapChromeMenuPanel: View {
                 }
             }
             if !sheet.actions.isEmpty {
-                if sheet.sheetId == "random" {
+                if sheet.capsuleActions {
                     HStack(spacing: 10) {
                         ForEach(sheet.actions) { row in
-                            Button { model.selectSheetRow(row) } label: {
-                                Label(row.title, systemImage: row.symbol ?? "arrow.clockwise")
-                                    .font(.subheadline.weight(.semibold))
-                                    .multilineTextAlignment(.center)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, minHeight: 52)
-                                    .padding(.horizontal, 10)
-                                    .foregroundStyle(row.tone == "accent" ? Color(uiColor: model.theme.onPrimary) : Color.primary)
-                                    .background(row.tone == "accent" ? accent : FM.bgOverlay, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(row.disabled)
+                            capsuleAction(row)
                         }
                     }
                 } else {
@@ -519,23 +513,64 @@ struct MapChromeMenuPanel: View {
         HStack(spacing: 10) {
             if sheet.messageTone == "loading" {
                 ProgressView()
+            } else if sheet.messageTone == "success" {
+                // v19 打卡成功
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(FM.success)
+                    .accessibilityHidden(true)
             }
             Text(message)
-                .foregroundStyle(sheet.messageTone == "danger" ? FM.dangerText : Color.secondary)
+                .foregroundStyle(sheet.messageTone == "danger" ? FM.dangerText
+                    : (sheet.messageTone == "success" ? FM.successText : Color.secondary))
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: 44)
     }
 
+    /// 并排的胶囊按钮（随机美食、评价、打卡）：主操作（accent）主题色实心，其余浅底。
+    /// 面板提交中（locked）时，禁用的主操作前面转圈
+    private func capsuleAction(_ row: MapChromeSheetRow) -> some View {
+        let prominent = row.tone == "accent"
+        let busy = sheet.locked && row.disabled && prominent
+        let foreground = prominent ? Color(uiColor: model.theme.onPrimary) : (row.tone == "danger" ? FM.dangerText : Color.primary)
+        return Button { model.selectSheetRow(row) } label: {
+            HStack(spacing: 8) {
+                if busy {
+                    ProgressView().tint(foreground)
+                } else if let symbol = row.symbol {
+                    Image(systemName: symbol)
+                }
+                Text(row.title)
+            }
+            .font(.subheadline.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .padding(.horizontal, 10)
+            .foregroundStyle(foreground)
+            .background(prominent ? accent : FM.bgOverlay, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(row.disabled)
+        // 随机美食加载中保持原样；其余面板禁用时半透明（设计参考 7.1），转圈的主操作不变淡
+        .opacity(row.disabled && sheet.sheetId != "random" && !busy ? 0.45 : 1)
+        .accessibilityLabel(Text(row.title))
+    }
+
     private func sectionView(_ section: MapChromeSheetSection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // v19：提示块的标题与脚注画在块里，输入框的标题由输入框自己画（右侧有“收起键盘”）
+            let titleInside = section.style == "note" || section.style == "input"
             if let range = section.range {
                 // v15 双头拉杆：标题与当前范围在同一行（与网页一致），拖动时实时更新，松手回传
                 MapChromeRangeSlider(title: section.title ?? "", range: range, accent: accent) { low, high in
                     model.selectSheetRange(range, low: low, high: high)
                 }
                 .padding(.horizontal, 4)
-            } else if let title = section.title {
+            } else if let title = section.title, !titleInside {
                 Text(title)
                     .font(.headline)
                     .padding(.horizontal, 4)
@@ -552,6 +587,19 @@ struct MapChromeMenuPanel: View {
                     }
                 }
                 .padding(.horizontal, 4)
+            } else if section.style == "stat" {
+                statView(section)
+            } else if section.style == "note" {
+                noteView(section)
+            } else if section.style == "bars" {
+                barsView(section)
+            } else if section.style == "grid" {
+                gridView(section)
+            } else if section.style == "photos" {
+                photosView(section)
+            } else if section.style == "input", let field = section.field {
+                MapChromeSheetInput(model: model, title: section.title, field: field, accent: accent)
+                    .id(field.id)
             } else if !section.rows.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
@@ -566,13 +614,254 @@ struct MapChromeMenuPanel: View {
                 .background(groupFill)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
+            if let footer = section.footer, !titleInside {
+                Text(footer)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    // MARK: v19 评价与打卡的分组样式
+
+    /// 行语气的颜色（图标、描边、填充）：与网页 rating.js 的四档同色（设计参考 1.4）
+    private func toneColor(_ tone: String?) -> Color? {
+        switch tone {
+        case "success", "include": return FM.success
+        case "accent": return accent
+        case "warning": return FM.warning
+        case "danger", "exclude": return FM.danger
+        default: return nil
+        }
+    }
+
+    /// 行语气的文字色：语义色的文字变体、加深的主色，保证浅底上的对比度
+    private func toneTextColor(_ tone: String?) -> Color? {
+        switch tone {
+        case "success", "include": return FM.successText
+        case "accent": return accent.fmReadableText
+        case "warning": return FM.warningText
+        case "danger", "exclude": return FM.dangerText
+        default: return nil
+        }
+    }
+
+    /// stat：评价档位大字（“均线之上 3.4”）。行标题按语气着色、副标题是分数；没有副标题时是一句小一号的提示（还没有评价）
+    private func statView(_ section: MapChromeSheetSection) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(section.rows) { row in
+                HStack(alignment: .center, spacing: 10) {
+                    if let tint = toneColor(row.tone) {
+                        MapChromeSkinImage(source: row.image, template: row.imageTemplate, width: 28, height: 28) {
+                            Image(systemName: row.symbol ?? "hand.thumbsup")
+                                .font(.system(size: 22, weight: .semibold))
+                        }
+                        .foregroundStyle(tint)
+                        .frame(width: 30, height: 30)
+                    }
+                    (Text(row.title).foregroundStyle(toneTextColor(row.tone) ?? Color.primary)
+                     + Text(row.subtitle.map { "  \($0)" } ?? "").foregroundStyle(Color.primary).monospacedDigit())
+                        .font(row.subtitle == nil ? Font.title3.bold() : Font.title2.bold())
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    /// note：语气浅底的提示块（低分风险、预计你会给）。标题与脚注画在块里；
+    /// 有副标题的行是“档位 + 分数”，副标题等于 subtitleEmphasis 时分数加粗放大
+    private func noteView(_ section: MapChromeSheetSection) -> some View {
+        let tint = section.rows.first.flatMap { toneColor($0.tone) }
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        return VStack(alignment: .leading, spacing: 4) {
+            if let title = section.title {
+                Text(title)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(section.rows) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let symbol = row.symbol {
+                        Image(systemName: symbol)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(toneColor(row.tone) ?? Color.secondary)
+                            .accessibilityHidden(true)
+                    }
+                    if let subtitle = row.subtitle {
+                        let emphasized = row.subtitleEmphasis == subtitle
+                        (Text(row.title).foregroundStyle(toneTextColor(row.tone) ?? Color.primary).font(.headline)
+                         + Text(" ")
+                         + Text(subtitle).foregroundStyle(Color.primary).font(emphasized ? Font.title2.bold() : Font.headline).monospacedDigit())
+                    } else {
+                        Text(row.title)
+                            .font(.subheadline)
+                            .foregroundStyle(toneTextColor(row.tone) ?? Color.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
             if let footer = section.footer {
                 Text(footer)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((tint ?? Color.primary).opacity(tint == nil ? 0.06 : 0.12), in: shape)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// bars：分布条。左边档位名，中间按 value（0–1）画条，右边人数（badge）；读屏读行副标题（“强烈推荐 7 人”）
+    private func barsView(_ section: MapChromeSheetSection) -> some View {
+        VStack(spacing: 8) {
+            ForEach(section.rows) { row in
+                HStack(spacing: 10) {
+                    Text(row.title)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(width: 64, alignment: .leading)
+                    Capsule()
+                        .fill(Color.primary.opacity(0.1))
+                        .frame(height: 8)
+                        .overlay(alignment: .leading) {
+                            GeometryReader { proxy in
+                                Capsule()
+                                    .fill(toneColor(row.tone) ?? accent)
+                                    .frame(width: proxy.size.width * CGFloat(row.value ?? 0))
+                            }
+                        }
+                        .animation(.easeOut(duration: 0.2), value: row.value)
+                    Text(row.badge ?? "")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 28, alignment: .trailing)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(row.subtitle ?? row.title))
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    /// grid：两列选项格（自己的评价）。每格图标、档位名与一句说明；选中的一格语气色描边、浅底（同添加地点表单的评价）
+    private func gridView(_ section: MapChromeSheetSection) -> some View {
+        VStack(spacing: 8) {
+            ForEach(Array(stride(from: 0, to: section.rows.count, by: 2)), id: \.self) { start in
+                HStack(spacing: 8) {
+                    optionTile(section.rows[start])
+                    if start + 1 < section.rows.count {
+                        optionTile(section.rows[start + 1])
+                    } else {
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func optionTile(_ row: MapChromeSheetRow) -> some View {
+        let color = toneColor(row.tone) ?? accent
+        let shape = RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous)
+        return Button {
+            model.selectSheetRow(row)
+        } label: {
+            HStack(spacing: 10) {
+                MapChromeSkinImage(source: row.image, template: row.imageTemplate, width: 26, height: 26) {
+                    Image(systemName: row.symbol ?? "hand.thumbsup")
+                        .font(.system(size: 20, weight: .semibold))
+                }
+                .foregroundStyle(color)
+                .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(row.selected ? (toneTextColor(row.tone) ?? accent.fmReadableText) : Color.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    if let subtitle = row.subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .frame(minHeight: 60)
+            .background(shape.fill(color.opacity(row.selected ? 0.16 : 0.06)))
+            .overlay(shape.strokeBorder(row.selected ? color : color.opacity(0.3), lineWidth: row.selected ? 2 : 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .disabled(row.disabled)
+        .opacity(row.disabled && !row.selected ? 0.5 : 1)
+        .accessibilityLabel(Text(row.subtitle.map { "\(row.title)，\($0)" } ?? row.title))
+        .accessibilityAddTraits(row.selected ? .isSelected : [])
+    }
+
+    /// photos：横排的方形缩略图（已选照片，点按移除，badge 为 "remove" 时右上角画移除标记）；没有图片的行画成虚线框的添加按钮
+    private func photosView(_ section: MapChromeSheetSection) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(section.rows) { row in
+                        photoTile(row)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private func photoTile(_ row: MapChromeSheetRow) -> some View {
+        let shape = RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous)
+        let thumbnail = row.image.flatMap { MapChromeSkinImages.local($0) }
+        return Button {
+            model.selectSheetRow(row)
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                if let thumbnail {
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 72, height: 72)
+                        .clipShape(shape)
+                } else {
+                    Image(systemName: row.symbol ?? "plus")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(row.badge == "remove" ? Color.secondary : accent)
+                        .frame(width: 72, height: 72)
+                        .background(Color.primary.opacity(0.07), in: shape)
+                        .overlay(shape.strokeBorder(accent.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                }
+                if row.badge == "remove" {
+                    Image(systemName: "xmark.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(FM.onScrim, FM.scrim)
+                        .font(.system(size: 20))
+                        .padding(4)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .disabled(row.disabled)
+        .opacity(row.disabled ? 0.45 : 1)
+        .accessibilityLabel(Text(row.subtitle.map { "\(row.title)，\($0)" } ?? row.title))
     }
 
     private func rowButton(_ row: MapChromeSheetRow, footnote: Bool) -> some View {
@@ -722,6 +1011,66 @@ struct MapChromeMenuPanel: View {
         if row.tone == "danger" { return FM.dangerText }
         if row.tone == "muted" || footnote { return .secondary }
         return .primary
+    }
+}
+
+/// v19 面板里的多行输入框（打卡的补充描述）。文字以原生为准：每次改动回传网页（sheet 事件 type "input"），
+/// 网页下发的 value 只在新建时作为初始值（同一面板里网页的回声不会覆盖输入，避免打断输入法组字）。
+/// 聚焦时标题右侧出现“收起键盘”；禁用（提交中）时收起键盘。
+private struct MapChromeSheetInput: View {
+    @ObservedObject var model: MapChromeModel
+    let title: String?
+    let field: MapChromeSheetField
+    let accent: Color
+    @State private var text: String
+    @FocusState private var focused: Bool
+
+    init(model: MapChromeModel, title: String?, field: MapChromeSheetField, accent: Color) {
+        self.model = model
+        self.title = title
+        self.field = field
+        self.accent = accent
+        _text = State(initialValue: field.value)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if let title {
+                    Text(title)
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                Spacer(minLength: 8)
+                if focused {
+                    Button(model.text("dismissKeyboard", "收起键盘")) {
+                        focused = false
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(accent.fmReadableText)
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(minHeight: 24)
+            .padding(.horizontal, 4)
+            TextField(field.placeholder ?? "", text: $text, axis: .vertical)
+                .lineLimit(3...6)
+                .focused($focused)
+                .disabled(field.disabled)
+                .nativeFieldBackground()
+                .accessibilityLabel(Text(title ?? field.placeholder ?? ""))
+        }
+        .onChange(of: text) { _, next in
+            let clipped = String(next.prefix(field.maxLength))
+            if clipped != next {
+                text = clipped
+                return
+            }
+            model.sendSheetInput(field, text: clipped)
+        }
+        .onChange(of: field.disabled) { _, disabled in
+            if disabled { focused = false }
+        }
     }
 }
 

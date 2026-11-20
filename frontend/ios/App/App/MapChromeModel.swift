@@ -83,6 +83,20 @@ struct MapChromeSheetRow: Identifiable, Equatable {
     var badge: String? = nil
     /// 地点卡片副标题内单独强调的预测分。
     var subtitleEmphasis: String? = nil
+    /// v19 分布条的长度（0–1，评价分布）
+    var value: Double? = nil
+    /// v19 选项格（grid）里的当前选中项（自己的评价）
+    var selected = false
+}
+
+/// v19 面板里的多行输入框（打卡的补充描述）：文字以原生为准，每次改动经 sheet 事件 type "input" 回传网页；
+/// 网页下发的 value 只在面板（sheetId#token）新建时用作初始值，避免回声打断输入法组字
+struct MapChromeSheetField: Equatable {
+    let id: String
+    var value: String
+    var placeholder: String?
+    var maxLength: Int
+    var disabled: Bool
 }
 
 struct MapChromeSheetSection: Identifiable, Equatable {
@@ -98,6 +112,10 @@ struct MapChromeSheetSection: Identifiable, Equatable {
     var rows: [MapChromeSheetRow]
     /// v15 双头拉杆（地图筛选的人均）
     var range: MapChromeSheetRange? = nil
+    /// v19 其余样式："stat"（评价档位大字）、"note"（提示块）、"bars"（分布条）、"grid"（两列选项格）、
+    /// "input"（多行输入框，见 field）、"photos"（缩略图行）；其他为 "list"
+    var style: String = "list"
+    var field: MapChromeSheetField? = nil
 }
 
 /// v15 双头拉杆：整数范围；松手回传行 id "<id>:range:<低>:<高>"。
@@ -186,9 +204,13 @@ struct MapChromeSheet: Identifiable, Equatable {
     var detailFooterAction: MapChromeSheetRow? = nil
     /// 列表打开时滚到这一行（收藏：从店卡回来时停在原来的位置）
     var focusRow: String? = nil
+    /// v19 提交中（打卡）：关闭钮、下滑与点地图都不关闭面板
+    var locked = false
 
     var id: String { "\(sheetId)#\(token)" }
     var isCard: Bool { style == "card" }
+    /// 操作按钮画成并排的胶囊按钮（随机美食、评价、打卡），其余面板画成分组行
+    var capsuleActions: Bool { ["random", "rating", "checkIn"].contains(sheetId) }
     /// 展会名可能很长（最多 80 字）：卡片标题放不下时来回滚动；地点卡片仍是缩小后截断
     var scrollsTitle: Bool { sheetId == "exhibition" }
     /// 多活动共用网页入口；原生卡片在摘要中直接显示所选活动的时间。
@@ -557,11 +579,19 @@ final class MapChromeModel: ObservableObject {
         onSheetEvent?("select", ["sheetId": sheet.sheetId, "token": sheet.token, "rowId": "\(range.id):range:\(low):\(high)"])
     }
 
-    /// 用户下滑、点遮罩或关闭按钮
+    /// 用户下滑、点遮罩或关闭按钮；提交中（locked）不关闭
     func dismissSheet() {
-        guard let sheet = presentedSheet else { return }
+        guard let sheet = presentedSheet, !sheet.locked else { return }
         dismissedSheetToken = sheet.token
         onSheetEvent?("dismiss", ["sheetId": sheet.sheetId, "token": sheet.token])
+    }
+
+    /// v19 输入框改动：只回传当前面板里存在、可编辑的输入框，文字按 maxLength 截断
+    func sendSheetInput(_ field: MapChromeSheetField, text: String) {
+        guard let sheet = presentedSheet,
+              let current = sheet.sections.compactMap(\.field).first(where: { $0.id == field.id }), !current.disabled else { return }
+        onSheetEvent?("input", ["sheetId": sheet.sheetId, "token": sheet.token, "rowId": current.id,
+                                "text": String(text.prefix(current.maxLength))])
     }
 
     func setCardSummaryHeight(_ height: CGFloat) {

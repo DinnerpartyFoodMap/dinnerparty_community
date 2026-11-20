@@ -556,6 +556,13 @@ try {
     await evaluate(`(() => {
         const map = window.__WEB_LAYOUT_MAP;
         map.emit('zoomstart');
+        map.zoom = 13.075;
+        map.positionMarkers();
+        map.emit('zoomchange');
+    })()`);
+    const intermediatePosition = await evaluate('window.__standaloneMarker.position');
+    await evaluate(`(() => {
+        const map = window.__WEB_LAYOUT_MAP;
         map.zoom = 13.3;
         map.positionMarkers();
         map.emit('zoomchange');
@@ -563,6 +570,9 @@ try {
     const precisePosition = await evaluate('window.__standaloneMarker.position');
     assert.ok(Math.abs(precisePosition[0] - 119.977) < 1e-7 && Math.abs(precisePosition[1] - 29.983) < 1e-7,
         'the next active zoom-in can refine the displayed coordinate');
+    assert.ok(intermediatePosition[0] > Math.min(standalone.position[0], precisePosition[0]) &&
+        intermediatePosition[0] < Math.max(standalone.position[0], precisePosition[0]),
+        'the marker is between its previous anchor and exact position during the zoom');
     await evaluate(`(() => {
         const map = window.__WEB_LAYOUT_MAP;
         map.setZoom(12);

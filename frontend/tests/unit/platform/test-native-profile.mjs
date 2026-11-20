@@ -10,6 +10,9 @@ import {
 } from '../../../src/profile/profileViewModel.js';
 import {
     buildCommunityPeople,
+    COMMUNITY_MAP_RINGS,
+    COMMUNITY_MAP_SEPARATION,
+    layoutCommunityMap,
     buildCommunitySettings,
     buildCompanionViewModel,
     communityEmptyState,
@@ -95,13 +98,38 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(people[0].name, '同好0');
     assert.match(people[0].meta, /90%/);
     assert.match(people[0].meta, /共同标签：面食/);
-    assert.equal(people[1].x, 1, 'coordinates stay inside the map');
+    assert.ok(people.every((person) => Math.hypot(person.x, person.y) <= 1 + 1e-3), 'coordinates stay inside the map');
     assert.equal(people[2].avatarURL, 'https://oss.example.com/a.webp');
     assert.equal(people[0].avatarURL, 'https://api.example.com/users/u0/avatar?fallback=default', 'no avatar → server default');
     assert.match(people[0].accessible, /同好0/);
     assert.equal(communityEmptyState({ profile_status: 'disabled' }).action, 'settings');
     assert.equal(communityEmptyState({ profile_status: 'ready' }).action, '');
     assert.ok(communityEmptyState({ profile_status: 'empty' }).title.length > 0);
+    // 星图：后端坐标全挤在中心附近（大家都很相似）时，也要按排名分三圈、两两分开，20 个头像都能单独点到
+    for (let count = 1; count <= 20; count += 1) {
+        const crowded = Array.from({ length: count }, (_, index) => {
+            const angle = index * 0.07;
+            return { x: Math.cos(angle) * 0.18, y: Math.sin(angle) * 0.18 };
+        });
+        const layout = layoutCommunityMap(crowded);
+        assert.equal(layout.length, count);
+        const radii = layout.map(({ x, y }) => Math.hypot(x, y));
+        radii.forEach((radius) => {
+            assert.ok(COMMUNITY_MAP_RINGS.some((ring) => Math.abs(ring - radius) < 1e-3), `${count}: every resident sits on a ring`);
+        });
+        for (let rank = 1; rank < count; rank += 1) {
+            assert.ok(radii[rank] >= radii[rank - 1] - 1e-3, `${count}: more similar residents are never farther out`);
+        }
+        for (let a = 0; a < count; a += 1) {
+            for (let b = a + 1; b < count; b += 1) {
+                const gap = Math.hypot(layout[a].x - layout[b].x, layout[a].y - layout[b].y);
+                assert.ok(gap >= COMMUNITY_MAP_SEPARATION - 1e-3, `${count}: residents ${a} and ${b} are ${gap.toFixed(3)} apart`);
+            }
+        }
+        assert.deepEqual(layoutCommunityMap(crowded), layout, 'the same residents keep the same places');
+    }
+    assert.ok(Math.hypot(people[0].x, people[0].y) <= COMMUNITY_MAP_RINGS[0] + 1e-3, 'the most similar resident is on the inner ring');
+    assert.deepEqual(layoutCommunityMap([{ x: 0, y: 0 }, {}]).length, 2, 'missing backend coordinates still get a place');
     assert.deepEqual(parseCommunityTags(' 面食，火锅,, 甜品 '), ['面食', '火锅', '甜品']);
     assert.equal(parseCommunityTags(Array.from({ length: 30 }, (_, i) => `t${i}`).join(',')).length, 20);
     const settings = buildCommunitySettings({ discovery: true, feedback: false, research: false, tags: ['面食', '火锅'] }, { retention_days: 90 });
