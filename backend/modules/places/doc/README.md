@@ -67,4 +67,4 @@ flowchart TD
 
 数据：Place（含 moderation_status）、PlaceRegion、Category、PlaceRequest（request_type 区分修改申请与新增复核）、PlaceModeration；跨模块写入涉及 PlaceRating、QQBotNotification。测试：[案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
 
-展会地点（denpawave Micro 跳转后定位到展馆）见 [展会场地点位](../../../doc/EXHIBITION_VENUE_LINK.md)：接收端（`modules/venues`）已实现，管理端面板与前端 `?venue=` 待做。
+展会地点（denpawave Micro 跳转后定位到展馆）见 [展会场地点位](../../../doc/EXHIBITION_VENUE_LINK.md)：**场馆不进 `Place`**，只在 `modules/venues` 里存坐标；前端 `?venue=` 待做。
