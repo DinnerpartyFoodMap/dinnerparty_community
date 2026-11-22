@@ -10,15 +10,16 @@ import AdminNotices from "./AdminNotices";
 import AdminExhibitions from "./AdminExhibitions";
 import AdminSkinCodes from "./AdminSkinCodes";
 import AdminFeedback from "./AdminFeedback";
+import AdminVenues from "./AdminVenues";
 import AdminTasteAxes from "./AdminTasteAxes";
 import ScrollableView from "../components/layout/ScrollableView";
 import { t } from "../i18n/index.js";
 import "./admin.css";
 
 const PERMISSIONS = {
-    YUYUKO: ["用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "皮肤兑换码", "住民反馈"],
-    YOUMU: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "QQ白名单管理", "公告发布", "住民反馈"],
-    KOMACHI: ["普通用户管理", "操作日志", "标记点管理", "评论管理", "住民反馈"]
+    YUYUKO: ["用户管理", "操作日志", "标记点管理", "场馆", "评论管理", "QQ白名单管理", "公告发布", "皮肤兑换码", "住民反馈"],
+    YOUMU: ["普通用户管理", "操作日志", "标记点管理", "场馆", "评论管理", "QQ白名单管理", "公告发布", "住民反馈"],
+    KOMACHI: ["普通用户管理", "操作日志", "标记点管理", "场馆", "评论管理", "住民反馈"]
 };
 
 // 后台的每个模块默认收起：点标题展开。第一次展开时才挂载（这时才请求数据），之后收起只是隐藏，保留填写的内容
@@ -61,6 +62,8 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
     const canManageSkinCodes = useMemo(() => perms.includes("皮肤兑换码"), [perms]);
     // 后端权限 manage_feedback，三个等级都有。
     const canManageFeedback = useMemo(() => perms.includes("住民反馈"), [perms]);
+    // 场馆请求走 manage_places：能改地点的人才决定场馆落到哪个点。
+    const canManageVenues = useMemo(() => perms.includes("场馆"), [perms]);
 
     const rootStyle = { height: "100%", minHeight: 0, background: 'var(--color-bg-base)', padding: 20, boxSizing: "border-box", color: 'var(--color-text-primary)' };
     const containerStyle = { maxWidth: 960, margin: "0 auto" };
@@ -110,6 +113,12 @@ export default function AdminDashboard({ user, token, backendUrl, onBackHome, on
                 {canManagePlaces && (
                     <AdminSection title={t('admin:dashboard.sections.places')} style={panelStyle}>
                         <AdminPlaces backendUrl={backendUrl} token={token} user={user} onRequireAuth={onRequireAuth} onOpenPlace={onOpenPlace} />
+                    </AdminSection>
+                )}
+
+                {canManageVenues && (
+                    <AdminSection title={t('admin:dashboard.sections.venues')} style={panelStyle}>
+                        <AdminVenues backendUrl={backendUrl} />
                     </AdminSection>
                 )}
 
