@@ -136,7 +136,7 @@ VENUE_ALLOWED_IPS=127.0.0.1,<denpa 生产出网 IP>  # 留空等于拒绝所有
 
 | 阶段 | 内容 |
 | --- | --- |
-| P0 剩余 | 前端 `?venue=` 解析与城市兜底提示、i18n 文案 |
+| P0 剩余 | 无（前端 `?venue=` 已实现） |
 | P1（product-backend） | 场馆 `confirmed` 且活动发布后写 `event_outbox`，worker 调 `/internal/venues`；失败重试与死信告警 |
 | P2（Micro） | 「展馆周边吃」链接带上 `publicKey` |
 

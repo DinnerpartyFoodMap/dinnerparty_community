@@ -1993,8 +1993,10 @@ export default function MapView({
         if (!placeId || !/^\d+$/.test(placeId)) return;
 
         const isNavShare = shareParamValue(params.get('nav')) === 'amap';
-        // 一次性参数：处理后从地址中移除，避免返回或刷新时重复跳转
-        removeQueryParams(['place', 'nav']);
+        // 一次性参数：处理后从地址中移除，避免返回或刷新时重复跳转。
+        // 同时丢掉 venue：分享链接比展会入口更具体，且本 effect 先于 venue effect 执行，
+        // 在这里删掉它、对方读到时就不存在了（否则两边都会处理）。
+        removeQueryParams(['place', 'nav', 'venue']);
 
         let cancelled = false;
         (async () => {
@@ -2026,6 +2028,53 @@ export default function MapView({
                 showPopup(place);
             } catch (e) {
                 console.warn('加载分享地点失败', e);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [mapReady, backendUrl, routeSearch]);
+
+    // 展会入口跳转（?venue=<key>，来自 denpawave Micro）：馆场馆已落点时定位过去，否则提示还没标记。
+    // 与 ?place= 分开处理：那是有地点 id、要开店卡；这里只有坐标，不打开任何卡片，也不发起任何搜索。
+    useEffect(() => {
+        if (!mapReady || !backendUrl) return;
+        const params = getQueryParams();
+        // ?place= 优先：分享链接比展会入口更具体（正常情况下上面那个 effect 已经删掉了 venue，
+        // 这里保留一次判断，避免依赖 effect 执行顺序）
+        if (shareParamValue(params.get('place'))) {
+            removeQueryParams(['venue']);
+            return;
+        }
+        const venueKey = shareParamValue(params.get('venue'));
+        if (!venueKey) return;
+        // 一次性参数：处理后从地址中移除，避免返回或刷新时重复跳转
+        removeQueryParams(['venue']);
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`${backendUrl}/venues/${encodeURIComponent(venueKey)}`, { cache: 'no-store' });
+                if (cancelled) return;
+                if (!res.ok) {
+                    showTip(t('map:venues.unavailable'));
+                    return;
+                }
+                const venue = await res.json();
+                if (cancelled) return;
+                const lng = Number(venue?.longitude), lat = Number(venue?.latitude);
+                // 未落点（pending / ignored / unknown）或坐标不可显示：只提示，绝不按场馆名搜索
+                if (venue?.status !== 'placed' || !isMappableCoordinate(lng, lat) || !mapRef.current) {
+                    showTip(t('map:venues.notPlaced'));
+                    return;
+                }
+                exitUserFilter();
+                setAlongRouteResults(null);
+                alongRouteResultsRef.current = null;
+                armSkipAutoSearch(800);
+                mapRef.current.setZoomAndCenter(15, [lng, lat], true);
+            } catch (e) {
+                console.warn('加载场馆位置失败', e);
+                if (!cancelled) showTip(t('map:venues.unavailable'));
             }
         })();
 
