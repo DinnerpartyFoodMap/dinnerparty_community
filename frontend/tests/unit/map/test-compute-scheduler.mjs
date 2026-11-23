@@ -17,11 +17,13 @@ const scheduler = createComputeScheduler({
     onResult:value=>shown.push(value),onError:error=>errors.push(error)
 });
 scheduler.submit({kind:'data',dataRevision:1});
-await tick(79); assert.equal(started.length,0);
+await tick(15); assert.equal(started.length,0);
 scheduler.submit({kind:'data',dataRevision:2});
-await tick(79); assert.equal(started.length,0);
+await tick(15); assert.equal(started.length,0);
 scheduler.submit({kind:'data',dataRevision:3});
-await tick(42); assert.equal(started.length,1,'continuous arrivals flush at 200ms');
+await tick(15); assert.equal(started.length,0);
+scheduler.submit({kind:'data',dataRevision:4});
+await tick(5); assert.equal(started.length,1,'continuous arrivals flush within 50ms');
 for(let i=4;i<=100;i++) scheduler.submit({kind:'data',dataRevision:i});
 await tick(80);
 pending.shift().resolve('obsolete');
@@ -31,15 +33,18 @@ assert.equal(started.length,2,'only latest waiting target runs');
 assert.equal(started[1].dataRevision,100);
 pending.shift().resolve('latest'); await tick(0);
 assert.deepEqual(shown,['latest']);
+scheduler.submit({kind:'data',immediate:true,dataRevision:101});await tick(0);
+assert.equal(started.at(-1).dataRevision,101,'a ready initial or new-band snapshot does not wait for debounce');
+pending.shift().resolve('immediate');await tick(0);
 scheduler.submit({kind:'camera'}); await tick(0);
 scheduler.invalidate(); pending.shift().resolve('invalidated');await tick(0);
-assert.deepEqual(shown,['latest']);
+assert.deepEqual(shown,['latest','immediate']);
 scheduler.submit({kind:'camera'}); await tick(0);
 pending.shift().reject(new Error('worker')); await tick(0);
 assert.equal(errors.length,1);
 scheduler.submit({kind:'camera'}); await tick(0);
 scheduler.destroy();pending.shift().resolve('destroyed');await tick(0);
-assert.deepEqual(shown,['latest']);
+assert.deepEqual(shown,['latest','immediate']);
 assert.equal(timers.size,0);
 
 let steps=0, yields=0;

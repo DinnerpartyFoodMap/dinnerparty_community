@@ -281,6 +281,8 @@ export class MarkerLayerController {
         this._cancelRender();
         this.scheduler.submit({
             kind:reason === 'data' ? 'data' : 'camera',reason,dataRevision:this.dataRevision,viewRevision:++this.viewRevision,places:this.currentPlaces,
+            immediate:!this.snapshot || this.snapshot.queryMode !== this.queryMode
+                || ['kind','tile','cell'].some(key=>this.snapshot.markerBand?.[key] !== this.markerBand?.[key]),
             payload:{viewBounds,zoom,refining:reason === 'refine',
                 viewZoom:this.options.getMarkerViewZoom?.(zoom),queryMode:this.queryMode,markerBand:this.markerBand,
                 selectedKey:this.selectedKey,transitionVersion:this.version+1}
@@ -548,6 +550,8 @@ export class MarkerLayerController {
         const prevEntryByKey = new Map(oldEntries);
         const animations = [];
         const ghosts = [];
+        const ghostLimit = degraded ? LIMITS.degradedGhosts : LIMITS.ghosts;
+        const existingGhosts = this._ghostCount();
         const txn = {version,animations,ghosts,done:false,probe:startFrameProbe()};
         this.txns.add(txn);
         let travelers = 0;
@@ -589,6 +593,27 @@ export class MarkerLayerController {
         const priority = node => node.key === this.selectedKey ? 0 : onscreen(project(node.coordinate)) ? 1 : 2;
         const buckets = [[],[],[]];
         for (const node of next.visibleNodes) { yield {sdk:false}; buckets[priority(node)].push(node); }
+        const retireSplitSource = (source) => {
+            if (!source || !oldEntries.delete(source.key)) return;
+            this.entries.delete(source.key);
+            this._setInteractive(source,false);
+            const visual = this._takeOver(source,visuals.get(source));
+            source.ghost = true;
+            source.parts.root.dataset.ghost = '';
+            source.parts.label.dataset.hidden = '';
+            if (!source.attached) return;
+            if (!animate || ghosts.length + existingGhosts >= ghostLimit || !onscreen(project(source.node.coordinate))) {
+                this._removeMarkers([source.marker]);
+                return;
+            }
+            setMarkerZ(source.marker,Z_INDEX.ghost);
+            ghosts.push(source);
+            const glyph = visual?.glyph || {scale:1,opacity:1};
+            run(source,source.parts.glyph,[
+                {transform:`scale(${glyph.scale})`,opacity:glyph.opacity},
+                {transform:'scale(0.86)',opacity:0}
+            ],{duration:MARKER_TIMING.splitSource,easing:'ease-in',fill:'both'});
+        };
         for (const node of buckets.flat()) {
             yield {sdk:false};
             const fromKey = plan.reuse.get(node.key);
@@ -644,12 +669,13 @@ export class MarkerLayerController {
             const own = project(node.coordinate);
             entry.attached = true;
             this._addMarkers([entry.marker]);
-            if (!plan.splitFrom.has(node.key) && !plan.mergeTargets.has(node.key)) delete entry.parts.root.dataset.staged;
+            // Attach, reveal and start motion in the same slice. Waiting for the
+            // full reconciliation lets short animations finish while hidden.
+            delete entry.parts.root.dataset.staged;
             const sourceKey = plan.splitFrom.get(node.key);
             const source = sourceKey ? prevEntryByKey.get(sourceKey) : null;
-            if (source) this._setInteractive(source,false);
-            yield {sdk:true};
-            if (!animate) continue;
+            retireSplitSource(source);
+            if (!animate) { yield {sdk:true}; continue; }
             const parentKey = plan.splitFrom.get(node.key);
             const parentEntry = parentKey ? prevEntryByKey.get(parentKey) : null;
             const parentNode = parentEntry ? parentEntry.node : null;
@@ -692,12 +718,11 @@ export class MarkerLayerController {
                     easing: 'ease-out'
                 });
             }
+            yield {sdk:true};
         }
 
         // ---- 退出节点：残影只做视觉过渡，不可点击 ----
 
-        const ghostLimit = degraded ? LIMITS.degradedGhosts : LIMITS.ghosts;
-        const existingGhosts = this._ghostCount();
         for (const [key, entry] of oldEntries) {
             yield {sdk:false};
             this.entries.delete(key);

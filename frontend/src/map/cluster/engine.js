@@ -128,26 +128,56 @@ export class ClusterEngine {
         this.placeByKey = new Map(normalized.map((item) => [item.key, item.place]));
         this._leafCache = new Map();
         this._expansionCache = new Map();
+        this._rootByKey = new Map();
+        this._keyByRoot = new WeakMap();
+        this._parentByRoot = new WeakMap();
+        // Build the hierarchy through Supercluster's public map/reduce API.
+        // Each accumulator owns one group, so even coincident 50k points have
+        // bounded tree depth and never need to be expanded for visible ancestry.
+        const groups = new WeakMap();
         this.index = new Supercluster({
             radius: radiusForCssPixels(opts.radiusPx, opts.extent),
             extent: opts.extent,
             minZoom: opts.minZoom,
             maxZoom: opts.maxZoom,
             minPoints: opts.minPoints,
-            map: (props) => ({ h1: props.h1, h2: props.h2, anonymous: props.anonymous, precision: props.precision }),
+            map: (props) => ({ h1: props.h1, h2: props.h2, anonymous: props.anonymous, precision: props.precision, memberRoot:props.memberRoot }),
             reduce: (acc, props) => {
+                let group = groups.get(acc);
+                if (!group) {
+                    const first = acc.memberRoot;
+                    group = {...first,children:[first]};
+                    groups.set(acc,group);
+                    this._parentByRoot.set(first,group);
+                    acc.memberRoot = group;
+                }
+                const child = props.memberRoot;
+                group.children.push(child);
+                this._parentByRoot.set(child,group);
+                group.count += child.count;
+                group.anonymous += child.anonymous;
+                group.minLng = Math.min(group.minLng,child.minLng);
+                group.maxLng = Math.max(group.maxLng,child.maxLng);
+                group.minLat = Math.min(group.minLat,child.minLat);
+                group.maxLat = Math.max(group.maxLat,child.maxLat);
                 acc.h1 = (acc.h1 ^ props.h1) >>> 0;
                 acc.h2 = (acc.h2 + props.h2) >>> 0;
                 acc.anonymous += props.anonymous;
                 acc.precision = Math.min(acc.precision, props.precision);
             }
         });
-        this.features = normalized.map((item) => ({
-            type: 'Feature',
-            properties: { key: item.key, h1: hashString(item.key), h2: hashString(item.key, HASH_SEED_2),
-                anonymous: item.place.aggregate ? 1 : 0, precision: item.place.aggregateCell?.[0] ?? Infinity },
-            geometry: { type: 'Point', coordinates: [item.lng, item.lat] }
-        }));
+        this.features = normalized.map((item) => {
+            const memberRoot = {count:1,anonymous:item.place.aggregate ? 1 : 0,
+                minLng:item.lng,maxLng:item.lng,minLat:item.lat,maxLat:item.lat,children:null};
+            this._rootByKey.set(item.key,memberRoot);
+            this._keyByRoot.set(memberRoot,item.key);
+            return {
+                type: 'Feature',
+                properties: { key: item.key, h1: hashString(item.key), h2: hashString(item.key, HASH_SEED_2),
+                    anonymous: item.place.aggregate ? 1 : 0, precision: item.place.aggregateCell?.[0] ?? Infinity,memberRoot },
+                geometry: { type: 'Point', coordinates: [item.lng, item.lat] }
+            };
+        });
         this.index.load(this.features);
     }
 
@@ -180,8 +210,11 @@ export class ClusterEngine {
         const [lng, lat] = feature.geometry.coordinates;
         if (props.cluster) {
             const count = props.point_count;
+            const key = `cluster:${this.generation}:${props.cluster_id}`;
+            this._rootByKey.set(key,props.memberRoot);
+            this._keyByRoot.set(props.memberRoot,key);
             return {
-                key: `cluster:${this.generation}:${props.cluster_id}`,
+                key,
                 kind: 'cluster',
                 clusterId: props.cluster_id,
                 coordinate: [lng, lat],
@@ -214,6 +247,44 @@ export class ClusterEngine {
         } catch (e) {
             return [];
         }
+    }
+
+    /** Match visible ancestors without allocating any hidden children/leaves. */
+    visibleAncestor(node, candidates, budget, cache = new Map()) {
+        let root = this._rootByKey.get(node.key), match = null;
+        const path = [];
+        while (root) {
+            if (cache.has(root)) { match = cache.get(root); break; }
+            if (--budget.remaining < 0) return null;
+            path.push(root);
+            const key = this._keyByRoot.get(root);
+            if (candidates.has(key)) { match = key; break; }
+            root = this._parentByRoot.get(root);
+        }
+        for (const item of path) cache.set(item,match);
+        return match;
+    }
+
+    /** Compact spatial groups for cross-band matching, charged by visited groups. */
+    cellGroups(node, cellOf, budget, {anonymousOnly = false} = {}) {
+        const root = this._rootByKey.get(node.key);
+        if (!root) return null;
+        const stack = [root], cells = new Map();
+        while (stack.length) {
+            if (--budget.remaining < 0) return null;
+            const current = stack.pop();
+            const count = anonymousOnly ? current.anonymous : current.count;
+            if (!count) continue;
+            const cell = cellOf(current.minLng,current.minLat);
+            if (cell === cellOf(current.maxLng,current.maxLat)) {
+                cells.set(cell,(cells.get(cell) || 0) + count);
+            } else {
+                // Do not allocate a 50k-child stack before checking its budget.
+                if (current.children.length > budget.remaining) return null;
+                for (const child of current.children) stack.push(child);
+            }
+        }
+        return cells;
     }
 
     /** 聚合真正拆开的层级；大于 maxZoom 表示到最大缩放仍无法分开（坐标重合或过近）。 */

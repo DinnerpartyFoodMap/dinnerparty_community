@@ -1,6 +1,6 @@
 // A queue owns only the latest reconciliation. SDK calls themselves cannot be preempted.
 export function createMarkerRenderQueue({
-    budgetMs = 4, maxSdkBatch = 4, now = () => performance.now(),
+    budgetMs = 4, now = () => performance.now(),
     scheduleFrame = requestAnimationFrame, cancelFrame = cancelAnimationFrame, onSlice = () => {}
 } = {}) {
     let task = null, frame = null, paused = false, destroyed = false;
@@ -30,7 +30,9 @@ export function createMarkerRenderQueue({
                 else step.value?.run?.();
                 count++;
                 if (step.value?.sdk !== false) writes++;
-                if (writes >= maxSdkBatch || now()-started >= budgetMs) break;
+                // Callers keep each SDK batch small. Yield on elapsed work, not
+                // the number of inexpensive calls, which would add idle frames.
+                if (now()-started >= budgetMs) break;
             }
         } catch (error) { task = null; current.reject(error); }
         onSlice({version:current.version,ms:now()-started,operations:count,writes});

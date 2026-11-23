@@ -55,44 +55,31 @@ function reuseSameKeys(plan, prev, next) {
 function planZoom(plan, prev, next, options) {
     const engine = next.engine;
     const usedPrev = new Set(plan.reuse.values());
-    // 所有父节点共享一个访问预算；超出后其余节点短渐变
+    // Walk upward from visible nodes. A parent's population says nothing about
+    // how many visible children a zoom exposes (50k members can be 100 glyphs).
     const budget = { remaining: options.descendantBudget };
-    if (next.logicalZoom > prev.logicalZoom) {
-        // 放大：旧的父聚合拆开，子节点从父节点位置出发
-        for (const parent of prev.visibleNodes) {
-            if (parent.kind !== 'cluster' || usedPrev.has(parent.key)) continue;
-            if (budget.remaining <= 0) break;
-            const descendants = engine.descendantsAt(parent, next.logicalZoom, budget);
-            if (!descendants) continue;
-            const visible = descendants.filter((d) => next.nodeByKey.has(d.key) && !plan.reuse.has(d.key));
-            if (!visible.length) continue;
-            if (visible.length === 1 && visible[0].count === parent.count) {
-                plan.reuse.set(visible[0].key, parent.key);
-                usedPrev.add(parent.key);
-                continue;
-            }
-            plan.splitSources.add(parent.key);
-            for (const child of visible) plan.splitFrom.set(child.key, parent.key);
-        }
-    } else if (next.logicalZoom < prev.logicalZoom) {
-        // 缩小：子节点朝真实父聚合移动，父聚合在汇合阶段出现
-        for (const parent of next.visibleNodes) {
-            if (parent.kind !== 'cluster' || plan.reuse.has(parent.key)) continue;
-            if (budget.remaining <= 0) break;
-            const descendants = engine.descendantsAt(parent, prev.logicalZoom, budget);
-            if (!descendants) continue;
-            const visible = descendants.filter((d) => prev.nodeByKey.has(d.key) && !usedPrev.has(d.key));
-            if (!visible.length) continue;
-            if (visible.length === 1 && visible[0].count === parent.count) {
-                plan.reuse.set(parent.key, visible[0].key);
-                usedPrev.add(visible[0].key);
-                continue;
-            }
-            plan.mergeTargets.add(parent.key);
-            for (const child of visible) {
-                plan.mergeInto.set(child.key, parent.key);
-                usedPrev.add(child.key);
-            }
+    const refining = next.logicalZoom > prev.logicalZoom;
+    const coarse = refining ? prev : next, fine = refining ? next : prev;
+    const parents = new Set(coarse.visibleNodes.filter(node=>node.kind === 'cluster'
+        && !(refining ? usedPrev.has(node.key) : plan.reuse.has(node.key))).map(node=>node.key));
+    const byParent = new Map(), cache = new Map();
+    for (const child of fine.visibleNodes) {
+        if (refining ? plan.reuse.has(child.key) : usedPrev.has(child.key)) continue;
+        const parent = engine.visibleAncestor(child,parents,budget,cache);
+        if (!parent) continue;
+        if (!byParent.has(parent)) byParent.set(parent,[]);
+        byParent.get(parent).push(child);
+    }
+    for (const [parentKey,children] of byParent) {
+        const parent = coarse.nodeByKey.get(parentKey);
+        if (children.length === 1 && children[0].count === parent.count) {
+            plan.reuse.set(refining ? children[0].key : parentKey,refining ? parentKey : children[0].key);
+        } else if (refining) {
+            plan.splitSources.add(parentKey);
+            for (const child of children) plan.splitFrom.set(child.key,parentKey);
+        } else {
+            plan.mergeTargets.add(parentKey);
+            for (const child of children) plan.mergeInto.set(child.key,parentKey);
         }
     }
 }
@@ -171,6 +158,12 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
     const fine = refining ? next : prev;
     const coarseNodes = refining ? remainingPrev : remainingNext;
     const fineNodes = refining ? remainingNext : remainingPrev;
+    const rawCost = coarseNodes.reduce((sum,node)=>sum+node.count*3,0)
+        + fineNodes.reduce((sum,node)=>sum+node.count*2,0);
+    if (rawCost > memberBudget.remaining) {
+        planMarkerCells(plan,coarse,fine,coarseNodes,fineNodes,refining,memberBudget);
+        return;
+    }
     const parentByMember = buildMemberToNode({ ...coarse, visibleNodes: coarseNodes }, memberBudget);
     if (!parentByMember) return;
 
@@ -219,6 +212,46 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
     for (const key of stableCandidates) {
         if (plan.reuse.has(key)) plan.keepAnchor.add(key);
     }
+}
+
+// Large tile bands contain many anonymous rows at identical cell coordinates.
+// Their compact index groups let visible glyphs retain motion within the same
+// visit budget, without materializing thousands of anonymous member keys.
+function planMarkerCells(plan, coarse, fine, coarseNodes, fineNodes, refining, budget) {
+    const cellOf = (lng,lat)=>tileOf(lng,lat,coarse.markerBand.cell).join('/');
+    const parentByCell = new Map();
+    for (const node of coarseNodes) {
+        const cells = coarse.engine.cellGroups(node,cellOf,budget,{anonymousOnly:true});
+        if (!cells) return;
+        for (const cell of cells.keys()) {
+            if (parentByCell.has(cell) && parentByCell.get(cell) !== node.key) parentByCell.set(cell,null);
+            else if (!parentByCell.has(cell)) parentByCell.set(cell,node.key);
+        }
+    }
+    const nextToPrev = new Map(), prevToNext = new Map(), stable = new Set();
+    for (const node of fineNodes) {
+        const cells = fine.engine.cellGroups(node,cellOf,budget);
+        if (!cells) break;
+        const votes = new Map();
+        for (const [cell,count] of cells) {
+            const parent = parentByCell.get(cell);
+            if (parent) votes.set(parent,(votes.get(parent) || 0)+count);
+        }
+        let best = null, bestCount = 0, bestDistance = Infinity;
+        for (const [key,count] of votes) {
+            const parent = coarse.nodeByKey.get(key);
+            const distance = markerDistanceSquared(node.sourceCoordinate ?? node.coordinate,parent.sourceCoordinate ?? parent.coordinate);
+            if (count > bestCount || count === bestCount && (distance < bestDistance || distance === bestDistance && key < best)) {
+                best = key; bestCount = count; bestDistance = distance;
+            }
+        }
+        if (!best) continue;
+        const nextKey = refining ? node.key : best, prevKey = refining ? best : node.key;
+        linkNodes(nextToPrev,prevToNext,nextKey,prevKey);
+        if (bestCount === node.count && bestCount === coarse.nodeByKey.get(best).count) stable.add(nextKey);
+    }
+    planRelations(plan,nextToPrev,prevToNext);
+    for (const key of stable) if (plan.reuse.has(key)) plan.keepAnchor.add(key);
 }
 
 function planData(plan, prev, next, options) {

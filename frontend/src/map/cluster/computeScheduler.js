@@ -25,7 +25,7 @@ export function createComputeScheduler({
             firstAt ??= time;
             latest = ++sequence;
             waiting = { ...target, requestId:latest,
-                due: target.kind === 'data' ? Math.min(time + 80, firstAt + 200) : time };
+                due: target.kind === 'data' && !target.immediate ? Math.min(time + 16, firstAt + 50) : time };
             pump();
             return latest;
         },
