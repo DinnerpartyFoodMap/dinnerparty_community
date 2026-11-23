@@ -712,10 +712,11 @@ export default function MapView({
                 // 标记层：图标、名称、数量同根渲染；点击回调经 ref 读取最新闭包
                 markerLayerRef.current = new MarkerLayerController(mapRef.current, {
                     ...markerOptions,
+                    onViewSettled: () => handleViewChange?.(),
                     nativeGlassVisible: mapPageActive || mapPreviewActive || pickerMode
                 });
                 // 双指缩放有一指先抬起时，剩下那根手指的移动不交给高德（否则地图会突然漂走，见 pinchGuard.js）
-                releasePinchGuard = installPinchGuard(mapRef.current.getContainer?.() || containerRef.current);
+                releasePinchGuard = installPinchGuard(mapRef.current.getContainer?.() || containerRef.current,{map:mapRef.current});
                 // 境外放大后高德没有数据，叠加 CARTO 海外底图；连不上时保持纯高德
                 overseasLayerRef.current = new OverseasTileLayer(mapRef.current, { apiKey: getRuntimeConfig().cartoApiKey, dark: pageDark });
             }
@@ -748,6 +749,7 @@ export default function MapView({
                 closePopup();
             };
             handleViewChange = () => {
+                if (markerLayerRef.current?.isTouchCameraActive?.()) return;
                 schedulePersistMapView();
                 // 跨级尽早换瓦片，同一级的补块和停留预取继续防抖。
                 let synced = false;

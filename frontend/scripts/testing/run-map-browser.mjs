@@ -73,6 +73,30 @@ try {
     const { targetId } = await command('Target.createTarget', { url: `http://127.0.0.1:${port}/__native-cluster-smoke` });
     const { sessionId } = await command('Target.attachToTarget', { targetId, flatten: true });
     await command('Emulation.setEmulatedMedia', { features:[{name:'prefers-reduced-motion',value:'no-preference'}] }, sessionId);
+    const cpuRate = Number(process.env.FOODMAP_CPU_RATE) || 1;
+    if (cpuRate > 1) await command('Emulation.setCPUThrottlingRate',{rate:cpuRate},sessionId);
+    if (process.env.FOODMAP_TOUCH === '1') {
+        await command('Emulation.setUserAgentOverride',{userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.154 Mobile/15E148 Safari/604.1',platform:'iPhone'},sessionId);
+        await command('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5},sessionId);
+        await command('Runtime.addBinding',{name:'__foodmapTouch'},sessionId);
+        socket.addEventListener('message',event=>{
+            const message=JSON.parse(event.data);
+            if(message.method!=='Runtime.bindingCalled'||message.params.name!=='__foodmapTouch')return;
+            const {id,steps}=JSON.parse(message.params.payload);
+            (async()=>{
+                for(const step of steps){
+                    if(step.wait)await new Promise(resolve=>setTimeout(resolve,step.wait));
+                    if(step.type)await command('Input.dispatchTouchEvent',{type:step.type,touchPoints:step.points},sessionId);
+                }
+            })().then(()=>command('Runtime.evaluate',{expression:`window.__foodmapTouchDone(${id})`},sessionId))
+                .catch(error=>command('Runtime.evaluate',{expression:`window.__foodmapTouchDone(${id},${JSON.stringify(error.message)})`},sessionId));
+        });
+        await command('Runtime.evaluate',{expression:`{
+            let id=0;const pending=new Map();
+            window.dispatchMapTouch=steps=>new Promise((resolve,reject)=>{pending.set(++id,{resolve,reject});window.__foodmapTouch(JSON.stringify({id,steps}));});
+            window.__foodmapTouchDone=(id,error)=>{const request=pending.get(id);pending.delete(id);error?request.reject(new Error(error)):request.resolve();};
+        }`},sessionId);
+    }
     let result;
     const deadline = Date.now() + 60000;
     while (Date.now() < deadline) {
@@ -83,7 +107,8 @@ try {
     const page = await command('Runtime.evaluate', { expression: 'document.documentElement.outerHTML', returnByValue: true }, sessionId);
     writeFileSync(join(scratch, 'rendered.html'), page.result.value);
     const browserVersion = await command('Browser.getVersion');
-    if (result) result.environment = {browser:browserVersion.product,window:'1280x900',gpu:false};
+    if (result) result.environment = {browser:browserVersion.product,window:'1280x900',gpu:false,cpuRate,
+        ...(process.env.FOODMAP_TOUCH === '1' ? {input:'trusted CDP touch',userAgent:'iPhone Chrome emulation; Chromium engine'} : {})};
     console.log(JSON.stringify(result || { passed: false, error: 'No browser result' }));
     if (!result?.passed) { console.error(`Browser output: ${scratch}`); process.exitCode = 1; }
     if (tracePath) {

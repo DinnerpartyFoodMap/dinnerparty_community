@@ -23,6 +23,7 @@
 | npm run test:platform | 配置、坐标、返回、凭证辅助与平台纯逻辑；不是所有原生能力的端到端覆盖 |
 | npm run test:map | 聚合、快照、转场、范围缓存、请求闸门、底图等纯逻辑；iOS 原生底图的协议清洗、AMap.Map 替身、触摸采样、原生标记层与 Swift 白名单对照（不编译 Swift） |
 | npm run test:native-clusters-browser | 真实标记控制器与 Web Animations，替换高德/原生边界；聚合玻璃帧采样、遮挡、回退与中断；不执行 SwiftUI |
+| npm run test:map-touch-browser | 触摸会话/无效相机/后台恢复边界，及真实高德 SDK 的可信 CDP 连续双指与可见拆合动画；需要联网，iPhone UA 仿真不代表 WebKit/iOS 真机 |
 | npm run test:add-pick-browser | 真实 MapView 与表单，替换高德/HTTP：首次点击固定坐标、相机不移、重复点击与取消重选 |
 | npm run test:random-browser | 真实 React 随机会话与 API：固定中心、短历史、取消/换账号、迟到响应与重试 ID |
 | npm run test:web-layout-browser | 真实地图与列表/雷达：遮挡命中、按钮位置、更多入口、500m 与中心请求参数 |

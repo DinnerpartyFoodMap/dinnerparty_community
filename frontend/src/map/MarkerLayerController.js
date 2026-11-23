@@ -18,7 +18,7 @@ import { createMarkerRenderQueue } from './markerRenderQueue.js';
 import {
     createMarkerParts, applyNodeAppearance, glyphSize
 } from './markerContent.js';
-import { readViewBounds, getMapZoomRange, projectToContainer } from './viewport.js';
+import { readViewBounds, readMapViewport, getMapZoomRange, projectToContainer } from './viewport.js';
 import { getMotionPolicy, startFrameProbe } from '../motion/policy.js';
 import { NativeClusterLayer } from './nativeClusterLayer.js';
 
@@ -63,11 +63,17 @@ function sameCoordinate(a, b) {
     return !!a && !!b && Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
 }
 
+function sameViewport(a,b) {
+    if (a === b) return true;
+    return !!a && !!b && ['zoom','minLng','maxLng','minLat','maxLat'].every(key=>Math.abs(a[key]-b[key])<1e-7);
+}
+
 export class MarkerLayerController {
     /**
      * @param {object} map AMap.Map
      * @param {{
      *   getMarkerViewZoom?: (zoom: number) => number,
+     *   onViewSettled?: (viewport: object) => void,
      *   onPlaceClick?: (place: object, node: object) => void,
      *   onClusterClick?: (node: object) => void,
      *   clusterRadiusPx?: number
@@ -108,20 +114,37 @@ export class MarkerLayerController {
         // 双指缩放时一根手指可能落在标记上：松手时不能当作点按（否则会展开聚合或打开地点卡片，地图跳到别处）
         this.multiTouch = false;
         this.multiTouchEndedAt = -Infinity;
+        this.touchCount = 0;
+        this.touchCameraFrame = 0;
+        this.touchStartView = null;
         this._onTouch = (event) => {
+            // Track the whole physical session, including a finger released
+            // outside the container. SDK end events can occur mid-pinch or be
+            // missing entirely for a pinch centered on the map.
+            if (!this.touchCount && !(event.type === 'touchstart' && this.touchTarget?.contains(event.target))) return;
             const count = event.touches ? event.touches.length : 0;
+            if (count && !this.touchCount) {
+                this.touchStartView ||= readMapViewport(this.map);
+                if (this.touchCameraFrame) cancelAnimationFrame(this.touchCameraFrame);
+                this.touchCameraFrame = 0;
+                // Keep touch targets connected until the last finger lifts.
+                this.renderQueue.pause();
+                this.cleanupQueue.pause();
+            }
+            this.touchCount = count;
             if (count > 1) {
                 this.multiTouch = true;
             } else if (count === 0 && this.multiTouch) {
                 this.multiTouch = false;
                 this.multiTouchEndedAt = performance.now();
             }
+            if (!count) this._settleTouchCamera();
         };
         this.touchTarget = map.getContainer?.() || null;
         if (this.touchTarget) {
             // 捕获阶段：先于高德在同一次 touchend 里判定点按
             for (const type of ['touchstart', 'touchend', 'touchcancel']) {
-                this.touchTarget.addEventListener(type, this._onTouch, { capture: true, passive: true });
+                window.addEventListener(type, this._onTouch, { capture: true, passive: true });
             }
         }
 
@@ -133,18 +156,24 @@ export class MarkerLayerController {
             this._finishAll();
         };
         this._onZoomChange = () => {
+            if (this.isTouchCameraActive()) return;
             if (this.cameraMoving && shouldRefineMarkerAnchors(this.snapshot, Number(this.map.getZoom()), this.cameraStartZoom)) {
                 this._commit('refine');
             }
         };
         this._onMoveEnd = () => {
+            if (this.isTouchCameraActive()) return;
             this.cameraMoving = false;
             this._scheduleCommit('camera');
         };
         this._onResize = () => this._scheduleCommit('resize');
         this._onVisibility = () => {
-            if (document.visibilityState === 'hidden') { this.scheduler.invalidate(); this._cancelRender(); this._finishAll(); this.renderQueue.pause(); }
-            else { this.renderQueue.resume(); this._scheduleCommit('resume'); }
+            if (document.visibilityState === 'hidden') {
+                if (this.touchCameraFrame) cancelAnimationFrame(this.touchCameraFrame);
+                this.touchCameraFrame = 0; this.touchCount = 0; this.touchStartView = null; this.multiTouch = false;
+                this.scheduler.invalidate(); this._cancelRender(); this._finishAll(); this.renderQueue.pause(); this.cleanupQueue.pause();
+            }
+            else { this._settleTouchCamera('resume'); }
         };
         for (const type of ['movestart', 'zoomstart', 'dragstart']) map.on(type, this._onMoveStart);
         for (const type of ['moveend', 'zoomend']) map.on(type, this._onMoveEnd);
@@ -170,7 +199,33 @@ export class MarkerLayerController {
         this.queryMode = queryMode;
         this.markerBand = markerBand;
         // Submit before preparation so continuous arrivals preserve the deadline.
-        if (!this.cameraMoving) this._commit('data');
+        if (!this.cameraMoving && !this.isTouchCameraActive()) this._commit('data');
+    }
+
+    isTouchCameraActive() { return this.touchCount > 0 || !!this.touchCameraFrame; }
+
+    _settleTouchCamera(reason = 'camera') {
+        if (this.touchCameraFrame) cancelAnimationFrame(this.touchCameraFrame);
+        let last = readMapViewport(this.map), stableSince = performance.now();
+        const check = () => {
+            if (this.destroyed || this.touchCount) { this.touchCameraFrame = 0; return; }
+            const view = readMapViewport(this.map), now = performance.now();
+            if (!sameViewport(view,last)) { last = view; stableSince = now; }
+            if (now-stableSince < 50) { this.touchCameraFrame = requestAnimationFrame(check); return; }
+            this.touchCameraFrame = 0;
+            const changed = view && !sameViewport(view,this.touchStartView);
+            this.touchStartView = null;
+            const needsCommit = changed || this.cameraMoving || this.snapshot?.dataRevision !== this.dataRevision;
+            this.cameraMoving = false;
+            // The page must load the final tile band too; a controller-only
+            // fallback would keep waiting for data from the previous band.
+            try { if (changed) this.options.onViewSettled?.(view); }
+            finally {
+                if (needsCommit) this._scheduleCommit(reason);
+                this.renderQueue.resume(); this.cleanupQueue.resume();
+            }
+        };
+        this.touchCameraFrame = requestAnimationFrame(check);
     }
 
     setSelectedKey(key) {
@@ -241,6 +296,8 @@ export class MarkerLayerController {
         this.client?.destroy();
         this.errorButton?.remove();
         if (this.commitRaf) cancelAnimationFrame(this.commitRaf);
+        if (this.touchCameraFrame) cancelAnimationFrame(this.touchCameraFrame);
+        this.touchCameraFrame = 0; this.touchCount = 0; this.touchStartView = null;
         if (this.labelRaf) cancelAnimationFrame(this.labelRaf);
         const map = this.map;
         try {
@@ -252,7 +309,7 @@ export class MarkerLayerController {
         document.removeEventListener('visibilitychange', this._onVisibility);
         if (this.touchTarget) {
             for (const type of ['touchstart', 'touchend', 'touchcancel']) {
-                this.touchTarget.removeEventListener(type, this._onTouch, { capture: true });
+                window.removeEventListener(type, this._onTouch, { capture: true });
             }
             this.touchTarget = null;
         }
@@ -269,7 +326,7 @@ export class MarkerLayerController {
         if (this.destroyed || this.commitRaf) return;
         this.commitRaf = requestAnimationFrame(() => {
             this.commitRaf = 0;
-            if (!this.cameraMoving) this._commit(reason);
+            if (!this.cameraMoving && !this.isTouchCameraActive()) this._commit(reason);
         });
     }
 
