@@ -1,13 +1,19 @@
 export function createWorkerClient({
-    createWorker = () => new Worker(new URL('./computeWorker.js', import.meta.url),{type:'module'})
+    createWorker = () => new Worker(new URL('./computeWorker.js', import.meta.url),{type:'module'}), onFatal = () => {}
 } = {}) {
     const worker = createWorker();
-    let sequence = 0, destroyed = false;
+    let sequence = 0, destroyed = false, failure = null;
     const metrics = { maxSendMs:0 };
     const pending = new Map();
     const fail = error => {
         for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(error); }
         pending.clear();
+    };
+    const fatal = error => {
+        if (destroyed || failure) return;
+        failure = error;
+        fail(error);
+        onFatal(error);
     };
     worker.onmessage = ({data}) => {
         const entry = pending.get(data.requestId);
@@ -18,13 +24,14 @@ export function createWorkerClient({
     };
     worker.onerror = event => {
         event.preventDefault?.();
-        fail(Object.assign(new Error(event.message || 'Map worker failed'),{code:'WORKER_FAILED'}));
+        fatal(Object.assign(new Error(event.message || 'Map worker failed'),{code:'WORKER_FAILED'}));
     };
-    worker.onmessageerror = () => fail(Object.assign(new Error('Invalid map worker reply'),{code:'WORKER_FAILED'}));
+    worker.onmessageerror = () => fatal(Object.assign(new Error('Invalid map worker reply'),{code:'WORKER_FAILED'}));
     return {
         metrics,
         request(op,payload,versions = {},transfer = []) {
             if (destroyed) return Promise.reject(new Error('Map worker disposed'));
+            if (failure) return Promise.reject(failure);
             const requestId = ++sequence;
             return new Promise((resolve,reject)=>{
                 const timer = setTimeout(()=>{

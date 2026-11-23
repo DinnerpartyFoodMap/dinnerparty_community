@@ -1,3 +1,40 @@
+import { MarkerTileSource,MarkerTileStore,tileOf } from '../../src/map/markerTiles.js';
+import { forEachInSlices,filterInSlices } from '../../src/map/cluster/cooperative.js';
+import { matchesPlaceFilter,EMPTY_PLACE_FILTER } from '../../src/places/placeFilter.js';
+import { readCache,writeCache,deleteCache } from '../../src/platform/cacheStore.js';
+
+// Use the actual source -> async tile expansion -> store composition -> filter path.
+export async function loadPlacesThroughTiles(places) {
+    const fields=['id','name','longitude','latitude','category'],bodies=new Map();
+    await forEachInSlices(places,place=>{
+        const key=tileOf(place.longitude,place.latitude,12).join('/');
+        if(!bodies.has(key))bodies.set(key,{fields,rows:[]});
+        bodies.get(key).rows.push(fields.map(field=>place[field] ?? null));
+    });
+    let requests=0;const writes=[];
+    const source=new MarkerTileSource({backendUrl:'https://tiles.test',readStored:readCache,removeStored:deleteCache,
+        writeStored:(key,value)=>{const writing=writeCache(key,value);writes.push(writing);return writing;},
+        fetchImpl:async url=>{requests++;return {ok:true,status:200,json:async()=>bodies.get(/\/12\/(\d+\/\d+)/.exec(url)?.[1])};}
+    });
+    source.manifest={levels:[],leaf:{tile:12,minZoom:13},tiles:{12:Object.fromEntries([...bodies.keys()].map(key=>[key,'hash']))}};
+    source.dict={tags:[],regions:[]};
+    const store=new MarkerTileStore(source);
+    let unsubscribe;
+    try {
+        const list=await new Promise((resolve,reject)=>{
+            const timer=setTimeout(()=>reject(new Error('Tile pipeline timed out')),12000);
+            const publish=()=>store.allAsync().then(rows=>{
+                if(rows.length===places.length){clearTimeout(timer);resolve(rows);}
+            }).catch(error=>{if(error.name!=='AbortError'){clearTimeout(timer);reject(error);}});
+            unsubscribe=store.subscribe(publish);
+            store.setView({bounds:{minLng:119.8,maxLng:120.2,minLat:29.8,maxLat:30.2},zoom:13});
+            publish();
+        });
+        await Promise.allSettled(writes);
+        return {places:await filterInSlices(list,place=>matchesPlaceFilter(place,EMPTY_PLACE_FILTER)),markerBand:store.band,requests};
+    } finally {unsubscribe?.();store.dispose();}
+}
+
 export const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));
 export async function until(predicate,label) {
     const deadline=performance.now()+12000;

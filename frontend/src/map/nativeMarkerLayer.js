@@ -181,12 +181,12 @@ export class NativeMarkerLayer {
         this.dataRevision = (this.dataRevision || 0) + 1;
         const normalized = normalizePlaces(places);
         const signature = dataSignature(normalized);
-        if (!this.engine || this.engine.signature !== signature) {
+        if (!this.engine || !this.engine.matches(normalized,signature)) {
             this.engine = new ClusterEngine(normalized, {
                 maxZoom: Math.min(30, Math.ceil(this.zoomRange.max)),
                 minZoom: Math.max(0, Math.floor(this.zoomRange.min)),
                 radiusPx: this.options.clusterRadiusPx || CLUSTER_DEFAULTS.radiusPx
-            });
+            },signature);
         } else {
             this.engine.updatePlaces(normalized);
         }
@@ -286,7 +286,8 @@ export class NativeMarkerLayer {
         return this.snapshot.engine.memberKeys(node).map(key=>this.snapshot.engine.placeByKey.get(key)).filter(Boolean);
     }
 
-    async getPlaceRevealZoom(place,baseZoom,maxZoom) {
+    async getPlaceRevealZoom(place,baseZoom,maxZoom,dataRevision = this.snapshot?.dataRevision) {
+        if (dataRevision !== this.snapshot?.dataRevision) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
         return revealZoom({engine:this.engine,place,baseZoom,maxZoom});
     }
 

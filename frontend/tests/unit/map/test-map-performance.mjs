@@ -13,7 +13,7 @@ const child = spawnSync(process.execPath, [
     `import { tileKeysForBounds } from ${JSON.stringify(tileModule)};
      const keys = tileKeysForBounds({ minLng:-180,maxLng:180,minLat:-85,maxLat:85 }, 12);
      if (keys.length !== 48 || new Set(keys).size !== 48) process.exit(2);`
-], { encoding: 'utf8', timeout: 15000 });
+], { encoding: 'utf8', timeout: 15000, windowsHide:true });
 assert.equal(child.status, 0, 'world query must fit in a 64MB heap: ' + child.stderr?.slice(-150));
 for (const bounds of [
     { minLng: -1, maxLng: 1, minLat: -1, maxLat: 1 },

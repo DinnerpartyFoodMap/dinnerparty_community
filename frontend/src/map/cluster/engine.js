@@ -142,12 +142,25 @@ export class ClusterEngine {
                 acc.precision = Math.min(acc.precision, props.precision);
             }
         });
-        this.index.load(normalized.map((item) => ({
+        this.features = normalized.map((item) => ({
             type: 'Feature',
             properties: { key: item.key, h1: hashString(item.key), h2: hashString(item.key, HASH_SEED_2),
                 anonymous: item.place.aggregate ? 1 : 0, precision: item.place.aggregateCell?.[0] ?? Infinity },
             geometry: { type: 'Point', coordinates: [item.lng, item.lat] }
-        })));
+        }));
+        this.index.load(this.features);
+    }
+
+    /** A hash is only a fast rejection; indexed geometry and metadata must also match. */
+    matches(normalized, signature = dataSignature(normalized)) {
+        if (signature !== this.signature || normalized.length !== this.features.length) return false;
+        return normalized.every((item,i)=>{
+            const feature = this.features[i], props = feature.properties;
+            return props.key === item.key && feature.geometry.coordinates[0] === item.lng
+                && feature.geometry.coordinates[1] === item.lat
+                && props.anonymous === (item.place.aggregate ? 1 : 0)
+                && props.precision === (item.place.aggregateCell?.[0] ?? Infinity);
+        });
     }
 
     /** 外观数据（名称、分类）更新不重建索引，只替换引用。 */
@@ -245,6 +258,7 @@ export class ClusterEngine {
         const out = [];
         const walk = (current) => {
             if (--counter.remaining < 0) return false;
+            if (current.kind === 'cluster' && current.count > counter.remaining) return false;
             if (current.kind !== 'cluster' || target < this.expansionZoom(current)) {
                 out.push(current);
                 return true;

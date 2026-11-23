@@ -13,6 +13,7 @@ import { canUseNativeMap } from "../platform/nativeMap";
 import { MarkerTileStore, markerTileSource, nextBandZoom, PREFETCH } from "./markerTiles";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
 import { filterInSlices } from "./cluster/cooperative.js";
+import { createMapActionGate, focusExhibitionVenue } from "./mapActions.js";
 import { computeLogicalZoom } from "./cluster/snapshot";
 import { clusterZoomOutcome, nextClusterZoom } from "./clusterZoom";
 import { readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
@@ -125,9 +126,14 @@ export default function MapView({
     const markerLayerRef = useRef(null);
     // 点聚合后正在进行的放大（见 handleClusterClick）
     const clusterZoomRef = useRef(null);
-    const mapActionRef = useRef(0);
+    const mapIntentRef = useRef(null);
     // 当前标记模式（沿途 / 搜索 / 住民 / 附近），预取只在附近模式
     const markerQueryModeRef = useRef('nearby');
+    if (!mapIntentRef.current) mapIntentRef.current = createMapActionGate(()=>{
+        const layer = markerLayerRef.current;
+        return {map:mapRef.current,layer,mode:markerQueryModeRef.current,
+            dataRevision:layer?.snapshot?.dataRevision,targetRevision:layer?.dataRevision};
+    });
     const overseasLayerRef = useRef(null);
     // 地图标记：分层瓦片（markerTiles.js）：按缩放取聚合瓦片或视野内的明细瓦片，加个人叠加与本地修改
     const markerStoreRef = useRef(null);
@@ -139,6 +145,7 @@ export default function MapView({
     const tileLimitTipRef = useRef(false);
     const overlayRequestRef = useRef(null);
     const nearbyFailureRef = useRef(0);
+    const nearbyPublishRef = useRef(null);
     // 快照里的地点只有标记字段，打开卡片时再补全（ensurePlaceDetail）；换账号时清空
     const placeDetailsRef = useRef({ cache: new Map(), pending: new Map() });
     const userLocationMarkerRef = useRef(null);
@@ -262,6 +269,7 @@ export default function MapView({
     const markerHandlersRef = useRef({});
 
     const clearSearchState = ({ resetTerm = true, closeSearchUi = true, reloadPlaces = true } = {}) => {
+        mapIntentRef.current.invalidate();
         searchRequestIdRef.current += 1;
         searchAbortControllersRef.current.forEach((controller) => controller.abort());
         searchAbortControllersRef.current = [];
@@ -930,12 +938,16 @@ export default function MapView({
     // 显示哪份数据由当前模式决定（沿途 > 搜索 > 住民筛选 > 附近），标记由统一入口渲染。
     const publishNearbyFromCache = () => {
         const store = markerStoreRef.current;
-        const places = store.all();
-        const band = store.band;
-        if (nearbyMarkersRef.current.places === places && nearbyMarkersRef.current.band === band) return;
-        const next = { places, band };
-        nearbyMarkersRef.current = next;
-        setNearbyMarkers(next);
+        nearbyPublishRef.current?.abort();
+        const abort = nearbyPublishRef.current = new AbortController();
+        store.allAsync({signal:abort.signal}).then(places=>{
+            if (abort.signal.aborted || markerStoreRef.current !== store) return;
+            const band = store.band;
+            if (nearbyMarkersRef.current.places === places && nearbyMarkersRef.current.band === band) return;
+            const next = {places,band};
+            nearbyMarkersRef.current = next;
+            setNearbyMarkers(next);
+        }).catch(error=>{if(error.name !== 'AbortError') console.warn('Map marker composition failed',error);});
     };
 
     // 一份标记数据都没有时才提示（本机缓存读完后再判断），连续失败只提示一次
@@ -970,6 +982,7 @@ export default function MapView({
         return () => {
             unsubscribe();
             unlimited();
+            nearbyPublishRef.current?.abort();
         };
     }, [backendUrl]);
 
@@ -1199,12 +1212,14 @@ export default function MapView({
     // 选中地点：宽屏卡片由地图覆盖物锚定，窄屏为底部面板（见 MapUI），这里只提交业务状态
     const showPopup = (p) => {
         if (!p) return;
+        mapIntentRef.current.select(()=>{
         selectedPlaceRef.current = p;
         setSelectedPlace(p);
         // 从搜索、分享链接、随机、列表跳过来：那家店所在的明细瓦片一起拉，回到附近模式放大时不用再等
         const lng = Number(p.longitude);
         const lat = Number(p.latitude);
         if (p.isMarked !== false && Number.isFinite(lng) && Number.isFinite(lat)) markerTileSource(backendUrl).prefetchLeafAt([[lng, lat]], { maxTiles: 1 });
+        });
     };
 
     // 选中的是快照里的地点：先用标记字段显示卡片，同时补全描述、图片等
@@ -1289,8 +1304,7 @@ export default function MapView({
     const showClusterMembers = async (request) => {
         try {
             const members = await request.layer.getClusterMembers(request.key,request.dataRevision);
-            if (mapActionRef.current !== request.action || mapRef.current !== request.map
-                || request.layer.snapshot?.dataRevision !== request.dataRevision) return;
+            if (!mapIntentRef.current.isCurrent(request.intent)) return;
         // 聚合瓦片的匿名点没有店名，不进成员列表
             setClusterMembers({ key:request.key,coordinate:request.coordinate,places:members.filter(place=>!place.aggregate) });
         } catch (error) { if (error.code !== 'STALE_DATA') console.warn('Cluster members unavailable',error); }
@@ -1325,7 +1339,7 @@ export default function MapView({
         }
     };
     const cancelClusterZoom = (invalidate = true) => {
-        if (invalidate !== false) mapActionRef.current += 1;
+        if (invalidate !== false) mapIntentRef.current.invalidate();
         const request = clusterZoomRef.current;
         if (!request) return;
         window.clearTimeout(request.timer);
@@ -1334,6 +1348,7 @@ export default function MapView({
     const issueClusterZoom = (request) => {
         const map = mapRef.current;
         if (!map || clusterZoomRef.current !== request) return;
+        if (!mapIntentRef.current.isCurrent(request.intent,{data:false})) { cancelClusterZoom(false); return; }
         window.clearTimeout(request.timer);
         request.phase = 'waiting';
         armSkipAutoSearch();
@@ -1354,6 +1369,7 @@ export default function MapView({
     const settleClusterZoom = (request) => {
         const map = mapRef.current;
         if (!map || clusterZoomRef.current !== request) return;
+        if (!mapIntentRef.current.isCurrent(request.intent,{data:false})) { cancelClusterZoom(false); return; }
         const zoom = Number(map.getZoom());
         const layer = markerLayerRef.current;
         const state = layer?.getZoomState?.();
@@ -1385,12 +1401,12 @@ export default function MapView({
         const layer = markerLayerRef.current;
         if (!map || !node || !layer) return;
         cancelClusterZoom();
-        const action = mapActionRef.current;
+        const intent = mapIntentRef.current.capture();
         const dataRevision = node.dataRevision ?? layer.snapshot?.dataRevision;
         let info;
         try { info = await layer.getClusterInfo(node.key,dataRevision); }
         catch (error) { if(error.code !== 'STALE_DATA') console.warn('Cluster query failed',error); return; }
-        if (mapActionRef.current !== action || mapRef.current !== map || layer.snapshot?.dataRevision !== dataRevision) return;
+        if (!mapIntentRef.current.isCurrent(intent) || intent.dataRevision !== dataRevision) return;
         const maxZoom = getMapZoomRange(map).max;
         const expansion = info.expansionZoom;
         const currentZoom = Number(map.getZoom());
@@ -1399,7 +1415,7 @@ export default function MapView({
             zoomIntoAggregate(node.coordinate);
             return;
         }
-        const request = {key:node.key,coordinate:node.coordinate,expansion,layer,dataRevision,action,map};
+        const request = {key:node.key,coordinate:node.coordinate,expansion,layer,dataRevision,intent,map};
         if (expansion > maxZoom || currentZoom >= maxZoom - 0.05) {
             showClusterMembers(request);
             return;
@@ -1423,7 +1439,7 @@ export default function MapView({
         if (!mapReady || !map) return undefined;
         const onMoveStart = () => {
             const request = clusterZoomRef.current;
-            if (!request) { mapActionRef.current += 1; return; }
+            if (!request) { mapIntentRef.current.invalidate(); return; }
             if (request.phase === 'waiting') {
                 startMoving(request);
             } else if (request.phase === 'settling') {
@@ -1535,6 +1551,7 @@ export default function MapView({
     };
 
     const handleAlongRouteResults = (results) => {
+        mapIntentRef.current.invalidate();
         if (Array.isArray(results)) {
             clearSearchState({ resetTerm: true, closeSearchUi: true, reloadPlaces: false });
             exitUserFilter();
@@ -1548,13 +1565,20 @@ export default function MapView({
     };
 
     // 打开某个地点时的缩放：至少 baseZoom，地点在那一级仍被聚合时放大到它单独显示的层级（clusterZoom.js 的 revealZoom）
-    const placeRevealZoom = async (place, baseZoom) => {
+    const placeRevealZoom = async (place, baseZoom, intent) => {
         const map = mapRef.current;
-        try {
-            return await markerLayerRef.current?.getPlaceRevealZoom(place,baseZoom,getMapZoomRange(map).max) ?? baseZoom;
-        } catch (error) {
-            return baseZoom;
+        for (let attempt=0;attempt<2;attempt++) {
+            const current = mapIntentRef.current.refresh(intent);
+            if (!current) return null;
+            Object.assign(intent,current);
+            try {
+                const zoom = await markerLayerRef.current?.getPlaceRevealZoom(place,baseZoom,getMapZoomRange(map).max,intent.dataRevision) ?? baseZoom;
+                if (mapIntentRef.current.isCurrent(intent)) return zoom;
+            } catch (error) {
+                if (error.code !== 'STALE_DATA') return mapIntentRef.current.isCurrent(intent) ? baseZoom : null;
+            }
         }
+        return null;
     };
 
     const handleSelectAlongRoutePlace = async (place) => {
@@ -1563,14 +1587,15 @@ export default function MapView({
         const lat = Number(place.latitude);
         if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
         cancelClusterZoom();
-        const action = mapActionRef.current, map = mapRef.current;
+        const intent = mapIntentRef.current.capture(), map = mapRef.current;
         try {
             // 展会等远距离目标先完成定位再开卡片，避免卡片按旧视口避让并打断地图移动。
-            const zoom = await placeRevealZoom(place, Math.max(16, Math.round(Number(map.getZoom()) || 16)));
-            if (action !== mapActionRef.current || mapRef.current !== map) return;
+            const zoom = await placeRevealZoom(place, Math.max(16, Math.round(Number(map.getZoom()) || 16)),intent);
+            if (zoom === null || !mapIntentRef.current.isCurrent(intent)) return;
             map.setZoomAndCenter(zoom, [lng, lat], true);
         } catch (error) { /* best effort */ }
         showPopup(place);
+        return true;
     };
 
     // 展会地点（展会面板点地址）：复用高德临时地点的标记与卡片，卡片只有导航；
@@ -1587,8 +1612,11 @@ export default function MapView({
             longitude: venue.lng,
             latitude: venue.lat
         };
-        setVenuePlace(place);
-        handleSelectAlongRoutePlace(place);
+        return focusExhibitionVenue(place,{
+            select:handleSelectAlongRoutePlace,
+            isSelected:value=>placeKey(selectedPlaceRef.current)===placeKey(value),
+            showMarker:setVenuePlace
+        });
     };
     useEffect(() => {
         if (venuePlace && (!selectedPlace || placeKey(selectedPlace) !== placeKey(venuePlace))) setVenuePlace(null);
@@ -1602,6 +1630,7 @@ export default function MapView({
         exitUserFilter();
         searchResultsRef.current = null;
         alongRouteResultsRef.current = null;
+        markerQueryModeRef.current = 'nearby';
         armSkipAutoSearch();
         return focusPlaceById(placeId).then((opened) => {
             loadPlacesRef.current?.();
@@ -1632,6 +1661,7 @@ export default function MapView({
         // Random discovery opens a detail popup without filtering nearby markers.
         searchResultsRef.current = null;
         alongRouteResultsRef.current = null;
+        markerQueryModeRef.current = 'nearby';
         armSkipAutoSearch();
         handleSelectAlongRoutePlace(place);
         loadPlacesRef.current?.();
@@ -1740,6 +1770,7 @@ export default function MapView({
 
     // 提交搜索时同时启动快速字面匹配与 AI 语义推荐；快速结果不会等待 AI。
     const searchServer = async ({ q = "", center = undefined, bounds = undefined, limit = undefined, autoFit = true } = {}) => {
+        mapIntentRef.current.invalidate();
         const query = String(q || '').trim();
         if (!query) return;
         const readMapPoint = (point) => {
@@ -1904,6 +1935,7 @@ export default function MapView({
 
     // 按住民筛选：退出搜索与沿途、收起卡片，读取这位住民创建的地点后视野调整到全部地点
     const openUserPlaces = async (user) => {
+        mapIntentRef.current.invalidate();
         if (!user?.id) return;
         const requestId = ++userFilterRequestRef.current;
         clearSearchState({ reloadPlaces: false });
@@ -1927,6 +1959,7 @@ export default function MapView({
 
     // 退出按住民筛选。reload：回到附近地点（搜索、沿途等接管标记时由它们自己加载）
     const exitUserFilter = ({ reload = false } = {}) => {
+        mapIntentRef.current.invalidate();
         userFilterRequestRef.current += 1;
         if (!userFilterRef.current) return;
         commitUserFilter(null);
@@ -1984,22 +2017,24 @@ export default function MapView({
     // 列表、收藏与日记中的地点：读取后居中并打开地点卡片
     const focusPlaceById = async (placeId) => {
         cancelClusterZoom();
-        const action = mapActionRef.current, map = mapRef.current;
+        const intent = mapIntentRef.current.capture(), map = mapRef.current;
         try {
             const res = await Api.fetchPlace(backendUrl, placeId, { token });
+            if (!mapIntentRef.current.isCurrent(intent,{data:false})) return false;
             if (!res.ok) { showTip(t('map:main.markerMissing')); return false; }
             const place = await res.json();
-            if (action !== mapActionRef.current || mapRef.current !== map) return false;
+            if (!mapIntentRef.current.isCurrent(intent,{data:false})) return false;
             if (mapRef.current && place.longitude != null && place.latitude != null) {
                 // 卡片下一帧会测量锚点并自动避让：先完成定位，避免按旧视口平移并打断定位动画。
                 // 至少 17 级；附近店多、17 级时仍被收进聚合的，放大到它单独显示
-                const zoom = await placeRevealZoom(place,17);
-                if (action !== mapActionRef.current || mapRef.current !== map) return false;
+                const zoom = await placeRevealZoom(place,17,intent);
+                if (zoom === null || !mapIntentRef.current.isCurrent(intent)) return false;
                 map.setZoomAndCenter(zoom, [place.longitude, place.latitude], true);
             }
             showPopup(place);
             return true;
         } catch (e) {
+            if (!mapIntentRef.current.isCurrent(intent,{data:false})) return false;
             showTip(t('map:main.markerLoadFailed'));
             return false;
         }
@@ -2472,7 +2507,7 @@ export default function MapView({
                 onRetryUserPlaces={() => userFilterRef.current && openUserPlaces(userFilterRef.current.user)}
                 onSetUserPlacesBlocked={setUserPlacesBlocked}
                 placeFilter={placeFilter}
-                onPlaceFilterChange={setPlaceFilter}
+                onPlaceFilterChange={(value)=>{mapIntentRef.current.invalidate();setPlaceFilter(value);}}
                 onSelectUserPlace={handleSelectAlongRoutePlace}
                 openManagePanel={openManagePanel}
                 ensurePlaceDetail={ensurePlaceDetail}

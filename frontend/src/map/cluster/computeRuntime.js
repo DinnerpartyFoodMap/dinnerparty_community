@@ -8,8 +8,9 @@ const stale = () => Object.assign(new Error('The map data has changed'), { code:
 // Pure worker-side state, also exercised without a browser by protocol tests.
 export function createComputeRuntime() {
     let engine = null, revision = null, active = null, candidate = null, snapshotId = 0, builds = 0, dataBounds = null;
-    const findSnapshot = dataRevision => {
-        const snapshot = [active,candidate].find(item=>item?.dataRevision === dataRevision);
+    const findSnapshot = (dataRevision,nodeKey) => {
+        const snapshots = [active,candidate].filter(item=>item?.dataRevision === dataRevision);
+        const snapshot = snapshots.find(item=>nodeKey && item.nodeByKey.has(nodeKey)) || snapshots[0];
         if (!snapshot) throw stale();
         return snapshot;
     };
@@ -31,7 +32,7 @@ export function createComputeRuntime() {
                         aggregate:!!aggregates[i],aggregateCell:aggregateCells[i]
                     })));
                     const signature = dataSignature(normalized);
-                    if (!engine || engine.signature !== signature) {
+                    if (!engine || !engine.matches(normalized,signature)) {
                         const indexStarted = performance.now();
                         engine = new ClusterEngine(normalized,payload.options,signature); builds++;
                         indexMs = performance.now() - indexStarted;
@@ -62,13 +63,14 @@ export function createComputeRuntime() {
                 Object.assign(next,{snapshotId:++snapshotId,dataRevision});
                 candidate = next;
                 const nodes = next.visibleNodes.map(({place,...node})=>node);
+                const finishedAt = performance.now();
                 return {snapshotId:next.snapshotId,dataRevision,logicalZoom,nodes,plan,
                     refineAfterZoom:next.refineAfterZoom,queryMode:next.queryMode,markerBand:next.markerBand,
                     zoomRange:{min:engine.minZoom,max:engine.maxZoom},dataBounds,
-                    metrics:{builds,inputCount:engine.size,indexMs,prepareMs:preparedAt-started,
-                        queryMs:queriedAt-preparedAt,transitionMs:performance.now()-queriedAt,ms:performance.now()-started}};
+                    metrics:{builds,inputCount:engine.size,indexMs,prepareMs:preparedAt-started-indexMs,
+                        queryMs:queriedAt-preparedAt,transitionMs:finishedAt-queriedAt,ms:finishedAt-started}};
             }
-            const snapshot = findSnapshot(dataRevision);
+            const snapshot = findSnapshot(dataRevision,payload.nodeKey);
             const index = snapshot.engine;
             if (op === 'reveal') return {zoom:revealZoom({engine:index,...payload})};
             let node = snapshot.nodeByKey.get(payload.nodeKey);

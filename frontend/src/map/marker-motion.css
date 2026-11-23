@@ -142,6 +142,15 @@
     pointer-events: none;
 }
 
+.fm-marker[data-pending] .fm-marker__hit {
+    pointer-events: none;
+}
+
+.fm-marker[data-staged],
+.fm-marker[data-retired] {
+    visibility: hidden;
+}
+
 /* 减少动态效果：名称直接显隐 */
 @media (prefers-reduced-motion: reduce) {
     .fm-marker__label,

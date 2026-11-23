@@ -1,9 +1,12 @@
 import { MarkerLayerController } from '../../src/map/MarkerLayerController.js';
 import { createWorkerClient } from '../../src/map/cluster/workerClient.js';
-import { createMapSurface,until,wait } from './map-test-surface.js';
+import { createMapSurface,until,wait,loadPlacesThroughTiles } from './map-test-surface.js';
 
 export async function runMapComputeTests() {
-    const surface=createMapSurface(),controller=new MarkerLayerController(surface.map);
+    const renderSlices=[];
+    const surface=createMapSurface(13),controller=new MarkerLayerController(surface.map,{onMetric:(kind,value)=>{
+        if(kind==='renderSlices')renderSlices.push(value.ms);
+    }});
     const assert=(ok,label)=>{if(!ok)throw new Error(label);};
     let beats=0;const interval=setInterval(()=>beats++,5);
     const longTasks=[];
@@ -23,7 +26,7 @@ export async function runMapComputeTests() {
             longitude:119.95+(i%250)*0.0004,latitude:29.96+Math.floor(i/250)*0.0004}));
         const largeStart=performance.now();
         const before=beats;
-        await controller.update({places});
+        await controller.update(await loadPlacesThroughTiles(places));
         await until(()=>controller.snapshot?.dataRevision===controller.dataRevision&&!controller.renderQueue.busy,'50k worker snapshot');
         assert(beats>before,'the page remains responsive while the worker builds the index');
         assert(controller.getEngine()===null,'web does not retain a synchronous index');
@@ -41,7 +44,7 @@ export async function runMapComputeTests() {
         await until(()=>controller.snapshot?.dataRevision===controller.dataRevision&&!controller.renderQueue.busy,'latest data wins');
         assert(controller.entries.size===1&&controller.entries.has('place:100019'),'intermediate updates cannot overwrite the final data');
         const result={passed:true,inputCount:50000,firstMs,totalMs:performance.now()-cold,samples,heartbeats:beats-before,worker:largeWorker,
-            maxRenderSlice:Math.max(...controller.metrics.renderSlices.map(s=>s.ms)),longTasks};
+            maxRenderSlice:Math.max(...renderSlices),longTasks};
         controller.update({places});
         controller.destroy();await wait(220);
         assert(surface.attached.size===0,'destroy cancels preparation and pending replies');

@@ -16,7 +16,7 @@
 import { placeKey } from './cluster/engine.js';
 import { computeLogicalZoom, expandBounds, normalizeViewBounds } from './cluster/snapshot.js';
 import { readCache, writeCache, deleteCache } from '../platform/cacheStore.js';
-import { collectInSlices } from './cluster/cooperative.js';
+import { collectInSlices, yieldTask } from './cluster/cooperative.js';
 
 export const GLYPH_KINDS = Object.freeze(['place', 'avoid', 'unexplored']);
 /** 换到明细级时等待补位瓦片的预算 */
@@ -472,6 +472,7 @@ export class MarkerTileStore {
     }
 
     dispose() {
+        this.disposed = true;
         this.switchToken += 1;
         this._unsubscribe?.();
         this._unsubscribe = null;
@@ -670,15 +671,32 @@ export class MarkerTileStore {
         return this._compose().list;
     }
 
-    _leafRows(band) {
-        const out = [];
+    async allAsync({signal} = {}) {
+        const version = this.version;
+        const cancelled = () => signal?.aborted || this.disposed || version !== this.version;
+        if (cancelled()) throw new DOMException('Cancelled','AbortError');
+        if (this._memo?.version === version && this.now() < this._memo.expiresAt) return this._memo.list;
+        const task = this._composeSteps();
+        let started = performance.now(), step;
+        while (true) {
+            if (cancelled()) { task.return(); throw new DOMException('Cancelled','AbortError'); }
+            step = task.next();
+            if (step.done) break;
+            if (performance.now()-started >= 4) { await yieldTask(); started = performance.now(); }
+        }
+        if (cancelled()) throw new DOMException('Cancelled','AbortError');
+        if (this._memo?.version !== version || this.now() >= this._memo.expiresAt) this._memo = step.value;
+        return this._memo.list;
+    }
+
+    *_leafRows(band) {
         const fallback = this._fallbackLevel();
         const fallbackShift = fallback ? 2 ** (band.tile - fallback.tile) : 1;
         const fallbackCellShift = fallback ? 2 ** (fallback.cell - band.tile) : 1;
         for (const key of this._coverage(band, this.displayBounds)) {
             const leaf = this.source.peek(band.tile, key);
             if (leaf) {
-                out.push(...leaf);
+                yield* leaf;
                 continue;
             }
             // 这块明细还没到或拿不到：用城市级聚合里落在这块里的格子顶上
@@ -689,30 +707,41 @@ export class MarkerTileStore {
             if (!parent) continue;
             for (const place of parent) {
                 const [, cellX, cellY] = place.aggregateCell;
-                if (Math.floor(cellX / fallbackCellShift) === x && Math.floor(cellY / fallbackCellShift) === y) out.push(place);
+                yield Math.floor(cellX / fallbackCellShift) === x && Math.floor(cellY / fallbackCellShift) === y ? place : null;
             }
         }
-        return out;
     }
 
     _compose() {
         const now = this.now();
         if (this._memo?.version === this.version && now < this._memo.expiresAt) return this._memo;
+        const task = this._composeSteps();
+        let step;
+        do { step = task.next(); } while (!step.done);
+        this._memo = step.value;
+        return this._memo;
+    }
+
+    *_composeSteps() {
+        const now = this.now(), version = this.version;
         const band = this.displayBand;
         const byKey = new Map();
         let expiresAt = Infinity;
         if (band && band.kind === 'aggregate') {
             for (const key of this._coverage(band, this.displayBounds)) {
                 const places = this.source.peek(band.tile, key);
-                if (places) for (const place of places) byKey.set(place.aggregateKey, place);
+                if (places) for (const place of places) { yield; byKey.set(place.aggregateKey, place); }
             }
         } else if (band) {
             for (const place of this._leafRows(band)) {
+                yield;
+                if (!place) continue;
                 const key = placeKey(place);
                 if (key) byKey.set(key, place);
             }
             // 本地修改：明细瓦片追上了（字段一致、或删除的已不在）就去掉
             for (const [key, patch] of this.patches) {
+                yield;
                 if (now - patch.at >= this.patchTtlMs) {
                     this.patches.delete(key);
                     continue;
@@ -726,13 +755,17 @@ export class MarkerTileStore {
                 if (patch.place) byKey.set(key, patch.place);
                 else byKey.delete(key);
             }
-            for (const id of this.overlay.hiddenIds) byKey.delete(`place:${id}`);
+            for (const id of this.overlay.hiddenIds) { yield; byKey.delete(`place:${id}`); }
         }
-        for (const place of this.overlay.own) byKey.set(placeKey(place), place);
+        for (const place of this.overlay.own) { yield; byKey.set(placeKey(place), place); }
         const previous = this._memo;
-        const list = Array.from(byKey.values());
-        const same = previous && previous.list.length === list.length && previous.list.every((place, index) => place === list[index]);
-        this._memo = { version: this.version, byKey, list: same ? previous.list : list, expiresAt };
-        return this._memo;
+        const list = [];
+        let same = previous && previous.list.length === byKey.size;
+        for (const place of byKey.values()) {
+            yield;
+            if (same && previous.list[list.length] !== place) same = false;
+            list.push(place);
+        }
+        return {version,byKey,list:same ? previous.list : list,expiresAt};
     }
 }

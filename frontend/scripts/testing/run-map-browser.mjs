@@ -44,7 +44,7 @@ try {
     await server.listen();
     const { port } = server.httpServer.address();
     // CDP 使用真实时钟。虚拟时间会让 JS 计时先跑完，Web Animations 的 compositor 却尚未推进。
-    processHandle = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--disable-background-networking', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--remote-debugging-port=0', `--user-data-dir=${join(scratch, 'profile')}`, '--window-size=800,900', 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    processHandle = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--disable-background-networking', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--remote-debugging-port=0', `--user-data-dir=${join(scratch, 'profile')}`, '--window-size=1280,900', 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     const endpoint = await new Promise((resolve, reject) => {
         let output = '';
         const timer = setTimeout(() => reject(new Error('Chromium did not expose CDP')), 15000);
@@ -56,14 +56,19 @@ try {
     });
     socket = new WebSocket(endpoint);
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
-    let seq = 0; const pending = new Map();
+    let seq = 0, traceHandle = null; const pending = new Map();
+    const tracePath = process.env.FOODMAP_TRACE_PATH;
     socket.addEventListener('message', event => {
         const message = JSON.parse(event.data); const entry = pending.get(message.id);
+        if (message.method === 'Tracing.tracingComplete') traceHandle = message.params.stream;
         if (entry) { pending.delete(message.id); clearTimeout(entry.timer); message.error ? entry.reject(new Error(JSON.stringify(message.error))) : entry.resolve(message.result); }
     });
     const command = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
         const id = ++seq; const timer = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timed out: ${method}`)); }, 25000);
         pending.set(id, { resolve, reject, timer }); socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+    });
+    if (tracePath) await command('Tracing.start', {
+        categories:'devtools.timeline,v8.execute,blink.user_timing,disabled-by-default-devtools.timeline',transferMode:'ReturnAsStream'
     });
     const { targetId } = await command('Target.createTarget', { url: `http://127.0.0.1:${port}/__native-cluster-smoke` });
     const { sessionId } = await command('Target.attachToTarget', { targetId, flatten: true });
@@ -77,7 +82,19 @@ try {
     }
     const page = await command('Runtime.evaluate', { expression: 'document.documentElement.outerHTML', returnByValue: true }, sessionId);
     writeFileSync(join(scratch, 'rendered.html'), page.result.value);
+    const browserVersion = await command('Browser.getVersion');
+    if (result) result.environment = {browser:browserVersion.product,window:'1280x900',gpu:false};
     console.log(JSON.stringify(result || { passed: false, error: 'No browser result' }));
     if (!result?.passed) { console.error(`Browser output: ${scratch}`); process.exitCode = 1; }
+    if (tracePath) {
+        await command('Tracing.end');
+        const traceDeadline = Date.now()+10000;
+        while (!traceHandle && Date.now()<traceDeadline) await new Promise(resolve=>setTimeout(resolve,50));
+        if (!traceHandle) throw new Error('Browser trace stream unavailable');
+        let trace = '', chunk;
+        do { chunk = await command('IO.read',{handle:traceHandle}); trace += chunk.data; } while (!chunk.eof);
+        await command('IO.close',{handle:traceHandle});
+        writeFileSync(resolve(tracePath),trace);
+    }
     await command('Browser.close');
 } finally { socket?.close(); processHandle?.kill(); await server.close(); }

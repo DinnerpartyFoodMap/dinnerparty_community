@@ -8,6 +8,9 @@ export async function runMapRenderTests() {
         // Deliberately oversized coverage stresses offscreen as well as onscreen creation.
         const places=Array.from({length:200},(_,i)=>({id:i+1,name:'Point '+i,longitude:119.9+(i%20)*0.01,latitude:29.95+Math.floor(i/20)*0.01}));
         await controller.update({places});
+        await until(()=>surface.attached.size>0&&controller.renderQueue.busy,'first initial batch');
+        const firstRoot=[...surface.attached][0].wrapper.querySelector('.fm-marker');
+        assert(getComputedStyle(firstRoot).visibility!=='hidden','initial batches are visible before final convergence');
         await until(()=>controller.snapshot?.dataRevision===controller.dataRevision&&!controller.renderQueue.busy,'batched initial markers');
         assert(surface.attached.size===200,'all target markers eventually attach');
         assert(controller.metrics.renderSlices.length>1,'initial creation is spread over frames');

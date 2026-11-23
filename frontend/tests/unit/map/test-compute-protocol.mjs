@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createComputeRuntime } from '../../../src/map/cluster/computeRuntime.js';
+import { createWorkerClient } from '../../../src/map/cluster/workerClient.js';
 
 const runtime = createComputeRuntime();
 let seq=0;
@@ -9,6 +10,8 @@ const request=(op,payload={},extra={})=>runtime.handle({op,requestId:++seq,dataR
 const a=await request('compute',{...view,data:points});
 assert.equal(a.nodes.reduce((n,x)=>n+x.count,0),2);
 assert.equal(a.metrics.builds,1);
+assert.ok(Math.abs(a.metrics.prepareMs+a.metrics.indexMs+a.metrics.queryMs+a.metrics.transitionMs-a.metrics.ms)<0.01,
+    'worker phase durations must not count index construction twice');
 assert.equal(a.plan.kind,'initial');
 const dropped=await request('compute',{...view,zoom:13});
 assert.equal(dropped.plan.kind,'initial','unacknowledged result cannot be a transition baseline');
@@ -30,4 +33,16 @@ assert.ok(reveal.zoom>=16);
 await assert.rejects(request('clusterInfo',{nodeKey:cluster.key},{dataRevision:999}),{code:'STALE_DATA'});
 await request('dispose');
 await assert.rejects(request('clusterInfo',{nodeKey:cluster.key}),{code:'STALE_DATA'});
+let fatals=0, posts=0;
+const transport={postMessage:()=>{posts++;},terminate(){}};
+const client=createWorkerClient({createWorker:()=>transport,onFatal:()=>{fatals++;}});
+try {
+    const pending=client.request('compute',{});
+    transport.onerror({message:'fixture failure',preventDefault(){}});
+    await assert.rejects(pending,{code:'WORKER_FAILED'});
+    assert.equal(fatals,1,'idle or obsolete worker failures notify the owner immediately');
+    const next=client.request('compute',{});next.catch(()=>{});
+    assert.equal(posts,1,'a failed transport never queues work that will only time out');
+    await assert.rejects(next,{code:'WORKER_FAILED'});
+} finally {client.destroy();}
 console.log('Worker computation protocol and acknowledged baselines passed');

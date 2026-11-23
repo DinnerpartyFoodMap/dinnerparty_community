@@ -33,7 +33,7 @@ export function createMarkerRenderQueue({
                 if (writes >= maxSdkBatch || now()-started >= budgetMs) break;
             }
         } catch (error) { task = null; current.reject(error); }
-        onSlice({version:current.version,ms:now()-started,operations:count});
+        onSlice({version:current.version,ms:now()-started,operations:count,writes});
         schedule();
     };
     return {
