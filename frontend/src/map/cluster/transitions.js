@@ -176,6 +176,7 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
 
     const zoom = coarse.markerBand.cell;
     const parentByCell = new Map();
+    if (!reserveMembers(memberBudget,parentByMember.size)) return;
     for (const [member, parent] of parentByMember) {
         const place = coarse.engine.placeByKey.get(member);
         // 同一个匿名格的行坐标相同，必定属于同一个可见节点。

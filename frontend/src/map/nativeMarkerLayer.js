@@ -17,6 +17,7 @@ import { nativeImageSource } from '../skins/nativeSkin.js';
 import { nativeColor } from '../platform/nativeMap.js';
 import { getMotionPolicy } from '../motion/policy.js';
 import { t } from '../i18n/index.js';
+import { revealZoom } from './clusterZoom.js';
 
 // 原生视图只在进入屏幕时创建，所以节点范围可以给大一些：上下左右各多一屏，平移时很少需要等新节点
 export const NATIVE_BUFFER_RATIO = 1;
@@ -177,6 +178,7 @@ export class NativeMarkerLayer {
     /** 单一数据入口：当前模式下应参与聚合的完整列表（同 MarkerLayerController.update） */
     update({ places = [], queryMode = 'nearby', markerBand = null } = {}) {
         if (this.destroyed) return;
+        this.dataRevision = (this.dataRevision || 0) + 1;
         const normalized = normalizePlaces(places);
         const signature = dataSignature(normalized);
         if (!this.engine || this.engine.signature !== signature) {
@@ -215,6 +217,7 @@ export class NativeMarkerLayer {
             transitionVersion: ++this.version
         });
         const plan = planTransition(this.snapshot, next);
+        next.dataRevision = this.dataRevision;
         stabilizeMarkerAnchors(this.snapshot, next, plan, { zoom, refining, selectedKey: this.selectedKey });
         this.snapshot = next;
         const nodes = next.visibleNodes.map(nativeNode);
@@ -263,6 +266,28 @@ export class NativeMarkerLayer {
 
     getEngine() {
         return this.engine;
+    }
+
+    getZoomState() {
+        return { logicalZoom:this.logicalZoom,minZoom:this.zoomRange.min,maxZoom:this.zoomRange.max };
+    }
+
+    async getClusterInfo(nodeKey,dataRevision = this.snapshot?.dataRevision) {
+        if (dataRevision !== this.snapshot?.dataRevision) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
+        const node = this.snapshot?.nodeByKey.get(nodeKey);
+        if (!node) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
+        return {expansionZoom:this.snapshot.engine.expansionZoom(node),aggregateOnly:!!node.aggregateOnly};
+    }
+
+    async getClusterMembers(nodeKey,dataRevision = this.snapshot?.dataRevision) {
+        if (dataRevision !== this.snapshot?.dataRevision) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
+        const node = this.snapshot?.nodeByKey.get(nodeKey);
+        if (!node) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
+        return this.snapshot.engine.memberKeys(node).map(key=>this.snapshot.engine.placeByKey.get(key)).filter(Boolean);
+    }
+
+    async getPlaceRevealZoom(place,baseZoom,maxZoom) {
+        return revealZoom({engine:this.engine,place,baseZoom,maxZoom});
     }
 
     /** 搜索结果自动适配视野时使用（同 MarkerLayerController） */

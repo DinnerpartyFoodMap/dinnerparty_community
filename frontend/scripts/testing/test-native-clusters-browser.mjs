@@ -52,6 +52,7 @@ try {
     });
     const { targetId } = await command('Target.createTarget', { url: `http://127.0.0.1:${port}/__native-cluster-smoke` });
     const { sessionId } = await command('Target.attachToTarget', { targetId, flatten: true });
+    await command('Emulation.setEmulatedMedia', { features:[{name:'prefers-reduced-motion',value:'no-preference'}] }, sessionId);
     let result;
     const deadline = Date.now() + 20000;
     while (Date.now() < deadline) {

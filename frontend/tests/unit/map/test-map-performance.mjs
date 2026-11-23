@@ -60,5 +60,15 @@ assert.equal(memberVisits, 0, 'zero budget never materializes members');
 assert.equal(plan.reuse.size, 0);
 assert.equal(plan.enter.length, 1);
 assert.equal(plan.exit.length, 1);
+for (const budget of [1,100,1000,6000]) {
+    memberVisits = 0;
+    planTransition(prev,next,{memberBudget:budget});
+    assert.ok(memberVisits<=budget,'all cross-generation phases share the member budget');
+}
 assert.deepEqual(verifySnapshotMembers(next), []);
+const collisionA = createEngine([{id:1,longitude:120,latitude:30},{id:2,longitude:120,latitude:30}]);
+const collisionB = createEngine([{id:3,longitude:120,latitude:30},{id:4,longitude:120,latitude:30}]);
+const ca = buildSnapshot(collisionA,input), cb = buildSnapshot(collisionB,input);
+cb.visibleNodes[0].memberSignature = ca.visibleNodes[0].memberSignature;
+assert.equal(planTransition(ca,cb).reuse.size,0,'equal hashes never replace exact membership verification');
 console.log('Map performance bounds passed');

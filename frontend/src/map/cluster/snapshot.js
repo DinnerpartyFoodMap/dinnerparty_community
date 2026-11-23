@@ -112,6 +112,7 @@ export function shouldRefineMarkerAnchors(snapshot, zoom, startZoom) {
 
 function markerPrecision(node, snapshot) {
     if (node.kind === 'place') return node.place?.aggregateCell?.[0] ?? Infinity;
+    if (node.markerPrecision !== undefined) return node.markerPrecision;
     if (snapshot.markerBand?.kind === 'aggregate') return snapshot.markerBand.cell;
     let precision = Infinity;
     if (snapshot.markerBand?.kind === 'leaf') {

@@ -12,8 +12,9 @@ import { NativeMarkerLayer } from "./nativeMarkerLayer";
 import { canUseNativeMap } from "../platform/nativeMap";
 import { MarkerTileStore, markerTileSource, nextBandZoom, PREFETCH } from "./markerTiles";
 import { placeKey, isMappableCoordinate } from "./cluster/engine";
+import { filterInSlices } from "./cluster/cooperative.js";
 import { computeLogicalZoom } from "./cluster/snapshot";
-import { clusterZoomOutcome, nextClusterZoom, revealZoom } from "./clusterZoom";
+import { clusterZoomOutcome, nextClusterZoom } from "./clusterZoom";
 import { readMapViewport, getMapZoomRange, getMapSafeInsets, centerForScreenTarget } from "./viewport";
 import MapUI from "./MapUI";
 import { createLocationReporter } from "./locationReport";
@@ -124,6 +125,7 @@ export default function MapView({
     const markerLayerRef = useRef(null);
     // 点聚合后正在进行的放大（见 handleClusterClick）
     const clusterZoomRef = useRef(null);
+    const mapActionRef = useRef(0);
     // 当前标记模式（沿途 / 搜索 / 住民 / 附近），预取只在附近模式
     const markerQueryModeRef = useRef('nearby');
     const overseasLayerRef = useRef(null);
@@ -1263,14 +1265,18 @@ export default function MapView({
     const markerBand = markerQueryMode === 'nearby' ? nearbyMarkers.band : null;
     useEffect(() => {
         if (!mapReady || !markerLayerRef.current) return;
+        const abort = new AbortController();
         // 筛选只作用于站内地点；当前选中的地点即使不符合也保留，卡片不会失去锚点
         const selectedKey = selectedPlaceRef.current ? placeKey(selectedPlaceRef.current) : null;
-        const filtered = (markerSource || []).filter((place) => (place.isMarked !== false || place.showOnMap === true)
-            && (matchesPlaceFilter(place, placeFilter) || (selectedKey && placeKey(place) === selectedKey)));
-        const visibleMapPlaces = venuePlace && !filtered.some((place) => placeKey(place) === placeKey(venuePlace))
-            ? [...filtered, venuePlace]
-            : filtered;
-        markerLayerRef.current.update({ places: visibleMapPlaces, queryMode: markerQueryMode, markerBand });
+        filterInSlices(markerSource || [],(place) => (place.isMarked !== false || place.showOnMap === true)
+            && (matchesPlaceFilter(place, placeFilter) || (selectedKey && placeKey(place) === selectedKey)),{signal:abort.signal})
+            .then(filtered => {
+                if (abort.signal.aborted) return;
+                const visibleMapPlaces = venuePlace && !filtered.some((place) => placeKey(place) === placeKey(venuePlace))
+                    ? [...filtered,venuePlace] : filtered;
+                markerLayerRef.current?.update({ places:visibleMapPlaces,queryMode:markerQueryMode,markerBand });
+            }).catch(error=>{if(error.name !== 'AbortError') console.warn('Map filter failed',error);});
+        return () => abort.abort();
     }, [mapReady, markerSource, markerQueryMode, markerBand, placeFilter, venuePlace]);
 
     useEffect(() => {
@@ -1280,9 +1286,14 @@ export default function MapView({
     // 点击聚合：查询真正的展开层级，把聚合放到未被遮挡区域的中央；到最大缩放仍重合时打开成员列表。
     // 放大动画停在半路（浏览器补发的事件、底图收尾打断）时再放大一次，直到聚合拆开；
     // 相机已放不大（原生底图在部分地区到不了 20 级）而聚合还在时打开成员列表（clusterZoom.js 的 clusterZoomOutcome）。
-    const showClusterMembers = (request) => {
+    const showClusterMembers = async (request) => {
+        try {
+            const members = await request.layer.getClusterMembers(request.key,request.dataRevision);
+            if (mapActionRef.current !== request.action || mapRef.current !== request.map
+                || request.layer.snapshot?.dataRevision !== request.dataRevision) return;
         // 聚合瓦片的匿名点没有店名，不进成员列表
-        setClusterMembers({ key: request.key, coordinate: request.coordinate, places: request.members.filter((place) => !place.aggregate) });
+            setClusterMembers({ key:request.key,coordinate:request.coordinate,places:members.filter(place=>!place.aggregate) });
+        } catch (error) { if (error.code !== 'STALE_DATA') console.warn('Cluster members unavailable',error); }
     };
     // 点聚合瓦片的匿名点或它们组成的聚合：放大到下一级（要到街区级时先预取那里的明细瓦片）；
     // 已经在街区级还是匿名点，说明那块明细拿不到（额度用完或网络失败），只提示
@@ -1313,7 +1324,8 @@ export default function MapView({
             console.warn('放大聚合失败', e);
         }
     };
-    const cancelClusterZoom = () => {
+    const cancelClusterZoom = (invalidate = true) => {
+        if (invalidate !== false) mapActionRef.current += 1;
         const request = clusterZoomRef.current;
         if (!request) return;
         window.clearTimeout(request.timer);
@@ -1344,9 +1356,9 @@ export default function MapView({
         if (!map || clusterZoomRef.current !== request) return;
         const zoom = Number(map.getZoom());
         const layer = markerLayerRef.current;
-        const engine = layer?.getEngine?.();
-        const logicalZoom = engine
-            ? computeLogicalZoom(zoom, layer.logicalZoom, { minZoom: engine.minZoom, maxZoom: engine.maxZoom })
+        const state = layer?.getZoomState?.();
+        const logicalZoom = state
+            ? computeLogicalZoom(zoom, state.logicalZoom, { minZoom: state.minZoom, maxZoom: state.maxZoom })
             : NaN;
         const outcome = clusterZoomOutcome({
             zoom, logicalZoom, expansion: request.expansion, targetZoom: request.targetZoom,
@@ -1365,23 +1377,29 @@ export default function MapView({
             issueClusterZoom(request);
             return;
         }
-        cancelClusterZoom();
+        cancelClusterZoom(false);
         if (outcome === 'members') showClusterMembers(request);
     };
-    const handleClusterClick = (node, engine) => {
+    const handleClusterClick = async (node) => {
         const map = mapRef.current;
-        if (!map || !node || !engine) return;
+        const layer = markerLayerRef.current;
+        if (!map || !node || !layer) return;
         cancelClusterZoom();
+        const action = mapActionRef.current;
+        const dataRevision = node.dataRevision ?? layer.snapshot?.dataRevision;
+        let info;
+        try { info = await layer.getClusterInfo(node.key,dataRevision); }
+        catch (error) { if(error.code !== 'STALE_DATA') console.warn('Cluster query failed',error); return; }
+        if (mapActionRef.current !== action || mapRef.current !== map || layer.snapshot?.dataRevision !== dataRevision) return;
         const maxZoom = getMapZoomRange(map).max;
-        const expansion = engine.expansionZoom(node);
+        const expansion = info.expansionZoom;
         const currentZoom = Number(map.getZoom());
-        const members = engine.memberKeys(node).map((key) => engine.placeByKey.get(key)).filter(Boolean);
         // 全是匿名点（聚合瓦片）：它们坐标相同拆不开，直接放大到下一级换数据
-        if (members.length && members.every((place) => place.aggregate)) {
+        if (info.aggregateOnly) {
             zoomIntoAggregate(node.coordinate);
             return;
         }
-        const request = { key: node.key, coordinate: node.coordinate, members, expansion };
+        const request = {key:node.key,coordinate:node.coordinate,expansion,layer,dataRevision,action,map};
         if (expansion > maxZoom || currentZoom >= maxZoom - 0.05) {
             showClusterMembers(request);
             return;
@@ -1405,7 +1423,7 @@ export default function MapView({
         if (!mapReady || !map) return undefined;
         const onMoveStart = () => {
             const request = clusterZoomRef.current;
-            if (!request) return;
+            if (!request) { mapActionRef.current += 1; return; }
             if (request.phase === 'waiting') {
                 startMoving(request);
             } else if (request.phase === 'settling') {
@@ -1530,24 +1548,27 @@ export default function MapView({
     };
 
     // 打开某个地点时的缩放：至少 baseZoom，地点在那一级仍被聚合时放大到它单独显示的层级（clusterZoom.js 的 revealZoom）
-    const placeRevealZoom = (place, baseZoom) => {
+    const placeRevealZoom = async (place, baseZoom) => {
         const map = mapRef.current;
         try {
-            return revealZoom({ engine: markerLayerRef.current?.getEngine?.(), place, baseZoom, maxZoom: getMapZoomRange(map).max });
+            return await markerLayerRef.current?.getPlaceRevealZoom(place,baseZoom,getMapZoomRange(map).max) ?? baseZoom;
         } catch (error) {
             return baseZoom;
         }
     };
 
-    const handleSelectAlongRoutePlace = (place) => {
+    const handleSelectAlongRoutePlace = async (place) => {
         if (!place || !mapRef.current) return;
         const lng = Number(place.longitude);
         const lat = Number(place.latitude);
         if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        cancelClusterZoom();
+        const action = mapActionRef.current, map = mapRef.current;
         try {
             // 展会等远距离目标先完成定位再开卡片，避免卡片按旧视口避让并打断地图移动。
-            const zoom = placeRevealZoom(place, Math.max(16, Math.round(Number(mapRef.current.getZoom()) || 16)));
-            mapRef.current.setZoomAndCenter(zoom, [lng, lat], true);
+            const zoom = await placeRevealZoom(place, Math.max(16, Math.round(Number(map.getZoom()) || 16)));
+            if (action !== mapActionRef.current || mapRef.current !== map) return;
+            map.setZoomAndCenter(zoom, [lng, lat], true);
         } catch (error) { /* best effort */ }
         showPopup(place);
     };
@@ -1962,14 +1983,19 @@ export default function MapView({
 
     // 列表、收藏与日记中的地点：读取后居中并打开地点卡片
     const focusPlaceById = async (placeId) => {
+        cancelClusterZoom();
+        const action = mapActionRef.current, map = mapRef.current;
         try {
             const res = await Api.fetchPlace(backendUrl, placeId, { token });
             if (!res.ok) { showTip(t('map:main.markerMissing')); return false; }
             const place = await res.json();
+            if (action !== mapActionRef.current || mapRef.current !== map) return false;
             if (mapRef.current && place.longitude != null && place.latitude != null) {
                 // 卡片下一帧会测量锚点并自动避让：先完成定位，避免按旧视口平移并打断定位动画。
                 // 至少 17 级；附近店多、17 级时仍被收进聚合的，放大到它单独显示
-                mapRef.current.setZoomAndCenter(placeRevealZoom(place, 17), [place.longitude, place.latitude], true);
+                const zoom = await placeRevealZoom(place,17);
+                if (action !== mapActionRef.current || mapRef.current !== map) return false;
+                map.setZoomAndCenter(zoom, [place.longitude, place.latitude], true);
             }
             showPopup(place);
             return true;

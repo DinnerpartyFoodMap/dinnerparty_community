@@ -117,11 +117,11 @@ export class ClusterEngine {
      * @param {Array} normalized normalizePlaces 的结果
      * @param {{ radiusPx?: number, extent?: number, minZoom?: number, maxZoom?: number, minPoints?: number, generation?: number }} [options]
      */
-    constructor(normalized, options = {}) {
+    constructor(normalized, options = {}, signature = dataSignature(normalized)) {
         const opts = { ...CLUSTER_DEFAULTS, ...options };
         this.options = opts;
         this.generation = options.generation ?? ++generationSeq;
-        this.signature = dataSignature(normalized);
+        this.signature = signature;
         this.size = normalized.length;
         this.maxZoom = opts.maxZoom;
         this.minZoom = opts.minZoom;
@@ -134,15 +134,18 @@ export class ClusterEngine {
             minZoom: opts.minZoom,
             maxZoom: opts.maxZoom,
             minPoints: opts.minPoints,
-            map: (props) => ({ h1: props.h1, h2: props.h2 }),
+            map: (props) => ({ h1: props.h1, h2: props.h2, anonymous: props.anonymous, precision: props.precision }),
             reduce: (acc, props) => {
                 acc.h1 = (acc.h1 ^ props.h1) >>> 0;
                 acc.h2 = (acc.h2 + props.h2) >>> 0;
+                acc.anonymous += props.anonymous;
+                acc.precision = Math.min(acc.precision, props.precision);
             }
         });
         this.index.load(normalized.map((item) => ({
             type: 'Feature',
-            properties: { key: item.key, h1: hashString(item.key), h2: hashString(item.key, HASH_SEED_2) },
+            properties: { key: item.key, h1: hashString(item.key), h2: hashString(item.key, HASH_SEED_2),
+                anonymous: item.place.aggregate ? 1 : 0, precision: item.place.aggregateCell?.[0] ?? Infinity },
             geometry: { type: 'Point', coordinates: [item.lng, item.lat] }
         })));
     }
@@ -170,6 +173,8 @@ export class ClusterEngine {
                 clusterId: props.cluster_id,
                 coordinate: [lng, lat],
                 count,
+                aggregateOnly: props.anonymous === count,
+                markerPrecision: props.precision,
                 memberSignature: `${count}:${(props.h1 >>> 0).toString(36)}:${(props.h2 >>> 0).toString(36)}`
             };
         }

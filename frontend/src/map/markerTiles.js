@@ -16,6 +16,7 @@
 import { placeKey } from './cluster/engine.js';
 import { computeLogicalZoom, expandBounds, normalizeViewBounds } from './cluster/snapshot.js';
 import { readCache, writeCache, deleteCache } from '../platform/cacheStore.js';
+import { collectInSlices } from './cluster/cooperative.js';
 
 export const GLYPH_KINDS = Object.freeze(['place', 'avoid', 'unexplored']);
 /** 换到明细级时等待补位瓦片的预算 */
@@ -121,22 +122,21 @@ export function nextBandZoom(manifest, zoom) {
 // ---- 展开瓦片 ----
 
 /** 聚合瓦片 → 匿名点（每家店一个，同一格坐标相同）。key 为 agg:<格子级>/<x>/<y>#<序号> */
-export function expandAggregateTile(body, dict, tileKey) {
-    if (!body || !Array.isArray(body.cells) || !dict) return [];
+function* aggregateRows(body, dict, tileKey) {
+    if (!body || !Array.isArray(body.cells) || !dict) return;
     const [tx, ty] = tileKey.split('/').map(Number);
     const shift = 2 ** (body.cell - body.z);
-    const out = [];
     for (const cell of body.cells) {
         if (!Array.isArray(cell) || !Array.isArray(cell[4])) continue;
         const cellX = tx * shift + cell[0];
         const cellY = ty * shift + cell[1];
         const longitude = lngOf(cellX + (cell[2] + 0.5) / 8, body.cell);
         const latitude = latOf(cellY + (cell[3] + 0.5) / 8, body.cell);
-        cell[4].forEach((row, index) => {
+        for (const [index, row] of cell[4].entries()) {
             const [tags, cost, region, glyph] = row;
             const names = Array.isArray(tags) ? tags.map((i) => dict.tags[i]).filter(Boolean) : [];
             const regionNames = region >= 0 && Array.isArray(dict.regions[region]) ? dict.regions[region] : null;
-            out.push({
+            yield {
                 aggregateKey: `agg:${body.cell}/${cellX}/${cellY}#${index}`,
                 aggregate: true,
                 aggregateCell: [body.cell, cellX, cellY],
@@ -149,21 +149,29 @@ export function expandAggregateTile(body, dict, tileKey) {
                 city: regionNames ? regionNames[1] : null,
                 district: regionNames ? regionNames[2] : null,
                 glyph: GLYPH_KINDS[glyph] || 'place'
-            });
-        });
+            };
+        }
     }
-    return out;
+}
+
+export function expandAggregateTile(body, dict, tileKey) {
+    return Array.from(aggregateRows(body, dict, tileKey));
 }
 
 /** 明细瓦片 → 地点（marker_only：打开卡片时再补全） */
 export function expandLeafTile(body) {
-    if (!body || !Array.isArray(body.fields) || !Array.isArray(body.rows)) return [];
+    return Array.from(leafRows(body));
+}
+
+function* leafRows(body) {
+    if (!body || !Array.isArray(body.fields) || !Array.isArray(body.rows)) return;
     const fields = body.fields.map(String);
-    return body.rows.filter(Array.isArray).map((row) => {
+    for (const row of body.rows) {
+        if (!Array.isArray(row)) continue;
         const place = { marker_only: true };
-        for (let i = 0; i < fields.length; i += 1) place[fields[i]] = row[i] === undefined ? null : row[i];
-        return place;
-    });
+        fields.forEach((field,index) => { place[field] = row[index] === undefined ? null : row[index]; });
+        yield place;
+    }
 }
 
 function connectionIsSlow() {
@@ -372,7 +380,8 @@ export class MarkerTileSource {
                 body = await res.json();
                 Promise.resolve().then(() => this.writeStored(storageKey, { hash, body })).catch(() => {});
             }
-            const places = leaf ? expandLeafTile(body) : expandAggregateTile(body, dict, key);
+            const places = await collectInSlices(leaf ? leafRows(body) : aggregateRows(body, dict, key));
+            if (this.hashOf(z, key) !== hash) return null;
             this.tiles.set(`${z}/${key}`, { hash, places });
             this._emit();
             return places;

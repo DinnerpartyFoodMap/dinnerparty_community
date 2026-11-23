@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { createComputeRuntime } from '../../../src/map/cluster/computeRuntime.js';
+
+const runtime = createComputeRuntime();
+let seq=0;
+const points={ keys:['place:1','place:2'],coordinates:new Float64Array([120,30,120.00001,30]),aggregateCells:[null,null],aggregates:[false,false] };
+const view={viewBounds:{minLng:119,maxLng:121,minLat:29,maxLat:31},zoom:12,queryMode:'nearby',markerBand:null};
+const request=(op,payload={},extra={})=>runtime.handle({op,requestId:++seq,dataRevision:1,viewRevision:seq,payload,...extra});
+const a=await request('compute',{...view,data:points});
+assert.equal(a.nodes.reduce((n,x)=>n+x.count,0),2);
+assert.equal(a.metrics.builds,1);
+assert.equal(a.plan.kind,'initial');
+const dropped=await request('compute',{...view,zoom:13});
+assert.equal(dropped.plan.kind,'initial','unacknowledged result cannot be a transition baseline');
+await request('commitAck',{snapshotId:a.snapshotId});
+// An ack that was superseded cannot advance the baseline.
+const b=await request('compute',{...view,zoom:14});
+assert.equal(b.plan.kind,'initial');
+await request('commitAck',{snapshotId:b.snapshotId});
+const c=await request('compute',{...view,zoom:16},{baseSnapshotId:b.snapshotId});
+assert.notEqual(c.plan.kind,'initial');
+assert.equal(c.metrics.builds,1,'camera changes reuse the index');
+const cluster=b.nodes.find(x=>x.kind==='cluster');
+const info=await request('clusterInfo',{nodeKey:cluster.key});
+assert.equal(info.aggregateOnly,false); assert.ok(info.expansionZoom>12);
+const members=await request('members',{nodeKey:cluster.key});
+assert.deepEqual(members.keys,['place:1','place:2']);
+const reveal=await request('reveal',{place:{id:1,longitude:120,latitude:30},baseZoom:16,maxZoom:20});
+assert.ok(reveal.zoom>=16);
+await assert.rejects(request('clusterInfo',{nodeKey:cluster.key},{dataRevision:999}),{code:'STALE_DATA'});
+await request('dispose');
+await assert.rejects(request('clusterInfo',{nodeKey:cluster.key}),{code:'STALE_DATA'});
+console.log('Worker computation protocol and acknowledged baselines passed');

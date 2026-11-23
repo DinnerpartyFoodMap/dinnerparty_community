@@ -7,9 +7,13 @@
 // - 每个转场有版本号，过期的完成回调不会回收新节点。
 // - 单点标记的名称总是显示（不做碰撞避让）；转场期间先隐藏，相机静止、转场结束后统一显示。
 
-import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
-import { buildSnapshot, resolveMarkerZoom, shouldRefineMarkerAnchors, stabilizeMarkerAnchors } from './cluster/snapshot.js';
-import { planTransition } from './cluster/transitions.js';
+import { placeKey, CLUSTER_DEFAULTS } from './cluster/engine.js';
+import { shouldRefineMarkerAnchors } from './cluster/snapshot.js';
+import { createComputeScheduler } from './cluster/computeScheduler.js';
+import { createWorkerClient } from './cluster/workerClient.js';
+import { forEachInSlices } from './cluster/cooperative.js';
+import { t } from '../i18n/index.js';
+import { createMarkerRenderQueue } from './markerRenderQueue.js';
 import {
     createMarkerParts, applyNodeAppearance, glyphSize
 } from './markerContent.js';
@@ -33,9 +37,7 @@ export const MARKER_TIMING = Object.freeze({
 });
 
 const LIMITS = Object.freeze({ travelers: 160, ghosts: 120, degradedGhosts: 30 });
-// AMap 每添加或移动一个 DOM 标记都有同步布局开销（中端设备约 1ms/个）：
-// 可见范围内的节点同步挂载，缓冲区内的节点按每帧预算分批挂载，避免一次提交形成长任务。
-const ATTACH_BUDGET_MS = 6;
+// Marker creation, placement and attachment share a cancellable frame budget.
 const Z_INDEX = Object.freeze({ ghost: 100, place: 110, cluster: 120, selected: 400 });
 const EASE_OUT = 'cubic-bezier(0.22, 0.8, 0.25, 1)';
 const EASE_IN_OUT = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -75,7 +77,15 @@ export class MarkerLayerController {
         this.AMap = window.AMap;
         this.options = options;
         this.zoomRange = getMapZoomRange(map);
-        this.engine = null;
+        this.dataRevision = 0;
+        this.viewRevision = 0;
+        this.placeByKey = new Map();
+        this.currentPlaces = [];
+        this.scheduler = createComputeScheduler({
+            execute: target => this._compute(target),
+            onResult: (result,target) => this._receive(result,target),
+            onError: error => this._computeError(error)
+        });
         this.queryMode = 'nearby';
         this.markerBand = null;
         this.snapshot = null;
@@ -89,9 +99,11 @@ export class MarkerLayerController {
         this.commitRaf = 0;
         this.labelRaf = 0;
         this.labelVisible = new Set();
-        this.pendingAttach = new Set();
-        this.attachHandle = 0;
-        this.metrics = { indexBuilds: [], commits: [], frames: [], domCount: 0 };
+        this.metrics = { indexBuilds: [], commits: [], frames: [], preparation: [], worker: [], renderSlices: [], domCount: 0 };
+        this.renderQueue = createMarkerRenderQueue({onSlice:metric=>this._pushMetric('renderSlices',metric)});
+        this.cleanupQueue = createMarkerRenderQueue({onSlice:metric=>this._pushMetric('renderSlices',metric)});
+        this.retiredMarkers = new Set();
+        this.placeVersions = new Map();
         // 双指缩放时一根手指可能落在标记上：松手时不能当作点按（否则会展开聚合或打开地点卡片，地图跳到别处）
         this.multiTouch = false;
         this.multiTouchEndedAt = -Infinity;
@@ -115,6 +127,8 @@ export class MarkerLayerController {
         this._onMoveStart = () => {
             if (!this.cameraMoving) this.cameraStartZoom = Number(this.map.getZoom());
             this.cameraMoving = true;
+            this.scheduler.invalidate();
+            this._cancelRender();
             this._finishAll();
         };
         this._onZoomChange = () => {
@@ -128,8 +142,8 @@ export class MarkerLayerController {
         };
         this._onResize = () => this._scheduleCommit('resize');
         this._onVisibility = () => {
-            if (document.visibilityState === 'hidden') this._finishAll();
-            else this._scheduleCommit('resume');
+            if (document.visibilityState === 'hidden') { this.scheduler.invalidate(); this._cancelRender(); this._finishAll(); this.renderQueue.pause(); }
+            else { this.renderQueue.resume(); this._scheduleCommit('resume'); }
         };
         for (const type of ['movestart', 'zoomstart', 'dragstart']) map.on(type, this._onMoveStart);
         for (const type of ['moveend', 'zoomend']) map.on(type, this._onMoveEnd);
@@ -147,24 +161,32 @@ export class MarkerLayerController {
      * 单一更新入口。places 为当前模式下应参与聚合的完整列表。
      * 只有 key、坐标或参与聚类的集合变化才重建索引；名称、分类等变化只刷新外观。
      */
-    update({ places = [], queryMode = 'nearby', markerBand = null } = {}) {
+    async update({ places = [], queryMode = 'nearby', markerBand = null } = {}) {
         if (this.destroyed) return;
-        const normalized = normalizePlaces(places);
-        const signature = dataSignature(normalized);
-        if (!this.engine || this.engine.signature !== signature) {
-            const started = performance.now();
-            this.engine = new ClusterEngine(normalized, {
-                maxZoom: Math.min(30, Math.ceil(this.zoomRange.max)),
-                minZoom: Math.max(0, Math.floor(this.zoomRange.min)),
-                radiusPx: this.options.clusterRadiusPx || CLUSTER_DEFAULTS.radiusPx
-            });
-            this._pushMetric('indexBuilds', { size: normalized.length, ms: performance.now() - started });
-        } else {
-            this.engine.updatePlaces(normalized);
-        }
+        this.scheduler.invalidate();
+        this._cancelRender();
+        this.prepareAbort?.abort();
+        const abort = this.prepareAbort = new AbortController();
+        const revision = ++this.dataRevision, started = performance.now();
+        this.currentPlaces = places;
         this.queryMode = queryMode;
         this.markerBand = markerBand;
-        this._commit('data');
+        const byKey = new Map(), keys = [], aggregateCells = [], aggregates = [];
+        const coordinates = new Float64Array(places.length * 2);
+        try {
+            await forEachInSlices(places,place=>{
+                const key = placeKey(place);
+                if (!key || byKey.has(key)) return;
+                const i = keys.length;
+                coordinates[i*2] = Number(place.longitude); coordinates[i*2+1] = Number(place.latitude);
+                byKey.set(key,place); keys.push(key);
+                aggregateCells.push(place.aggregateCell ?? null); aggregates.push(!!place.aggregate);
+            },{signal:abort.signal});
+        } catch (error) { if (error.name !== 'AbortError') this._computeError(error); return; }
+        if (this.destroyed || revision !== this.dataRevision) return;
+        this.prepared = {revision,byKey,data:{keys,coordinates,aggregateCells,aggregates}};
+        this._pushMetric('preparation',{size:keys.length,ms:performance.now()-started});
+        if (!this.cameraMoving) this._commit('data');
     }
 
     setSelectedKey(key) {
@@ -195,22 +217,32 @@ export class MarkerLayerController {
     }
 
     getEngine() {
-        return this.engine;
+        return null; // The web index belongs exclusively to the worker.
+    }
+
+    getZoomState() {
+        return { logicalZoom:this.logicalZoom,minZoom:this.zoomRange.min,maxZoom:this.zoomRange.max };
+    }
+
+    async getClusterInfo(nodeKey, dataRevision = this.snapshot?.dataRevision) {
+        return this.client.request('clusterInfo',{nodeKey},{dataRevision});
+    }
+
+    async getClusterMembers(nodeKey, dataRevision = this.snapshot?.dataRevision) {
+        const places = this.placeVersions.get(dataRevision) || this.placeByKey;
+        const {keys} = await this.client.request('members',{nodeKey},{dataRevision});
+        return keys.map(key=>places.get(key)).filter(Boolean);
+    }
+
+    async getPlaceRevealZoom(place,baseZoom,maxZoom) {
+        if (!this.client || !this.snapshot) return Math.min(baseZoom,maxZoom);
+        const {zoom} = await this.client.request('reveal',{place,baseZoom,maxZoom},{dataRevision:this.snapshot.dataRevision});
+        return zoom;
     }
 
     /** 搜索结果自动适配视野时使用。 */
     getDataBounds() {
-        if (!this.engine || !this.engine.size) return null;
-        let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
-        for (const place of this.engine.placeByKey.values()) {
-            const lng = Number(place.longitude);
-            const lat = Number(place.latitude);
-            if (lng < minLng) minLng = lng;
-            if (lng > maxLng) maxLng = lng;
-            if (lat < minLat) minLat = lat;
-            if (lat > maxLat) maxLat = lat;
-        }
-        return { minLng, minLat, maxLng, maxLat };
+        return this.dataBounds || null;
     }
 
     destroy() {
@@ -218,6 +250,12 @@ export class MarkerLayerController {
         this.nativeClusters?.destroy();
         this._finishAll();
         this.destroyed = true;
+        this.scheduler.destroy();
+        this.renderQueue.destroy();
+        this.cleanupQueue.destroy();
+        this.prepareAbort?.abort();
+        this.client?.destroy();
+        this.errorButton?.remove();
         if (this.commitRaf) cancelAnimationFrame(this.commitRaf);
         if (this.labelRaf) cancelAnimationFrame(this.labelRaf);
         const map = this.map;
@@ -234,11 +272,10 @@ export class MarkerLayerController {
             }
             this.touchTarget = null;
         }
-        this._cancelAttach();
-        const markers = Array.from(this.entries.values()).filter((entry) => entry.attached).map((entry) => entry.marker);
+        const markers = [...Array.from(this.entries.values()).filter((entry) => entry.attached).map((entry) => entry.marker),...this.retiredMarkers];
         this._removeMarkers(markers);
+        this.retiredMarkers.clear();
         this.entries.clear();
-        this.pendingAttach.clear();
         if (typeof window !== 'undefined' && window.__foodMapMarkers === this) delete window.__foodMapMarkers;
     }
 
@@ -253,30 +290,77 @@ export class MarkerLayerController {
     }
 
     _commit(reason) {
-        if (this.destroyed || !this.engine) return;
+        if (this.destroyed || !this.prepared || this.prepared.revision !== this.dataRevision) return;
         const viewBounds = readViewBounds(this.map);
         if (!viewBounds) return;
-        const started = performance.now();
         const zoom = Number(this.map.getZoom());
-        const refining = reason === 'refine';
-        if (refining && this.snapshot?.engine !== this.engine) return;
-        const logicalZoom = refining ? this.logicalZoom : resolveMarkerZoom(zoom, this.logicalZoom, {
-            minZoom: this.engine.minZoom,
-            maxZoom: this.engine.maxZoom
-        }, this.markerBand, this.options.getMarkerViewZoom);
-        if (logicalZoom === null) return;
-        this.logicalZoom = logicalZoom;
-        const next = buildSnapshot(this.engine, {
-            viewBounds,
-            logicalZoom,
-            queryMode: this.queryMode,
-            markerBand: this.markerBand,
-            transitionVersion: this.version + 1
+        this._cancelRender();
+        this.scheduler.submit({
+            kind:reason === 'data' ? 'data' : 'camera',reason,dataRevision:this.dataRevision,viewRevision:++this.viewRevision,
+            payload:{viewBounds,zoom,refining:reason === 'refine',
+                viewZoom:this.options.getMarkerViewZoom?.(zoom),queryMode:this.queryMode,markerBand:this.markerBand,
+                selectedKey:this.selectedKey,transitionVersion:this.version+1}
         });
-        const plan = planTransition(this.snapshot, next);
-        stabilizeMarkerAnchors(this.snapshot, next, plan, { zoom, refining, selectedKey: this.selectedKey });
-        this._apply(plan, next, reason);
-        this._pushMetric('commits', { reason, kind: plan.kind, nodes: next.visibleNodes.length, ms: performance.now() - started });
+    }
+
+    async _compute(target) {
+        this.client ||= createWorkerClient(this.options.workerOptions);
+        const payload = {...target.payload};
+        const prepared = this.prepared;
+        if (prepared.revision !== target.dataRevision) return {skipped:true};
+        const transfer = [];
+        if (this.sentRevision !== prepared.revision) {
+            payload.data = prepared.data;
+            payload.options = {minZoom:Math.max(0,Math.floor(this.zoomRange.min)),maxZoom:Math.min(30,Math.ceil(this.zoomRange.max)),
+                radiusPx:this.options.clusterRadiusPx || CLUSTER_DEFAULTS.radiusPx};
+            transfer.push(prepared.data.coordinates.buffer);
+            this.sentRevision = prepared.revision;
+        }
+        target.byKey = prepared.byKey;
+        return this.client.request('compute',payload,{
+            dataRevision:target.dataRevision,viewRevision:target.viewRevision,baseSnapshotId:this.snapshot?.snapshotId
+        },transfer);
+    }
+
+    async _receive(result,target) {
+        if (result.skipped || this.destroyed || target.dataRevision !== this.dataRevision) return;
+        const started = performance.now();
+        const visibleNodes = result.nodes.map(node=>({...node,dataRevision:result.dataRevision,
+            ...(node.kind === 'place' ? {place:target.byKey.get(node.key)} : {})}));
+        const next = {...result,visibleNodes,nodeByKey:new Map(visibleNodes.map(node=>[node.key,node]))};
+        this.placeByKey = target.byKey;
+        for (const revision of this.placeVersions.keys()) {
+            if (revision !== this.snapshot?.dataRevision && revision !== result.dataRevision) this.placeVersions.delete(revision);
+        }
+        this.placeVersions.set(result.dataRevision,target.byKey);
+        this.logicalZoom = result.logicalZoom; this.dataBounds = result.dataBounds;
+        this.errorButton?.remove(); this.errorButton = null;
+        this._pushMetric('worker',{...result.metrics,maxSendMs:this.client.metrics.maxSendMs});
+        if (result.metrics.indexMs > 0) this._pushMetric('indexBuilds',{size:result.metrics.inputCount,ms:result.metrics.indexMs});
+        const applied = await this._apply(result.plan,next,target.reason);
+        if (applied === false || this.destroyed) return;
+        this.client.acknowledge(result.snapshotId);
+        for (const revision of this.placeVersions.keys()) if (revision !== result.dataRevision) this.placeVersions.delete(revision);
+        this._pushMetric('commits',{reason:target.reason,kind:result.plan.kind,nodes:visibleNodes.length,ms:performance.now()-started});
+    }
+
+    _computeError(error) {
+        if (this.destroyed) return;
+        console.warn('Map marker computation failed',error);
+        this.client?.destroy(); this.client = null; this.sentRevision = null;
+        if (!this.retriedWorker) { this.retriedWorker = true; this.retry(); return; }
+        if (!this.errorButton) {
+            const button = this.errorButton = document.createElement('button');
+            button.className = 'fm-marker-retry';
+            button.textContent = t('map:main.reload');
+            button.onclick = () => this.retry();
+            this.map.getContainer()?.appendChild(button);
+        }
+    }
+
+    retry() {
+        this.retriedWorker = true;
+        this.update({places:this.currentPlaces,queryMode:this.queryMode,markerBand:this.markerBand});
     }
 
     _pushMetric(kind, value) {
@@ -345,7 +429,8 @@ export class MarkerLayerController {
         const base = entry.node.kind === 'cluster'
             ? Z_INDEX.cluster + Math.min(40, Math.round(Math.log2(entry.node.count) * 4))
             : Z_INDEX.place;
-        setMarkerZ(entry.marker, selected ? Z_INDEX.selected : base);
+        const z = selected ? Z_INDEX.selected : base;
+        if (entry.z !== z) { setMarkerZ(entry.marker,z); entry.z = z; }
         this.nativeClusters?.invalidate();
     }
 
@@ -356,7 +441,7 @@ export class MarkerLayerController {
         if (source === 'sdk' && now < (entry.touchSdkBlockedUntil || 0)) return;
         const node = entry.node;
         if (node.kind === 'place') this.options.onPlaceClick?.(node.place, node);
-        else this.options.onClusterClick?.(node, this.snapshot?.engine);
+        else this.options.onClusterClick?.(node);
     }
 
     _removeMarkers(markers) {
@@ -401,9 +486,9 @@ export class MarkerLayerController {
      * 接管仍在播放转场的节点：记下当前可视状态并取消旧动画，新动画从这里出发，
      * 而不是跳回旧起点重新播放或直接跳到终点。没有进行中的动画时返回 null。
      */
-    _takeOver(entry) {
+    _takeOver(entry, measured) {
         if (!entry.anims || !entry.anims.size) return null;
-        const visual = { travel: this._readVisual(entry.parts.travel), glyph: this._readVisual(entry.parts.glyph) };
+        const visual = measured || { travel: this._readVisual(entry.parts.travel), glyph: this._readVisual(entry.parts.glyph) };
         for (const anim of Array.from(entry.anims)) {
             try { anim.cancel(); } catch (e) { /* ignore */ }
         }
@@ -411,7 +496,16 @@ export class MarkerLayerController {
         return visual;
     }
 
+    _cancelRender() {
+        if (this.renderQueue?.cancel()) this._finishAll();
+    }
+
     _apply(plan, next, reason) {
+        this._cancelRender();
+        return this.renderQueue.replace({version:this.version+1,operations:this._render(plan,next,reason)});
+    }
+
+    *_render(plan, next, reason) {
         const policy = getMotionPolicy();
         // 新手势开始时旧转场已收敛。相机结束事件可能晚于数据提交，保留刚开始的转场。
         if (reason === 'resize' || reason === 'resume' || !policy.clusterMotion || !policy.pageVisible) {
@@ -432,11 +526,13 @@ export class MarkerLayerController {
         const onscreen = (p) => !!p && p.x > -ONSCREEN_MARGIN && p.y > -ONSCREEN_MARGIN
             && p.x < size.width + ONSCREEN_MARGIN && p.y < size.height + ONSCREEN_MARGIN;
 
-        const oldEntries = this.entries;
+        const oldEntries = new Map(this.entries);
         const nextEntries = new Map();
         const prevEntryByKey = new Map(oldEntries);
         const animations = [];
-        const created = [];
+        const ghosts = [];
+        const txn = {version,animations,ghosts,done:false,probe:startFrameProbe()};
+        this.txns.add(txn);
         let travelers = 0;
         const run = (entry, el, keyframes, timing) => {
             if (!el || typeof el.animate !== 'function') return null;
@@ -468,18 +564,30 @@ export class MarkerLayerController {
         };
 
         // ---- 目标节点 ----
-        for (const node of next.visibleNodes) {
+        const visuals = new Map();
+        for (const entry of oldEntries.values()) {
+            yield {sdk:false};
+            if (entry.anims?.size) visuals.set(entry,{travel:this._readVisual(entry.parts.travel),glyph:this._readVisual(entry.parts.glyph)});
+        }
+        const priority = node => node.key === this.selectedKey ? 0 : onscreen(project(node.coordinate)) ? 1 : 2;
+        const buckets = [[],[],[]];
+        for (const node of next.visibleNodes) { yield {sdk:false}; buckets[priority(node)].push(node); }
+        for (const node of buckets.flat()) {
+            yield;
             const fromKey = plan.reuse.get(node.key);
-            let entry = fromKey ? oldEntries.get(fromKey) : null;
+            let entry = (fromKey ? oldEntries.get(fromKey) : null) || oldEntries.get(node.key);
             if (entry) {
-                oldEntries.delete(fromKey);
+                oldEntries.delete(entry.key);
+                this.entries.delete(entry.key);
                 const previousNode = entry.node;
                 entry.key = node.key;
                 entry.node = node;
+                entry.parts.hit.style.pointerEvents = '';
+                this.entries.set(node.key,entry);
                 const moved = !sameCoordinate(previousNode.coordinate, node.coordinate);
                 const recounted = previousNode.count !== node.count;
                 if (moved || recounted) {
-                    const visual = this._takeOver(entry);
+                    const visual = this._takeOver(entry,visuals.get(entry));
                     const animateMove = animate && !plan.reanchor.has(node.key);
                     let offset = { x: 0, y: 0 };
                     if (moved) {
@@ -504,9 +612,8 @@ export class MarkerLayerController {
                 if (!entry.attached) {
                     const pos = project(node.coordinate);
                     if (pos && onscreen(pos)) {
-                        this.pendingAttach.delete(entry);
                         entry.attached = true;
-                        created.push(entry.marker);
+                        this._addMarkers([entry.marker]);
                     }
                 }
                 continue;
@@ -514,16 +621,14 @@ export class MarkerLayerController {
 
             entry = this._createEntry(node);
             nextEntries.set(node.key, entry);
+            this.entries.set(node.key,entry);
             const own = project(node.coordinate);
-            if (own && onscreen(own)) {
-                entry.attached = true;
-                created.push(entry.marker);
-            } else {
-                // 缓冲区内的节点稍后分批挂载
-                entry.attached = false;
-                this.pendingAttach.add(entry);
-                continue;
-            }
+            entry.attached = true;
+            this._addMarkers([entry.marker]);
+            const sourceKey = plan.splitFrom.get(node.key);
+            const source = sourceKey ? prevEntryByKey.get(sourceKey) : null;
+            if (source) source.parts.hit.style.pointerEvents = 'none';
+            if (plan.mergeTargets.has(node.key)) entry.parts.hit.style.pointerEvents = 'none';
             if (!animate) continue;
             const parentKey = plan.splitFrom.get(node.key);
             const parentEntry = parentKey ? prevEntryByKey.get(parentKey) : null;
@@ -531,7 +636,7 @@ export class MarkerLayerController {
             let parentPoint = parentNode ? project(parentNode.coordinate) : null;
             if (parentPoint && parentEntry.anims && parentEntry.anims.size) {
                 // 父节点仍在移动：从它当前的可视位置出发
-                const v = this._readVisual(parentEntry.parts.travel);
+                const v = visuals.get(parentEntry)?.travel || {tx:0,ty:0};
                 parentPoint = { x: parentPoint.x + v.tx, y: parentPoint.y + v.ty };
             }
 
@@ -570,19 +675,21 @@ export class MarkerLayerController {
         }
 
         // ---- 退出节点：残影只做视觉过渡，不可点击 ----
-        const ghosts = [];
-        const toRemove = [];
+
         const ghostLimit = degraded ? LIMITS.degradedGhosts : LIMITS.ghosts;
         const existingGhosts = this._ghostCount();
         for (const [key, entry] of oldEntries) {
+            yield;
+            this.entries.delete(key);
             const own = animate ? project(entry.node.coordinate) : null;
-            const visual = this._takeOver(entry);
+            const visual = this._takeOver(entry,visuals.get(entry));
             if (!entry.attached) {
-                this.pendingAttach.delete(entry);
                 continue;
             }
             if (!animate || !own || !onscreen(own) || ghosts.length + existingGhosts >= ghostLimit) {
-                toRemove.push(entry.marker);
+                entry.ghost = true;
+                entry.parts.root.dataset.ghost = '';
+                this._removeMarkers([entry.marker]);
                 continue;
             }
             const startTravel = visual ? visual.travel : { tx: 0, ty: 0, opacity: 1 };
@@ -624,9 +731,11 @@ export class MarkerLayerController {
             }
         }
 
-        this._removeMarkers(toRemove);
-        this._addMarkers(created);
-        this._scheduleAttach();
+
+        for (const entry of nextEntries.values()) {
+            yield {sdk:false};
+            entry.parts.hit.style.pointerEvents = '';
+        }
         this.entries = nextEntries;
         this.snapshot = next;
         this.metrics.domCount = nextEntries.size + ghosts.length + existingGhosts;
@@ -638,8 +747,7 @@ export class MarkerLayerController {
             }
         }
 
-        const txn = { version, animations, ghosts, done: false, probe: animations.length ? startFrameProbe() : null };
-        this.txns.add(txn);
+
         this.nativeClusters?.invalidate();
         if (!animations.length) {
             this._completeTransaction(txn);
@@ -648,67 +756,24 @@ export class MarkerLayerController {
         Promise.all(animations.map((anim) => anim.finished.catch(() => null))).then(() => this._completeTransaction(txn));
     }
 
-    _scheduleAttach() {
-        if (this.destroyed || this.attachHandle || !this.pendingAttach.size) return;
-        const run = (deadline) => {
-            this.attachHandle = 0;
-            this._flushAttach(deadline);
-        };
-        if (typeof window.requestIdleCallback === 'function') {
-            this.attachHandle = { idle: window.requestIdleCallback(run, { timeout: 250 }) };
-        } else {
-            this.attachHandle = { timer: setTimeout(() => run(null), 32) };
-        }
-    }
-
-    _cancelAttach() {
-        const handle = this.attachHandle;
-        this.attachHandle = 0;
-        if (!handle) return;
-        if (handle.idle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(handle.idle);
-        if (handle.timer) clearTimeout(handle.timer);
-    }
-
-    _flushAttach(deadline) {
-        if (this.destroyed) return;
-        // 转场进行中或相机移动时让出主线程
-        if (this.txns.size || this.cameraMoving) {
-            this._scheduleAttach();
-            return;
-        }
-        const started = performance.now();
-        const budget = deadline && typeof deadline.timeRemaining === 'function'
-            ? Math.min(ATTACH_BUDGET_MS, Math.max(1, deadline.timeRemaining()))
-            : ATTACH_BUDGET_MS;
-        let attachedAny = false;
-        let batch = [];
-        const flush = () => {
-            if (!batch.length) return;
-            this._addMarkers(batch.map((entry) => entry.marker));
-            batch.forEach((entry) => { entry.attached = true; });
-            batch = [];
-            attachedAny = true;
-        };
-        for (const entry of Array.from(this.pendingAttach)) {
-            this.pendingAttach.delete(entry);
-            if (this.entries.get(entry.key) !== entry || entry.attached) continue;
-            batch.push(entry);
-            // 每次 add 有固定开销，小批量提交；超出本帧预算后让出
-            if (batch.length >= 4) {
-                flush();
-                if (performance.now() - started > budget) break;
-            }
-        }
-        flush();
-        if (this.pendingAttach.size) this._scheduleAttach();
-        else if (attachedAny) this._scheduleLabels();
-        if (attachedAny) this.nativeClusters?.invalidate();
-    }
-
     _ghostCount() {
         let count = 0;
         for (const txn of this.txns) if (!txn.done) count += txn.ghosts.length;
         return count;
+    }
+
+    _retireMarkers(markers) {
+        for (const marker of markers) this.retiredMarkers.add(marker);
+        if (this.cleanupQueue.busy || this.destroyed) return;
+        const controller = this;
+        this.cleanupQueue.replace({version:this.version,operations:(function*() {
+            while (controller.retiredMarkers.size) {
+                const marker = controller.retiredMarkers.values().next().value;
+                controller.retiredMarkers.delete(marker);
+                controller._removeMarkers([marker]);
+                yield;
+            }
+        })()}).catch(error=>console.warn('Marker cleanup failed',error));
     }
 
     _completeTransaction(txn) {
@@ -716,7 +781,7 @@ export class MarkerLayerController {
         txn.done = true;
         this.txns.delete(txn);
         if (txn.probe) this._pushMetric('frames', txn.probe());
-        if (txn.ghosts.length) this._removeMarkers(txn.ghosts.map((entry) => entry.marker));
+        if (txn.ghosts.length) this._retireMarkers(txn.ghosts.map((entry) => entry.marker));
         this.nativeClusters?.invalidate();
         if (!this.txns.size) this._scheduleLabels();
     }
@@ -730,7 +795,10 @@ export class MarkerLayerController {
             this._completeTransaction(txn);
         }
         for (const entry of this.entries.values()) {
-            if (entry.anims) entry.anims.clear();
+            if (entry.anims) {
+                for (const anim of entry.anims) { try { anim.cancel(); } catch (e) { /* already removed */ } }
+                entry.anims.clear();
+            }
         }
     }
 
