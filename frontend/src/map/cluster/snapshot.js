@@ -165,13 +165,24 @@ export function stabilizeMarkerAnchors(prev, next, plan, { zoom, refining = fals
 }
 
 /** 构建 成员 key → 节点 key 的映射。只在需要跨代比对时按需构建，并受成员总数预算限制。 */
+export function reserveMembers(budget, count) {
+    if (count > budget.remaining) return false;
+    budget.remaining -= count;
+    return true;
+}
+
+export function budgetedMemberKeys(engine, node, budget) {
+    // Charge both materialization (including cached arrays) and the caller's scan.
+    if (!reserveMembers(budget, node.count * 2)) return null;
+    return engine ? engine.memberKeys(node) : [node.key];
+}
+
 export function buildMemberToNode(snapshot, budget = 6000) {
+    const counter = typeof budget === 'object' ? budget : { remaining: budget };
     const map = new Map();
-    let total = 0;
     for (const node of snapshot.visibleNodes) {
-        total += node.count;
-        if (total > budget) return null;
-        const members = snapshot.engine ? snapshot.engine.memberKeys(node) : [node.key];
+        const members = budgetedMemberKeys(snapshot.engine, node, counter);
+        if (!members) return null;
         for (const member of members) map.set(member, node.key);
     }
     return map;

@@ -3,7 +3,7 @@
 // 同一索引代内使用真实树关系，跨代优先使用 key 和成员交集。
 // 附近地图换瓦片档时，剩余节点可以按匿名粗格的覆盖范围过渡。
 
-import { buildMemberToNode } from './snapshot.js';
+import { buildMemberToNode, budgetedMemberKeys, reserveMembers } from './snapshot.js';
 import { tileOf, worldX, worldY } from '../markerTiles.js';
 
 const DEFAULT_OPTIONS = { descendantBudget: 4000, memberBudget: 6000 };
@@ -185,12 +185,11 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
     const nextToPrev = new Map();
     const prevToNext = new Map();
     const stableCandidates = new Set();
-    let total = 0;
     for (const node of fineNodes) {
-        total += node.count;
-        if (total > memberBudget) return;
+        const members = budgetedMemberKeys(fine.engine, node, memberBudget);
+        if (!members) break;
         const votes = new Map();
-        for (const member of fine.engine.memberKeys(node)) {
+        for (const member of members) {
             const parent = parentByMember.get(member)
                 ?? parentByCell.get(coarseCellKey(fine.engine.placeByKey.get(member), zoom));
             if (parent) votes.set(parent, (votes.get(parent) || 0) + 1);
@@ -222,6 +221,7 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
 }
 
 function planData(plan, prev, next, options) {
+    const budget = { remaining: Math.max(0, options.memberBudget) };
     const usedPrev = new Set(plan.reuse.values());
     // 1. 成员签名相同且核对成员一致：直接沿用图形
     const prevBySignature = new Map();
@@ -234,9 +234,15 @@ function planData(plan, prev, next, options) {
         if (node.kind !== 'cluster' || plan.reuse.has(node.key)) continue;
         const candidates = prevBySignature.get(node.memberSignature);
         if (!candidates) continue;
-        const nextMembers = next.engine.memberKeys(node);
-        const match = candidates.find((candidate) => !usedPrev.has(candidate.key)
-            && sameMembers(prev.engine.memberKeys(candidate), nextMembers));
+        const nextMembers = budgetedMemberKeys(next.engine, node, budget);
+        if (!nextMembers) continue;
+        let match;
+        for (const candidate of candidates) {
+            if (usedPrev.has(candidate.key)) continue;
+            const previousMembers = budgetedMemberKeys(prev.engine, candidate, budget);
+            if (!previousMembers || !reserveMembers(budget, nextMembers.length)) break;
+            if (sameMembers(previousMembers, nextMembers)) { match = candidate; break; }
+        }
         if (match) {
             plan.reuse.set(node.key, match.key);
             usedPrev.add(match.key);
@@ -249,24 +255,24 @@ function planData(plan, prev, next, options) {
     // 换档时把共同成员和匿名格一起用于查找来源，避免共同成员先占用整个粗节点。
     const direction = markerBandDirection(prev, next);
     if (direction) {
-        planMarkerBand(plan, prev, next, remainingPrev, remainingNext, direction, options.memberBudget);
+        planMarkerBand(plan, prev, next, remainingPrev, remainingNext, direction, budget);
         return;
     }
     // 2. 普通数据变化按成员交集分类。明细档补块时，新增的真实地点也可匹配被替换的匿名格。
-    const prevMemberMap = buildMemberToNode({ ...prev, visibleNodes: remainingPrev }, options.memberBudget);
+    const prevMemberMap = buildMemberToNode({ ...prev, visibleNodes: remainingPrev }, budget);
     if (!prevMemberMap) return;
 
+    if (!reserveMembers(budget, prevMemberMap.size)) return;
     const fallback = missingFallbackCells(prev, next, prevMemberMap);
     const nextToPrev = new Map();
     const prevToNext = new Map();
     const stableCandidates = new Set();
-    let total = 0;
     for (const node of remainingNext) {
-        total += node.count;
-        if (total > options.memberBudget) return;
+        const members = budgetedMemberKeys(next.engine, node, budget);
+        if (!members) break;
         const hits = new Map();
         let replacesFallback = false;
-        for (const member of next.engine.memberKeys(node)) {
+        for (const member of members) {
             let prevKey = prevMemberMap.get(member);
             if (!prevKey && fallback && !prev.engine.placeByKey.has(member)) {
                 const place = next.engine.placeByKey.get(member);

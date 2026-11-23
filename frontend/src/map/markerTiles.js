@@ -54,12 +54,47 @@ export function tileKeysForBounds(bounds, z, limit = MAX_TILES_PER_LEVEL) {
     if (!bounds) return [];
     const [x0, y0] = tileOf(bounds.minLng, bounds.maxLat, z);
     const [x1, y1] = tileOf(bounds.maxLng, bounds.minLat, z);
-    const keys = [];
+    limit = Math.max(0, Math.floor(Number(limit) || 0));
+    if (!limit || x1 < x0 || y1 < y0) return [];
+    const keys = [], heap = [], seen = new Set();
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
-    for (let x = x0; x <= x1; x += 1) for (let y = y0; y <= y1; y += 1) keys.push({ key: `${x}/${y}`, d: (x - cx) ** 2 + (y - cy) ** 2 });
-    keys.sort((a, b) => a.d - b.d);
-    return keys.slice(0, limit).map((item) => item.key);
+    const compare = (a,b) => a.d - b.d || a.x - b.x || a.y - b.y;
+    const push = (x,y) => {
+        const key = `${x}/${y}`;
+        if (x < x0 || x > x1 || y < y0 || y > y1 || seen.has(key)) return;
+        seen.add(key);
+        const item = {x,y,key,d:(x-cx)**2+(y-cy)**2};
+        let i = heap.length;
+        heap.push(item);
+        while (i > 0) {
+            const parent = (i-1) >> 1;
+            if (compare(heap[parent],item) <= 0) break;
+            heap[i] = heap[parent]; i = parent;
+        }
+        heap[i] = item;
+    };
+    const pop = () => {
+        const first = heap[0], last = heap.pop();
+        if (heap.length) {
+            let i = 0;
+            while (i*2+1 < heap.length) {
+                let child = i*2+1;
+                if (child+1 < heap.length && compare(heap[child+1],heap[child]) < 0) child++;
+                if (compare(last,heap[child]) <= 0) break;
+                heap[i] = heap[child]; i = child;
+            }
+            heap[i] = last;
+        }
+        return first;
+    };
+    push(Math.floor(cx),Math.floor(cy));
+    while (heap.length && keys.length < limit) {
+        const {x,y,key} = pop();
+        keys.push(key);
+        push(x-1,y); push(x+1,y); push(x,y-1); push(x,y+1);
+    }
+    return keys;
 }
 
 /** 当前逻辑缩放该用哪一级：{ kind: 'aggregate', tile, cell, minZoom, maxZoom } 或 { kind: 'leaf', tile, minZoom } */
@@ -416,6 +451,7 @@ export class MarkerTileStore {
         this.switchWaitMs = switchWaitMs;
         this.view = null;            // { bounds, logicalZoom }
         this.displayBand = null;
+        this.displayBounds = null;
         this.targetBand = null;
         this.switchToken = 0;
         this.overlay = { own: [], hiddenIds: new Set(), signature: '[]|' };
@@ -464,8 +500,7 @@ export class MarkerTileStore {
         this.version += 1;
     }
 
-    _coverage(band) {
-        const bounds = this.view?.bounds;
+    _coverage(band, bounds = this.view?.bounds) {
         if (!bounds || !band) return [];
         if (band.kind === 'leaf') return tileKeysForBounds(bounds, band.tile).filter((key) => this.source.hashOf(band.tile, key));
         return tileKeysForBounds(expandBounds(bounds, AGGREGATE_BUFFER), band.tile).filter((key) => this.source.hashOf(band.tile, key));
@@ -514,12 +549,14 @@ export class MarkerTileStore {
         const loads = this._neededLoads(band);
         const promises = loads.map(([z, key]) => this.source.load(z, key));
         if (bandId(band) === bandId(this.displayBand)) {
+            this.displayBounds = normalized;
             this._bump();
             return true;
         }
         const ready = loads.every(([z, key]) => this.source.peek(z, key) !== undefined);
         if (ready || !this.displayBand) {
             this.displayBand = band;
+            this.displayBounds = normalized;
             this._bump();
             return true;
         }
@@ -533,6 +570,7 @@ export class MarkerTileStore {
         Promise.all([Promise.allSettled(targetLoads), fallbackReady]).then(() => {
             if (token !== this.switchToken || bandId(this.displayBand) === bandId(band)) return;
             this.displayBand = band;
+            this.displayBounds = this.view.bounds;
             this._bump();
             this._notify();
         });
@@ -553,6 +591,7 @@ export class MarkerTileStore {
             const ready = this._neededLoads(this.targetBand).every(([z, key]) => this.source.peek(z, key) !== undefined);
             if (!ready) return;
             this.displayBand = this.targetBand;
+            this.displayBounds = this.view.bounds;
         }
         this._bump();
         this._notify();
@@ -627,7 +666,7 @@ export class MarkerTileStore {
         const fallback = this._fallbackLevel();
         const fallbackShift = fallback ? 2 ** (band.tile - fallback.tile) : 1;
         const fallbackCellShift = fallback ? 2 ** (fallback.cell - band.tile) : 1;
-        for (const key of this._coverage(band)) {
+        for (const key of this._coverage(band, this.displayBounds)) {
             const leaf = this.source.peek(band.tile, key);
             if (leaf) {
                 out.push(...leaf);
@@ -654,7 +693,7 @@ export class MarkerTileStore {
         const byKey = new Map();
         let expiresAt = Infinity;
         if (band && band.kind === 'aggregate') {
-            for (const key of this._coverage(band)) {
+            for (const key of this._coverage(band, this.displayBounds)) {
                 const places = this.source.peek(band.tile, key);
                 if (places) for (const place of places) byKey.set(place.aggregateKey, place);
             }

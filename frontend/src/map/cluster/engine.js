@@ -244,6 +244,8 @@ export class ClusterEngine {
                 out.push(current);
                 return true;
             }
+            // getChildren allocates its entire result before walk can check its budget.
+            if (current.count > counter.remaining) return false;
             const kids = this.children(current);
             if (!kids.length) {
                 out.push(current);
