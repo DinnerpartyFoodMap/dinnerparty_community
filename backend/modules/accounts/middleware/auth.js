@@ -5,7 +5,8 @@ const { refreshBanState } = require('../services/userAccess');
 const { avatarColumns, withAvatarFields } = require('../services/userAvatar');
 const logger = require('../../../infrastructure/logger');
 
-const JWT_SECRET = process.env.JWT_SECRET || "yuyuko_secret_key";
+const { JWT_SECRET } = require('../services/jwtSecret');
+const JWT_VERIFY_OPTIONS = { algorithms: ['HS256'] };
 
 // 可在测试中替换为内存实现。
 let sessionStoreOverride = null;
@@ -48,7 +49,7 @@ async function requireAuth(req, res, next) {
 
     let payload;
     try {
-        payload = jwt.verify(token, JWT_SECRET);
+        payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY_OPTIONS);
     } catch (e) {
         logger.warn('Authentication rejected', {
             event: 'security.auth.rejected',
@@ -147,7 +148,7 @@ async function attachViewer(req, res, next) {
     const token = extractBearerToken(req);
     if (!token) return next();
     try {
-        const payload = jwt.verify(token, JWT_SECRET);
+        const payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY_OPTIONS);
         if (!payload || !payload.id) return next();
         const session = await sessionStore().verifySession(payload, token);
         if (!session.ok) return next();

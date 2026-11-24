@@ -6,6 +6,13 @@ const https = require("https");
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, '.env') });
 const logger = require('./infrastructure/logger');
+// 仓库公开，JWT 回退密钥人人可见：没配好 JWT_SECRET 就不启动（否则谁都能签任意住民、管理员的 token）
+try {
+    require('./modules/accounts/services/jwtSecret').assertJwtSecretConfigured();
+} catch (error) {
+    console.error(`[startup] ${error.message}`);
+    process.exit(1);
+}
 const { requestLogger, notFoundHandler, errorHandler } = require('./http/middleware/requestLogger');
 
 // Capture legacy console.* calls from every subsequently loaded module and make
@@ -51,6 +58,7 @@ function trustProxySetting(value) {
 app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
 // 数据访问限流的计数放在 Redis（不可用时自动退回进程内计数）
 require('./http/middleware/rateLimit').useRedis(require('./infrastructure/redis'));
+require('./modules/accounts/services/loginThrottle').useRedis(require('./infrastructure/redis'));
 app.disable('x-powered-by');
 
 const HOST = process.env.HOST || "127.0.0.1";

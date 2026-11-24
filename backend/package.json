@@ -19,6 +19,7 @@
         "test:transactions": "node tests/infrastructure/test_transactions.js",
         "test:place-location": "node tests/places/test_place_location_ui.js",
         "test:sessions": "node tests/accounts/test_sessions.js",
+        "test:auth-hardening": "node tests/accounts/test_auth_hardening.js",
         "test:session-store": "node tests/accounts/test_session_store.js",
         "test:search": "node tests/discovery/test_place_search.js && node tests/discovery/test_search_smoke.js",
         "test:ai-clients": "node tests/infrastructure/test_ai_clients.js",

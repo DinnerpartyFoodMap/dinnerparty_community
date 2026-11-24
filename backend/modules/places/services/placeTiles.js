@@ -226,7 +226,7 @@ function invalidateTileSnapshot() {
 const TICKET_TTL_MS = 24 * 3600 * 1000;
 
 function ticketKey() {
-    const secret = process.env.TILE_TICKET_SECRET || process.env.JWT_SECRET || 'yuyuko_secret_key';
+    const secret = process.env.TILE_TICKET_SECRET || require('../../accounts/services/jwtSecret').JWT_SECRET;
     return crypto.createHmac('sha256', String(secret)).update('place-tile-ticket').digest();
 }
 

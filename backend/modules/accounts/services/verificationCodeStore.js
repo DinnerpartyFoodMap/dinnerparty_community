@@ -7,7 +7,7 @@ const { db } = require('../../../infrastructure/database');
 // caller's write transaction. Each code store has its own table with the columns
 // created by createCodeTableSql().
 const sql = db._raw;
-const SECRET = process.env.JWT_SECRET || 'yuyuko_secret_key';
+const { JWT_SECRET: SECRET } = require('./jwtSecret');
 
 class VerificationError extends Error {
     constructor(status, reason, message, retryAfterSeconds) {

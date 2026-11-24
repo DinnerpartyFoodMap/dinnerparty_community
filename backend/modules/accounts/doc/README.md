@@ -53,6 +53,8 @@ flowchart TD
 | 短信验证码 | 本站生成并校验，阿里云只下发 | 用 dypns 的 `##code##` 与 CheckSmsVerifyCode 可省本地表，但错误次数、用途与申请人绑定不受我们控制，且境外号码走另一个产品 |
 | 登录状态 | JWT sid + Redis 多设备索引，兼容旧无 sid token | 完全无状态 token 简单，但无法按设备撤销 |
 | Redis 故障 | JWT 合法时继续认证，记录降级 | 故障时拒绝更严格，但会影响所有登录用户；当前行为有已撤销 token 暂时有效的取舍 |
+| JWT 密钥 | `services/jwtSecret.js` 统一读取；`index.js` 启动时 `JWT_SECRET` 没设、等于代码里的回退值或短于 32 个字符就拒绝启动；签发与校验都限定 HS256 | 仓库公开，回退值人人可见，加上 Redis 故障时只验 JWT，任何人都能签出管理员 token；回退值只留给测试脚本 |
+| 登录失败限流 | `services/loginThrottle.js`：只数密码错误，同一时间窗内按账号 + IP 段、IP 段、账号三个计数，任一到额度即 429（`code: 'login_throttled'`，带 `Retry-After`），正确密码也拒绝；登录成功只清账号 + IP 段的计数。始终拦截，不受 `ANTI_SCRAPE_MODE` 影响；额度用 `LOGIN_FAILURE_LIMITS` 覆盖。计数在 Redis，不可用时退回进程内，出错放行 | 只按账号锁会让别人故意输错就把住民锁在外面，所以账号总计数额度放宽；IP 段计数依赖 `TRUST_PROXY` 配对，否则客户端能伪造 X-Forwarded-For 绕过，这时只剩账号总计数兜底 |
 | 位置 | 每用户覆盖一条最近定位 | 不保存轨迹；Bot 随机推荐只需要一个中心 |
 
 测试见 [案例库](TEST_CASES.md)。历史：`d285076` 验证码与重置，`13576c8` 最近定位。待办 ACC-01 / ACC-02 见 [维护清单](../../../doc/HISTORY_AND_TODO.md)。

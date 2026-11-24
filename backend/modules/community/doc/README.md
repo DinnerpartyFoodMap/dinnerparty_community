@@ -41,6 +41,6 @@ flowchart TD
 - COM-03：持旧 consent_version 提交观察；预期不新增有效快照；同 ID 不同参数重试得到冲突，不能覆盖他人记录。
 - COM-04（`test_favorite_collection.js`）存量账号迁移后可匿名读取公开收藏。关闭公开后，主页、完整清单、偏好举例及旧接口均不披露收藏。公开清单遵循屏蔽、封禁和地点审核状态。关闭发现仅影响同好匹配。
 - COM-06（已有自动化，test_random_decision_chain）：同一 `draw_id` 重试、换范围重放、他人接续与分叉、非法范围；点开未被抽中的地点、surface 不符的反馈；地图点击带合法 / 越界 `viewport`、合法 / 非法 `map_mode` 与 `map_filter`。预期：重试结果不变，冲突 409、非法范围 400；不符的反馈不计入；只保存校验通过的上下文，模式与筛选成对出现。
-- COM-05（待自动化）：为评论、聚餐、公告补独立权限与边界矩阵，见 COM-T01；不把 test:community 的向量测试当作这三个路由的覆盖证明。
+- COM-05（部分自动化）：为评论、聚餐、公告补独立权限与边界矩阵，见 COM-T01；不把 test:community 的向量测试当作这三个路由的覆盖证明。已覆盖删除饭局（`test:auth-hardening`）：发起人可删且不记审计；别人删需要 `manage_comments`（未知的 admin_level 没有权限），删除记一条 `delete-dinner` 审计（目标为发起人，details 含饭局 id 与标题）。
 
 待办 COM-T01 / COM-T02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
