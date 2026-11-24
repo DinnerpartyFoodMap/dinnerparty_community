@@ -4,6 +4,7 @@ import Tooltip from "../components/primitives/Tooltip";
 import Button from "../components/primitives/Button";
 import ManagePanel from "../places/components/ManagePanel";
 import AddForm from "../places/components/AddPlaceForm";
+import { PLACE_DESCRIPTION_MIN_LENGTH, placeDescriptionTooShort } from "../places/placeDescription";
 import PlaceDetailPanel, { PlaceCardDetails, parseImages as parsePlaceImages } from "../places/components/PlaceDetailPanel";
 import Markdown from "../components/markdown/Markdown";
 import PlaceRatingPanel from "../places/components/PlaceRatingPanel";
@@ -1080,6 +1081,7 @@ export default function MapUI(props) {
                 // “待探索”的地点还没去过，不评价
                 const exploring = hasExploreTag(values.category);
                 if (!exploring && (values.rating == null || values.ratingInputKind === 'default')) return { ok: false, message: t('map:addForm.ratingRequired') };
+                if (placeDescriptionTooShort(values.description)) return { ok: false, message: t('map:addForm.descriptionTooShort', { min: PLACE_DESCRIPTION_MIN_LENGTH }) };
                 const payload = {
                     name: values.name,
                     category: values.category,

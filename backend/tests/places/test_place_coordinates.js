@@ -46,29 +46,35 @@ const sql = db._raw;
     const placeCount = () => sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n;
     try {
         assert.equal(PLACE_MAX_LATITUDE, 85.0511, 'must match frontend cluster/engine.js MAX_MERCATOR_LAT');
-        assert.equal(validateNewPlace({ name: '边界', latitude: PLACE_MAX_LATITUDE, longitude: 180 }).value.latitude, PLACE_MAX_LATITUDE);
-        assert.equal(validateNewPlace({ name: '边界', latitude: -PLACE_MAX_LATITUDE, longitude: -180 }).value.latitude, -PLACE_MAX_LATITUDE);
+        assert.equal(validateNewPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '边界', latitude: PLACE_MAX_LATITUDE, longitude: 180 }).value.latitude, PLACE_MAX_LATITUDE);
+        assert.equal(validateNewPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '边界', latitude: -PLACE_MAX_LATITUDE, longitude: -180 }).value.latitude, -PLACE_MAX_LATITUDE);
         // 描述按 Markdown（含 HTML）显示且显示前会清理，保存时接受 HTML；店名、分类、地址仍只接受纯文本，描述仍限 1000 字
         const point = { latitude: 23.1, longitude: 113.3 };
-        assert.equal(validateNewPlace({ ...point, name: '店', description: '**好吃** <b>推荐</b>' }).value.description, '**好吃** <b>推荐</b>');
+        assert.equal(validateNewPlace({ ...point, name: '店', description: '**好吃** <b>推荐</b>，牛肉面汤底浓，人均二十' }).value.description, '**好吃** <b>推荐</b>，牛肉面汤底浓，人均二十');
+        // 描述至少 15 个字，不算空白；emoji 算一个字
+        assert.match(validateNewPlace({ ...point, name: '店', description: '好吃' }).error, /至少写 15 个字/);
+        assert.match(validateNewPlace({ ...point, name: '店' }).error, /至少写 15 个字/, 'missing description');
+        assert.match(validateNewPlace({ ...point, name: '店', description: '好 吃 好 吃 好 吃 好 吃 好 吃 好 吃 好 吃' }).error, /至少写 15 个字/, 'spaces do not count');
+        assert.equal(validateNewPlace({ ...point, name: '店', description: '一二三四五六七八九十一二三四五' }).error, undefined, 'exactly 15');
+        assert.match(validateNewPlace({ ...point, name: '店', description: '一二三四五六七八九十一二三四🍜' }).value.description, /🍜/, 'emoji counts as one');
         for (const field of ['name', 'category', 'address']) {
-            assert.match(validateNewPlace({ ...point, name: '店', [field]: '<b>x</b>' }).error, /纯文本/, field);
+            assert.match(validateNewPlace({ ...point, name: '店', description: '测试描述：招牌菜、人均和营业时间都写了', [field]: '<b>x</b>' }).error, /纯文本/, field);
         }
         assert.match(validateNewPlace({ ...point, name: '店', description: 'x'.repeat(1001) }).error, /1000/);
 
         // 新增：地图上方空白处（89.9°）与左右边界外都拒绝，库里不留记录。
         for (const [latitude, longitude] of [[89.9, 120], [-86, 120], [85.06, 120], [30, 181]]) {
-            const res = await call('POST', '/places', owner, { name: '界外店', latitude, longitude });
+            const res = await call('POST', '/places', owner, { description: '测试描述：招牌菜、人均和营业时间都写了', name: '界外店', latitude, longitude });
             assert.equal(res.status, 400, `POST /places ${latitude},${longitude}`);
             assert.match((await res.json()).error, /超出有效范围/);
         }
         assert.equal(placeCount(), 1);
-        const created = await call('POST', '/places', owner, { name: '北角店', latitude: 85.05, longitude: 120 });
+        const created = await call('POST', '/places', owner, { description: '测试描述：招牌菜、人均和营业时间都写了', name: '北角店', latitude: 85.05, longitude: 120 });
         assert.equal(created.status, 200, await created.clone().text());
         assert.equal(placeCount(), 2);
 
         // 编辑：越界坐标拒绝且不改动其他字段；字符串数字按数值写入；只改描述不受影响。
-        for (const body of [{ latitude: 88 }, { longitude: -200 }, { latitude: 'north' }, { description: '新描述', latitude: 89 }]) {
+        for (const body of [{ latitude: 88 }, { longitude: -200 }, { latitude: 'north' }, { description: '新描述：招牌菜、人均和营业时间都写了', latitude: 89 }]) {
             const res = await call('PUT', '/places/1', owner, body);
             assert.equal(res.status, 400, `PUT ${JSON.stringify(body)}`);
         }
@@ -77,7 +83,7 @@ const sql = db._raw;
         const moved = await call('PUT', '/places/1', owner, { latitude: '30.5', longitude: 120.5 });
         assert.equal(moved.status, 200, await moved.clone().text());
         assert.deepEqual(coords(), { longitude: 120.5, latitude: 30.5 });
-        assert.equal((await call('PUT', '/places/1', owner, { description: '只改描述' })).status, 200);
+        assert.equal((await call('PUT', '/places/1', owner, { description: '只改描述，人均二十，招牌牛肉面' })).status, 200);
         assert.deepEqual(coords(), { longitude: 120.5, latitude: 30.5 });
 
         // 修改申请：两个入口都校验，越界申请不会入库。
@@ -117,9 +123,21 @@ const sql = db._raw;
         assert.equal(longEdit.status, 400);
         assert.match((await longEdit.json()).error, /1000/);
         assert.equal((await call('PUT', '/places/1', owner, { description: 123 })).status, 400, 'non-string description');
-        assert.equal(description(), '只改描述');
-        assert.equal((await call('PUT', '/places/1', owner, { description: '  **好吃** <b>推荐</b>  ' })).status, 200);
-        assert.equal(description(), '**好吃** <b>推荐</b>', 'trimmed, HTML kept');
+        assert.equal(description(), '只改描述，人均二十，招牌牛肉面');
+        assert.equal((await call('PUT', '/places/1', owner, { description: '  **好吃** <b>推荐</b>，牛肉面汤底浓，人均二十  ' })).status, 200);
+        assert.equal(description(), '**好吃** <b>推荐</b>，牛肉面汤底浓，人均二十', 'trimmed, HTML kept');
+        // 改成太短的描述拒绝；老地点描述本来就短时，不改描述的编辑照常保存
+        const shortEdit = await call('PUT', '/places/1', owner, { description: '好吃' });
+        assert.equal(shortEdit.status, 400);
+        assert.match((await shortEdit.json()).error, /至少写 15 个字/);
+        assert.equal(description(), '**好吃** <b>推荐</b>，牛肉面汤底浓，人均二十');
+        sql.prepare("UPDATE Place SET description = '老描述' WHERE id = 1").run();
+        assert.equal((await call('PUT', '/places/1', owner, { description: ' 老描述 ', per_person_cost: 30 })).status, 200, 'unchanged short description is kept');
+        const shortRequest = await call('POST', '/place-requests', visitor, { place_id: 1, proposed: { description: '也很短' } });
+        assert.equal(shortRequest.status, 400);
+        assert.equal((await shortRequest.json()).code, 'PLACE_DESCRIPTION_TOO_SHORT');
+        assert.equal((await call('POST', '/place-requests', visitor, { place_id: 1, proposed: { description: '老描述', per_person_cost: 35 } })).status, 201, 'request keeping the old description');
+        sql.prepare("UPDATE Place SET description = ? WHERE id = 1").run('**好吃** <b>推荐</b>，牛肉面汤底浓，人均二十');
         for (const [url, body] of [
             ['/place-requests', { place_id: 1, proposed: { description: tooLong } }],
             ['/places/1/requests', { proposed: { description: tooLong } }]
@@ -128,20 +146,20 @@ const sql = db._raw;
             assert.equal(res.status, 400, url);
             assert.equal((await res.json()).code, 'INVALID_PLACE_DESCRIPTION');
         }
-        const htmlRequest = await call('POST', '/place-requests', visitor, { place_id: 1, proposed: { description: ' 申请<i>描述</i> ' } });
+        const htmlRequest = await call('POST', '/place-requests', visitor, { place_id: 1, proposed: { description: ' 申请<i>描述</i>：人均二十，招牌牛肉面 ' } });
         assert.equal(htmlRequest.status, 201);
         const htmlRequestRow = await htmlRequest.json();
-        assert.equal(JSON.parse(htmlRequestRow.proposed).description, '申请<i>描述</i>');
+        assert.equal(JSON.parse(htmlRequestRow.proposed).description, '申请<i>描述</i>：人均二十，招牌牛肉面');
         const legacyLong = sql.prepare('INSERT INTO PlaceRequest (place_id, requester_id, proposed, note) VALUES (1, ?, ?, ?)')
             .run(visitor, JSON.stringify({ description: tooLong }), '').lastInsertRowid;
         const approveLong = await call('POST', `/place-requests/${legacyLong}/review`, admin, { action: 'approve' });
         assert.equal(approveLong.status, 400);
         assert.equal((await approveLong.json()).code, 'INVALID_PLACE_DESCRIPTION');
-        assert.equal(description(), '**好吃** <b>推荐</b>', 'failed approval leaves the place unchanged');
+        assert.equal(description(), '**好吃** <b>推荐</b>，牛肉面汤底浓，人均二十', 'failed approval leaves the place unchanged');
         assert.equal(sql.prepare('SELECT status FROM PlaceRequest WHERE id = ?').get(legacyLong).status, 'pending');
         assert.equal((await call('POST', `/place-requests/${legacyLong}/review`, admin, { action: 'reject' })).status, 200);
         assert.equal((await call('POST', `/place-requests/${htmlRequestRow.id}/review`, admin, { action: 'approve' })).status, 200);
-        assert.equal(description(), '申请<i>描述</i>');
+        assert.equal(description(), '申请<i>描述</i>：人均二十，招牌牛肉面');
 
         // 已有数据检查：只读列出修复前存进库的越界地点和待审核申请。
         const runCheck = () => spawnSync(process.execPath, [path.join(__dirname, '../../scripts/places/check_place_coordinates.js')],

@@ -14,7 +14,7 @@ async function main(){
     const create=require('../../modules/places/services/placeService').createPlace;
     try{
         for(const id of ['creator','viewer','other'])db._raw.prepare('INSERT INTO User(id,username,password) VALUES(?,?,?)').run(id,id,'unused');
-        const p=await create({name:'test-place',category:'餐厅',latitude:30,longitude:120,description:'本人补充的介绍',rating:4,rating_input_kind:'explicit'},'creator',{source:'web'});
+        const p=await create({name:'test-place',category:'餐厅',latitude:30,longitude:120,description:'本人补充的介绍：招牌菜和人均都写了',rating:4,rating_input_kind:'explicit'},'creator',{source:'web'});
         assert.equal(p.rating_average,4);assert.equal(p.rating_count,1);
         await new Promise(setImmediate); // Let the deliberately unconfigured embedding retry finish before installing a fixture vector.
         const v=new Float32Array(1024);v[0]=1;

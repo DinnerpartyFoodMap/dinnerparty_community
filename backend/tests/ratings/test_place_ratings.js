@@ -98,16 +98,16 @@ function testMigrationSeed() {
 }
 async function testCreationRatings() {
     const creator = makeUser('creator');
-    const plain = await placeService.createPlace({ name: '新店', latitude: 1, longitude: 1, category: '火锅' }, creator, { source: 'web' });
-    const avoid = await placeService.createPlace({ name: '雷店', latitude: 1, longitude: 1, category: '火锅, 避雷' }, creator, { source: 'web' });
-    const chosen = await placeService.createPlace({ name: '一般店', latitude: 1, longitude: 1, category: '避雷', rating: 3 }, creator, { source: 'web' });
+    const plain = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '新店', latitude: 1, longitude: 1, category: '火锅' }, creator, { source: 'web' });
+    const avoid = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '雷店', latitude: 1, longitude: 1, category: '火锅, 避雷' }, creator, { source: 'web' });
+    const chosen = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '一般店', latitude: 1, longitude: 1, category: '避雷', rating: 3 }, creator, { source: 'web' });
     assert.deepEqual([plain, avoid, chosen].map((place) => [place.rating_count, place.rating_average]), [[1, 4], [1, 1], [1, 3]], 'creation responses carry the creator rating aggregate');
     assert.equal(sql.prepare('SELECT source FROM PlaceRating WHERE place_id = ?').get(plain.id).source, 'create');
     for (const rating of [0, 5, '4', 2.5]) {
-        await assert.rejects(async () => await placeService.createPlace({ name: 'x', latitude: 1, longitude: 1, rating }, creator, { source: 'web' }), (error) => error.status === 400 && error.publicMessage === '评价无效');
+        await assert.rejects(async () => await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: 'x', latitude: 1, longitude: 1, rating }, creator, { source: 'web' }), (error) => error.status === 400 && error.publicMessage === '评价无效');
     }
     // QQ Bot path: insertPlaceSync inside the caller's transaction, default rule applies.
-    const validated = placeService.validateNewPlace({ name: '机器人店', latitude: 2, longitude: 2, category: '避雷' });
+    const validated = placeService.validateNewPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '机器人店', latitude: 2, longitude: 2, category: '避雷' });
     const botPlace = sql.transaction(() => placeService.insertPlaceSync(validated.value, creator, { source: 'qq_bot' })).immediate();
     assert.equal(sql.prepare('SELECT score FROM PlaceRating WHERE place_id = ?').get(botPlace).score, 1);
     assert.equal(ratings.ratingQuota(creator).used, 0, 'creation ratings never use the daily quota');
@@ -295,10 +295,10 @@ async function testHttp({ target, twin }) {
         assert.equal(nearbyPlace.rating_average, 4);
         const single = await request(`/places/${places[0]}`);
         assert.equal(single.body.rating_average, 2);
-        const created = await request('/places', 'POST', { name: '表单新店', latitude: 30, longitude: 120, category: '避雷', rating: 3 }, alice);
+        const created = await request('/places', 'POST', { description: '测试描述：招牌菜、人均和营业时间都写了', name: '表单新店', latitude: 30, longitude: 120, category: '避雷', rating: 3 }, alice);
         assert.equal(created.status, 200);
         assert.equal(created.body.rating_average, 3);
-        assert.equal((await request('/places', 'POST', { name: '坏评价', latitude: 30, longitude: 120, rating: 9 }, alice)).status, 400);
+        assert.equal((await request('/places', 'POST', { description: '测试描述：招牌菜、人均和营业时间都写了', name: '坏评价', latitude: 30, longitude: 120, rating: 9 }, alice)).status, 400);
     }
     finally {
         await new Promise((resolve) => server.close(resolve));

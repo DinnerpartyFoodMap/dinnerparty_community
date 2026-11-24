@@ -10,6 +10,8 @@ const {
     normalizeCategoryList,
     normalizePlainTextField,
     normalizePlaceDescription,
+    checkPlaceDescriptionMinLength,
+    placeDescriptionChanged,
     normalizePlaceCoordinates,
     normalizePerPersonCost,
     syncCategoryRegistry,
@@ -343,6 +345,10 @@ router.put("/:id", requireAuth, (req, res) => {
             }
         }
         if (Object.keys(updates).length === 0) return res.status(400).json({ error: "没有提供要更新的字段" });
+        if (updates.description !== undefined && placeDescriptionChanged(updates.description, place.description)) {
+            const tooShort = checkPlaceDescriptionMinLength(updates.description);
+            if (tooShort) return res.status(400).json({ error: tooShort.error });
+        }
 
         // 创建者（非管理员）改自己已公开的地点：先过 AI 初筛（doc/placeModeration.md）。改出明显不合规的内容时
         // 这次修改不生效，转成修改申请交管理员审核，地点对所有人保持原样

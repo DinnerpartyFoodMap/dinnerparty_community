@@ -94,6 +94,8 @@
     "submit": "提交",
     "ratingLabel": "你的评价",
     "ratingRequired": "请选择你的评价",
+    "descriptionHint": "至少 {{min}} 个字，已写 {{count}} 个字",
+    "descriptionTooShort": "描述至少写 {{min}} 个字（不算空格），可以写招牌菜、价格、营业时间或怎么找到",
     "explore": "待探索：还没去过，先标记",
     "exploreHint": "带“待探索”标签的地点不需要评价，有人评价前地图上显示问号图标",
     "draft": {

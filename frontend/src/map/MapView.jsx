@@ -27,6 +27,7 @@ const JourneyWorkspace = React.lazy(() => import("../journey/JourneyWorkspace"))
 import { useMapFeedback } from "../journey/feedback";
 import CommentPanel from "../places/components/CommentPanel";
 import { buildManagePayload } from "../places/managePlacePayload";
+import { PLACE_DESCRIPTION_MIN_LENGTH, placeDescriptionTooShort } from "../places/placeDescription";
 import { useTips } from "../components/feedback/Tips";
 import { useConfirm } from "../components/feedback/Confirm";
 import Tooltip from "../components/primitives/Tooltip";
@@ -2345,11 +2346,23 @@ export default function MapView({
         }
     };
 
+    // 改了描述时，描述至少 PLACE_DESCRIPTION_MIN_LENGTH 个字（没改的老描述不拦）；不合格返回提示文字
+    const rejectShortDescription = (edit) => {
+        const payload = buildManagePayload(edit, manageOriginal.current);
+        if (payload.description === undefined || !placeDescriptionTooShort(payload.description)) return null;
+        const message = t('map:addForm.descriptionTooShort', { min: PLACE_DESCRIPTION_MIN_LENGTH });
+        setManageMessage(message);
+        showTip(message);
+        return { ok: false, message };
+    };
+
     // 直接更新。edit 缺省为网页表单的草稿（iOS 原生表单传入自己的内容）；返回 { ok, message }
     const updatePlaceWith = async (edit = manageEdit) => {
         if (!selectedPlace) return { ok: false, message: '' };
         if (!token) { onRequireAuth && onRequireAuth(); return { ok: false, message: '' }; }
         if (isBanned) { showTip(t('map:main.updateBanned')); return { ok: false, message: t('map:main.updateBanned') }; }
+        const shortDescription = rejectShortDescription(edit);
+        if (shortDescription) return shortDescription;
         setManageSubmitting(true);
         try {
             const payload = buildManagePayload(edit, manageOriginal.current);
@@ -2385,6 +2398,8 @@ export default function MapView({
         if (!selectedPlace) return { ok: false, message: '' };
         if (!token) { onRequireAuth && onRequireAuth(); return { ok: false, message: '' }; }
         if (isBanned) { showTip(t('map:main.requestBanned')); return { ok: false, message: t('map:main.requestBanned') }; }
+        const shortDescription = rejectShortDescription(edit);
+        if (shortDescription) return shortDescription;
         setManageSubmitting(true);
         try {
             const payload = {

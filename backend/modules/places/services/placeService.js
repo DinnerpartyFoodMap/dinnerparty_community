@@ -12,6 +12,8 @@ const { hasExploreTag } = require('../../ratings/services/ratingWarning');
 const PLACE_NAME_MAX_LENGTH = 120;
 const PLACE_CATEGORY_MAX_LENGTH = 240;
 const PLACE_DESCRIPTION_MAX_LENGTH = 1000;
+// 描述最少字数，不算空白；与前端 src/places/placeDescription.js 一致
+const PLACE_DESCRIPTION_MIN_LENGTH = 15;
 const PLACE_ADDRESS_MAX_LENGTH = 250;
 const HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
 // The map (Web Mercator) ends at ±85.0511°. Clicking the blank area beyond it still yields
@@ -89,6 +91,22 @@ function normalizePlaceDescription(value) {
     return normalizePlainTextField(value, { fieldLabel: '描述', maxLength: PLACE_DESCRIPTION_MAX_LENGTH, allowHtml: true });
 }
 
+/** 描述字数：去掉所有空白后按字符（码点）数，emoji 算一个 */
+function placeDescriptionLength(value) {
+    return Array.from(String(value ?? '').replace(/\s/g, '')).length;
+}
+
+/** 描述太短时返回 { error }，否则 null。新增地点必查；编辑、修改申请只在描述有改动时查（老地点改别的字段不受影响） */
+function checkPlaceDescriptionMinLength(value) {
+    if (placeDescriptionLength(value) >= PLACE_DESCRIPTION_MIN_LENGTH) return null;
+    return { error: `描述至少写 ${PLACE_DESCRIPTION_MIN_LENGTH} 个字（不算空格），可以写招牌菜、价格、营业时间或怎么找到` };
+}
+
+/** 编辑时描述是否改了：和现有描述比较（都去首尾空白） */
+function placeDescriptionChanged(next, current) {
+    return String(next ?? '').trim() !== String(current ?? '').trim();
+}
+
 // Strict: null, '', booleans and arrays are rejected instead of becoming 0.
 function normalizeCoordinate(value, {
     fieldLabel,
@@ -146,6 +164,8 @@ function validateNewPlace(input = {}) {
     if (categoryList.error) return categoryList;
     const description = normalizePlaceDescription(input.description);
     if (description.error) return description;
+    const descriptionTooShort = checkPlaceDescriptionMinLength(description.value);
+    if (descriptionTooShort) return descriptionTooShort;
     const address = normalizePlainTextField(input.address, { fieldLabel: '地址', maxLength: PLACE_ADDRESS_MAX_LENGTH });
     if (address.error) return address;
     const latitude = normalizeCoordinate(input.latitude, LATITUDE_RULE);
@@ -306,6 +326,10 @@ module.exports = {
     PLACE_NAME_MAX_LENGTH,
     PLACE_CATEGORY_MAX_LENGTH,
     PLACE_DESCRIPTION_MAX_LENGTH,
+    PLACE_DESCRIPTION_MIN_LENGTH,
+    placeDescriptionLength,
+    checkPlaceDescriptionMinLength,
+    placeDescriptionChanged,
     PLACE_MAX_LATITUDE,
     HTML_TAG_PATTERN,
     parseCategoryNames,

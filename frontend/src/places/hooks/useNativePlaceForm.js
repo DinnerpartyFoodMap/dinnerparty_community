@@ -4,6 +4,7 @@ import { getPlatform, isPluginAvailable } from '../../platform/env';
 import { createNativePlaceFormSession } from '../../platform/nativePlaceForm';
 import { loadCategoryDirectory } from '../categoryDirectory';
 import { RATING_TIERS, EXPLORE_TAG } from '../rating';
+import { PLACE_DESCRIPTION_MIN_LENGTH } from '../placeDescription';
 import { PLACE_IMAGE_PICK_LIMIT, uploadPlaceImage } from '../components/PlaceImageInputs';
 import { imageThumbnailUrl } from '../../platform/runtimeConfig';
 import { nativeThemeColors } from '../../theme/theme';
@@ -136,7 +137,7 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
                 ...nativeThemeColors(),
                 categories: categories.map((item) => ({ name: item.name, common: !!item.is_common })),
                 tiers: RATING_TIERS.map((tier) => ({ score: tier.score, title: tier.label, hint: tier.hint, color: tierColor(tier.tone) })),
-                limits: { descriptionLength: 1000, images: PLACE_IMAGE_PICK_LIMIT },
+                limits: { descriptionLength: 1000, descriptionMinLength: PLACE_DESCRIPTION_MIN_LENGTH, images: PLACE_IMAGE_PICK_LIMIT },
                 canDirect: current.canDirect !== false,
                 canDelete: !!current.canDelete,
                 canPickPosition: !!current.canPickPosition,

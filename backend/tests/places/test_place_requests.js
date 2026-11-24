@@ -54,7 +54,7 @@ const sql = db._raw;
 
         // 同一住民连续提交：之前未审的标成 superseded，只留最新一条；两个提交入口共用此规则
         const first = await file(visitor, { name: '改名一' });
-        const second = await file(visitor, { description: '第二次' }, '/places/1/requests');
+        const second = await file(visitor, { description: '第二次：招牌菜、人均和营业时间都写了' }, '/places/1/requests');
         const third = await file(visitor, { name: '改名三', creator_id: visitor, updated_by: visitor, updated_time: '2099-01-01' });
         assert.equal(status(first.id), 'superseded');
         assert.equal(status(second.id), 'superseded');
@@ -64,7 +64,7 @@ const sql = db._raw;
         assert.deepEqual(JSON.parse(audit.details).superseded_request_ids, [second.id]);
 
         // 其他住民的申请、新增复核和打卡申请不受影响
-        const fromOther = await file(other, { description: '别人的修改' });
+        const fromOther = await file(other, { description: '别人的修改：招牌菜、人均和营业时间都写了' });
         const checkIn = Number(sql.prepare(`INSERT INTO PlaceRequest (place_id, requester_id, proposed, note, request_type)
             VALUES (1, ?, '{}', '', 'check_in')`).run(visitor).lastInsertRowid);
         await file(visitor, { name: '改名四' });
