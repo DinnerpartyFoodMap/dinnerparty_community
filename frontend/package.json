@@ -23,6 +23,7 @@
         "test:privacy": "node --import ./scripts/support/json-modules.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/platform/test-privacy-consent.mjs",
         "test:structure": "node tests/unit/structure/test-structure.mjs",
         "test:map-touch-browser": "node scripts/testing/test-map-touch-lifecycle-browser.mjs && node scripts/testing/test-map-touch-gesture-browser.mjs",
+        "test:map-anchor-browser": "node scripts/testing/test-map-anchor-refinement-browser.mjs && node scripts/testing/test-map-amap-anchor-browser.mjs",
         "test:map-motion-browser": "node scripts/testing/test-map-motion-visible-browser.mjs",
         "test:map-review-browser": "node scripts/testing/test-map-review-browser.mjs",
         "test:map-compute-browser": "node scripts/testing/test-map-compute-browser.mjs",

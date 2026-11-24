@@ -33,6 +33,41 @@ assert.ok(reveal.zoom>=16);
 await assert.rejects(request('clusterInfo',{nodeKey:cluster.key},{dataRevision:999}),{code:'STALE_DATA'});
 await request('dispose');
 await assert.rejects(request('clusterInfo',{nodeKey:cluster.key}),{code:'STALE_DATA'});
+
+// An ordinary settled camera request must finish inherited anchor refinement
+// even when every intermediate `refine` request was discarded.
+{
+    const runtime=createComputeRuntime();
+    const anchor=[113.2662964,23.075],exact=[113.264,23.075];
+    const x=Math.floor((anchor[0]+180)/360*2**14);
+    const sin=Math.sin(anchor[1]*Math.PI/180);
+    const y=Math.floor((.5-Math.log((1+sin)/(1-sin))/(4*Math.PI))*2**14);
+    const base={viewBounds:{minLng:113,maxLng:114,minLat:23,maxLat:24},queryMode:'nearby'};
+    const aggregate={kind:'aggregate',tile:8,cell:14,minZoom:0,maxZoom:12};
+    const leaf={kind:'leaf',tile:12,minZoom:13};
+    const input=(key,coordinate,cell=null)=>({keys:[key],coordinates:new Float64Array(coordinate),aggregateCells:[cell],aggregates:[!!cell]});
+    const compute=(payload,dataRevision=2)=>runtime.handle({op:'compute',dataRevision,payload:{...base,...payload}});
+    const ack=snapshot=>runtime.handle({op:'commitAck',payload:{snapshotId:snapshot.snapshotId}});
+    const coarse=await compute({zoom:12,markerBand:aggregate,data:input(`agg:14/${x}/${y}#0`,anchor,[14,x,y])},1);await ack(coarse);
+    const named=await compute({zoom:13,markerBand:leaf,data:input('place:1',exact)});await ack(named);
+    assert.deepEqual(named.nodes[0].coordinate,coarse.nodes[0].coordinate,'new names keep the displayed anchor at the band switch');
+    const partial=await compute({zoom:13.1,markerBand:leaf});await ack(partial);
+    assert.ok(partial.nodes[0].coordinate[0]<anchor[0]&&partial.nodes[0].coordinate[0]>exact[0],
+        'final camera work advances coordinates without an intermediate refine flag');
+    const pan=await compute({zoom:13.1,markerBand:leaf});await ack(pan);
+    assert.deepEqual(pan.nodes[0].coordinate,partial.nodes[0].coordinate,'stationary updates retain the displayed position');
+    const out=await compute({zoom:13.05,markerBand:leaf});await ack(out);
+    assert.deepEqual(out.nodes[0].coordinate,partial.nodes[0].coordinate,'zooming out does not advance or rewind precision');
+    await compute({zoom:14,markerBand:leaf}); // superseded, never acknowledged
+    const latest=await compute({zoom:13.2,markerBand:leaf});await ack(latest);
+    const expected=anchor[0]+(exact[0]-anchor[0])*.8;
+    assert.ok(Math.abs(latest.nodes[0].coordinate[0]-expected)<1e-7&&latest.nodes[0].sourceCoordinate,
+        'a discarded higher-zoom candidate cannot leak its completed refinement into a newer lower target');
+    const final=await compute({zoom:14,markerBand:leaf});await ack(final);
+    assert.ok(final.nodes[0].coordinate.every((value,i)=>Math.abs(value-exact[i])<1e-7),'continued zoom releases the inherited anonymous coordinate');
+    assert.equal(final.nodes[0].sourceCoordinate,undefined);
+    assert.equal(final.logicalZoom,14,'coordinate refinement preserves normal topology changes');
+}
 let fatals=0, posts=0;
 const transport={postMessage:()=>{posts++;},terminate(){}};
 const client=createWorkerClient({createWorker:()=>transport,onFatal:()=>{fatals++;}});

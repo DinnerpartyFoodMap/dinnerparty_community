@@ -1,5 +1,5 @@
 import { ClusterEngine, normalizePlaces, dataSignature } from './engine.js';
-import { buildSnapshot, resolveMarkerZoom, stabilizeMarkerAnchors } from './snapshot.js';
+import { buildSnapshot, resolveMarkerZoom, stabilizeMarkerAnchors, shouldRefineMarkerAnchors } from './snapshot.js';
 import { planTransition } from './transitions.js';
 import { revealZoom } from '../clusterZoom.js';
 
@@ -57,10 +57,15 @@ export function createComputeRuntime() {
                 const next = buildSnapshot(engine,{...payload,logicalZoom});
                 const queriedAt = performance.now();
                 const plan = planTransition(previous,next);
+                // Intermediate refinement requests may be superseded by the
+                // final camera request, or deferred for an entire touch session.
+                // Refine from committed camera progress independently of the
+                // `refining` flag, which also preserves the intermediate topology.
+                const refineAnchors = payload.refining || shouldRefineMarkerAnchors(previous,payload.zoom,previous?.cameraZoom ?? payload.zoom);
                 stabilizeMarkerAnchors(previous,next,plan,{
-                    zoom:payload.zoom,refining:payload.refining,selectedKey:payload.selectedKey
+                    zoom:payload.zoom,refining:refineAnchors,selectedKey:payload.selectedKey
                 });
-                Object.assign(next,{snapshotId:++snapshotId,dataRevision});
+                Object.assign(next,{snapshotId:++snapshotId,dataRevision,cameraZoom:payload.zoom});
                 candidate = next;
                 const nodes = next.visibleNodes.map(({place,...node})=>node);
                 const finishedAt = performance.now();
