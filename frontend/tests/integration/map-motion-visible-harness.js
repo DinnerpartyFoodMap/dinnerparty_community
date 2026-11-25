@@ -1,5 +1,5 @@
 import { MarkerLayerController } from '../../src/map/MarkerLayerController.js';
-import { createMapSurface,until,wait } from './map-test-surface.js';
+import { createMapSurface,until } from './map-test-surface.js';
 import { getMotionPolicy } from '../../src/motion/policy.js';
 
 export async function runMotionRegressionTests() {
@@ -34,9 +34,11 @@ export async function runMotionRegressionTests() {
         assert(getComputedStyle(child.parts.root).visibility!=='hidden','split motion must be visible while preparation is still running');
         assert(controller.renderQueue.busy,'test observes a partial split, not merely a settled frame');
         const before=distance(child);
-        await wait(50);
-        const after=distance(child);
-        assert(before>1&&after<before,'a visible child actually travels away from its parent');
+        assert(before>1,'a split child starts near the parent, before reaching its own position');
+        await until(()=>{
+            const after=distance(child);
+            return after>0.25&&after<before-0.25;
+        },'a visible child travels away from its parent');
         await until(()=>controller.snapshot?.logicalZoom===20&&!controller.renderQueue.busy&&!controller.txns.size&&!controller.cleanupQueue.busy,'split settles');
         assert(controller.entries.size===120,'all split members eventually appear');
         surface.setZoom(10);

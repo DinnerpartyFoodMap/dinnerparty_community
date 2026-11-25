@@ -1,4 +1,5 @@
 import { MarkerLayerController } from '../../src/map/MarkerLayerController.js';
+import { NativeMarkerLayer } from '../../src/map/nativeMarkerLayer.js';
 import { createMapSurface,until,wait } from './map-test-surface.js';
 
 export async function runMapRenderTests() {
@@ -14,7 +15,7 @@ export async function runMapRenderTests() {
         await until(()=>controller.snapshot?.dataRevision===controller.dataRevision&&!controller.renderQueue.busy,'batched initial markers');
         assert(surface.attached.size===200,'all target markers eventually attach');
         assert(controller.metrics.renderSlices.length>1,'initial creation is spread over frames');
-        assert(surface.stats.maxAdd<=4,'SDK attachments are bounded');
+        assert(surface.stats.maxAdd>1&&surface.stats.maxAdd<=4,'each SDK attachment batch is small and shares a single call');
         const unchanged=surface.stats.created;
         surface.emit('moveend');
         await wait(300);
@@ -23,7 +24,7 @@ export async function runMapRenderTests() {
         await until(()=>controller.snapshot?.dataRevision===controller.dataRevision&&!controller.renderQueue.busy&&controller.txns.size===0,'batched removal');
         await until(()=>!controller.cleanupQueue.busy,'retired markers recycled');
         assert(surface.attached.size===1,'retired markers leave no DOM behind');
-        assert(surface.stats.maxRemove<=4,'SDK removals are bounded');
+        assert(surface.stats.maxRemove>1&&surface.stats.maxRemove<=4,'retired markers are removed in small batches');
         controller.update({places});
         await wait(90);
         surface.setZoom(5);
@@ -33,6 +34,17 @@ export async function runMapRenderTests() {
         const result={passed:true,created:surface.stats.created,maxAdd:surface.stats.maxAdd,maxRemove:surface.stats.maxRemove,
             maxSlice:Math.max(...controller.metrics.renderSlices.map(s=>s.ms))};
         controller.destroy();assert(surface.attached.size===0,'destroy releases all markers');
+        const nativeCommits=[];
+        const nativeMap={...surface.map,setMarkerStyle(){},setSelectedPlace(){},
+            setNodes(nodes,plan,options){nativeCommits.push({nodes,plan,options});return {count:nodes.length};}
+        };
+        const nativeLayer=new NativeMarkerLayer(nativeMap);
+        try {
+            nativeLayer.update({places});
+            await until(()=>nativeLayer.snapshot?.nodeByKey.size>0,'native Worker snapshot');
+            assert(!nativeLayer.localCompute,'the iOS marker path starts its bundled Worker in the browser');
+            assert(nativeCommits.length===1,'the first native snapshot reaches the bridge');
+        } finally {nativeLayer.destroy();}
         return result;
     } finally {controller.destroy();surface.destroy();}
 }

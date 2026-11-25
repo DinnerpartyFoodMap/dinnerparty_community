@@ -8,12 +8,12 @@
 // - 每个转场有版本号，过期的完成回调不会回收新节点。
 // - 单点标记的名称总是显示（不做碰撞避让）；转场期间先隐藏，相机静止、转场结束后统一显示。
 
-import { placeKey, isMappableCoordinate, CLUSTER_DEFAULTS } from './cluster/engine.js';
+import { CLUSTER_DEFAULTS } from './cluster/engine.js';
 import { shouldRefineMarkerAnchors } from './cluster/snapshot.js';
 import { planTransition } from './cluster/transitions.js';
 import { createComputeScheduler } from './cluster/computeScheduler.js';
 import { createWorkerClient } from './cluster/workerClient.js';
-import { forEachInSlices } from './cluster/cooperative.js';
+import { prepareClusterInput } from './cluster/computeInput.js';
 import { t } from '../i18n/index.js';
 import { createMarkerRenderQueue } from './markerRenderQueue.js';
 import {
@@ -39,6 +39,7 @@ export const MARKER_TIMING = Object.freeze({
 });
 
 const LIMITS = Object.freeze({ travelers: 160, ghosts: 120, degradedGhosts: 30 });
+const SDK_MARKER_BATCH = 4;
 // Marker creation, placement and attachment share a cancellable frame budget.
 const Z_INDEX = Object.freeze({ ghost: 100, place: 110, cluster: 120, selected: 400 });
 const EASE_OUT = 'cubic-bezier(0.22, 0.8, 0.25, 1)';
@@ -110,7 +111,11 @@ export class MarkerLayerController {
         this.labelRaf = 0;
         this.labelVisible = new Set();
         this.metrics = { indexBuilds: [], commits: [], frames: [], preparation: [], worker: [], renderSlices: [], domCount: 0 };
-        this.renderQueue = createMarkerRenderQueue({onSlice:metric=>this._pushMetric('renderSlices',metric)});
+        this.pendingAttachments = [];
+        this.renderQueue = createMarkerRenderQueue({
+            flushSlice: () => this._flushAttachments(),
+            onSlice: metric => this._pushMetric('renderSlices', metric)
+        });
         this.cleanupQueue = createMarkerRenderQueue({onSlice:metric=>this._pushMetric('renderSlices',metric)});
         this.retiredMarkers = new Set();
         this.placeVersions = new Map();
@@ -355,19 +360,12 @@ export class MarkerLayerController {
         const payload = {...target.payload};
         let prepared = this.prepared;
         if (prepared?.revision !== target.dataRevision) {
-            const started = performance.now(), byKey = new Map(), keys = [], aggregateCells = [], aggregates = [];
-            const coordinates = new Float64Array(target.places.length * 2);
+            const started = performance.now();
             const abort = this.prepareAbort = new AbortController();
-            await forEachInSlices(target.places,place=>{
-                const key = placeKey(place), lng = Number(place.longitude), lat = Number(place.latitude);
-                if (!key || !isMappableCoordinate(lng,lat) || byKey.has(key)) return;
-                const i = keys.length;
-                coordinates[i*2] = lng; coordinates[i*2+1] = lat;
-                byKey.set(key,place); keys.push(key);aggregateCells.push(place.aggregateCell ?? null);aggregates.push(!!place.aggregate);
-            },{signal:abort.signal});
+            const input = await prepareClusterInput(target.places, { signal: abort.signal });
             if (this.destroyed || target.dataRevision !== this.dataRevision) return {skipped:true};
-            prepared = this.prepared = {revision:target.dataRevision,byKey,data:{keys,coordinates,aggregateCells,aggregates}};
-            this._pushMetric('preparation',{size:keys.length,ms:performance.now()-started});
+            prepared = this.prepared = {revision:target.dataRevision,...input};
+            this._pushMetric('preparation',{size:input.data.keys.length,ms:performance.now()-started});
         }
         const transfer = [];
         if (this.sentRevision !== prepared.revision) {
@@ -524,6 +522,19 @@ export class MarkerLayerController {
         } catch (e) {
             markers.forEach((m) => { try { m.setMap(null); } catch (err) { /* ignore */ } });
         }
+    }
+
+    _queueAttachment(marker, onAttached) {
+        this.pendingAttachments.push({ marker, onAttached });
+        if (this.pendingAttachments.length === SDK_MARKER_BATCH) this._flushAttachments();
+    }
+
+    _flushAttachments() {
+        if (!this.pendingAttachments.length) return;
+        const batch = this.pendingAttachments;
+        this.pendingAttachments = [];
+        this._addMarkers(batch.map(({ marker }) => marker));
+        for (const { onAttached } of batch) onAttached?.();
     }
 
     _addMarkers(markers) {
@@ -730,7 +741,7 @@ export class MarkerLayerController {
                     const pos = project(node.coordinate);
                     if (pos && onscreen(pos)) {
                         entry.attached = true;
-                        this._addMarkers([entry.marker]);
+                        this._queueAttachment(entry.marker);
                     }
                 }
                 yield {sdk:moved || previousZ !== entry.z || !wasAttached};
@@ -742,16 +753,15 @@ export class MarkerLayerController {
             this.entries.set(node.key,entry);
             const own = project(node.coordinate);
             entry.attached = true;
-            this._addMarkers([entry.marker]);
-            // Attach, reveal and start motion in the same slice. Waiting for the
-            // full reconciliation lets short animations finish while hidden.
-            delete entry.parts.root.dataset.staged;
+            const reveal = () => { delete entry.parts.root.dataset.staged; };
             const sourceKey = plan.splitFrom.get(node.key);
-            const source = sourceKey ? prevEntryByKey.get(sourceKey) : null;
-            retireSplitSource(source);
-            if (!animate) { yield {sdk:true}; continue; }
-            const parentKey = plan.splitFrom.get(node.key);
-            const parentEntry = parentKey ? prevEntryByKey.get(parentKey) : null;
+            const parentEntry = sourceKey ? prevEntryByKey.get(sourceKey) : null;
+            retireSplitSource(parentEntry);
+            if (!animate) {
+                this._queueAttachment(entry.marker, reveal);
+                yield {sdk:true};
+                continue;
+            }
             const parentNode = parentEntry ? parentEntry.node : null;
             let parentPoint = parentNode ? project(parentNode.coordinate) : null;
             if (parentPoint && parentEntry.anims && parentEntry.anims.size) {
@@ -760,40 +770,46 @@ export class MarkerLayerController {
                 parentPoint = { x: parentPoint.x + v.tx, y: parentPoint.y + v.ty };
             }
 
-            if (parentPoint && onscreen(parentPoint) && !reduced && travelers < LIMITS.travelers) {
-                travelers += 1;
-                const parentScale = glyphSize(parentNode).height / glyphSize(node).height;
-                run(entry, entry.parts.travel, [
-                    { transform: `translate(${parentPoint.x - own.x}px, ${parentPoint.y - own.y}px)` },
-                    { transform: 'translate(0px, 0px)' }
-                ], { duration: MARKER_TIMING.split, easing: EASE_OUT });
-                run(entry, entry.parts.glyph, [
-                    { transform: `scale(${Math.min(1, parentScale * 0.7).toFixed(3)})`, opacity: 0.35 },
-                    { transform: 'scale(1)', opacity: 1, offset: 0.55 },
-                    { transform: 'scale(1)', opacity: 1 }
-                ], { duration: MARKER_TIMING.split, easing: EASE_OUT });
-            } else if (plan.mergeTargets.has(node.key) && !reduced && onscreen(own)) {
-                const keyframes = degraded
-                    ? [{ transform: 'scale(0.86)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }]
-                    : [
-                        { transform: 'scale(0.82)', opacity: 0 },
-                        { transform: 'scale(1.06)', opacity: 1, offset: 0.55 },
-                        { transform: 'scale(0.985)', opacity: 1, offset: 0.8 },
+            // Start Web Animations only after the SDK has actually attached the DOM.
+            this._queueAttachment(entry.marker, () => {
+                reveal();
+                if (parentPoint && onscreen(parentPoint) && !reduced && travelers < LIMITS.travelers) {
+                    travelers += 1;
+                    const parentScale = glyphSize(parentNode).height / glyphSize(node).height;
+                    run(entry, entry.parts.travel, [
+                        { transform: `translate(${parentPoint.x - own.x}px, ${parentPoint.y - own.y}px)` },
+                        { transform: 'translate(0px, 0px)' }
+                    ], { duration: MARKER_TIMING.split, easing: EASE_OUT });
+                    run(entry, entry.parts.glyph, [
+                        { transform: `scale(${Math.min(1, parentScale * 0.7).toFixed(3)})`, opacity: 0.35 },
+                        { transform: 'scale(1)', opacity: 1, offset: 0.55 },
                         { transform: 'scale(1)', opacity: 1 }
-                    ];
-                run(entry, entry.parts.glyph, keyframes, {
-                    duration: MARKER_TIMING.mergeTarget,
-                    delay: MARKER_TIMING.mergeTargetDelay,
-                    easing: 'ease-out'
-                });
-            } else if (onscreen(own)) {
-                run(entry, entry.parts.travel, [{ opacity: 0 }, { opacity: 1 }], {
-                    duration: reduced ? MARKER_TIMING.reducedFade : MARKER_TIMING.fadeIn,
-                    easing: 'ease-out'
-                });
-            }
+                    ], { duration: MARKER_TIMING.split, easing: EASE_OUT });
+                } else if (plan.mergeTargets.has(node.key) && !reduced && onscreen(own)) {
+                    const keyframes = degraded
+                        ? [{ transform: 'scale(0.86)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }]
+                        : [
+                            { transform: 'scale(0.82)', opacity: 0 },
+                            { transform: 'scale(1.06)', opacity: 1, offset: 0.55 },
+                            { transform: 'scale(0.985)', opacity: 1, offset: 0.8 },
+                            { transform: 'scale(1)', opacity: 1 }
+                        ];
+                    run(entry, entry.parts.glyph, keyframes, {
+                        duration: MARKER_TIMING.mergeTarget,
+                        delay: MARKER_TIMING.mergeTargetDelay,
+                        easing: 'ease-out'
+                    });
+                } else if (onscreen(own)) {
+                    run(entry, entry.parts.travel, [{ opacity: 0 }, { opacity: 1 }], {
+                        duration: reduced ? MARKER_TIMING.reducedFade : MARKER_TIMING.fadeIn,
+                        easing: 'ease-out'
+                    });
+                }
+            });
             yield {sdk:true};
         }
+
+        this._flushAttachments();
 
         // ---- 退出节点：残影只做视觉过渡，不可点击 ----
 
@@ -899,9 +915,13 @@ export class MarkerLayerController {
         const controller = this;
         this.cleanupQueue.replace({version:this.version,operations:(function*() {
             while (controller.retiredMarkers.size) {
-                const marker = controller.retiredMarkers.values().next().value;
-                controller.retiredMarkers.delete(marker);
-                controller._removeMarkers([marker]);
+                const markers = [];
+                for (const marker of controller.retiredMarkers) {
+                    controller.retiredMarkers.delete(marker);
+                    markers.push(marker);
+                    if (markers.length === SDK_MARKER_BATCH) break;
+                }
+                controller._removeMarkers(markers);
                 yield;
             }
         })()}).catch(error=>console.warn('Marker cleanup failed',error));

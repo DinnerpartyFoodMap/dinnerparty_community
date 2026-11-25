@@ -1,7 +1,7 @@
 // A queue owns only the latest reconciliation. SDK calls themselves cannot be preempted.
 export function createMarkerRenderQueue({
     budgetMs = 4, now = () => performance.now(),
-    scheduleFrame = requestAnimationFrame, cancelFrame = cancelAnimationFrame, onSlice = () => {}
+    scheduleFrame = requestAnimationFrame, cancelFrame = cancelAnimationFrame, flushSlice = () => {}, onSlice = () => {}
 } = {}) {
     let task = null, frame = null, paused = false, destroyed = false;
     const cancel = () => {
@@ -19,22 +19,34 @@ export function createMarkerRenderQueue({
         frame = null;
         if (!task || paused || destroyed) return;
         const current = task, started = now();
-        let count = 0, writes = 0;
+        let count = 0, writes = 0, complete = false;
         try {
-            while (task === current) {
-                const step = current.iterator.next();
-                if (step.done) {
-                    task = null; current.onComplete?.(current.version); current.resolve(true); break;
+            try {
+                while (task === current) {
+                    const step = current.iterator.next();
+                    if (step.done) {
+                        complete = true;
+                        break;
+                    }
+                    if (typeof step.value === 'function') step.value();
+                    else step.value?.run?.();
+                    count++;
+                    if (step.value?.sdk !== false) writes++;
+                    // SDK batches stay small while inexpensive work can share the frame.
+                    if (now()-started >= budgetMs) break;
                 }
-                if (typeof step.value === 'function') step.value();
-                else step.value?.run?.();
-                count++;
-                if (step.value?.sdk !== false) writes++;
-                // Callers keep each SDK batch small. Yield on elapsed work, not
-                // the number of inexpensive calls, which would add idle frames.
-                if (now()-started >= budgetMs) break;
+            } finally {
+                flushSlice();
             }
-        } catch (error) { task = null; current.reject(error); }
+            if (complete && task === current) {
+                task = null;
+                current.onComplete?.(current.version);
+                current.resolve(true);
+            }
+        } catch (error) {
+            if (task === current) task = null;
+            current.reject(error);
+        }
         onSlice({version:current.version,ms:now()-started,operations:count,writes});
         schedule();
     };

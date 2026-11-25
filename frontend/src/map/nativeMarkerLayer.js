@@ -1,15 +1,17 @@
 // iOS 原生底图的标记层：与 MarkerLayerController 同一个入口（update / setSelectedKey / refreshAppearance / destroy），
 // 同一套聚合与转场规则，只是不在网页里画东西。
 //
-// - 聚合：网页的聚合引擎（cluster/engine.js，Supercluster）与快照、转场计划（snapshot.js、transitions.js）原样复用；
-//   按当前缩放取一份快照，与上一份比出计划，连同节点一起交给原生（setNodes）。相机移动中（捏合、松手后的减速、动画）
-//   每次 mapmove 都检查：聚合层级变了或视野出了缓冲区就立即提交，不等 MapKit 在减速结束后才发的 moveend。
+// - 聚合：复用网页的 Worker，按缩放、视野生成快照和转场计划。只保留最新的等待请求，
+//   原生确认后才以该快照为下一次转场的起点。相机移动中跨层级或移出缓冲区时立即请求。
 // - 显示：节点（单点或聚合）是 MapKit 的标注视图，拖动缩放时与底图同帧移动；合并 / 拆分动画由原生按计划用 Core Animation
 //   播放，节奏与网页的 MARKER_TIMING 相同。网页只在聚合层级变化、视野出缓冲区、数据变化时发一次，不逐帧参与。
 // - 点按：单点回传 markerTap（打开卡片），聚合回传 clusterTap，交给 MapView 的 handleClusterClick（与网页相同的展开逻辑）。
-import { ClusterEngine, normalizePlaces, dataSignature, CLUSTER_DEFAULTS } from './cluster/engine.js';
-import { buildSnapshot, resolveMarkerZoom, boundsContains, shouldRefineMarkerAnchors, stabilizeMarkerAnchors } from './cluster/snapshot.js';
-import { planTransition } from './cluster/transitions.js';
+import { CLUSTER_DEFAULTS } from './cluster/engine.js';
+import { resolveMarkerZoom, boundsContains, expandBounds, shouldRefineMarkerAnchors } from './cluster/snapshot.js';
+import { createComputeRuntime } from './cluster/computeRuntime.js';
+import { createComputeScheduler } from './cluster/computeScheduler.js';
+import { prepareClusterInput } from './cluster/computeInput.js';
+import { createWorkerClient } from './cluster/workerClient.js';
 import { PLACE_GLYPH, CLUSTER_GLYPH } from './cluster/glyph.js';
 import { placeGlyphKind, markerImageSources, DEFAULT_CLUSTER_CROP } from './markerContent.js';
 import { readViewBounds, getMapZoomRange } from './viewport.js';
@@ -17,7 +19,6 @@ import { nativeImageSource } from '../skins/nativeSkin.js';
 import { nativeColor } from '../platform/nativeMap.js';
 import { getMotionPolicy } from '../motion/policy.js';
 import { t } from '../i18n/index.js';
-import { revealZoom } from './clusterZoom.js';
 
 // 原生视图只在进入屏幕时创建，所以节点范围可以给大一些：上下左右各多一屏，平移时很少需要等新节点
 export const NATIVE_BUFFER_RATIO = 1;
@@ -100,21 +101,35 @@ function nodesSignature(nodes) {
     return nodes.map((n) => `${n.id}|${n.lng}|${n.lat}|${n.count}|${n.glyph}|${n.name}`).join('\n');
 }
 
+function createLocalClient() {
+    const runtime = createComputeRuntime();
+    return {
+        request: (op, payload, versions) => runtime.handle({ op, payload, ...versions }),
+        acknowledge: (snapshotId) => runtime.handle({ op: 'commitAck', payload: { snapshotId } }),
+        destroy: () => runtime.handle({ op: 'dispose' })
+    };
+}
+
 export class NativeMarkerLayer {
     /**
      * @param {import('./nativeMapView.js').NativeMapView} map
      * @param {{ getMarkerViewZoom?: (zoom: number) => number,
      *           onPlaceClick?: (place: object, node: object) => void,
-     *           onClusterClick?: (node: object, engine: ClusterEngine) => void,
-     *           clusterRadiusPx?: number }} options
+     *           onClusterClick?: (node: object) => void,
+     *           clusterRadiusPx?: number, workerOptions?: object }} options
      */
     constructor(map, options = {}) {
         this.map = map;
         this.options = options;
         this.zoomRange = getMapZoomRange(map);
-        this.engine = null;
         this.snapshot = null;
-        this.logicalZoom = undefined;
+        this.currentPlaces = [];
+        this.dataRevision = 0;
+        this.frameRevision = 0;
+        this.appliedFrameRevision = 0;
+        this.needsBridgeSync = false;
+        this.pendingView = null;
+        this.localCompute = typeof Worker !== 'function' && !options.workerOptions?.createWorker;
         this.queryMode = 'nearby';
         this.markerBand = null;
         this.selectedKey = null;
@@ -122,44 +137,57 @@ export class NativeMarkerLayer {
         this.sentSignature = '';
         this.version = 0;
         this.cameraMoving = false;
-        this.pendingData = false;
         this.styleKey = '';
         this.styleTimer = 0;
         this.destroyed = false;
+        this.scheduler = createComputeScheduler({
+            execute: (target) => this._compute(target),
+            onResult: (result, target) => this._receive(result, target),
+            onError: (error, target) => this._computeError(error, target)
+        });
 
         this._onMoveStart = () => {
-            if (!this.cameraMoving) this.cameraStartZoom = Number(this.map.getZoom());
+            if (!this.cameraMoving) {
+                this.cameraStartZoom = Number(this.map.getZoom());
+                this._invalidateView();
+            }
             this.cameraMoving = true;
         };
         // 移动中：聚合层级变了（捏合、减速、点聚合后的放大动画）或视野出了缓冲区，立即换节点
         this._onMapMove = () => {
-            if (this.destroyed || !this.engine || !this.snapshot) return;
+            const previous = this.pendingView || this.snapshot;
+            if (this.destroyed || !previous) return;
             const zoom = Number(this.map.getZoom());
-            const logical = this._resolveZoom(zoom);
-            if (logical === null) return;
+            const logical = this._resolveZoom(zoom, previous.logicalZoom);
+            if (logical === null) {
+                if (this.pendingView) this._invalidateView();
+                return;
+            }
             const viewBounds = readViewBounds(this.map);
-            const refining = this.cameraMoving && this.snapshot.engine === this.engine
-                && shouldRefineMarkerAnchors(this.snapshot, zoom, this.cameraStartZoom);
-            if (refining || logical !== this.logicalZoom || (viewBounds && !boundsContains(this.snapshot.coverageBounds, viewBounds))) {
+            const refining = !this.pendingView && this.cameraMoving && this.snapshot?.dataRevision === this.dataRevision
+                && logical === this.snapshot.logicalZoom && shouldRefineMarkerAnchors(this.snapshot, zoom, this.cameraStartZoom);
+            if (refining || logical !== previous.logicalZoom || (viewBounds && !boundsContains(previous.coverageBounds, viewBounds))) {
                 this._commit('live', refining);
             }
         };
         this._onMoveEnd = () => {
             this.cameraMoving = false;
-            this.pendingData = false;
             this._commit('camera');
         };
         this._onMarkerTap = ({ id }) => {
             const node = this.snapshot?.nodeByKey.get(id);
-            const place = this.snapshot?.engine?.placeByKey.get(id);
+            const place = node?.place;
             if (place) this.options.onPlaceClick?.(place, node);
         };
         this._onClusterTap = ({ id }) => {
             const node = this.snapshot?.nodeByKey.get(id);
-            if (node?.kind === 'cluster') this.options.onClusterClick?.(node, this.snapshot.engine);
+            if (node?.kind === 'cluster') return this.options.onClusterClick?.(node);
         };
         // 校准结果变了：同一份节点按新坐标重发（不播放转场）
-        this._onFrameChange = () => this._commit('frames');
+        this._onFrameChange = () => {
+            ++this.frameRevision;
+            this._commit('frames');
+        };
         map.on('movestart', this._onMoveStart);
         map.on('mapmove', this._onMapMove);
         map.on('moveend', this._onMoveEnd);
@@ -178,71 +206,148 @@ export class NativeMarkerLayer {
     /** 单一数据入口：当前模式下应参与聚合的完整列表（同 MarkerLayerController.update） */
     update({ places = [], queryMode = 'nearby', markerBand = null } = {}) {
         if (this.destroyed) return;
-        this.dataRevision = (this.dataRevision || 0) + 1;
-        const normalized = normalizePlaces(places);
-        const signature = dataSignature(normalized);
-        if (!this.engine || !this.engine.matches(normalized,signature)) {
-            this.engine = new ClusterEngine(normalized, {
-                maxZoom: Math.min(30, Math.ceil(this.zoomRange.max)),
-                minZoom: Math.max(0, Math.floor(this.zoomRange.min)),
-                radiusPx: this.options.clusterRadiusPx || CLUSTER_DEFAULTS.radiusPx
-            },signature);
-        } else {
-            this.engine.updatePlaces(normalized);
-        }
+        ++this.dataRevision;
+        this.prepareAbort?.abort();
+        this.currentPlaces = places;
         this.queryMode = queryMode;
         this.markerBand = markerBand;
-        this._commit('data');
+        if (!this.cameraMoving) this._commit('data');
     }
 
-    _commit(reason, refining = false) {
-        if (this.destroyed || !this.engine) return;
-        // 数据变化等相机静止后一起提交；移动中只按聚合层级与缓冲区换节点（live）
-        if (this.cameraMoving && reason === 'data') {
-            this.pendingData = true;
-            return;
-        }
+    _invalidateView() {
+        this.scheduler.invalidate();
+        this.prepareAbort?.abort();
+        this.pendingView = null;
+    }
+
+    _commit(reason, refining = false, retryBridge = false) {
+        if (this.destroyed || !this.dataRevision) return;
         const viewBounds = readViewBounds(this.map);
         if (!viewBounds) return;
         const zoom = Number(this.map.getZoom());
-        const logicalZoom = this._resolveZoom(zoom);
-        if (logicalZoom === null) return;
-        this.logicalZoom = logicalZoom;
-        const next = buildSnapshot(this.engine, {
-            viewBounds,
-            logicalZoom,
-            queryMode: this.queryMode,
-            markerBand: this.markerBand,
-            bufferRatio: NATIVE_BUFFER_RATIO,
-            transitionVersion: ++this.version
-        });
-        const plan = planTransition(this.snapshot, next);
-        next.dataRevision = this.dataRevision;
-        stabilizeMarkerAnchors(this.snapshot, next, plan, { zoom, refining, selectedKey: this.selectedKey });
-        this.snapshot = next;
-        const nodes = next.visibleNodes.map(nativeNode);
-        const signature = nodesSignature(nodes);
-        // 平移后节点没变（仍在缓冲区内）：不用再发
-        if (signature === this.sentSignature && reason !== 'frames') return;
-        const policy = getMotionPolicy();
-        const animate = policy.clusterMotion && policy.pageVisible && plan.kind !== 'initial' && reason !== 'frames';
-        const prevKeys = this.sentKeys;
-        this.sentKeys = new Set(nodes.map((node) => node.id));
-        this.sentSignature = signature;
-        this.map.setNodes(nodes, plan, { prevKeys, animate, selected: this.selectedKey });
+        const viewZoom = this.options.getMarkerViewZoom?.(zoom);
+        const logicalZoom = this._resolveZoom(zoom, this.snapshot?.logicalZoom, viewZoom);
+        if (logicalZoom === null) {
+            this._invalidateView();
+            return;
+        }
+        const kind = reason === 'data' ? 'data' : 'camera';
+        const target = {
+            kind, reason, retryBridge, viewRevision: ++this.version, dataRevision: this.dataRevision,
+            logicalZoom, coverageBounds: expandBounds(viewBounds, NATIVE_BUFFER_RATIO), places: this.currentPlaces,
+            immediate: !this.snapshot || this.queryMode !== this.snapshot.queryMode
+                || ['kind', 'tile', 'cell'].some((key) => this.markerBand?.[key] !== this.snapshot.markerBand?.[key]),
+            payload: { viewBounds, zoom, viewZoom, refining, queryMode: this.queryMode, markerBand: this.markerBand,
+                bufferRatio: NATIVE_BUFFER_RATIO, selectedKey: this.selectedKey, transitionVersion: this.version }
+        };
+        this.pendingView = target;
+        this.scheduler.submit(target);
     }
 
-    _resolveZoom(zoom) {
-        return resolveMarkerZoom(zoom, this.logicalZoom, { minZoom: this.engine.minZoom, maxZoom: this.engine.maxZoom },
-            this.markerBand, this.options.getMarkerViewZoom);
+    async _compute(target) {
+        if (!this.client) {
+            const options = this.options.workerOptions;
+            if (this.localCompute) this.client = createLocalClient();
+            else if (options?.createWorker) this.client = createWorkerClient(options);
+            else {
+                // Bundle the worker so WKWebView can start it without a capacitor: worker request.
+                const { default: InlineWorker } = await import('./cluster/computeWorker.js?worker&inline');
+                if (this.destroyed) return { skipped: true };
+                this.client = createWorkerClient({ ...options, createWorker: () => new InlineWorker() });
+            }
+        }
+        const { dataRevision, places } = target;
+        const payload = { ...target.payload };
+        if (this.prepared?.revision !== dataRevision) {
+            const abort = this.prepareAbort = new AbortController();
+            const prepared = await prepareClusterInput(places, { signal: abort.signal });
+            if (this.destroyed || dataRevision !== this.dataRevision) return { skipped: true };
+            this.prepared = { ...prepared, revision: dataRevision };
+        }
+        target.byKey = this.prepared.byKey;
+        const transfer = [];
+        if (this.sentRevision !== dataRevision) {
+            payload.data = this.prepared.data;
+            payload.options = {
+                maxZoom: Math.min(30, Math.ceil(this.zoomRange.max)),
+                minZoom: Math.max(0, Math.floor(this.zoomRange.min)),
+                radiusPx: this.options.clusterRadiusPx || CLUSTER_DEFAULTS.radiusPx
+            };
+            transfer.push(payload.data.coordinates.buffer);
+            this.sentRevision = dataRevision;
+        }
+        return this.client.request('compute', payload, { dataRevision, viewRevision: target.viewRevision }, transfer);
+    }
+
+    async _receive(result, target) {
+        try {
+            if (result.skipped || this.destroyed || target.dataRevision !== this.dataRevision
+                || this._resolveZoom(Number(this.map.getZoom()), this.snapshot?.logicalZoom) === null) return;
+            const nodes = result.nodes.map((node) => ({ ...node, dataRevision: result.dataRevision,
+                place: node.kind === 'place' ? target.byKey.get(node.key) : undefined }));
+            const nativeNodes = nodes.map(nativeNode);
+            const signature = nodesSignature(nativeNodes);
+            const frameRevision = this.frameRevision;
+            const frameChanged = frameRevision !== this.appliedFrameRevision;
+            if (signature !== this.sentSignature || frameChanged || this.needsBridgeSync) {
+                const policy = getMotionPolicy();
+                const animate = policy.clusterMotion && policy.pageVisible && result.plan.kind !== 'initial'
+                    && !frameChanged && !this.needsBridgeSync;
+                const prevKeys = this.needsBridgeSync ? new Set() : this.sentKeys;
+                const response = await this.map.setNodes(nativeNodes, result.plan, { prevKeys, animate, selected: this.selectedKey });
+                if (this.destroyed) return;
+                if (response === null) {
+                    // A lost reply can mean either the old or the new snapshot is on screen.
+                    this.needsBridgeSync = true;
+                    if (!target.retryBridge && this.pendingView?.viewRevision === target.viewRevision) {
+                        this._commit(target.reason, target.payload.refining, true);
+                    }
+                    return;
+                }
+                this.needsBridgeSync = false;
+                this.sentKeys = new Set(nativeNodes.map((node) => node.id));
+                this.sentSignature = signature;
+                this.appliedFrameRevision = frameRevision;
+            }
+            this.snapshot = { ...result, coverageBounds: target.coverageBounds, byKey: target.byKey,
+                nodeByKey: new Map(nodes.map((node) => [node.key, node])) };
+            this.client.acknowledge(result.snapshotId);
+        } finally {
+            if (this.pendingView?.viewRevision === target.viewRevision) {
+                this.pendingView = null;
+                // The camera can cross a refinement point while the bridge is applying this snapshot.
+                if (this.cameraMoving && Number(this.map.getZoom()) !== target.payload.zoom) this._onMapMove();
+            }
+        }
+    }
+
+    _computeError(error, target) {
+        if (this.pendingView?.viewRevision === target.viewRevision) this.pendingView = null;
+        if (this.destroyed || error.name === 'AbortError') return;
+        if (!this.localCompute) {
+            this.client?.destroy();
+            this.client = null;
+            this.localCompute = true;
+            this.prepared = null;
+            this.sentRevision = null;
+            this._commit(target.reason);
+        } else {
+            console.warn('Native map marker computation failed', error);
+        }
+    }
+
+    _resolveZoom(zoom, previousZoom, viewZoom = this.options.getMarkerViewZoom?.(zoom)) {
+        const range = { minZoom: this.zoomRange.min, maxZoom: this.zoomRange.max };
+        return resolveMarkerZoom(zoom, previousZoom, range, this.markerBand,
+            Number.isFinite(viewZoom) ? () => viewZoom : undefined);
     }
 
     setSelectedKey(key) {
         const next = key || null;
         if (next === this.selectedKey) return;
         this.selectedKey = next;
-        if (this.snapshot?.nodeByKey.get(next)?.sourceCoordinate) {
-            this._commit('selection');
+        if (this.pendingView || this.snapshot?.nodeByKey.get(next)?.sourceCoordinate) {
+            this._commit('selection', this.pendingView?.payload.refining);
         }
         this.map.setSelectedPlace(next);
     }
@@ -264,48 +369,45 @@ export class NativeMarkerLayer {
 
     setNativeGlassVisible() { }
 
-    getEngine() {
-        return this.engine;
-    }
-
     getZoomState() {
-        return { logicalZoom:this.logicalZoom,minZoom:this.zoomRange.min,maxZoom:this.zoomRange.max };
+        return { logicalZoom: this.snapshot?.logicalZoom, minZoom: this.zoomRange.min, maxZoom: this.zoomRange.max };
     }
 
-    async getClusterInfo(nodeKey,dataRevision = this.snapshot?.dataRevision) {
-        if (dataRevision !== this.snapshot?.dataRevision) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
-        const node = this.snapshot?.nodeByKey.get(nodeKey);
-        if (!node) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
-        return {expansionZoom:this.snapshot.engine.expansionZoom(node),aggregateOnly:!!node.aggregateOnly};
-    }
-
-    async getClusterMembers(nodeKey,dataRevision = this.snapshot?.dataRevision) {
-        if (dataRevision !== this.snapshot?.dataRevision) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
-        const node = this.snapshot?.nodeByKey.get(nodeKey);
-        if (!node) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
-        return this.snapshot.engine.memberKeys(node).map(key=>this.snapshot.engine.placeByKey.get(key)).filter(Boolean);
-    }
-
-    async getPlaceRevealZoom(place,baseZoom,maxZoom,dataRevision = this.snapshot?.dataRevision) {
-        if (dataRevision !== this.snapshot?.dataRevision) throw Object.assign(new Error('Map data changed'),{code:'STALE_DATA'});
-        return revealZoom({engine:this.engine,place,baseZoom,maxZoom});
-    }
-
-    /** 搜索结果自动适配视野时使用（同 MarkerLayerController） */
-    getDataBounds() {
-        if (!this.engine || !this.engine.size) return null;
-        let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
-        for (const place of this.engine.placeByKey.values()) {
-            const lng = Number(place.longitude), lat = Number(place.latitude);
-            minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
-            minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+    _snapshotFor(dataRevision) {
+        if (!this.snapshot || dataRevision !== this.snapshot.dataRevision) {
+            throw Object.assign(new Error('Map data changed'), { code: 'STALE_DATA' });
         }
-        return { minLng, minLat, maxLng, maxLat };
+        return this.snapshot;
+    }
+
+    async getClusterInfo(nodeKey, dataRevision = this.snapshot?.dataRevision) {
+        this._snapshotFor(dataRevision);
+        return this.client.request('clusterInfo', { nodeKey }, { dataRevision });
+    }
+
+    async getClusterMembers(nodeKey, dataRevision = this.snapshot?.dataRevision) {
+        const snapshot = this._snapshotFor(dataRevision);
+        const { keys } = await this.client.request('members', { nodeKey }, { dataRevision });
+        return keys.map((key) => snapshot.byKey.get(key)).filter(Boolean);
+    }
+
+    async getPlaceRevealZoom(place, baseZoom, maxZoom, dataRevision = this.snapshot?.dataRevision) {
+        if (!this.snapshot) return Math.min(baseZoom, maxZoom);
+        this._snapshotFor(dataRevision);
+        const { zoom } = await this.client.request('reveal', { place, baseZoom, maxZoom }, { dataRevision });
+        return zoom;
+    }
+
+    getDataBounds() {
+        return this.snapshot?.dataBounds || null;
     }
 
     destroy() {
         if (this.destroyed) return;
         this.destroyed = true;
+        this.prepareAbort?.abort();
+        this.scheduler.destroy();
+        this.client?.destroy();
         window.clearTimeout(this.styleTimer);
         window.removeEventListener('themechange', this._onTheme);
         this.themeObserver?.disconnect();

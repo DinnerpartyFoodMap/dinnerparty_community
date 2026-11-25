@@ -36,6 +36,7 @@ const {
     NativeMapView, NativeMarkerOverlay, NativePolylineOverlay, isNativeMap, nativeMapAppearance, sampleTouchHoles, readPoint
 } = await import('../../../src/map/nativeMapView.js');
 const { NativeMarkerLayer, buildNativeMarkerStyle, nativeNode, NATIVE_BUFFER_RATIO } = await import('../../../src/map/nativeMarkerLayer.js');
+const { createComputeRuntime } = await import('../../../src/map/cluster/computeRuntime.js');
 const { lngOf, tileOf } = await import('../../../src/map/markerTiles.js');
 const { computeLogicalZoom } = await import('../../../src/map/cluster/snapshot.js');
 const {
@@ -446,7 +447,7 @@ const canvas = {
         }
         on(type, fn) { if (!this.handlers.has(type)) this.handlers.set(type, new Set()); this.handlers.get(type).add(fn); }
         off(type, fn) { this.handlers.get(type)?.delete(fn); }
-        emit(type, event = {}) { for (const fn of this.handlers.get(type) || []) fn(event); }
+        emit(type, event = {}) { return Promise.all([...this.handlers.get(type) || []].map((fn) => fn(event))); }
         getZoom() { return this.zoom; }
         getZooms() { return [3, 20]; }
         getBounds() {
@@ -455,18 +456,73 @@ const canvas = {
             const ne = { lng: this.center[0] + span, lat: this.center[1] + span };
             return { getSouthWest: () => sw, getNorthEast: () => ne };
         }
-        setNodes(nodes, plan, options) { this.calls.push(['nodes', nodes, plan, options]); }
+        setNodes(nodes, plan, options) { this.calls.push(['nodes', nodes, plan, options]); return this.onSetNodes?.(); }
         setSelectedPlace(id) { this.calls.push(['selected', id]); }
         setMarkerStyle(style) { this.calls.push(['style', style]); }
         last(kind) { return this.calls.filter(([k]) => k === kind).at(-1); }
         count(kind) { return this.calls.filter(([k]) => k === kind).length; }
     }
+    const until = async (predicate) => {
+        const end = Date.now() + 2000;
+        while (!predicate()) {
+            assert.ok(Date.now() < end, 'native marker update settled');
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+    };
+    const settle = (layer) => until(() => !layer.pendingView);
+    {
+        const asyncMap = new FakeMap();
+        const runtime = createComputeRuntime();
+        const operations = [];
+        const asyncLayer = new NativeMarkerLayer(asyncMap, { workerOptions: {
+            createWorker: () => ({
+                postMessage(message) {
+                    operations.push(message.op);
+                    queueMicrotask(async () => {
+                        const result = await runtime.handle(message);
+                        this.onmessage?.({ data: { requestId: message.requestId, result } });
+                    });
+                },
+                terminate() {}
+            })
+        } });
+        const place = (id) => ({ id, name: String(id), longitude: 113.3, latitude: 23.1 });
+        let acknowledge;
+        asyncMap.onSetNodes = () => new Promise((resolve) => { acknowledge = resolve; });
+        asyncLayer.update({ places: [place(901)] });
+        assert.equal(asyncMap.count('nodes'), 0, 'native update yields before committing a new cluster snapshot');
+        await until(() => !!acknowledge);
+        asyncLayer.update({ places: [place(902)] });
+        asyncLayer.update({ places: [place(903)] });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        assert.equal(asyncMap.count('nodes'), 1, 'only one native snapshot is in flight');
+        asyncMap.onSetNodes = null;
+        acknowledge({ count: 1 });
+        await until(() => asyncMap.count('nodes') === 2);
+        const [, nodes, , options] = asyncMap.last('nodes');
+        assert.deepEqual(nodes.map((node) => node.id), ['place:903'], 'only the latest waiting snapshot reaches MapKit');
+        assert.deepEqual([...options.prevKeys], ['place:901'], 'transition starts from the snapshot acknowledged by MapKit');
+        assert.deepEqual(operations.slice(0, 3), ['compute', 'commitAck', 'compute']);
+        await settle(asyncLayer);
+
+        let delivery = 0;
+        asyncMap.onSetNodes = () => ++delivery === 1 ? null : { count: 1 };
+        asyncLayer.update({ places: [place(904)] });
+        await settle(asyncLayer);
+        assert.equal(delivery, 2, 'a failed native delivery gets one resync attempt');
+        const [, retriedNodes, , resync] = asyncMap.last('nodes');
+        assert.deepEqual(retriedNodes.map((node) => node.id), ['place:904']);
+        assert.equal(resync.animate, false, 'resync does not assume the failed call left the native layer untouched');
+        assert.equal(resync.prevKeys.size, 0);
+        asyncLayer.destroy();
+    }
+
     const map = new FakeMap();
     const clicked = [];
     const clusters = [];
     const layer = new NativeMarkerLayer(map, {
         onPlaceClick: (place) => clicked.push(place.id),
-        onClusterClick: (node, engine) => clusters.push([node.key, engine.memberKeys(node).length])
+        onClusterClick: async (node) => clusters.push([node.key, (await layer.getClusterMembers(node.key, node.dataRevision)).length])
     });
     assert.equal(map.count('style'), 1, '创建时下发一次样式');
     // 两组相距约 50 米的店：放大时各自分开，缩小后合并
@@ -475,9 +531,11 @@ const canvas = {
         { id: 2, name: '乙', longitude: 113.3005, latitude: 23.1000 },
         { id: 3, name: '避雷', longitude: 113.3010, latitude: 23.1000, rating_count: 3, rating_average: 1.2 },
         { id: 'amap_B0', isMarked: false, name: '未收录', longitude: 113.3015, latitude: 23.1000 },
-        { id: 4, name: '没坐标', longitude: 'x', latitude: 23 }
+        { id: 4, name: '没坐标', longitude: 'x', latitude: 23 },
+        null
     ];
     layer.update({ places });
+    await settle(layer);
     let [, nodes, plan, options] = map.last('nodes');
     assert.deepEqual(nodes.map((n) => [n.id, n.cluster, n.glyph, n.name]), [
         ['place:1', false, 'place', '甲'], ['place:2', false, 'place', '乙'], ['place:3', false, 'avoid', '避雷'], ['poi:amap:B0', false, 'add', '未收录']
@@ -486,14 +544,17 @@ const canvas = {
     assert.equal(plan.kind, 'initial');
 
     layer.update({ places: places.map((p) => ({ ...p, favorite: true })) });
+    await settle(layer);
     assert.equal(map.count('nodes'), 1, '与标记无关的字段变化不重发');
 
     // 缩小到 14 级：四家店合并成一个聚合，计划是 mergeInto → 同一个父聚合
     map.zoom = 14;
     map.emit('movestart');
     layer.update({ places: places.slice(0, 3) });
+    await settle(layer);
     assert.equal(map.count('nodes'), 1, '相机移动中不换节点');
     map.emit('moveend');
+    await settle(layer);
     [, nodes, plan, options] = map.last('nodes');
     assert.equal(nodes.length, 1);
     assert.equal(nodes[0].cluster, true);
@@ -507,6 +568,7 @@ const canvas = {
     map.center = [113.3001, 23.1001];
     map.emit('movestart');
     map.emit('moveend');
+    await settle(layer);
     assert.equal(map.count('nodes'), sentBefore, '平移后节点不变不重发');
 
     // 放大回 18 级：聚合拆开，子节点从父聚合出发
@@ -515,6 +577,7 @@ const canvas = {
     map.center = [113.3, 23.1];
     map.emit('movestart');
     map.emit('moveend');
+    await settle(layer);
     [, nodes, plan, options] = map.last('nodes');
     assert.equal(nodes.length, 3);
     assert.equal(plan.kind, 'zoom-in');
@@ -527,30 +590,39 @@ const canvas = {
     let sent = map.count('nodes');
     map.zoom = 17.9;
     map.emit('mapmove');
+    await settle(layer);
     map.zoom = 17.4;
     map.emit('mapmove');
+    await settle(layer);
     assert.equal(map.count('nodes'), sent, '还没越过滞回边界（18 ± 0.65）：不换');
     map.zoom = 16.3;
     map.emit('mapmove');
+    await settle(layer);
     assert.equal(map.count('nodes'), sent + 1, '缩小到另一个聚合层级：移动中立即换节点');
     assert.equal(map.last('nodes')[1].length, 1, '四家店合并');
     assert.equal(map.last('nodes')[3].animate, true, '移动中换节点也播放合并 / 拆分');
     sent = map.count('nodes');
     map.zoom = 16.1;
     map.emit('mapmove');
+    await settle(layer);
     assert.equal(map.count('nodes'), sent, '同一聚合层级内移动不换');
     layer.update({ places: places.slice(0, 2) });
+    await settle(layer);
     map.emit('mapmove');
+    await settle(layer);
     assert.equal(map.count('nodes'), sent, '移动中数据变化仍等相机静止');
     map.center = [113.6, 23.1];
     map.emit('mapmove');
+    await settle(layer);
     assert.equal(map.count('nodes'), sent + 1, '平移出缓冲区：移动中补节点');
     map.zoom = 18;
     map.center = [113.3, 23.1];
     map.emit('moveend');
+    await settle(layer);
     [, nodes] = map.last('nodes');
     assert.equal(nodes.length, 2, '静止后数据变化一起提交');
     layer.update({ places: places.slice(0, 3) });
+    await settle(layer);
 
     // 点按：单点交给 onPlaceClick，聚合交给 onClusterClick（与网页同一个展开逻辑）
     map.emit('markerTap', { id: 'place:2' });
@@ -559,19 +631,21 @@ const canvas = {
     map.zoom = 14;
     map.emit('movestart');
     map.emit('moveend');
+    await settle(layer);
     const cluster = map.last('nodes')[1][0];
-    map.emit('clusterTap', { id: cluster.id });
-    map.emit('clusterTap', { id: 'place:1' });
+    await map.emit('clusterTap', { id: cluster.id });
+    await map.emit('clusterTap', { id: 'place:1' });
     assert.deepEqual(clusters, [[cluster.id, 3]]);
 
     // 校准结果变化：同一份节点重发，不播放转场
     map.emit('framechange', { frames: { hk: 'wgs' } });
+    map.emit('moveend');
+    await settle(layer);
     assert.equal(map.last('nodes')[3].animate, false);
 
     layer.setSelectedKey('place:1');
     layer.setSelectedKey('place:1');
     assert.equal(map.count('selected'), 1);
-    assert.equal(layer.getEngine().size, 3);
     assert.deepEqual(layer.getDataBounds(), { minLng: 113.3, minLat: 23.1, maxLng: 113.301, maxLat: 23.1 });
     assert.equal(NATIVE_BUFFER_RATIO, 1);
     layer.destroy();
@@ -596,6 +670,7 @@ const canvas = {
     });
     tileMap.zoom = 12;
     tileLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    await settle(tileLayer);
     const [, aggregateNodes] = tileMap.last('nodes');
     const aggregate = aggregateNodes.find((node) => node.cluster);
     assert.equal(aggregate.count, 2, '12 级时两个匿名点合为一处聚合');
@@ -603,11 +678,14 @@ const canvas = {
     tileMap.emit('movestart');
     tileMap.zoom = 13;
     tileMap.emit('mapmove');
+    await settle(tileLayer);
     assert.equal(tileMap.count('nodes'), 1, '缩放中不提前拆开旧瓦片的匿名点');
     tileMap.emit('moveend');
+    await settle(tileLayer);
     assert.equal(tileMap.count('nodes'), 1, '没有明细时，相机停下也保留原聚合');
 
     tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
+    await settle(tileLayer);
     assert.equal(tileMap.count('nodes'), 2, '明细到达时只发送一份转场');
     const [, leafNodes, leafPlan, leafOptions] = tileMap.last('nodes');
     assert.deepEqual(leafNodes.map((node) => node.id), ['place:101', 'place:102', 'place:103']);
@@ -618,11 +696,14 @@ const canvas = {
     assert.deepEqual([detail.lng, detail.lat], [standaloneAnchor.lng, standaloneAnchor.lat], '拆分时独立标记继续使用屏幕上已有的地理锚点');
     assert.equal(leafOptions.animate, true);
     tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
+    await settle(tileLayer);
     assert.equal(tileMap.count('nodes'), 2, '静止时重复提交明细不会重新定位');
     tileMap.emit('movestart');
     tileMap.zoom = 12;
     tileMap.emit('moveend');
+    await settle(tileLayer);
     tileLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    await settle(tileLayer);
     const [, zoomedOutNodes, mergePlan] = tileMap.last('nodes');
     const mergedStandalone = zoomedOutNodes.find((node) => !node.cluster);
     assert.deepEqual([mergedStandalone.lng, mergedStandalone.lat], [detail.lng, detail.lat], '合并时独立标记仍固定');
@@ -630,27 +711,35 @@ const canvas = {
 
     tileMap.zoom = 13;
     tileMap.emit('moveend');
+    await settle(tileLayer);
     tileLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
+    await settle(tileLayer);
     tileMap.emit('movestart');
     tileMap.zoom = 13.075;
     tileMap.emit('mapmove');
+    await settle(tileLayer);
     const intermediate = tileMap.last('nodes')[1].find((node) => node.id === 'place:103');
     assert.ok(intermediate.lng > Math.min(detail.lng, leafPlaces[2].longitude)
         && intermediate.lng < Math.max(detail.lng, leafPlaces[2].longitude), '继续放大的中间帧逐步接近明细位置');
     const refinementFrames = tileMap.count('nodes');
     tileMap.zoom = 13.02;
     tileMap.emit('mapmove');
+    await settle(tileLayer);
     assert.equal(tileMap.count('nodes'), refinementFrames, '手势短暂缩回时标记不沿修正轨迹倒退');
     tileMap.zoom = 13.3;
     tileMap.emit('mapmove');
+    await settle(tileLayer);
     const [, refinedNodes, refinePlan] = tileMap.last('nodes');
     const refined = refinedNodes.find((node) => node.id === 'place:103');
     assert.ok(Math.abs(refined.lng - 113.264) < 1e-7, '继续放大时采用真实明细位置');
     assert.ok(refinePlan.reanchor.has('place:103'), '补齐明细位置时不额外播放滑动动画');
     tileMap.emit('moveend');
+    await settle(tileLayer);
     tileMap.zoom = 12;
     tileMap.emit('moveend');
+    await settle(tileLayer);
     tileLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    await settle(tileLayer);
     const coarseWithExactAnchor = tileMap.last('nodes')[1].find((node) => !node.cluster);
     assert.deepEqual([coarseWithExactAnchor.lng, coarseWithExactAnchor.lat], [refined.lng, refined.lat], '已知精确位置的点缩小时保持在原处');
     tileLayer.destroy();
@@ -661,8 +750,10 @@ const canvas = {
     const fallbackLayer = new NativeMarkerLayer(fallbackMap, { onPlaceClick: (place) => fallbackClicks.push(place.id) });
     fallbackMap.zoom = 13;
     fallbackLayer.update({ places: [leafPlaces[0], aggregatePlaces[2]], markerBand: leafBand });
+    await settle(fallbackLayer);
     const fallback = fallbackMap.last('nodes')[1].find((node) => node.id === aggregatePlaces[2].aggregateKey);
     fallbackLayer.update({ places: [leafPlaces[0], leafPlaces[2]], markerBand: leafBand });
+    await settle(fallbackLayer);
     const [, recoveredNodes, recoveryPlan] = fallbackMap.last('nodes');
     const recovered = recoveredNodes.find((node) => node.id === 'place:103');
     assert.equal(recoveryPlan.reuse.get(recovered.id), fallback.id, '明细补到时沿用同格匿名标记');
@@ -671,10 +762,24 @@ const canvas = {
     fallbackMap.emit('markerTap', { id: recovered.id });
     assert.deepEqual(fallbackClicks, [103]);
     fallbackLayer.setSelectedKey(recovered.id);
+    await settle(fallbackLayer);
     const selected = fallbackMap.last('nodes')[1].find((node) => node.id === recovered.id);
     assert.ok(Math.abs(selected.lng - leafPlaces[2].longitude) < 1e-7
         && Math.abs(selected.lat - leafPlaces[2].latitude) < 1e-7, '选中时采用明细坐标');
     fallbackLayer.destroy();
+
+    const selectionMap = new FakeMap();
+    const selectionLayer = new NativeMarkerLayer(selectionMap);
+    selectionMap.zoom = 13;
+    selectionLayer.update({ places: [leafPlaces[0], aggregatePlaces[2]], markerBand: leafBand });
+    await settle(selectionLayer);
+    selectionLayer.update({ places: [leafPlaces[0], leafPlaces[2]], markerBand: leafBand });
+    selectionLayer.setSelectedKey('place:103');
+    await settle(selectionLayer);
+    const newlySelected = selectionMap.last('nodes')[1].find((node) => node.id === 'place:103');
+    assert.ok(Math.abs(newlySelected.lng - leafPlaces[2].longitude) < 1e-7,
+        'selection arriving during compute uses the selected place’s precise position');
+    selectionLayer.destroy();
 
     // 上一次停在 13 级，回捏到 12 级时才收到明细，仍保留画面上的匿名聚合。
     const reverseMap = new FakeMap();
@@ -682,27 +787,34 @@ const canvas = {
     const clickedMembers = [];
     const reverseLayer = new NativeMarkerLayer(reverseMap, {
         getMarkerViewZoom: (zoom) => computeLogicalZoom(zoom, settledZoom),
-        onClusterClick: (node, engine) => clickedMembers.push(...engine.memberKeys(node))
+        onClusterClick: async (node) => clickedMembers.push(...(await reverseLayer.getClusterMembers(node.key, node.dataRevision)).map((place) => place.aggregateKey))
     });
     reverseMap.zoom = 12;
     reverseLayer.update({ places: aggregatePlaces, queryMode: 'nearby', markerBand: aggregateBand });
+    await settle(reverseLayer);
     const reverseAggregate = reverseMap.last('nodes')[1].find((node) => node.cluster);
     reverseMap.emit('movestart');
     reverseMap.zoom = 13;
     reverseMap.emit('mapmove');
+    await settle(reverseLayer);
     reverseMap.emit('moveend');
+    await settle(reverseLayer);
     settledZoom = 13;
 
     reverseMap.emit('movestart');
-    reverseMap.zoom = 12;
+    reverseMap.zoom = 13.35;
     reverseLayer.update({ places: leafPlaces, queryMode: 'nearby', markerBand: leafBand });
     reverseMap.emit('mapmove');
+    reverseMap.zoom = 12;
+    reverseMap.emit('mapmove');
+    await settle(reverseLayer);
     assert.equal(reverseMap.count('nodes'), 1, '回到 12 级时不显示迟到的明细');
-    reverseMap.emit('clusterTap', { id: reverseAggregate.id });
+    await reverseMap.emit('clusterTap', { id: reverseAggregate.id });
     assert.deepEqual(clickedMembers, aggregatePlaces.slice(0, 2).map((place) => place.aggregateKey), '点按仍使用画面上的聚合成员');
 
     reverseMap.zoom = 12.48;
     reverseMap.emit('moveend');
+    await settle(reverseLayer);
     assert.equal(reverseMap.count('nodes'), 2, '停在 12.48 时按上次停在 13 级的滞回规则显示明细');
     assert.equal(reverseMap.last('nodes')[3].animate, true);
     reverseLayer.destroy();
@@ -772,6 +884,11 @@ const canvas = {
         assert.equal(Math.round(Number(match[1]) * 1000), ms, `${key} 与网页一致`);
     }
     assert.doesNotMatch(controller, /clusteringIdentifier = (?!nil)/, '不用 MapKit 自带的聚合');
+    const setNodes = controller.slice(controller.indexOf('func setNodes('), controller.indexOf('private func finishTransitions()'));
+    assert.doesNotMatch(setNodes, /finishTransitions\(\)/, '提交快照时不打断未改变标记上的动画');
+    assert.doesNotMatch(setNodes, /inputs\.count <= Self\.animatedNodeLimit/, '缓冲区节点不能关闭眼前的转场');
+    assert.match(setNodes, /isOnScreen\(view\), takeAnimationSlot\(\)/, '屏内退出标记分享动画预算');
+    assert.match(setNodes, /visibleToAnimation\(input\.coordinate\), takeAnimationSlot\(\)/, '屏内新标记分享动画预算');
     // MapKit 会改动 setVisibleMapRect 的请求（放进自己的可见区域）：iOS 点聚合只放大一点点、补放大落在同一处就打开成员列表。
     // 设置相机前按同步试探学到的比例与偏移修正请求；试探不回传相机事件；事件与平移的中心取可见矩形的中点
     const setCamera = controller.slice(controller.indexOf('func setCamera('), controller.indexOf('private func calibrateCameraFit()'));
