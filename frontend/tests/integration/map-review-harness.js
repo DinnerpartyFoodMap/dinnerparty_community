@@ -32,15 +32,21 @@ export async function runReviewRegressionTests() {
             surface.emit('moveend');
             await until(()=>live.metrics.commits.at(-1)?.reason==='camera'&&!live.renderQueue.busy,'unchanged camera');
             assert(slices.length>0&&slices.every(slice=>slice.writes===0),'unchanged nodes are not throttled as 120 SDK writes');
-            const stable=live.snapshot, keys=[...live.entries.keys()].sort();
+            const stable=live.snapshot;
             live.update({places:places.map((place,i)=>({...place,id:i+20000,longitude:119.99+(i%20)*.001})),queryMode:'search'});
             await until(()=>live.renderQueue.busy&&[...live.entries.keys()].some(key=>key==='place:20000'),'partial new render');
+            const shown=[...live.entries.keys()].filter(key=>/^place:2\d{4}$/.test(key));
             surface.emit('zoomstart');
-            await until(()=>!live.renderQueue.busy&&!live.cleanupQueue.busy,'rollback while the camera is moving');
-            assert(JSON.stringify([...live.entries.keys()].sort())===JSON.stringify(keys),'cancel restores the last committed topology');
-            assert(live.getDataBounds()===stable.dataBounds,'rollback restores committed data bounds as well as markers');
+            assert(live.renderQueue.busy,'a camera start does not cancel the reconciliation in progress');
+            await until(()=>!live.renderQueue.busy&&!live.cleanupQueue.busy,'reconciliation finishes while the camera is moving');
+            // Rolling back to the previous topology and re-applying the target after
+            // the camera stops made markers blink during every wheel/pinch zoom.
+            assert(shown.every(key=>live.entries.has(key)),'markers already shown are not rolled back when the camera moves');
+            assert(live.snapshot!==stable&&live.snapshot.dataRevision===live.dataRevision,'the in-flight target is committed, not the old topology');
+            assert(![...live.entries.values()].some(entry=>entry.anims?.size)&&!live.txns.size,'no transition starts after the camera has moved');
+            assert(live.getDataBounds()===live.snapshot.dataBounds,'data bounds follow the committed markers');
             surface.emit('zoomend');
-            await until(()=>live.snapshot?.dataRevision===live.dataRevision&&!live.renderQueue.busy&&!live.txns.size,'resume latest data after rollback');
+            await until(()=>live.snapshot?.dataRevision===live.dataRevision&&!live.renderQueue.busy&&!live.txns.size,'latest data after the camera stops');
             const root=[...live.entries.values()][0];let taps=0;
             live.options.onPlaceClick=()=>taps++;
             root.interactive=false;

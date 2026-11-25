@@ -25,6 +25,7 @@
         "test:map-touch-browser": "node scripts/testing/test-map-touch-lifecycle-browser.mjs && node scripts/testing/test-map-touch-gesture-browser.mjs",
         "test:map-anchor-browser": "node scripts/testing/test-map-anchor-refinement-browser.mjs && node scripts/testing/test-map-amap-anchor-browser.mjs",
         "test:map-motion-browser": "node scripts/testing/test-map-motion-visible-browser.mjs",
+        "test:map-flicker-browser": "node scripts/testing/test-map-zoom-flicker-browser.mjs && node scripts/testing/test-map-zoom-flicker-browser.mjs touch",
         "test:map-review-browser": "node scripts/testing/test-map-review-browser.mjs",
         "test:map-compute-browser": "node scripts/testing/test-map-compute-browser.mjs",
         "test:map-render-browser": "node scripts/testing/test-map-render-budget-browser.mjs",

@@ -97,8 +97,27 @@ try {
             window.__foodmapTouchDone=(id,error)=>{const request=pending.get(id);pending.delete(id);error?request.reject(new Error(error)):request.resolve();};
         }`},sessionId);
     }
+    // Trusted mouse wheel input for desktop zoom tests (window.dispatchMapWheel(steps)).
+    await command('Runtime.addBinding',{name:'__foodmapWheel'},sessionId);
+    socket.addEventListener('message',event=>{
+        const message=JSON.parse(event.data);
+        if(message.method!=='Runtime.bindingCalled'||message.params.name!=='__foodmapWheel')return;
+        const {id,steps}=JSON.parse(message.params.payload);
+        (async()=>{
+            for(const step of steps){
+                if(step.wait)await new Promise(resolve=>setTimeout(resolve,step.wait));
+                if(Number.isFinite(step.deltaY))await command('Input.dispatchMouseEvent',{type:'mouseWheel',x:step.x,y:step.y,deltaX:0,deltaY:step.deltaY},sessionId);
+            }
+        })().then(()=>command('Runtime.evaluate',{expression:`window.__foodmapWheelDone(${id})`},sessionId))
+            .catch(error=>command('Runtime.evaluate',{expression:`window.__foodmapWheelDone(${id},${JSON.stringify(error.message)})`},sessionId));
+    });
+    await command('Runtime.evaluate',{expression:`{
+        let id=0;const pending=new Map();
+        window.dispatchMapWheel=steps=>new Promise((resolve,reject)=>{pending.set(++id,{resolve,reject});window.__foodmapWheel(JSON.stringify({id,steps}));});
+        window.__foodmapWheelDone=(id,error)=>{const request=pending.get(id);pending.delete(id);error?request.reject(new Error(error)):request.resolve();};
+    }`},sessionId);
     let result;
-    const deadline = Date.now() + 60000;
+    const deadline = Date.now() + (Number(process.env.FOODMAP_TIMEOUT_MS) || 60000);
     while (Date.now() < deadline) {
         const snapshot = await command('Runtime.evaluate', { expression: 'document.body?.dataset.result ? document.getElementById("result").textContent : null', returnByValue: true }, sessionId);
         if (snapshot.result?.value) { result = JSON.parse(snapshot.result.value); break; }

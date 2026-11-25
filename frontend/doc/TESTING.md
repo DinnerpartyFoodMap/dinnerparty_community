@@ -25,6 +25,7 @@
 | npm run test:native-clusters-browser | 真实标记控制器与 Web Animations，替换高德/原生边界；聚合玻璃帧采样、遮挡、回退与中断；不执行 SwiftUI |
 | npm run test:map-touch-browser | 触摸会话/无效相机/后台恢复边界，及真实高德 SDK 的可信 CDP 连续双指与可见拆合动画；需要联网，iPhone UA 仿真不代表 WebKit/iOS 真机 |
 | npm run test:map-anchor-browser | 匿名转明细后，桌面/触屏/缺失事件路径的坐标精修，以及真实高德 SDK 的命名标记 DOM 与精确坐标对齐；SDK 部分需要联网 |
+| npm run test:map-flicker-browser | 真实高德 SDK 与 Worker，可信 CDP 滚轮快慢连续缩放和双指连续捏合，逐帧检查标记是否消失又出现、可见数量是否骤降；需要联网，`FOODMAP_CPU_RATE=4` 可降速复跑 |
 | npm run test:add-pick-browser | 真实 MapView 与表单，替换高德/HTTP：首次点击固定坐标、相机不移、重复点击与取消重选 |
 | npm run test:random-browser | 真实 React 随机会话与 API：固定中心、短历史、取消/换账号、迟到响应与重试 ID |
 | npm run test:web-layout-browser | 真实地图与列表/雷达：遮挡命中、按钮位置、更多入口、500m 与中心请求参数 |

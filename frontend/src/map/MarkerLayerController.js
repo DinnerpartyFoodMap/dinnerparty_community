@@ -4,6 +4,7 @@
 // 时序规则：
 // - 缩放结束后提交完整目标快照；跨瓦片级别时等待对应数据，既有节点跟随地图。
 // - zoomstart / movestart / 页面隐藏 / 销毁时终止转场并收敛到目标快照，手势始终优先。
+// - 分帧调和进行中相机移动或有新提交时，调和继续完成（不再起动画），不退回上一份快照；新结果到达后从当前标记接替。
 // - 每个转场有版本号，过期的完成回调不会回收新节点。
 // - 单点标记的名称总是显示（不做碰撞避让）；转场期间先隐藏，相机静止、转场结束后统一显示。
 
@@ -102,6 +103,8 @@ export class MarkerLayerController {
         this.version = 0;
         this.txns = new Set();
         this.cameraMoving = false;
+        // 每次相机开始移动加一；调和途中发现它变了，就停止新动画并丢弃旧的投影缓存
+        this.cameraEpoch = 0;
         this.destroyed = false;
         this.commitRaf = 0;
         this.labelRaf = 0;
@@ -151,8 +154,10 @@ export class MarkerLayerController {
         this._onMoveStart = () => {
             if (!this.cameraMoving) this.cameraStartZoom = Number(this.map.getZoom());
             this.cameraMoving = true;
+            this.cameraEpoch++;
             this.scheduler.invalidate();
-            this._cancelRender();
+            // 进行中的调和继续完成（不再起新动画），不退回上一份快照：
+            // 退回会把刚显示的新标记撤掉、旧标记重建，下一次提交又换回来，连续缩放时标记一闪一闪。
             this._finishAll();
         };
         this._onZoomChange = () => {
@@ -193,7 +198,7 @@ export class MarkerLayerController {
      */
     async update({ places = [], queryMode = 'nearby', markerBand = null } = {}) {
         if (this.destroyed) return;
-        this._cancelRender();
+        // 进行中的调和保留到新结果到达时由 _apply 接替，避免先退回旧快照再换新（闪烁）
         ++this.dataRevision;
         this.currentPlaces = places;
         this.queryMode = queryMode;
@@ -335,7 +340,6 @@ export class MarkerLayerController {
         const viewBounds = readViewBounds(this.map);
         if (!viewBounds) return;
         const zoom = Number(this.map.getZoom());
-        this._cancelRender();
         this.scheduler.submit({
             kind:reason === 'data' ? 'data' : 'camera',reason,dataRevision:this.dataRevision,viewRevision:++this.viewRevision,places:this.currentPlaces,
             immediate:!this.snapshot || this.snapshot.queryMode !== this.queryMode
@@ -392,11 +396,14 @@ export class MarkerLayerController {
         this.errorButton?.remove(); this.errorButton = null;
         this._pushMetric('worker',{...result.metrics,maxSendMs:this.client.metrics.maxSendMs});
         if (result.metrics.indexMs > 0) this._pushMetric('indexBuilds',{size:result.metrics.inputCount,ms:result.metrics.indexMs});
-        const applied = await this._apply(result.plan,next,target.reason);
-        if (applied === false || this.destroyed) return;
-        this.client.acknowledge(result.snapshotId);
-        for (const revision of this.placeVersions.keys()) if (revision !== result.dataRevision) this.placeVersions.delete(revision);
-        this._pushMetric('commits',{reason:target.reason,kind:result.plan.kind,nodes:visibleNodes.length,ms:performance.now()-started});
+        // 不等分帧调和完成就放开计算调度：相机停下后的新结果要能直接接替进行中的调和，
+        // 而不是排在一份已过时的调和后面（慢设备上会晚几秒）。
+        this._apply(result.plan,next,target.reason).then(applied => {
+            if (applied === false || this.destroyed) return;
+            this.client?.acknowledge(result.snapshotId);
+            for (const revision of this.placeVersions.keys()) if (revision !== result.dataRevision) this.placeVersions.delete(revision);
+            this._pushMetric('commits',{reason:target.reason,kind:result.plan.kind,nodes:visibleNodes.length,ms:performance.now()-started});
+        }).catch(error => this._computeError(error));
     }
 
     _computeError(error) {
@@ -588,12 +595,21 @@ export class MarkerLayerController {
             this._finishAll();
         }
         const version = ++this.version;
-        const animate = policy.clusterMotion && policy.pageVisible && !this.cameraMoving
+        let animate = policy.clusterMotion && policy.pageVisible && !this.cameraMoving
             && plan.kind !== 'initial' && reason !== 'resume';
         const reduced = policy.reducedMotion;
         const degraded = policy.degradeLevel > 0;
         const size = this._containerSize();
         const projCache = new Map();
+        // 调和跨多帧。相机开始移动后（_onMoveStart 已收敛本次转场）不再起动画或残影，
+        // 屏幕投影也需重新计算；剩余节点直接就位，等相机停下后的提交接替。
+        let epoch = this.cameraEpoch;
+        const stopMotionIfCameraMoved = () => {
+            if (this.cameraEpoch === epoch) return;
+            epoch = this.cameraEpoch;
+            animate = false;
+            projCache.clear();
+        };
         const project = (coordinate) => {
             const id = `${coordinate[0]},${coordinate[1]}`;
             if (!projCache.has(id)) projCache.set(id, projectToContainer(this.map, coordinate));
@@ -673,6 +689,7 @@ export class MarkerLayerController {
         };
         for (const node of buckets.flat()) {
             yield {sdk:false};
+            stopMotionIfCameraMoved();
             const fromKey = plan.reuse.get(node.key);
             let entry = (fromKey ? oldEntries.get(fromKey) : null) || oldEntries.get(node.key);
             if (entry) {
@@ -782,6 +799,7 @@ export class MarkerLayerController {
 
         for (const [key, entry] of oldEntries) {
             yield {sdk:false};
+            stopMotionIfCameraMoved();
             this.entries.delete(key);
             const own = animate ? project(entry.node.coordinate) : null;
             const visual = this._takeOver(entry,visuals.get(entry));
@@ -852,7 +870,7 @@ export class MarkerLayerController {
         this.metrics.domCount = nextEntries.size + ghosts.length + existingGhosts;
 
         // 新增的单点在转场后段才显示名称：先隐藏，转场结束时统一布局
-        if (animations.length) {
+        if (animations.length && !txn.done) {
             for (const entry of nextEntries.values()) {
                 if (!this.labelVisible.has(entry.key)) entry.parts.label.dataset.hidden = '';
             }
@@ -860,8 +878,10 @@ export class MarkerLayerController {
 
 
         this.nativeClusters?.invalidate();
-        if (!animations.length) {
+        // txn.done：调和途中相机移动，转场已被 _finishAll 收敛，名称按最终状态重新布局
+        if (txn.done || !animations.length) {
             this._completeTransaction(txn);
+            if (!this.txns.size) this._scheduleLabels();
             return;
         }
         Promise.all(animations.map((anim) => anim.finished.catch(() => null))).then(() => this._completeTransaction(txn));
