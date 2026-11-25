@@ -35,6 +35,7 @@ const ICONS = Object.freeze({
     hidden: ['visibility_off', 'eye.slash'],
     diaries: ['auto_stories', 'book.pages'],
     comments: ['chat_bubble', 'text.bubble'],
+    writeComment: ['add_comment', 'square.and.pencil'],
     details: ['info', 'info.circle'],
     addPhoto: ['add_photo_alternate', 'photo.badge.plus'],
     photo: ['image', 'photo'],

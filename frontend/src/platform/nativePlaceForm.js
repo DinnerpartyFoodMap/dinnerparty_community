@@ -14,7 +14,7 @@ const imageList = (value) => (Array.isArray(value) ? value : [])
     .filter((url) => typeof url === 'string' && /^https?:\/\//.test(url) && url.length <= 2048)
     .slice(0, MAX_IMAGES);
 
-/** 只保留白名单字段并截到上限：店名、分类（逗号分隔）、简介、人均（正整数字符串）、评价（1–4）、两组图片地址 */
+/** 只保留白名单字段并截到上限：店名、分类（逗号分隔）、简介、人均（正整数字符串）、评价（1–4）、两组图片地址；评论模式另有评论 */
 export function pickPlaceFormValues(values) {
     if (!values || typeof values !== 'object') return null;
     const cost = clip(values.perPersonCost, 8);
@@ -23,6 +23,7 @@ export function pickPlaceFormValues(values) {
         name: clip(values.name, 120).trim(),
         category: clip(values.category, 240).trim(),
         description: clip(values.description, 1000).trim(),
+        comment: clip(values.comment, 400).trim(),
         perPersonCost: /^[1-9]\d*$/.test(cost) ? cost : '',
         rating: Number.isInteger(rating) && rating >= 1 && rating <= 4 ? rating : null,
         ratingInputKind:['explicit','default'].includes(values.rating_input_kind)?values.rating_input_kind:'unknown',

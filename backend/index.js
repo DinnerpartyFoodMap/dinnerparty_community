@@ -39,7 +39,7 @@ const preferencesRouter = require('./modules/preferences/routes/preferences');
 const noticesRouter = require("./modules/community/routes/notices");
 const categoriesRouter = require("./modules/places/routes/categories");
 const alongRouteRouter = require("./modules/discovery/routes/alongRoute");
-const { requireAuth } = require("./modules/accounts/middleware/auth");
+const { requireAuth, requireAuthWithCode } = require("./modules/accounts/middleware/auth");
 const { startVectorRetryWorker } = require('./modules/preferences/services/placeVectorService');
 const { startUserVectorWorker } = require('./modules/preferences/services/userPreferenceService');
 
@@ -230,6 +230,10 @@ app.use(require('./http/middleware/jsonCompression').jsonCompression());
 app.use('/api/journeys', express.json({ limit: '256kb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/comments', (error, req, res, next) => {
+    if (req.method !== 'POST' || req.path !== '/' || ![400, 413, 415].includes(error.status)) return next(error);
+    return res.status(error.status).json({ error: '评论请求格式无效或超出大小限制', code: 'COMMENT_INVALID' });
+});
 
 const CLIENT_AUTH_STAGES = new Set([
     'submitted',
@@ -292,7 +296,7 @@ app.use('/upload', requireAuth, require('./modules/media/routes/upload'));
 
 // mount admin routers under /admin
 app.use("/admin/users", requireAuth, adminUsersRouter);
-app.use("/admin/comments", requireAuth, adminCommentsRouter);
+app.use("/admin/comments", requireAuthWithCode, adminCommentsRouter);
 app.use("/admin/general-users", requireAuth, adminGeneralUsersRouter);
 app.use("/admin/audit", requireAuth, adminAuditRouter);
 app.use("/admin/qq-whitelist", requireAuth, adminQQWhitelistRouter);
@@ -312,6 +316,7 @@ require('./modules/accounts/services/sessions').getDefaultSessionStore();
 startVectorRetryWorker();
 // 新增地点初筛：上次进程退出时还没查完的地点重新排队（modules/places/doc/placeModeration.md）
 require('./modules/places/services/placeModeration').resumeModeration();
+require('./modules/community/services/residentComments').resumeCommentModeration();
 // 地点的省 / 市 / 区（地区筛选）：后台用高德逆地理编码补齐（modules/places/services/placeRegions.js）
 const stopPlaceRegionWorker = require('./modules/places/services/placeRegions').startPlaceRegionWorker();
 const stopUserVectorWorker = startUserVectorWorker();

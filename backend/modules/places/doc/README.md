@@ -1,5 +1,11 @@
 # 地点与修改申请
 
+## 住民评论
+
+`GET /places/:id` 返回 `comments`，每项包含 `id`、`user_id`、`username`、`content`、`status`、`time`、`updated_at`、`mine`。先选最近的 50 条可见评论，排除本人、封禁作者和观看者屏蔽的作者。登录时额外返回自己的那一条，任何审核状态都可见，并标记 `mine: true`。结果按 `time`、`id` 升序排列。评论独立于地点描述，只有单个地点详情返回评论。
+
+住民在已有评分的公开地点发表或修改评论，写入与删除接口见 [社区互动](../../community/doc/README.md#住民评论)。初筛拦下的评论以 `request_type = 'comment'` 进入地点修改申请页，见 [审核流程](placeModeration.md#住民评论)。
+
 ## 地点打卡
 
 已登录住民可在公开地点卡片提交打卡。 `POST /places/:id/check-ins` 接收 JSON，带照片时改用 multipart 表单，`payload` 是同一份 JSON，`photos` 最多 3 张，每张最多 3 MB。首次提交必填 `request_id` 与 `fix`，描述和四档评分均选填。服务端用当前店铺坐标和同一坐标系的设备定位计算距离，要求距离严格小于 50 米、报告精度不大于 25 米、定位不超过 15 秒。打卡响应与数据库不保存设备经纬度。按北京时间每日最多 5 家，同店每日一次。
@@ -65,4 +71,4 @@ flowchart TD
 
 `routes/placeVisits.js`（`/api/visits`：状态、查看、到访推断与“是否去过”回答）挂在本模块，规则见 [到访与兴趣信号](../../preferences/doc/INTEREST_V3.md) 与 [评分迁移](../../ratings/doc/RATING_MIGRATION.md)。修改记录只保存描述里新增的文字，见 [编辑文本证据](../../ratings/doc/EDIT_TEXT_EVIDENCE.md)。
 
-数据：Place（含 moderation_status）、PlaceRegion、Category、PlaceRequest（request_type 区分修改申请与新增复核）、PlaceModeration；跨模块写入涉及 PlaceRating、QQBotNotification。测试：[案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+数据：Place（含 moderation_status）、PlaceRegion、Category、PlaceRequest（request_type 区分修改、新增复核、打卡和评论）、PlaceModeration。跨模块读写涉及 Comment、PlaceRating、QQBotNotification。测试见 [案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。

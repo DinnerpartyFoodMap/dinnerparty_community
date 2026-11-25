@@ -10,6 +10,8 @@ import UIKit
 /// open 结束时返回 { id, action: 'submitted' | 'deleted' | 'cancel' | 'pickPosition', values }：
 /// values 是当时填写的内容（取消时网页存为草稿；pickPosition 时网页打开全屏地图选点，选好后重新打开表单）。
 /// 分类目录、评价档位、上限与全部文案都由网页下发（文案走网页 i18n）。
+/// mode 为 "comment" 时是同一个表单的评论模式：只有评论与评价两项（住民评论，接在地点描述末尾显示），
+/// 提交的 values 是 { comment, rating }，canDelete 表示可以删除自己已有的评论。
 @objc(NativePlaceFormPlugin)
 public class NativePlaceFormPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativePlaceFormPlugin"
@@ -208,6 +210,8 @@ final class NativePlaceFormModel: ObservableObject {
     @Published var name: String
     @Published var categories: [String]
     @Published var description: String
+    /// 评论模式的评论（纯文本，网页规整空白）
+    @Published var comment: String
     @Published var cost: String
     @Published var rating: Int?
     @Published var noExperience: Bool
@@ -226,6 +230,8 @@ final class NativePlaceFormModel: ObservableObject {
     @Published var expanded = false
 
     let isCreate: Bool
+    /// 评论模式：只有评论与评价
+    let isComment: Bool
     let needsEditRating: Bool
     private let original: JSObject
     private let originalPosition: String
@@ -242,6 +248,8 @@ final class NativePlaceFormModel: ObservableObject {
     let positionText: String
     let maxDescription: Int
     let maxImages: Int
+    let maxComment: Int
+    let minComment: Int
     var onFinish: ((String) -> Void)?
     var onLockChange: ((Bool) -> Void)?
     private let labels: [String: String]
@@ -253,12 +261,14 @@ final class NativePlaceFormModel: ObservableObject {
 
     init(call: CAPPluginCall, send: @escaping ([String: Any]) -> Void) {
         self.send = send
-        isCreate = call.getString("mode") != "edit"
+        let mode = call.getString("mode") ?? "create"
+        isComment = mode == "comment"
+        isCreate = mode != "edit" && !isComment
         needsEditRating = call.getBool("ratingRequired", false)
         exploreTag = String((call.getString("exploreTag") ?? "待探索").prefix(16))
         original = call.getObject("original") ?? [:]
         originalPosition = call.getString("originalPosition") ?? ""
-        expanded = call.getString("mode") == "edit"
+        expanded = mode == "edit" || isComment
         dark = call.getBool("dark", false)
         let colors = NativeThemeColors(primary: call.getString("primary"), secondary: call.getString("secondary"))
         tint = colors.primary
@@ -271,6 +281,8 @@ final class NativePlaceFormModel: ObservableObject {
         let limits = call.getObject("limits") ?? [:]
         maxDescription = max(1, (limits["descriptionLength"] as? NSNumber)?.intValue ?? 1000)
         maxImages = max(1, (limits["images"] as? NSNumber)?.intValue ?? 20)
+        maxComment = max(1, (limits["commentLength"] as? NSNumber)?.intValue ?? 200)
+        minComment = max(1, (limits["commentMinLength"] as? NSNumber)?.intValue ?? 2)
         categoryOptions = (call.getArray("categories", JSObject.self) ?? []).compactMap { item -> CategoryOption? in
             guard let name = item["name"] as? String, !name.isEmpty else { return nil }
             return CategoryOption(name: String(name.prefix(32)), common: (item["common"] as? Bool) ?? false)
@@ -292,6 +304,7 @@ final class NativePlaceFormModel: ObservableObject {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         description = String((values["description"] as? String ?? "").prefix(1000))
+        comment = String((values["comment"] as? String ?? "").prefix(maxComment))
         cost = String((values["perPersonCost"] as? String ?? "").filter(\.isNumber).prefix(6))
         let rawRating = (values["rating"] as? NSNumber)?.intValue
         rating = rawRating.flatMap { (1...4).contains($0) ? $0 : nil }
@@ -316,13 +329,17 @@ final class NativePlaceFormModel: ObservableObject {
     // MARK: 内容
 
     private var contentKey: String {
-        [name, categories.joined(separator: ","), description, cost, String(rating ?? 0), String(noExperience),
+        [name, categories.joined(separator: ","), description, comment, cost, String(rating ?? 0), String(noExperience),
          (exterior + menu).compactMap(\.url).joined(separator: "|")].joined(separator: "\u{1}")
     }
 
     var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var trimmedComment: String { comment.trimmingCharacters(in: .whitespacesAndNewlines) }
     var uploading: Bool { (exterior + menu).contains { $0.state == .queued || $0.state == .uploading } }
-    var canSubmit: Bool { !trimmedName.isEmpty && !submitting && !uploading && !loadingImages }
+    var canSubmit: Bool {
+        if isComment { return !trimmedComment.isEmpty && !submitting }
+        return !trimmedName.isEmpty && !submitting && !uploading && !loadingImages
+    }
     var hasChanges: Bool { contentKey != initialKey || (exterior + menu).contains { $0.state != .done } }
     /// 修改地点有改动或正在提交时不能直接下滑关掉；新增地点的内容会存成草稿，可以直接关
     var isLocked: Bool { submitting || (!isCreate && hasChanges) }
@@ -352,6 +369,9 @@ final class NativePlaceFormModel: ObservableObject {
 
     /// 交给网页的填写内容（提交、取消存草稿、去地图选点）
     var values: [String: Any] {
+        if isComment {
+            return ["comment": trimmedComment, "rating": rating.map { $0 as Any } ?? NSNull()]
+        }
         var result: [String: Any] = [
             "name": trimmedName,
             "category": categories.joined(separator: ", "),
@@ -574,6 +594,21 @@ final class NativePlaceFormModel: ObservableObject {
     }
 
     func submit() {
+        if isComment {
+            guard !submitting else { return }
+            // 去掉空白后至少 minComment 个字；评价必选（已有评价时网页预填）
+            if trimmedComment.filter({ !$0.isWhitespace }).count < minComment {
+                alertMessage = text("commentTooShort", "评论至少 \(minComment) 个字")
+                return
+            }
+            if rating == nil {
+                ratingMissing = true
+                alertMessage = text("ratingRequired", "请选择你的评价")
+                return
+            }
+            startRequest(kind: "submit", payload: ["values": values])
+            return
+        }
         guard canSubmit else {
             if trimmedName.isEmpty { alertMessage = text("nameRequired", "请填写店名") }
             return
@@ -665,6 +700,10 @@ private struct NativePlaceFormView: View {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    if model.isComment {
+                        commentSection
+                        if !model.tiers.isEmpty { ratingSection }
+                    } else {
                     locationSection
                     formSection(model.text("name", "店名")) {
                         row {
@@ -707,6 +746,7 @@ private struct NativePlaceFormView: View {
                     }
                     imagesSection(.exterior)
                     imagesSection(.menu)
+                    }
                     if !model.isCreate && !model.canDirect {
                         Label(model.text("needsReview", "你不是创建者，修改会提交给管理员审核"), systemImage: "info.circle")
                             .font(.footnote)
@@ -770,6 +810,9 @@ private struct NativePlaceFormView: View {
         .onChange(of: model.description) { _, value in
             if value.count > model.maxDescription { model.description = String(value.prefix(model.maxDescription)) }
         }
+        .onChange(of: model.comment) { _, value in
+            if value.count > model.maxComment { model.comment = String(value.prefix(model.maxComment)) }
+        }
         .onChange(of: model.cost) { _, value in
             // 人均只要正整数
             var digits = String(value.filter(\.isNumber).prefix(6))
@@ -790,7 +833,7 @@ private struct NativePlaceFormView: View {
 
     /// 与收藏面板的标题行一致：左边提交、居中标题、右边统一关闭钮
     private var header: some View {
-        NativeSheetHeader(title: model.text("title", model.isCreate ? "添加地点" : "修改地点"),
+        NativeSheetHeader(title: model.text("title", model.isCreate ? "添加地点" : (model.isComment ? "评论" : "修改地点")),
                           closeLabel: model.text("cancel", "取消"),
                           closeDisabled: model.submitting,
                           onClose: { model.requestCancel() }) {
@@ -798,7 +841,8 @@ private struct NativePlaceFormView: View {
                 ProgressView()
                     .accessibilityLabel(Text(model.text("submitting", "提交中...")))
             } else {
-                let enabled = !(model.trimmedName.isEmpty || model.uploading || model.loadingImages)
+                let enabled = model.isComment ? !model.trimmedComment.isEmpty
+                    : !(model.trimmedName.isEmpty || model.uploading || model.loadingImages)
                 Button(model.text("submit", "提交")) { model.submit() }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(model.tint.fmReadableText)
@@ -954,6 +998,20 @@ private struct NativePlaceFormView: View {
             row {
                 TextField(model.text("descriptionPlaceholder", "简介"), text: $model.description, axis: .vertical)
                     .lineLimit(4...12)
+            }
+        }
+    }
+
+    // MARK: 评论
+
+    /// 评论模式的评论框：纯文本，接在地点描述末尾显示为「住民名：评论」
+    private var commentSection: some View {
+        formSection(model.text("comment", "评论"),
+                    trailing: "\(model.comment.count) / \(model.maxComment)",
+                    footer: model.text("commentNotice", "评论会接在描述末尾，通过审核后其他住民才能看到")) {
+            row {
+                TextField(model.text("commentPlaceholder", "写下你的评论"), text: $model.comment, axis: .vertical)
+                    .lineLimit(3...8)
             }
         }
     }

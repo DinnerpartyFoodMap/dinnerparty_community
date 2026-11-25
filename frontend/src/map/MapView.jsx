@@ -2528,6 +2528,7 @@ export default function MapView({
                 onSelectUserPlace={handleSelectAlongRoutePlace}
                 openManagePanel={openManagePanel}
                 ensurePlaceDetail={ensurePlaceDetail}
+                loadPlaceDetail={loadPlaceDetail}
                 openCreateFromPoi={openCreateFromPoi}
                 openCommentPanel={openCommentPanel}
                 closePopup={closePopup}

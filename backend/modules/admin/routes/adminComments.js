@@ -18,23 +18,26 @@ const deleteCommentTransaction = db._raw.transaction(({ id, actingAdminId }) => 
 });
 
 // 列出所有评论（需 manage_comments 权限）
-router.get("/", requireAdmin("manage_comments"), (req, res) => {
+router.get("/", requireAdmin("manage_comments", { codedErrors: true }), (req, res) => {
     db.all("SELECT * FROM Comment ORDER BY time DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            res.locals.unhandledError = err;
+            return res.status(500).json({ error: '评论读取失败，请稍后重试', code: 'COMMENT_READ_FAILED' });
+        }
         res.json(rows || []);
     });
 });
 
 // 删除指定评论（需 manage_comments 权限）
-router.delete("/:id", requireAdmin("manage_comments"), (req, res) => {
+router.delete("/:id", requireAdmin("manage_comments", { codedErrors: true }), (req, res) => {
     const id = req.params.id;
     try {
         const deleted = deleteCommentTransaction.immediate({ id, actingAdminId: req.user && req.user.id });
-        if (!deleted) return res.status(404).json({ error: '评论不存在' });
+        if (!deleted) return res.status(404).json({ error: '评论不存在', code: 'COMMENT_NOT_FOUND' });
         return res.json({ success: true });
     } catch (error) {
         res.locals.unhandledError = error;
-        return res.status(500).json({ error: '评论删除失败，请稍后重试' });
+        return res.status(500).json({ error: '评论删除失败，请稍后重试', code: 'COMMENT_DELETE_FAILED' });
     }
 });
 

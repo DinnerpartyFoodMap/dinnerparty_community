@@ -5,6 +5,7 @@ import { createNativePlaceFormSession } from '../../platform/nativePlaceForm';
 import { loadCategoryDirectory } from '../categoryDirectory';
 import { RATING_TIERS, EXPLORE_TAG } from '../rating';
 import { PLACE_DESCRIPTION_MIN_LENGTH } from '../placeDescription';
+import { COMMENT_MAX_LENGTH, COMMENT_MIN_LENGTH } from '../placeComments';
 import { PLACE_IMAGE_PICK_LIMIT, uploadPlaceImage } from '../components/PlaceImageInputs';
 import { imageThumbnailUrl } from '../../platform/runtimeConfig';
 import { nativeThemeColors } from '../../theme/theme';
@@ -38,10 +39,31 @@ const imageEntries = (list) => (Array.isArray(list) ? list : [])
     .filter((url) => typeof url === 'string' && url)
     .map((url) => ({ url, thumb: imageThumbnailUrl(url, 240) }));
 
-// 原生表单的文案都由网页下发（走 i18n），原生只保留中文兜底
-function formLabels(mode, canDirect) {
+function formTitle(mode) {
+    if (mode === 'create') return t('map:placeForm.titleCreate');
+    return mode === 'comment' ? t('map:placeComments.form.title') : t('map:placeForm.titleEdit');
+}
+
+// 评论模式（只有评论与评价）的文案：删除、确认都是针对自己的评论
+function commentLabels(status) {
     return {
-        title: mode === 'create' ? t('map:placeForm.titleCreate') : t('map:placeForm.titleEdit'),
+        comment: t('map:placeComments.form.comment'),
+        commentPlaceholder: t('map:placeComments.form.placeholder'),
+        commentNotice: status === 'rejected' ? t('map:placeComments.form.rejectedNotice') : t('map:placeComments.form.notice'),
+        commentTooShort: t('map:placeComments.form.tooShort', { min: COMMENT_MIN_LENGTH }),
+        rating: t('map:placeComments.form.rating'),
+        ratingRequired: t('map:placeComments.form.ratingRequired'),
+        submit: t('map:placeComments.form.submit'),
+        delete: t('map:placeComments.form.delete'),
+        deleteTitle: t('map:placeComments.form.deleteTitle'),
+        discardTitle: t('map:placeComments.form.discardTitle')
+    };
+}
+
+// 原生表单的文案都由网页下发（走 i18n），原生只保留中文兜底
+function formLabels(mode, canDirect, commentStatus) {
+    const labels = {
+        title: formTitle(mode),
         expand: t('map:placeForm.expand'),
         name: t('map:placeForm.name'),
         namePlaceholder: t('map:addForm.namePlaceholder'),
@@ -93,11 +115,13 @@ function formLabels(mode, canDirect) {
         timeout: t('map:placeForm.timeout'),
         failed: t('map:placeForm.failed')
     };
+    return mode === 'comment' ? { ...labels, ...commentLabels(commentStatus) } : labels;
 }
 
 /**
  * open 期间在 iOS 上呈现原生地点表单（NativePlaceFormPlugin.swift）。form 描述这次打开：
- *   { mode: 'create' | 'edit', key, values, address, position, canDirect, canDelete, canPickPosition }
+ *   { mode: 'create' | 'edit' | 'comment', key, values, address, position, canDirect, canDelete, canPickPosition, commentStatus }
+ * comment 模式只有评论与评价（values.comment、values.rating），canDelete 表示可以删除自己已有的评论。
  * key 变化时重新打开（例如选完位置回来）。onSubmit / onDelete 返回 { ok, message }；onFinish(action, values)。
  * 打不开或异常结束时返回 false，调用方改用网页表单；关闭后下次重新尝试原生。
  */
@@ -109,7 +133,7 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
     latest.current = { form, token, dark, onSubmit, onDelete, onFinish };
     const active = supported && !failed && open && !!form;
     // 打开期间收起地图原生控件（地点卡片也是系统面板，不让位表单就弹不出来）
-    useOverlayEntry(active ? { kind: 'native-place-form', label: form.mode === 'create' ? t('map:placeForm.titleCreate') : t('map:placeForm.titleEdit'), modal: false, closeOnEscape: false, consumeBack: false } : null);
+    useOverlayEntry(active ? { kind: 'native-place-form', label: formTitle(form.mode), modal: false, closeOnEscape: false, consumeBack: false } : null);
 
     useEffect(() => {
         if (!open) setFailed(false);
@@ -137,7 +161,7 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
                 ...nativeThemeColors(),
                 categories: categories.map((item) => ({ name: item.name, common: !!item.is_common })),
                 tiers: RATING_TIERS.map((tier) => ({ score: tier.score, title: tier.label, hint: tier.hint, color: tierColor(tier.tone) })),
-                limits: { descriptionLength: 1000, descriptionMinLength: PLACE_DESCRIPTION_MIN_LENGTH, images: PLACE_IMAGE_PICK_LIMIT },
+                limits: { descriptionLength: 1000, descriptionMinLength: PLACE_DESCRIPTION_MIN_LENGTH, images: PLACE_IMAGE_PICK_LIMIT, commentLength: COMMENT_MAX_LENGTH, commentMinLength: COMMENT_MIN_LENGTH },
                 canDirect: current.canDirect !== false,
                 canDelete: !!current.canDelete,
                 canPickPosition: !!current.canPickPosition,
@@ -147,13 +171,14 @@ export default function useNativePlaceForm({ open, form, backendUrl, token, onSu
                     name: values.name || '',
                     category: values.category || '',
                     description: values.description || '',
+                    comment: values.comment || '',
                     perPersonCost: values.perPersonCost != null ? String(values.perPersonCost) : '',
                     rating: values.rating ?? null,
                     noExperience:values.noExperience===true,
                     exteriorImages: imageEntries(values.exteriorImages),
                     menuImages: imageEntries(values.menuImages)
                 },
-                labels: formLabels(current.mode, current.canDirect !== false)
+                labels: formLabels(current.mode, current.canDirect !== false, current.commentStatus)
             };
             session = createNativePlaceFormSession(registerPlugin('NativePlaceForm'), snapshot, {
                 onUpload: async (image) => {

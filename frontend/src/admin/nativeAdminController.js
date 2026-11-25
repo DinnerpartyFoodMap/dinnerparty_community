@@ -433,9 +433,14 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
     };
     const rows = items.map((r) => {
       const isCreate = r.request_type === 'create';
-      const reasons = (r.moderation?.decision?.reasons || []).map((reason) => reasonLabels[reason] || reason);
-      const approveLabel = isCreate ? t('admin:places.createApproveAction') : t('admin:places.approveAction');
-      const rejectLabel = isCreate ? t('admin:places.createRejectAction') : t('admin:places.rejectAction');
+      // 住民评论被 AI 初筛拦下后的复核：通过即公开评论，驳回则只有作者能看到
+      const isComment = r.request_type === 'comment';
+      const reasons = (r.moderation?.decision?.reasons || []).map((reason) => (isComment && reason === 'unrelated'
+        ? t('admin:places.moderation.reason.commentUnrelated') : reasonLabels[reason]) || reason);
+      const approveLabel = isCreate ? t('admin:places.createApproveAction') : isComment ? t('admin:places.commentApproveAction') : t('admin:places.approveAction');
+      const rejectLabel = isCreate ? t('admin:places.createRejectAction') : isComment ? t('admin:places.commentRejectAction') : t('admin:places.rejectAction');
+      const approveImpact = isCreate ? t('admin:places.createApproveImpact') : isComment ? t('admin:places.commentApproveImpact') : t('admin:places.approveImpact');
+      const rejectImpact = isCreate ? t('admin:places.createRejectImpact') : isComment ? t('admin:places.commentRejectImpact') : t('admin:places.rejectImpact');
       const review = (actionValue, label, impact) => action(label, async () => {
         await api(`/place-requests/${encodeURIComponent(r.id)}/review`, { method: 'POST', body: JSON.stringify({ action: actionValue }) });
         return { page: await loadPlaces(), message: t('admin:places.success') };
@@ -445,19 +450,27 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
       }), button: label } });
       const content = isCreate ? (r.place || {}) : (r.proposed || {});
       const actions = [
-        approveLabel ? review('approve', approveLabel, isCreate ? t('admin:places.createApproveImpact') : t('admin:places.approveImpact')) : null,
-        review('reject', rejectLabel, isCreate ? t('admin:places.createRejectImpact') : t('admin:places.rejectImpact')),
+        approveLabel ? review('approve', approveLabel, approveImpact) : null,
+        review('reject', rejectLabel, rejectImpact),
         onOpenPlace && r.place_id ? action(t('admin:places.openOnMap'), async () => { onOpenPlace(r.place_id); return { close: true }; }) : null
       ].filter(Boolean);
       const gallery = [...storedImages(content.exterior_images), ...storedImages(content.menu_images), ...(r.photo_previews || [])]
         .map((url) => absoluteImage(url, backendUrl)).filter(Boolean);
       return {
         id: String(r.id),
-        title: isCreate ? t('admin:places.createTitle', { id: r.id }) : t('admin:places.requestTitle', { id: r.id }),
-        subtitle: [content.name, r.created_time].filter(Boolean).join(' · '),
-        badge: isCreate ? t('admin:places.typeCreate') : '',
-        badgeTone: isCreate ? 'warning' : '',
-        fields: [
+        title: isCreate ? t('admin:places.createTitle', { id: r.id }) : isComment ? t('admin:places.commentTitle', { id: r.id }) : t('admin:places.requestTitle', { id: r.id }),
+        subtitle: [isComment ? r.place_name : content.name, r.created_time].filter(Boolean).join(' · '),
+        badge: isCreate ? t('admin:places.typeCreate') : isComment ? t('admin:places.typeComment') : '',
+        badgeTone: isCreate || isComment ? 'warning' : '',
+        fields: isComment ? [
+          { label: t('admin:places.field.type'), value: t('admin:places.typeComment') },
+          { label: t('admin:places.moderation.field.place'), value: String(r.place_name || r.place_id || '-') },
+          { label: t('admin:places.moderation.field.author'), value: String(r.comment?.username || r.requester_id || '-') },
+          { label: t('admin:places.col.submittedAt'), value: r.created_time || '' },
+          ...(reasons.length ? [{ label: t('admin:places.moderation.label'), value: reasons.join(t('common:punctuation.listSeparator')) }] : []),
+          { label: t('admin:places.moderation.field.comment'), value: String(r.comment?.content ?? r.proposed?.content ?? t('admin:places.commentMissing')) },
+          ...(r.note ? [{ label: t('admin:places.field.note'), value: r.note }] : [])
+        ] : [
           { label: t('admin:places.field.type'), value: isCreate ? t('admin:places.typeCreate') : t('admin:places.typeModify') },
           { label: t('admin:places.col.placeId'), value: String(r.place_id || '-') },
           { label: isCreate ? t('admin:places.field.creator') : t('admin:places.col.requester'), value: String((isCreate ? r.place?.creator_name : '') || r.requester_id || '-') },

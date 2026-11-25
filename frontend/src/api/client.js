@@ -190,6 +190,28 @@ export async function postPlaceRequest(backendUrl, token, payload) {
     return data;
 }
 
+// 住民评论（每人每店一条，再次提交即修改）：返回 { comment: { id, status, ... } }；失败带 status 与 code
+export async function savePlaceComment(backendUrl, token, placeId, content) {
+    const res = await fetch(`${backendUrl}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ place_id: placeId, content })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.commentFailed', { status: res.status })), { status: res.status, code: data.code });
+    return data;
+}
+
+export async function deletePlaceComment(backendUrl, token, commentId) {
+    const res = await fetch(`${backendUrl}/comments/${encodeURIComponent(commentId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || t('map:api.commentDeleteFailed', { status: res.status })), { status: res.status, code: data.code });
+    return data;
+}
+
 function normalizeDinner(item) {
     if (!item || typeof item !== 'object') return null;
     return {

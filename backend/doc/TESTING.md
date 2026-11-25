@@ -32,6 +32,7 @@
 | 评分 | npm run test:ratings | schema、数学权重、批处理、HTTP 与配额 |
 | 发现 | npm run test:search / test:random | 排序、降级、地理边界、概率 |
 | 偏好与社区 | npm run test:preferences / test:community | 行为去重、画像、同好隐私 |
+| 住民评论 | npm run test:comments | 提交校验、每日额度、初筛与复核状态、详情里的评论、删除连带、与修改记录隔离（评分汇总读取用替身，不需要私有算法服务） |
 | 日记 | npm run test:journeys / test:journey-resolution / test:journey-publication | 修订、澄清、公开快照、幂等提交 |
 | 观察屋 | npm run test:rooms | 固定语料的字数、占位符、禁用词、住民之间的分寸和成批比例 |
 | Bot 与图片 | npm run test:qq-bot / test:images | 协议替身、草稿、通知、隐私、OSS 迁移 |

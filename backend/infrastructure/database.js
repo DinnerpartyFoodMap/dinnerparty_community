@@ -751,6 +751,8 @@ function init() {
         // tables that still declare user UUID references as INTEGER, preserving
         // rows, explicit indexes, triggers and AUTOINCREMENT values.
         migrateUserReferenceColumnsToText();
+        require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);
+        require('../modules/community/services/residentCommentSchema').initResidentCommentSchema(rawDb);
         require('../modules/ratings/services/placeRatingSchema').initPlaceRatingSchema(rawDb);
         require('../modules/places/services/placeCheckInSchema').initPlaceCheckInSchema(rawDb);
         require('../modules/skins/services/companionState').initCompanionStateSchema(rawDb);
@@ -762,7 +764,6 @@ function init() {
         require('../modules/accounts/services/phoneVerification').initPhoneVerificationSchema(rawDb);
         require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
-        require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);
         require('../modules/places/services/placeRegionSchema').initPlaceRegionSchema(rawDb);
         require('../modules/preferences/services/tasteAxes').initTasteAxesSchema(rawDb);
         require('../modules/ratings/services/modelProfiles').initModelProfileSchema(rawDb);

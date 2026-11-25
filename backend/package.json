@@ -25,6 +25,7 @@
         "test:ai-clients": "node tests/infrastructure/test_ai_clients.js",
         "test:preferences": "node tests/preferences/test_preferences.js",
         "test:community": "node tests/community/test_favorite_collection.js && node tests/community/test_community_preferences.js && node tests/community/test_feedback_retention.js && node tests/community/test_random_decision_chain.js",
+        "test:comments": "node tests/community/test_place_comments.js",
         "test:rating-migration": "node tests/ratings/test_rating_source_policy.js && node tests/ratings/test_rating_migration_adapter.js && node tests/ratings/test_rating_projection_boundary.js",
         "test:visits": "node tests/places/test_place_visits.js",
         "test:random": "node tests/discovery/test_random_recommendation.js",

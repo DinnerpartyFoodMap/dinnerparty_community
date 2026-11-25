@@ -35,7 +35,8 @@ function loadUserById(userId) {
     });
 }
 
-async function requireAuth(req, res, next) {
+async function requireAuth(req, res, next, codedErrors = false) {
+    const reject = (status, code, error, extra) => res.status(status).json(codedErrors ? { error, code } : { error, ...extra });
     const token = extractBearerToken(req);
     if (!token) {
         logger.warn('Authentication rejected', {
@@ -44,7 +45,7 @@ async function requireAuth(req, res, next) {
             method: req.method,
             path: req.path
         });
-        return res.status(401).json({ error: "未提供授权 token" });
+        return reject(401, 'AUTH_REQUIRED', '未提供授权 token');
     }
 
     let payload;
@@ -57,7 +58,7 @@ async function requireAuth(req, res, next) {
             method: req.method,
             path: req.path
         });
-        return res.status(401).json({ error: "无效或已过期的 token" });
+        return reject(401, 'AUTH_INVALID_TOKEN', '无效或已过期的 token');
     }
 
     const userId = payload && payload.id;
@@ -68,7 +69,7 @@ async function requireAuth(req, res, next) {
             method: req.method,
             path: req.path
         });
-        return res.status(401).json({ error: "无效或已过期的 token" });
+        return reject(401, 'AUTH_INVALID_TOKEN', '无效或已过期的 token');
     }
 
     try {
@@ -88,7 +89,7 @@ async function requireAuth(req, res, next) {
                 method: req.method,
                 path: req.path
             });
-            return res.status(401).json({ error: "通行凭证已失效，请重新核验" });
+            return reject(401, 'AUTH_SESSION_INVALID', '通行凭证已失效，请重新核验');
         }
 
         const user = await loadUserById(userId);
@@ -100,7 +101,7 @@ async function requireAuth(req, res, next) {
                 method: req.method,
                 path: req.path
             });
-            return res.status(404).json({ error: "住民不存在" });
+            return reject(404, 'AUTH_USER_NOT_FOUND', '住民不存在');
         }
 
         // handle banned users: auto-unban if expired, otherwise restrict non-read methods
@@ -115,7 +116,7 @@ async function requireAuth(req, res, next) {
                     method: req.method,
                     path: req.path
                 });
-                return res.status(403).json({ error: "通行凭证已受限，仅允许查看内容", reason: user.ban_reason || null });
+                return reject(403, 'AUTH_USER_BANNED', '通行凭证已受限，仅允许查看内容', { reason: user.ban_reason || null });
             }
             // else continue but keep user info
         }
@@ -134,7 +135,7 @@ async function requireAuth(req, res, next) {
             path: req.path,
             error: err
         });
-        return res.status(500).json({ error: "鉴权失败", detail: err.message });
+        return reject(500, 'AUTH_FAILED', '鉴权失败', { detail: err.message });
     }
 }
 
@@ -161,4 +162,5 @@ async function attachViewer(req, res, next) {
     return next();
 }
 
-module.exports = { requireAuth, attachViewer, extractBearerToken, setSessionStoreForTesting, sessionStore };
+const requireAuthWithCode = (req, res, next) => requireAuth(req, res, next, true);
+module.exports = { requireAuth, requireAuthWithCode, attachViewer, extractBearerToken, setSessionStoreForTesting, sessionStore };

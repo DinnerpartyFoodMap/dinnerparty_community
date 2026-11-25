@@ -16,6 +16,11 @@ import { chooseRating, withdrawRating } from "../places/ratingActions";
 import RatingPredictionValue from "../places/components/RatingPredictionValue";
 import CompanionRoam from '../companion/CompanionRoam';
 import usePlaceRating from "../places/hooks/usePlaceRating";
+import usePlaceComments from "../places/hooks/usePlaceComments";
+import usePlaceCommentForm from "../places/hooks/usePlaceCommentForm";
+import PlaceCommentList from "../places/components/PlaceCommentList";
+import { appendCommentsToDetail, canCommentOn, commentEntryLabel } from "../places/placeComments";
+import { useConfirm } from "../components/feedback/Confirm";
 import useVisitEvidence from '../places/useVisitEvidence';
 import useDetailInterest from '../places/useDetailInterest';
 import { isAvoidedPlace, hasExploreTag, tierForAverage, ratingTierFor, tierLabel, formatAverage, summaryText, summaryFromPlace, ratingDisplay, ratingPlaceForViewer } from "../places/rating";
@@ -88,7 +93,7 @@ import { loadPlaceRegions, peekPlaceRegions } from '../places/placeRegions';
 import { describePlaceFilter } from '../places/components/PlaceFilterPanel';
 import { applyFilterSheetRow, filterChromeSheet } from '../places/filterChromeSheet';
 import { loadCategoryDirectory } from '../places/categoryDirectory';
-import { sfSymbol } from '../platform/iconRegistry.js';
+import { materialIcon, sfSymbol } from '../platform/iconRegistry.js';
 import { clusterMembersChromeSheet, clusterMemberRowId, clusterMemberDetail, clusterMembersTitle, findClusterMember } from './clusterMembers';
 
 const POPUP_GHOST_CLICK_GUARD_MS = 400;
@@ -539,6 +544,22 @@ export default function MapUI(props) {
     const preloadedRatingPlace=ratingPlaceForViewer(selectedPlace,isAuthenticated?currentUser?.id:null);
     const { summary: ratingSummary, personal: personalizedRating, risk: ratingRisk, mine: ownRating } = ratingDisplay(placeRating.data, preloadedRatingPlace);
     const myRatingTier = ratingTierFor(ownRating?.score);
+    // 住民评论：接在描述末尾显示，“写评论”复用编辑地点的面板（评论模式），见 places/placeComments.js
+    const confirmDialog = useConfirm();
+    const placeComments = usePlaceComments({ place: !pickerMode ? selectedPlace : null, token: isAuthenticated ? token : null, loadDetail: props.loadPlaceDetail });
+    const commentForm = usePlaceCommentForm({
+        backendUrl, token, place: selectedPlace, comments: placeComments, rating: placeRating, myScore: ownRating?.score,
+        notify: (text) => showTip?.(text), confirm: confirmDialog
+    });
+    const commentAllowed = canCommentOn(selectedPlace) && !pickerMode && !currentUser?.is_banned;
+    const openCommentForm = () => {
+        if (!commentAllowed) return;
+        if (!isAuthenticated) { onRequireAuth?.(); return; }
+        commentForm.openForm();
+    };
+    const commentEntry = commentAllowed ? openCommentForm : undefined;
+    const commentLabel = commentEntryLabel(placeComments.comments);
+    const hasComments = (placeComments.comments?.length || 0) > 0;
 
     const [pickedPageOpen, setPickedPageOpen] = useState(false);
     const [navPickerOpen, setNavPickerOpen] = useState(false);
@@ -1069,6 +1090,16 @@ export default function MapUI(props) {
             canDelete: direct,
             canPickPosition: true
         };
+    } else if (commentForm.open && selectedPlace && !pickerMode) {
+        // 评论：同一个原生表单的 comment 模式，只有评论与评价
+        nativeFormSpec = {
+            mode: 'comment',
+            ratingRequired: true,
+            key: `comment:${selectedPlace.id}`,
+            values: { comment: commentForm.form.content, rating: commentForm.form.rating },
+            commentStatus: commentForm.form.status || '',
+            canDelete: commentForm.form.commentId != null
+        };
     }
     const nativePlaceFormActive = useNativePlaceForm({
         open: !!nativeFormSpec,
@@ -1076,6 +1107,7 @@ export default function MapUI(props) {
         backendUrl,
         token,
         onSubmit: (values) => {
+            if (nativeFormSpec?.mode === 'comment') return commentForm.submit({ content: values.comment, rating: values.rating });
             if (nativeFormSpec?.mode === 'create') {
                 // 评价必须自己选（上一版原生表单没选时会带上按分类预选的一档，标为 default，这里一并拒绝）
                 // “待探索”的地点还没去过，不评价
@@ -1098,8 +1130,12 @@ export default function MapUI(props) {
             }
             return props.onManageSubmitWith(editFromFormValues(values));
         },
-        onDelete: () => props.onManageDeleteConfirmed?.(),
+        onDelete: () => (nativeFormSpec?.mode === 'comment' ? commentForm.remove() : props.onManageDeleteConfirmed?.()),
         onFinish: (action, values) => {
+            if (nativeFormSpec?.mode === 'comment') {
+                if (action !== 'submitted' && action !== 'deleted') commentForm.close();
+                return;
+            }
             if (nativeFormSpec?.mode === 'create') {
                 if (action === 'submitted') return;
                 if (values && currentUser?.id && addDraft) persistPlaceDraft(currentUser.id, draftFromFormValues(values), addDraft.baseline, addDraft.source);
@@ -1265,6 +1301,11 @@ export default function MapUI(props) {
         ].filter(Boolean).join(subtitleSeparator);
         const subtitlePrefix = [moderationShort, ratingRisk ? t('map:rating.riskLabel') : null].filter(Boolean);
         const predictedScore = personalizedRating?.kind === 'prediction' ? formatAverage(personalizedRating.average) : null;
+        const nativeDetail = appendCommentsToDetail({
+            plain: markdownToPlainText(selectedPlace.description),
+            markdown: markdownToNativeInline(selectedPlace.description),
+            comments: unmarked ? [] : placeComments.comments
+        });
         const ratingRow = !unmarked && {
             id: 'rating',
             title: summaryText(ratingSummary),
@@ -1289,8 +1330,9 @@ export default function MapUI(props) {
             size: 'card',
             leading: unmarked ? undefined : { id: 'share', title: t('map:ui.share.title'), symbol: sfSymbol('share'), ...nativeIcon('cardActions.share'), keepsOpen: true },
             // 简介支持基础 Markdown：detail 是去掉标记的纯文本（旧版 App 只认它），detailMarkdown 是原生可显示的行内格式
-            detail: markdownToPlainText(selectedPlace.description) || undefined,
-            detailMarkdown: markdownToNativeInline(selectedPlace.description) || undefined,
+            // 住民评论按「住民名：评论」接在简介后面（appendCommentsToDetail 控制长度）
+            detail: nativeDetail.plain || undefined,
+            detailMarkdown: nativeDetail.markdown || undefined,
             caption: String(selectedPlace.address || '').trim() || undefined,
             actions: [
                 (!unmarked || venueCard) && { id: 'navigate', title: t('map:ui.nav.title'), symbol: sfSymbol('navigate'), ...nativeIcon('cardActions.navigate'), tone: 'accent', disabled: !hasNavigationTarget, keepsOpen: true },
@@ -1318,6 +1360,8 @@ export default function MapUI(props) {
             ].filter(Boolean),
             detailFooterAction: canReportPlace ? { id: 'report', title: t('map:ui.report'), symbol: sfSymbol('report'), ...nativeIcon('cardActions.report'), keepsOpen: true } : undefined,
             sections: [
+                // 评论列表在简介末尾，紧接着是“写评论 / 修改我的评论”
+                commentAllowed && { id: 'comments', rows: [{ id: 'comment', title: commentLabel, symbol: sfSymbol('writeComment'), keepsOpen: true }] },
                 ratingRow && { id: 'rating', title: t('map:rating.panel.title'), rows: [ratingRow] },
                 {
                     id: 'meta',
@@ -1487,6 +1531,7 @@ export default function MapUI(props) {
                 case 'comments': if (isAdmin) openCommentPanel?.(); break;
                 case 'diaries': openDiaries(); break;
                 case 'checkIn': openCheckIn(); break;
+                case 'comment': openCommentForm(); break;
                 case 'rate':
                 case 'rating': openRating(); break;
                 case 'report': reportPlace(); break;
@@ -2090,6 +2135,7 @@ export default function MapUI(props) {
         { id: 'details', title: t('map:ui.card.details'), icon: 'info', slot: 'cardActions.details', run: () => { setDetailFocus(null); setDetailOpen(true); } },
         { id: 'share', title: t('map:ui.share.title'), icon: 'share', slot: 'cardActions.share', run: () => setShareOpen(true) },
         { id: 'edit', title: t('map:ui.edit'), icon: 'edit', slot: 'cardActions.edit', run: () => openManagePanel?.() },
+        commentAllowed && { id: 'comment', title: commentLabel, icon: materialIcon('writeComment'), run: openCommentForm },
         isAdmin && { id: 'comments', title: t('map:editEvidence.history'), icon: 'history', slot: 'cardActions.details', run: () => openCommentPanel?.() },
         !iosApp && canReportPlace && { id: 'report', title: t('map:ui.report'), icon: 'flag', slot: 'cardActions.report', run: reportPlace }
     ].filter(Boolean);
@@ -2132,9 +2178,15 @@ export default function MapUI(props) {
             )}
             <div style={{ marginTop: 6, fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.5, wordBreak: 'break-word' }}>
                 {inSheet && showCardDetails ? (
-                    <Markdown text={selectedPlace.description} style={{ lineHeight: 1.55 }} />
+                    <>
+                        <Markdown text={selectedPlace.description} style={{ lineHeight: 1.55 }} />
+                        <PlaceCommentList comments={placeComments.comments} onWrite={commentEntry} writeLabel={commentLabel} />
+                    </>
                 ) : (() => {
-                    const { text, hasMore } = getPopupDescriptionPreview(selectedPlace);
+                    // 有评论时也给“展开”：评论在完整描述的末尾
+                    const preview = getPopupDescriptionPreview(selectedPlace);
+                    const text = preview.text;
+                    const hasMore = preview.hasMore || hasComments;
                     return (
                         <>
                             <span>{text}</span>
@@ -3337,6 +3389,15 @@ export default function MapUI(props) {
                     onPickPosition={onManagePickPosition}
                 />
             )}
+            {!hideNonSearchButtons && !pickerMode && (
+                <ManagePanel
+                    mode="comment"
+                    open={commentForm.open && !!selectedPlace && !nativePlaceFormActive}
+                    selectedPlace={selectedPlace}
+                    commentForm={commentForm}
+                    onClose={() => { if (!commentForm.form?.submitting) commentForm.close(); }}
+                />
+            )}
 
             <ResponsivePanel
                 open={navPickerOpen && !!selectedPlace}
@@ -3570,7 +3631,8 @@ export default function MapUI(props) {
                 <>
                     <PlaceDetailPanel open={detailOpen && !!selectedPlace} place={selectedPlace} focus={detailFocus} backendUrl={backendUrl} onClose={() => setDetailOpen(false)} onNavigate={handleNavigate}
                         rating={ratingPlaceId != null ? { summary: ratingSummary, mine: myRatingTier } : null} onOpenRating={openRating}
-                        onReport={canReportPlace ? reportPlace : undefined} reportAtBottom={iosApp} />
+                        onReport={canReportPlace ? reportPlace : undefined} reportAtBottom={iosApp}
+                        comments={placeComments.comments} onWriteComment={commentEntry} writeCommentLabel={commentLabel} />
                     <ResponsivePanel open={!!visitEvidence.prompt} onClose={()=>void visitEvidence.answer('later')} title={t('map:rating.visitQuestion')} kind="visit-confirmation" desktop="center" mobile="sheet">
                         <div style={{padding:20,display:'flex',gap:12}}>
                             <Button onClick={()=>void visitEvidence.answer('yes')}>{t('map:rating.visitYes')}</Button>

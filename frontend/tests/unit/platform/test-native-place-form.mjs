@@ -8,7 +8,7 @@ assert.deepEqual(pickPlaceFormValues({
     name: '  店名 ', category: '火锅店, 烧烤', description: 'x'.repeat(1200), perPersonCost: '012', rating: 9,
     exteriorImages: ['https://cdn.example.com/a.jpg', 'javascript:alert(1)', 42], menuImages: 'nope', extra: true
 }), {
-    name: '店名', category: '火锅店, 烧烤', description: 'x'.repeat(1000), perPersonCost: '', rating: null,ratingInputKind:'unknown',noExperience:false,
+    name: '店名', category: '火锅店, 烧烤', description: 'x'.repeat(1000), comment: '', perPersonCost: '', rating: null,ratingInputKind:'unknown',noExperience:false,
     exteriorImages: ['https://cdn.example.com/a.jpg'], menuImages: []
 });
 assert.equal(pickPlaceFormValues({ perPersonCost: '45', rating: 3 }).perPersonCost, '45');
@@ -16,6 +16,10 @@ assert.equal(pickPlaceFormValues({ rating: 3 }).rating, 3);
 assert.equal(pickPlaceFormValues({ noExperience:true }).noExperience,true);
 assert.equal(pickPlaceFormValues({ noExperience:'true' }).noExperience,false);
 assert.equal(pickPlaceFormValues(null), null);
+// 评论模式：评论截到 400 字（网页提交前再按 200 字校验）、去首尾空白
+assert.equal(pickPlaceFormValues({ comment: '  好吃 ', rating: 4 }).comment, '好吃');
+assert.equal(pickPlaceFormValues({ comment: 'y'.repeat(500) }).comment.length, 400);
+assert.equal(pickPlaceFormValues({ comment: 42 }).comment, '');
 assert.deepEqual([...PLACE_FORM_ACTIONS], ['submitted', 'deleted', 'cancel', 'pickPosition']);
 
 function fakePlugin() {

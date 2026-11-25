@@ -8,6 +8,7 @@ import { imageThumbnailUrl } from "../../platform/runtimeConfig";
 import PlaceDiaryList from "../../journey/PlaceDiaryList";
 import SkinIcon from "../../skins/SkinIcon";
 import Markdown from "../../components/markdown/Markdown";
+import PlaceCommentList from "./PlaceCommentList";
 import { t, tx } from "../../i18n/index.js";
 import { tierForAverage, tierLabel, formatAverage, summaryText } from "../rating";
 
@@ -24,7 +25,8 @@ export function parseImages(value, backendUrl) {
 
 // 地点详情：宽屏为右侧信息板（非模态，地图仍可操作），窄屏为可在中/全屏两档停靠的底部面板。
 // 图片预览是嵌套浮层：返回键先关闭预览，再关闭详情。iOS 的举报放在详情内容的最后。
-export default function PlaceDetailPanel({ open = true, place, onClose, onNavigate, focus = null, backendUrl, rating = null, onOpenRating, onReport, reportAtBottom = false }) {
+// comments / onWriteComment / writeCommentLabel：接在描述后面的住民评论与“写评论”入口（PlaceCommentList）
+export default function PlaceDetailPanel({ open = true, place, onClose, onNavigate, focus = null, backendUrl, rating = null, onOpenRating, onReport, reportAtBottom = false, comments = null, onWriteComment, writeCommentLabel }) {
     const layout = useLayoutPolicy();
     return (
         <ResponsivePanel
@@ -44,7 +46,7 @@ export default function PlaceDetailPanel({ open = true, place, onClose, onNaviga
             bodyStyle={{ padding: 0 }}
         >
             {place && <PlaceDetailBody place={place} onNavigate={onNavigate} isMobile={layout.sheet} focus={focus} backendUrl={backendUrl} rating={rating} onOpenRating={onOpenRating}
-                onReport={reportAtBottom ? onReport : undefined} />}
+                onReport={reportAtBottom ? onReport : undefined} comments={comments} onWriteComment={onWriteComment} writeCommentLabel={writeCommentLabel} />}
         </ResponsivePanel>
     );
 }
@@ -96,7 +98,7 @@ function ImageGroup({ title, images, onPreview }) {
     );
 }
 
-function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, rating, onOpenRating, onReport }) {
+function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, rating, onOpenRating, onReport, comments, onWriteComment, writeCommentLabel }) {
     const [preview, setPreview] = useState(null);
     const diariesRef = useRef(null);
     // 从地点小卡的「相关日记」进入时，直接定位到日记区域
@@ -134,6 +136,7 @@ function PlaceDetailBody({ place, onNavigate, isMobile, focus, backendUrl, ratin
                 <div style={{ marginBottom: 24 }}>
                     <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 4 }}>{t('map:common.label.description')}</div>
                     <Markdown text={place.description} style={{ lineHeight: 1.55 }} fallback={<div>{t('map:placeDetail.noDescription')}</div>} />
+                    <PlaceCommentList comments={comments} onWrite={onWriteComment} writeLabel={writeCommentLabel} />
                     {place.address && <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-secondary)' }}>{place.address}</div>}
                 </div>
                 {/* 相关公开日记：放在基本信息之后、长图片列表之前；日记照片不混入外观/菜单图库 */}
