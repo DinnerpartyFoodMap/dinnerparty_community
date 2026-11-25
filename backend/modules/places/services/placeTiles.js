@@ -11,7 +11,8 @@ const { publicPlaceSql } = require('./placeVisibility');
 // 前端 frontend/src/map/markerTiles.js 按同样的级别和格式读取，两边一起改。
 //
 // - 三级聚合瓦片：格子位置（成员重心，取整到 1/8 格）、店数、每家店匿名的一行（标签编号、人均、地区编号、图标类型）。
-//   不带 id、店名和单店坐标：拉齐这些瓦片也对不上具体的店，id 只出现在明细瓦片和单店接口里（两处都有配额）。
+//   最细一级（z14 格，sub: 16）的行再带店所在的 1/16 小格编号（约 140 m），放大到 z13 换明细时标记只挪几个像素。
+//   不带 id、店名和精确坐标：拉齐这些瓦片也对不上具体的店，id 只出现在明细瓦片和单店接口里（两处都有配额）。
 //   行按内容排序，不保留 id 顺序。公共缓存，URL 带内容哈希，永不过期。
 // - 明细瓦片（z12）：与旧快照相同的字段（id、店名、坐标、标签、人均、省市区、评价汇总），按 IP / 账号限流，只在浏览器缓存。
 // - 字典：标签名、地区名（聚合瓦片里用编号）；清单：每块瓦片的内容哈希。
@@ -21,7 +22,8 @@ const { publicPlaceSql } = require('./placeVisibility');
 const AGGREGATE_LEVELS = Object.freeze([
     Object.freeze({ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }),
     Object.freeze({ tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }),
-    Object.freeze({ tile: 8, cell: 14, minZoom: 11, maxZoom: 12 })
+    // sub：行里带格内 sub×sub 小格的编号（y * sub + x），只给紧接明细级的这一级
+    Object.freeze({ tile: 8, cell: 14, minZoom: 11, maxZoom: 12, sub: 16 })
 ]);
 const LEAF_LEVEL = Object.freeze({ tile: 12, minZoom: 13 });
 const LEAF_FIELDS = Object.freeze([
@@ -126,12 +128,18 @@ function buildTiles(rows, now = Date.now()) {
             cell.sy += cyf - cy;
             const region = regionKey(row);
             const cost = Number(row.per_person_cost);
-            cell.rows.push([
+            const anonymousRow = [
                 tagsOf(row.category).map((tag) => tagIndex.get(tag)).sort((a, b) => a - b),
                 Number.isFinite(cost) && cost > 0 ? Math.round(cost) : -1,
                 region ? regionIndex.get(JSON.stringify(region)) : -1,
                 glyphOf(row)
-            ]);
+            ];
+            if (level.sub) {
+                const sx = Math.min(level.sub - 1, Math.floor((cxf - cx) * level.sub));
+                const sy = Math.min(level.sub - 1, Math.floor((cyf - cy) * level.sub));
+                anonymousRow.push(sy * level.sub + sx);
+            }
+            cell.rows.push(anonymousRow);
         }
         tiles[level.tile] = {};
         for (const [tileKey, cells] of [...byTile.entries()].sort()) {
@@ -140,6 +148,7 @@ function buildTiles(rows, now = Date.now()) {
                 v: FORMAT_VERSION,
                 z: level.tile,
                 cell: level.cell,
+                ...(level.sub ? { sub: level.sub } : {}),
                 cells: [...cells.values()]
                     .sort((a, b) => a.cx - b.cx || a.cy - b.cy)
                     .map((cell) => {

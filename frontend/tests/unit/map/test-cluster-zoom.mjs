@@ -36,6 +36,12 @@ import { sanitizeSheet, NATIVE_SHEETS } from '../../../src/platform/nativeMapChr
     assert.equal(zoom, standaloneZoom(withOutsider, outsider, 16), '把它加进现有地点后计算');
     assert.ok(zoom > 16 && zoom <= 20, '与丙相距约 30 米，16 级仍在一起');
     assert.equal(revealZoom({ engine: null, place: places[0], baseZoom: 16, maxZoom: 20 }), 16, '还没有标记层：只有它自己，基准层级即可');
+
+    // 地图还在聚合级：这家店自己的匿名行就在几十米外的小格中心，到明细级会被换掉，不能让它把缩放推高
+    const twin = { aggregateKey: 'agg:14/13350/7130#0', aggregate: true, aggregateCell: [14, 13350, 7130, 18], name: '',
+        longitude: outsider.longitude + 0.0001, latitude: outsider.latitude };
+    const aggregateEngine = createEngine([twin], { maxZoom: 20 });
+    assert.equal(revealZoom({ engine: aggregateEngine, place: outsider, baseZoom: 16, maxZoom: 20 }), 16, '匿名点不参与');
     assert.equal(revealZoom({ engine, place: { name: '没有 id 和坐标' }, baseZoom: 16, maxZoom: 20 }), 16);
 }
 

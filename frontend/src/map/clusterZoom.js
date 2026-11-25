@@ -33,6 +33,7 @@ export function standaloneZoom(engine, place, fromZoom = 0) {
  * 打开地点时的缩放：至少 baseZoom，地点在 baseZoom 仍被聚合时放大到它单独显示的层级（取整数，与聚合层级一致），
  * 不超过 maxZoom。地点还不在标记层的数据里（筛选掉了、标记快照还没有它）时，按“现有地点 + 它”算——
  * 选中的地点总会加进标记层。到最大缩放仍分不开（坐标重合）时保持 baseZoom，放大也没有用。
+ * 这时地图多半还在聚合级，匿名点（其中有这家店自己的那一行，在它 1/16 小格的中心）到了 baseZoom 就换成明细，不参与计算。
  */
 export function revealZoom({ engine, place, baseZoom, maxZoom }) {
     const base = Number.isFinite(baseZoom) ? baseZoom : 16;
@@ -41,7 +42,7 @@ export function revealZoom({ engine, place, baseZoom, maxZoom }) {
     if (!key) return Math.min(base, max);
     let index = engine;
     if (!index || !index.placeByKey.has(key)) {
-        const others = index ? Array.from(index.placeByKey.values()) : [];
+        const others = index ? Array.from(index.placeByKey.values()).filter((other) => !other.aggregate) : [];
         index = createEngine([...others, place], index ? index.options : undefined);
     }
     const zoom = standaloneZoom(index, place, base);

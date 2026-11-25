@@ -122,10 +122,18 @@ function markerBandDirection(prev, next) {
     return null;
 }
 
+// 匿名点与明细换档时按哪一级格子对应：带格内小格的一级（sub）按小格（z14 + 4 = z18），其余按格子本身。
+function bandMatchZoom(band) {
+    const bits = Number.isInteger(band?.sub) && band.sub > 1 ? Math.log2(band.sub) : 0;
+    return band.cell + (Number.isInteger(bits) ? bits : 0);
+}
+
 function coarseCellKey(place, zoom) {
     if (!place) return null;
     if (place.aggregateCell) {
-        const [cellZoom, x, y] = place.aggregateCell;
+        const [cellZoom, x, y, subZoom] = place.aggregateCell;
+        // 带小格的匿名点坐标就是小格中心，到小格这一级为止都按坐标取格子
+        if (subZoom >= zoom) return tileOf(Number(place.longitude), Number(place.latitude), zoom).join('/');
         if (cellZoom < zoom) return null;
         const scale = 2 ** (cellZoom - zoom);
         return `${Math.floor(x / scale)}/${Math.floor(y / scale)}`;
@@ -138,10 +146,11 @@ function missingFallbackCells(prev, next, previousMembers) {
     const parents = new Map();
     let zoom;
     for (const [member, nodeKey] of previousMembers) {
-        const cell = prev.engine.placeByKey.get(member)?.aggregateCell;
+        const place = prev.engine.placeByKey.get(member);
+        const cell = place?.aggregateCell;
         if (!cell || next.engine.placeByKey.has(member)) continue;
-        zoom = cell[0]; // 明细档只用同一级城市瓦片补位。
-        parents.set(`${cell[1]}/${cell[2]}`, nodeKey);
+        zoom = cell[3] ?? cell[0]; // 明细档只用同一级城市瓦片补位；带小格时按小格对应。
+        parents.set(coarseCellKey(place, zoom), nodeKey);
     }
     return parents.size ? { zoom, parents } : null;
 }
@@ -167,13 +176,13 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
     const parentByMember = buildMemberToNode({ ...coarse, visibleNodes: coarseNodes }, memberBudget);
     if (!parentByMember) return;
 
-    const zoom = coarse.markerBand.cell;
+    const zoom = bandMatchZoom(coarse.markerBand);
     const parentByCell = new Map();
     if (!reserveMembers(memberBudget,parentByMember.size)) return;
     for (const [member, parent] of parentByMember) {
         const place = coarse.engine.placeByKey.get(member);
-        // 同一个匿名格的行坐标相同，必定属于同一个可见节点。
-        if (place?.aggregateCell?.[0] === zoom) parentByCell.set(coarseCellKey(place, zoom), parent);
+        // 同一个匿名格（带小格时是同一个小格）的行坐标相同，必定属于同一个可见节点。
+        if (place?.aggregateCell?.[0] === coarse.markerBand.cell) parentByCell.set(coarseCellKey(place, zoom), parent);
     }
 
     const nextToPrev = new Map();
@@ -214,9 +223,12 @@ function planMarkerBand(plan, prev, next, remainingPrev, remainingNext, directio
     }
 }
 
-// Large tile bands contain many anonymous rows at identical cell coordinates.
-// Their compact index groups let visible glyphs retain motion within the same
-// visit budget, without materializing thousands of anonymous member keys.
+// Large tile bands contain many anonymous rows per cell. Their compact index
+// groups let visible glyphs retain motion within the same visit budget, without
+// materializing thousands of anonymous member keys. This path stays at cell
+// level even when rows carry sub-cells: descending to sub-cells would exhaust
+// the budget for city-wide clusters. A cell split across two coarse nodes
+// matches neither, and those fine nodes fade in.
 function planMarkerCells(plan, coarse, fine, coarseNodes, fineNodes, refining, budget) {
     const cellOf = (lng,lat)=>tileOf(lng,lat,coarse.markerBand.cell).join('/');
     const parentByCell = new Map();

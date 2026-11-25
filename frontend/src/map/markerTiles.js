@@ -3,8 +3,9 @@
 //
 // 1. 清单 GET /places/tiles/manifest：各级瓦片的内容哈希（公共缓存，约一分钟跟上修改）；字典 /tiles/<哈希>/dict：标签名、地区名。
 // 2. 三级聚合瓦片（z2 / z5 / z8 瓦片，格子 z9 / z12 / z14）：格子位置、每家店匿名的一行（标签、人均、地区、图标类型）。
-//    这里把每一行展开成一个“匿名点”（aggregate: true，没有店名），同一格的点坐标相同，交给现有聚合引擎就成了
-//    一个聚合点；筛选（places/placeFilter.js）照常作用在这些点的标签、人均、地区上，聚合数跟着变。
+//    这里把每一行展开成一个“匿名点”（aggregate: true，没有店名）交给现有聚合引擎。前两级同一格的点都放在格子重心；
+//    最细一级（瓦片带 sub）的行带店所在的 1/16 小格（约 140 m），点放在小格中心，换到明细时只挪几个像素，
+//    aggregateCell 的第 4 项记下小格的级别（z18）。筛选（places/placeFilter.js）照常作用在这些点的标签、人均、地区上。
 // 3. 明细瓦片（z12）：店名、精确坐标、评价汇总，与旧快照的字段相同（marker_only，打开卡片时再读 GET /places/:id）。
 //    按 IP / 账号限流（登录后带票据 ?t=），只在浏览器和 IndexedDB 里缓存。拿不到的那块用城市级聚合顶上。
 //
@@ -126,20 +127,26 @@ function* aggregateRows(body, dict, tileKey) {
     if (!body || !Array.isArray(body.cells) || !dict) return;
     const [tx, ty] = tileKey.split('/').map(Number);
     const shift = 2 ** (body.cell - body.z);
+    // 格内小格：sub 必须是 2 的幂，小格就是 cell + log2(sub) 级的瓦片
+    const subBits = Number.isInteger(body.sub) && body.sub > 1 ? Math.log2(body.sub) : NaN;
+    const sub = Number.isInteger(subBits) ? body.sub : 0;
     for (const cell of body.cells) {
         if (!Array.isArray(cell) || !Array.isArray(cell[4])) continue;
         const cellX = tx * shift + cell[0];
         const cellY = ty * shift + cell[1];
-        const longitude = lngOf(cellX + (cell[2] + 0.5) / 8, body.cell);
-        const latitude = latOf(cellY + (cell[3] + 0.5) / 8, body.cell);
+        const centroid = [lngOf(cellX + (cell[2] + 0.5) / 8, body.cell), latOf(cellY + (cell[3] + 0.5) / 8, body.cell)];
         for (const [index, row] of cell[4].entries()) {
-            const [tags, cost, region, glyph] = row;
+            const [tags, cost, region, glyph, subIndex] = row;
             const names = Array.isArray(tags) ? tags.map((i) => dict.tags[i]).filter(Boolean) : [];
             const regionNames = region >= 0 && Array.isArray(dict.regions[region]) ? dict.regions[region] : null;
+            const inCell = sub && Number.isInteger(subIndex) && subIndex >= 0 && subIndex < sub * sub;
+            const [longitude, latitude] = inCell
+                ? [lngOf(cellX + (subIndex % sub + 0.5) / sub, body.cell), latOf(cellY + (Math.floor(subIndex / sub) + 0.5) / sub, body.cell)]
+                : centroid;
             yield {
                 aggregateKey: `agg:${body.cell}/${cellX}/${cellY}#${index}`,
                 aggregate: true,
-                aggregateCell: [body.cell, cellX, cellY],
+                aggregateCell: inCell ? [body.cell, cellX, cellY, body.cell + subBits] : [body.cell, cellX, cellY],
                 name: '',
                 longitude,
                 latitude,
