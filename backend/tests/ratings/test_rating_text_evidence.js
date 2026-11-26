@@ -11,14 +11,14 @@ async function main(){
  server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});const base='http://127.0.0.1:'+server.address().port;
  const request=async(method,url,body,user='owner')=>{const res=await fetch(base+url,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt.sign({id:user},process.env.JWT_SECRET||'yuyuko_secret_key')},...(body?{body:JSON.stringify(body)}:{})});return {status:res.status,data:await res.json()};};
  const revision=()=>sql.prepare('SELECT COUNT(*) n FROM PlaceRevision').get().n;
- let r=await request('PUT','/places/1',{description:'烧鸭好吃，等了40分钟'});assert.equal(r.status,400);assert.equal(revision(),0,'missing rating rolls back edit');
- r=await request('PUT','/places/1',{description:'烧鸭好吃，等了40分钟',rating:2});assert.equal(r.status,200,JSON.stringify(r.data));
+ let r=await request('PUT','/places/1',{description:'烧鸭好吃，但是等了40分钟才上菜'});assert.equal(r.status,400);assert.equal(revision(),0,'missing rating rolls back edit');
+ r=await request('PUT','/places/1',{description:'烧鸭好吃，但是等了40分钟才上菜',rating:2});assert.equal(r.status,200,JSON.stringify(r.data));
  assert.equal(sql.prepare('SELECT score FROM PlaceRating').get().score,2);assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment').get().n,1);
  const evidence=require('../../modules/ratings/services/ratingTextEvidence'),judge=require('../../modules/ratings/services/ratingContentJudge');
  assert.equal(judge.cleanText(null),'');assert.equal(judge.cleanText(undefined),'');assert.equal(judge.cleanText(Number.NaN),'');assert.equal(judge.cleanText('nan'),'nan','literal text is not silently discarded');assert.equal(judge.multiplier(null,1),1,'a genuinely absent description has baseline influence, never template penalty');
  const row=sql.prepare('SELECT * FROM RatingTextEvidence').get();assert.equal(row.user_id,'owner');assert.ok(row.evidence_text.includes('等了40分钟'));assert.ok(!row.evidence_text.includes('烧鸭好吃'),'old author text not credited again');
  assert.ok(require('../../modules/ratings/services/modelProfiles').inputFor(1).reviews.some(r=>r.content.includes('等了40分钟')&&!r.content.includes('烧鸭好吃')),'model profiles consume only the new contribution, including short specific text, never the deleted/before-state diff');
- r=await request('PUT','/places/1',{description:'烧鸭好吃，等了40分钟',rating:4});assert.equal(r.status,200);assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment').get().n,1,'retry does not create another comment');assert.equal(sql.prepare('SELECT score FROM PlaceRating').get().score,2,'editing never overwrites an existing vote');
+ r=await request('PUT','/places/1',{description:'烧鸭好吃，但是等了40分钟才上菜',rating:4});assert.equal(r.status,200);assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment').get().n,1,'retry does not create another comment');assert.equal(sql.prepare('SELECT score FROM PlaceRating').get().score,2,'editing never overwrites an existing vote');
  assert.deepEqual((await request('GET','/places/1/edit-context')).data.mine,{score:2});
  const beforeJudgeClock=require('../../modules/ratings/services/ratingSnapshot').revision();
  await evidence.processPending({evaluate:async rows=>rows.map(r=>({id:r.id,polarity:'negative',specificity:1,positive_support:0,negative_support:1,negative_severity:.5,boilerplate:0,confidence:.9,excerpts:['等了40分钟']}))});
@@ -34,7 +34,7 @@ async function main(){
  assert.deepEqual(shadow.qualities,plain.qualities);assert.deepEqual(shadow.shadow_qualities,active.qualities);assert.ok(active.qualities[0].average<plain.qualities[0].average,'bounded text weights actually affect the numeric service');
  assert.throws(()=>client.validate('ratingquality',{...shadow,text_evidence_policy:undefined},input),e=>e.code==='invalid_response');
  // Pending changes do not publish comments or scores before approval.
- r=await request('POST','/place-requests',{place_id:1,proposed:{description:'烧鸭好吃，等了40分钟，米饭是冷的'},rating:1},'guest');assert.equal(r.status,201,JSON.stringify(r.data));const pendingId=r.data.id;
+ r=await request('POST','/place-requests',{place_id:1,proposed:{description:'烧鸭好吃，但是等了40分钟才上菜，米饭是冷的'},rating:1},'guest');assert.equal(r.status,201,JSON.stringify(r.data));const pendingId=r.data.id;
  assert.equal(sql.prepare("SELECT COUNT(*) n FROM Comment WHERE user_id='guest'").get().n,0);assert.equal(sql.prepare("SELECT COUNT(*) n FROM PlaceRating WHERE user_id='guest'").get().n,0);
  require('../../modules/places/services/placeEditRating').commitEditRating('guest',1,{rating:3});
  r=await request('POST',`/place-requests/${pendingId}/review`,{action:'approve'},'admin');assert.equal(r.status,200,JSON.stringify(r.data));
@@ -42,7 +42,7 @@ async function main(){
  const attributed=sql.prepare("SELECT c.user_id,r.author_id,r.executor_id FROM Comment c JOIN PlaceRevision r ON r.id=c.place_revision_id WHERE c.user_id='guest'").get();assert.deepEqual(attributed,{user_id:'guest',author_id:'guest',executor_id:'admin'});
  assert.equal((await request('POST',`/place-requests/${pendingId}/review`,{action:'approve'},'admin')).status,409);
  // A correction with no first-hand experience can be submitted without a vote.
- r=await request('PUT','/places/1',{name:'Corrected',description:'烧鸭好吃，等了40分钟，米饭是冷的。营业到22点',no_experience:true},'admin');assert.equal(r.status,200);assert.equal(sql.prepare("SELECT COUNT(*) n FROM PlaceRating WHERE user_id='admin'").get().n,0);
+ r=await request('PUT','/places/1',{name:'Corrected',description:'烧鸭好吃，但是等了40分钟才上菜，米饭是冷的。营业到22点',no_experience:true},'admin');assert.equal(r.status,200);assert.equal(sql.prepare("SELECT COUNT(*) n FROM PlaceRating WHERE user_id='admin'").get().n,0);
  assert.equal(sql.prepare("SELECT content FROM Comment WHERE user_id='admin'").get().content,'营业到22点','the record is only the added description text');
  const beforeNameOnly=sql.prepare('SELECT COUNT(*) n FROM Comment').get().n;
  r=await request('PUT','/places/1',{name:'Corrected again',no_experience:true},'admin');assert.equal(r.status,200);

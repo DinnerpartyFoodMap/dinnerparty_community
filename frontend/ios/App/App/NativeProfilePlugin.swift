@@ -14,7 +14,7 @@ import UIKit
 ///   页面栈：loadProfile（同好里点开的住民） | loadCommunity | loadCommunitySettings | saveCommunitySettings | clearInteractions
 ///          | loadCompanion | setCompanionEnabled | chooseCompanion
 ///
-/// 主页自带页面栈（NavigationStack）：同好、角色观察屋和同好里点开的其他住民主页都推入在主页之上，
+/// 主页自带页面栈（NavigationStack）：同好、小伙伴和同好里点开的其他住民主页都推入在主页之上，
 /// 返回时系统侧滑就能看到下面的主页；住民设置由网页在主页之上打开（NativeSettingsPlugin），主页不关闭。
 /// 网页取数据、执行请求，并把六轴、小组件、同好与小伙伴整理成可直接显示的快照；原生只显示与收集输入，不访问后端、不持有凭证。
 @objc(NativeProfilePlugin)
@@ -81,6 +81,13 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
                 host?.overrideUserInterfaceStyle = dark ? .dark : .light
             }
             self.screenPresenter.edgeEnabled = true
+            // 从地图底栏点小伙伴进来：小伙伴页随主页一起推入，返回时先回到主页
+            navigator.rootUserId = call.getString("userId")
+            if call.getString("initialPage") == "companion" {
+                navigator.open(.companion)
+            } else if call.getString("initialPage") == "room", let owner = call.getString("userId"), !owner.isEmpty {
+                navigator.open(.room(owner))
+            }
             self.screenPresenter.onEdgeBack = { [weak self] in
                 guard let self, !self.presenting, self.activeFinish == nil else { return false }
                 self.finish(action: "back")
@@ -293,6 +300,8 @@ enum NativeProfileRoute: Hashable {
     case companion
     /// 同好里点开的住民主页
     case profile(String)
+    /// 别人的小伙伴（只读）：住民主页的“去看 Ta 的小伙伴”、时间线头像、熟悉的小伙伴、口味像你的小伙伴
+    case room(String)
 }
 
 final class NativeProfileNavigator: ObservableObject {
@@ -303,9 +312,12 @@ final class NativeProfileNavigator: ObservableObject {
     }
     let root: NativeProfileModel
     var onDepthChange: ((Int) -> Void)?
+    /// 会话打开的那位住民（根页）的编号
+    var rootUserId: String?
 
     private let session: NativeProfileSession
     private var profiles: [String: NativeProfileModel] = [:]
+    private var rooms: [String: NativeOtherRoomModel] = [:]
     private var communityModel: NativeCommunityModel?
     private var companionModel: NativeCompanionModel?
 
@@ -320,6 +332,29 @@ final class NativeProfileNavigator: ObservableObject {
         path.append(route)
     }
 
+    func pop() {
+        guard !path.isEmpty else { return }
+        path.removeLast()
+    }
+
+    /// 从小伙伴页点主人名：上一页就是这位住民的主页时直接返回，否则推入
+    func openProfile(_ userId: String) {
+        let previous = path.dropLast().last
+        if previous == .profile(userId) || (path.count == 1 && rootUserId == userId) {
+            pop()
+        } else {
+            open(.profile(userId))
+        }
+    }
+
+    func room(_ userId: String) -> NativeOtherRoomModel {
+        if let model = rooms[userId] { return model }
+        let model = NativeOtherRoomModel(session: session, userId: userId)
+        model.navigator = self
+        rooms[userId] = model
+        return model
+    }
+
     var community: NativeCommunityModel {
         if let communityModel { return communityModel }
         let model = NativeCommunityModel(session: session)
@@ -331,11 +366,12 @@ final class NativeProfileNavigator: ObservableObject {
     var companion: NativeCompanionModel {
         if let companionModel { return companionModel }
         let model = NativeCompanionModel(session: session)
+        model.navigator = self
         companionModel = model
         return model
     }
 
-    /// 观察屋打开过才需要接收推来的小伙伴状态
+    /// 小伙伴页打开过才需要接收推来的小伙伴状态
     var loadedCompanion: NativeCompanionModel? { companionModel }
 
     func profile(_ userId: String) -> NativeProfileModel {
@@ -395,6 +431,7 @@ final class NativeProfileModel: ObservableObject {
         let collectionVisibility: Bool?
         let canBlock: Bool
         let blocked: Bool
+        let canOpenRoom: Bool
         let widgets: [String]
         let hiddenWidgets: Set<String>
         let sections: [WidgetSection]
@@ -524,6 +561,7 @@ final class NativeProfileModel: ObservableObject {
             collectionVisibility: object["collectionVisibility"] as? Bool,
             canBlock: (object["canBlock"] as? Bool) ?? false,
             blocked: (object["blocked"] as? Bool) ?? false,
+            canOpenRoom: (object["canOpenRoom"] as? Bool) ?? false,
             widgets: (object["widgets"] as? JSArray ?? []).compactMap { $0 as? String },
             hiddenWidgets: Set((object["hiddenWidgets"] as? JSArray ?? []).compactMap { $0 as? String }),
             sections: sections,
@@ -611,13 +649,19 @@ final class NativeProfileModel: ObservableObject {
         start("setCollectionVisibility", values: ["isPublic": isPublic])
     }
 
-    /// 同好、角色观察屋：推入页面栈，主页留在下面
+    /// 同好、小伙伴：推入页面栈，主页留在下面
     func openCommunity() {
         navigator?.open(.community)
     }
 
     func openCompanion() {
         navigator?.open(.companion)
+    }
+
+    /// 去看 Ta 的小伙伴：推入对方的小伙伴页
+    func openRoom() {
+        guard let owner = userId ?? navigator?.rootUserId else { return }
+        navigator?.open(.room(owner))
     }
 
     /// 住民设置：网页在主页之上打开原生设置；网页处理不了时退回旧流程（收起主页后打开设置）
@@ -856,7 +900,130 @@ final class NativeCommunityModel: ObservableObject {
     }
 }
 
-// MARK: - 角色观察屋状态
+// MARK: - 小伙伴状态
+
+/// 小伙伴的一天：网页（companion/roomNativeModel.js）算好分段和每行文字，原生只照着画。
+struct NativeRoomRow: Identifiable {
+    let id: Int
+    let kind: String        // segment | group | event
+    let title: String
+    let time: String
+    let duration: String
+    let text: String
+    let sub: String
+    let star: Bool
+    let grouped: Bool
+    let avatars: [NativeRoomAvatar]
+    /// 一次外出、拼桌的组标题：店的编号（点了回地图开这家店），没有为空
+    let placeId: String
+}
+
+struct NativeRoomAvatar {
+    let userId: String
+    let name: String
+    let image: String       // 安装包里的图片路径或 https 地址
+}
+
+/// 熟悉的小伙伴、口味像你的小伙伴里的一只
+struct NativeRoomPerson: Identifiable {
+    let userId: String
+    let name: String
+    let caption: String
+    let image: String
+    var id: String { userId }
+
+    static func parseList(_ raw: Any?) -> [NativeRoomPerson] {
+        (raw as? JSArray ?? []).prefix(5).compactMap { item in
+            guard let object = item as? JSObject, let userId = object["userId"] as? String, !userId.isEmpty else { return nil }
+            return NativeRoomPerson(userId: userId, name: object["name"] as? String ?? "",
+                                    caption: object["caption"] as? String ?? "", image: object["image"] as? String ?? "")
+        }
+    }
+}
+
+struct NativeRoomFilter: Identifiable {
+    let id: String
+    let label: String
+}
+
+struct NativeRoomSnapshot {
+    var available = false
+    var loaded = false
+    var named = false
+    var error = ""
+    var cardTitle = ""
+    var cardBody = ""
+    var cardAction = ""
+    var name = ""
+    var now = ""
+    var paused = ""
+    var date = ""
+    var dayLabel = ""
+    var prev = ""
+    var next = ""
+    var filter = "all"
+    var filters: [NativeRoomFilter] = []
+    var rows: [NativeRoomRow] = []
+    var empty = ""
+    var upcoming = ""
+    var note = ""
+    /// 名字或口头禅没通过检查时名字下方的提示（点了进编辑）
+    var notice = ""
+    var friends: [NativeRoomPerson] = []
+    var neighbors: [NativeRoomPerson] = []
+    var labels: [String: String] = [:]
+
+    static func parse(_ object: JSObject) -> NativeRoomSnapshot {
+        var room = NativeRoomSnapshot()
+        let string = { (key: String) in object[key] as? String ?? "" }
+        room.available = (object["available"] as? Bool) ?? false
+        room.loaded = (object["loaded"] as? Bool) ?? false
+        room.named = (object["named"] as? Bool) ?? false
+        room.error = string("error")
+        if let card = object["card"] as? JSObject {
+            room.cardTitle = card["title"] as? String ?? ""
+            room.cardBody = card["body"] as? String ?? ""
+            room.cardAction = card["action"] as? String ?? ""
+        }
+        room.name = string("name")
+        room.now = string("now")
+        room.paused = string("paused")
+        room.date = string("date")
+        room.dayLabel = string("dayLabel")
+        room.prev = string("prev")
+        room.next = string("next")
+        room.filter = object["filter"] as? String ?? "all"
+        room.empty = string("empty")
+        room.upcoming = string("upcoming")
+        room.note = string("note")
+        room.notice = string("notice")
+        room.friends = NativeRoomPerson.parseList(object["friends"])
+        room.neighbors = NativeRoomPerson.parseList(object["neighbors"])
+        if let labels = object["labels"] as? JSObject {
+            room.labels = NativeProfileSession.strings(labels)
+            room.filters = (labels["filters"] as? JSArray ?? []).compactMap { raw in
+                guard let item = raw as? JSObject, let id = item["id"] as? String else { return nil }
+                return NativeRoomFilter(id: id, label: item["label"] as? String ?? id)
+            }
+        }
+        room.rows = (object["rows"] as? JSArray ?? []).prefix(400).enumerated().compactMap { index, raw in
+            guard let item = raw as? JSObject, let kind = item["kind"] as? String else { return nil }
+            return NativeRoomRow(
+                id: index, kind: kind, title: item["title"] as? String ?? "",
+                time: item["time"] as? String ?? "", duration: item["duration"] as? String ?? "",
+                text: item["text"] as? String ?? "", sub: item["sub"] as? String ?? "",
+                star: (item["star"] as? Bool) ?? false, grouped: (item["grouped"] as? Bool) ?? false,
+                avatars: (item["avatars"] as? JSArray ?? []).prefix(2).compactMap { raw in
+                    guard let avatar = raw as? JSObject else { return nil }
+                    return NativeRoomAvatar(userId: avatar["userId"] as? String ?? "", name: avatar["name"] as? String ?? "",
+                                            image: avatar["image"] as? String ?? "")
+                },
+                placeId: item["placeId"] as? String ?? ""
+            )
+        }
+        return room
+    }
+}
 
 final class NativeCompanionModel: ObservableObject {
     struct Role: Identifiable, Equatable {
@@ -880,13 +1047,27 @@ final class NativeCompanionModel: ObservableObject {
     @Published private(set) var fedPulse = 0
     @Published var alertMessage: String?
     @Published private(set) var labels: [String: String] = [:]
+    @Published private(set) var room = NativeRoomSnapshot()
 
     private var satietyCount = 0
     private var previewPath = ""
     private let session: NativeProfileSession
+    weak var navigator: NativeProfileNavigator?
 
     init(session: NativeProfileSession) {
         self.session = session
+    }
+
+    /// 小伙伴页只在自己的主页里出现：主人就是根页住民
+    var selfId: String { navigator?.rootUserId ?? "" }
+
+    func openRoom(_ id: String) {
+        guard !id.isEmpty, id != selfId else { return }
+        navigator?.open(.room(id))
+    }
+
+    func openPlace(_ id: String) {
+        session.close("openPlace", ["placeId": id])
     }
 
     func text(_ key: String, _ fallback: String) -> String {
@@ -904,7 +1085,7 @@ final class NativeCompanionModel: ObservableObject {
             if ok, let companion = payload["companion"] as? JSObject {
                 self.apply(companion)
             } else if !self.loaded {
-                self.loadError = message.isEmpty ? self.text("loadFailed", "角色观察屋加载失败，请稍后重试") : message
+                self.loadError = message.isEmpty ? self.text("loadFailed", "小伙伴加载失败，请稍后重试") : message
             }
         }
     }
@@ -930,8 +1111,35 @@ final class NativeCompanionModel: ObservableObject {
             previewPath = path
             preview = NativeProfileImage.bundled(path)
         }
+        if let raw = object["room"] as? JSObject {
+            room = NativeRoomSnapshot.parse(raw)
+        }
         loaded = true
         loadError = nil
+    }
+
+    /// 翻日期、切筛选：date 为空是今天
+    func roomNavigate(date: String, filter: String) {
+        guard !busy else { return }
+        busy = true
+        session.request("roomNavigate", values: ["date": date, "filter": filter]) { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.busy = false
+            if ok, let companion = payload["companion"] as? JSObject {
+                self.apply(companion)
+            } else if !message.isEmpty {
+                self.alertMessage = message
+            }
+        }
+    }
+
+    /// 起名、编辑性格的表单只在网页：收起主页后在网页小伙伴页里直接弹出
+    func openNaming() {
+        session.close("companionName")
+    }
+
+    func openEditor() {
+        session.close("companionEdit")
     }
 
     func setEnabled(_ value: Bool) {
@@ -962,6 +1170,479 @@ final class NativeCompanionModel: ObservableObject {
             } else {
                 self.alertMessage = message.isEmpty ? self.text("switchFailed", "切换角色失败，请重试") : message
             }
+        }
+    }
+}
+
+// MARK: - 别人的小伙伴
+
+/// 别人的小伙伴（只读）：网页（companion/roomNativeModel.js 的 buildOtherRoomNativeModel）算好的快照
+struct NativeOtherRoomSnapshot {
+    var loaded = false
+    var missing = ""
+    var error = ""
+    var name = ""
+    var avatar = ""
+    var ownerLine = ""
+    var ownerName = ""
+    var bond = ""
+    var tags: [String] = []
+    var quirks: [String] = []
+    var paused = ""
+    /// 查看者自己：时间线里点自己的头像没有反应
+    var viewerId = ""
+    /// 时间线部分和自己的小伙伴页同一套字段
+    var room = NativeRoomSnapshot()
+
+    static func parse(_ object: JSObject) -> NativeOtherRoomSnapshot {
+        var value = NativeOtherRoomSnapshot()
+        let string = { (key: String) in object[key] as? String ?? "" }
+        value.loaded = (object["loaded"] as? Bool) ?? false
+        value.missing = string("missing")
+        value.error = string("error")
+        value.name = string("name")
+        value.avatar = string("avatar")
+        value.ownerLine = string("ownerLine")
+        value.ownerName = string("ownerName")
+        value.bond = string("bond")
+        value.tags = (object["tags"] as? JSArray ?? []).prefix(10).compactMap { $0 as? String }
+        value.quirks = (object["quirks"] as? JSArray ?? []).prefix(3).compactMap { $0 as? String }
+        value.paused = string("paused")
+        value.viewerId = string("viewerId")
+        value.room = NativeRoomSnapshot.parse(object)
+        return value
+    }
+}
+
+final class NativeOtherRoomModel: ObservableObject {
+    let userId: String
+    weak var navigator: NativeProfileNavigator?
+    @Published private(set) var state = NativeOtherRoomSnapshot()
+    @Published private(set) var busy = false
+    @Published var alertMessage: String?
+    @Published var confirmBlock = false
+
+    private let session: NativeProfileSession
+    private var requested = false
+
+    init(session: NativeProfileSession, userId: String) {
+        self.session = session
+        self.userId = userId
+    }
+
+    func text(_ key: String, _ fallback: String) -> String {
+        NativeProfileSession.text(state.room.labels, key, fallback)
+    }
+
+    var ready: Bool { state.loaded && state.missing.isEmpty && state.error.isEmpty }
+
+    func loadIfNeeded() {
+        guard !requested else { return }
+        requested = true
+        load(date: "", filter: "all")
+    }
+
+    /// date 为空是今天
+    func load(date: String, filter: String) {
+        guard !busy else { return }
+        busy = true
+        session.request("loadRoom", values: ["userId": userId, "date": date, "filter": filter]) { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.busy = false
+            if ok, let room = payload["room"] as? JSObject {
+                self.state = NativeOtherRoomSnapshot.parse(room)
+            } else if !self.state.loaded {
+                var failed = NativeOtherRoomSnapshot()
+                failed.loaded = true
+                failed.error = message.isEmpty ? self.text("loadFailed", "小伙伴的时间线加载失败，请稍后重试") : message
+                self.state = failed
+            } else if !message.isEmpty {
+                self.alertMessage = message
+            }
+        }
+    }
+
+    func retry() {
+        state = NativeOtherRoomSnapshot()
+        load(date: "", filter: "all")
+    }
+
+    func openRoom(_ id: String) {
+        guard !id.isEmpty, id != userId, id != state.viewerId else { return }
+        navigator?.open(.room(id))
+    }
+
+    func openOwner() {
+        navigator?.openProfile(userId)
+    }
+
+    func openPlace(_ id: String) {
+        session.close("openPlace", ["placeId": id])
+    }
+
+    /// 举报：网页打开预填好的举报表；举报表显示在地图页上，所以先收起主页
+    func report() {
+        guard !busy else { return }
+        session.request("reportUser", values: ["userId": userId, "name": state.ownerName]) { [weak self] ok, _, _ in
+            if ok { self?.session.close("back") }
+        }
+    }
+
+    /// 屏蔽这位住民：只屏蔽、不打开举报，成功后退出这一页
+    func block() {
+        guard !busy else { return }
+        busy = true
+        session.request("setBlocked", values: ["blocked": true, "userId": userId, "report": false]) { [weak self] ok, message, _ in
+            guard let self else { return }
+            self.busy = false
+            if ok {
+                self.navigator?.pop()
+            } else {
+                self.alertMessage = message.isEmpty ? self.text("blockFailed", "屏蔽失败，请稍后重试") : message
+            }
+        }
+    }
+}
+
+/// 小伙伴的圆头像：https 地址或安装包里的图（内置角色饭桶）
+private struct NativeRoomAvatarImage: View {
+    let path: String
+    var size: CGFloat = 26
+
+    var body: some View {
+        Group {
+            if let url = NativeProfileImage.httpsURL(path) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Color.clear
+                }
+            } else if let image = NativeProfileImage.bundled(path) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: "person.crop.circle.fill").resizable().scaledToFit()
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .accessibilityHidden(true)
+    }
+}
+
+/// 时间线（自己的、别人的小伙伴页共用）：日期、筛选和分段后的行，网页已经算好每一行的文字
+private struct NativeRoomTimeline: View {
+    let state: NativeRoomSnapshot
+    let busy: Bool
+    let tint: Color
+    /// 点了没有反应的头像：这只小伙伴自己、查看者自己
+    let inertIds: Set<String>
+    let onNavigate: (_ date: String, _ filter: String) -> Void
+    let onOpenPerson: (String) -> Void
+    let onOpenPlace: (String) -> Void
+
+    var body: some View {
+        NativePageCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Button {
+                        onNavigate(state.prev, state.filter)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(state.prev.isEmpty || busy)
+                    .accessibilityLabel(Text(state.labels["prevDay"] ?? "前一天"))
+                    Spacer()
+                    Text(state.dayLabel)
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        onNavigate(state.next, state.filter)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(state.next.isEmpty || busy)
+                    .accessibilityLabel(Text(state.labels["nextDay"] ?? "后一天"))
+                }
+                if !state.filters.isEmpty {
+                    Picker("", selection: Binding(get: { state.filter }, set: { onNavigate(state.date, $0) })) {
+                        ForEach(state.filters) { item in
+                            Text(item.label).tag(item.id)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(busy)
+                }
+                if !state.empty.isEmpty {
+                    Text(state.empty)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+                ForEach(state.rows) { row in
+                    rowView(row)
+                }
+                if !state.upcoming.isEmpty {
+                    Text(state.upcoming)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+                Text(state.note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rowView(_ row: NativeRoomRow) -> some View {
+        switch row.kind {
+        case "segment":
+            Text(row.title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+                .accessibilityAddTraits(.isHeader)
+        case "group":
+            if row.placeId.isEmpty {
+                Text(row.title)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 10)
+            } else {
+                Button {
+                    onOpenPlace(row.placeId)
+                } label: {
+                    Text(row.title)
+                        .font(.footnote)
+                        .foregroundStyle(tint.fmReadableText)
+                        .multilineTextAlignment(.leading)
+                        .padding(.leading, 10)
+                        .frame(minHeight: 32, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        default:
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.time)
+                        .font(.footnote.monospacedDigit())
+                    if !row.duration.isEmpty {
+                        Text(row.duration)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(width: 52, alignment: .leading)
+                HStack(spacing: 2) {
+                    ForEach(Array(row.avatars.enumerated()), id: \.offset) { _, avatar in
+                        if avatar.userId.isEmpty || inertIds.contains(avatar.userId) {
+                            NativeRoomAvatarImage(path: avatar.image)
+                        } else {
+                            Button {
+                                onOpenPerson(avatar.userId)
+                            } label: {
+                                NativeRoomAvatarImage(path: avatar.image)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .frame(width: 26, height: 26)
+                            .accessibilityLabel(Text(avatar.name))
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.star ? row.text + " ★" : row.text)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !row.sub.isEmpty {
+                        Text(row.sub)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, row.grouped ? 10 : 0)
+            .overlay(alignment: .leading) {
+                if row.grouped {
+                    Rectangle()
+                        .fill(tint.opacity(0.45))
+                        .frame(width: 2)
+                }
+            }
+        }
+    }
+}
+
+/// 熟悉的小伙伴、口味像你的小伙伴：头像、名字、一行小字；点了推入对方的小伙伴页。没有人时不显示
+private struct NativeRoomPeople: View {
+    let title: String
+    let people: [NativeRoomPerson]
+    let onOpen: (String) -> Void
+
+    var body: some View {
+        if !people.isEmpty {
+            NativePageCard(padding: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(people) { person in
+                        Button {
+                            onOpen(person.userId)
+                        } label: {
+                            HStack(spacing: 10) {
+                                NativeRoomAvatarImage(path: person.image, size: 36)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(person.name)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(Color.primary)
+                                    if !person.caption.isEmpty {
+                                        Text(person.caption)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 别人的小伙伴页（只读）：大头照、名字、主人、熟悉程度、性格和小习惯、时间线；右上角举报、屏蔽
+private struct NativeOtherRoomView: View {
+    @ObservedObject var model: NativeOtherRoomModel
+    @ObservedObject var session: NativeProfileSession
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                let state = model.state
+                if !state.loaded {
+                    ProgressView()
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                } else if !state.missing.isEmpty {
+                    Text(state.missing)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 200)
+                } else if !state.error.isEmpty {
+                    NativePageCard(padding: 16) {
+                        VStack(spacing: 10) {
+                            Text(state.error)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button(model.text("retry", "重试")) { model.retry() }
+                                .buttonStyle(.bordered)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                } else {
+                    header(state)
+                    if state.paused.isEmpty {
+                        NativeRoomTimeline(state: state.room, busy: model.busy, tint: session.tint,
+                                           inertIds: [model.userId, state.viewerId],
+                                           onNavigate: { date, filter in model.load(date: date, filter: filter) },
+                                           onOpenPerson: { model.openRoom($0) },
+                                           onOpenPlace: { model.openPlace($0) })
+                    } else {
+                        Text(state.paused)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 120)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+        }
+        .nativePageBackground()
+        .navigationTitle(model.text("title", "小伙伴"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(model.text("report", "举报")) { model.report() }
+                    Button(model.text("block", "屏蔽这位住民"), role: .destructive) { model.confirmBlock = true }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel(Text(model.text("menu", "更多")))
+                .disabled(!model.ready || model.busy)
+            }
+        }
+        .onAppear { model.loadIfNeeded() }
+        .alert(model.text("block", "屏蔽这位住民"), isPresented: $model.confirmBlock) {
+            Button(model.text("blockAction", "屏蔽"), role: .destructive) { model.block() }
+            Button(model.text("cancel", "取消"), role: .cancel) {}
+        } message: {
+            Text(model.text("blockConfirm", "屏蔽后你们互相看不到对方的地点、日记和小伙伴，小伙伴也不再碰面，已有的拼桌会变成一个人吃饭。"))
+        }
+        .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
+            Button(model.text("ok", "好"), role: .cancel) {}
+        }
+    }
+
+    private func header(_ state: NativeOtherRoomSnapshot) -> some View {
+        NativePageCard(padding: 16) {
+            VStack(spacing: 8) {
+                NativeRoomAvatarImage(path: state.avatar, size: 96)
+                Text(state.name)
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                if !state.ownerLine.isEmpty {
+                    Button {
+                        model.openOwner()
+                    } label: {
+                        Text(state.ownerLine)
+                            .font(.footnote)
+                            .foregroundStyle(session.tint.fmReadableText)
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !state.bond.isEmpty {
+                    Text(state.bond)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if !state.tags.isEmpty || !state.quirks.isEmpty {
+                    NativeFlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(Array((state.tags + state.quirks).enumerated()), id: \.offset) { _, item in
+                            Text(item)
+                                .font(.caption)
+                                .nativeChip(selected: false)
+                        }
+                    }
+                }
+                if !state.room.now.isEmpty {
+                    Text(state.room.now)
+                        .font(.subheadline)
+                        .foregroundStyle(session.tint)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 }
@@ -1007,6 +1688,8 @@ private struct NativeProfileRootView: View {
             NativeCompanionView(model: navigator.companion, session: session)
         case .profile(let userId):
             NativeProfilePage(model: navigator.profile(userId), session: session)
+        case .room(let userId):
+            NativeOtherRoomView(model: navigator.room(userId), session: session)
         }
     }
 }
@@ -1133,6 +1816,18 @@ private struct NativeProfilePage: View {
                         .buttonStyle(.plain)
                         .fixedSize()
                     }
+                }
+                if model.view.canOpenRoom {
+                    Button {
+                        model.openRoom()
+                    } label: {
+                        Text(model.text("visitRoom", "去看 Ta 的小伙伴"))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(session.tint.fmReadableText)
+                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .nativeChip(selected: false)
+                    }
+                    .buttonStyle(.plain)
                 }
                 if model.view.canBlock {
                     Button {
@@ -1313,7 +2008,7 @@ private struct NativeProfilePage: View {
             VStack(spacing: 0) {
                 accountRow(model.text("settings", "住民与地图设置"), symbol: "gearshape", action: model.openSettings)
                 Divider()
-                accountRow(model.text("companion", "角色观察屋"), symbol: "figure.stand", action: model.openCompanion)
+                accountRow(model.text("companion", "小伙伴"), symbol: "figure.stand", action: model.openCompanion)
                 Divider()
                 accountRow(model.text("logout", "暂离幻想乡"), symbol: "rectangle.portrait.and.arrow.right",
                            role: .destructive, action: model.logout)
@@ -1712,9 +2407,9 @@ private struct NativeCommunityStarMap: View {
     }
 }
 
-// MARK: 角色观察屋
+// MARK: 小伙伴
 
-/// 原生角色观察屋：开关、当前角色（内置角色用静态预览）、饱食度与切换角色。
+/// 原生小伙伴：开关、当前角色（内置角色用静态预览）、饱食度与切换角色。
 /// Live2D 动画只在网页与地图底栏；iOS 不提供兑换码（App Store 3.1.1），这里没有兑换表单。
 private struct NativeCompanionView: View {
     @ObservedObject var model: NativeCompanionModel
@@ -1744,19 +2439,21 @@ private struct NativeCompanionView: View {
                             .accessibilityLabel(Text(model.text("loading", "加载中")))
                     }
                 } else {
+                    // 从上到下：舞台和饱食度、起名卡片或时间线、切换角色，开关在最下面（和网页小伙伴页同一顺序）
+                    if model.enabled {
+                        room
+                        roomSection
+                        if model.roles.count > 1 {
+                            roleChoices
+                        }
+                    }
                     NativePageCard(padding: 14) {
                         Toggle(isOn: Binding(get: { model.enabled }, set: { model.setEnabled($0) })) {
-                            Text(model.text("enabled", "开启角色观察屋"))
+                            Text(model.text("enabled", "开启小伙伴"))
                                 .font(.subheadline.weight(.medium))
                         }
                         .tint(session.tint)
                         .disabled(model.busy)
-                    }
-                    if model.enabled {
-                        room
-                        if model.roles.count > 1 {
-                            roleChoices
-                        }
                     }
                 }
             }
@@ -1765,7 +2462,7 @@ private struct NativeCompanionView: View {
             .padding(.bottom, 32)
         }
         .nativePageBackground()
-        .navigationTitle(model.text("title", "角色观察屋"))
+        .navigationTitle(model.text("title", "小伙伴"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { model.load() }
         .onChange(of: model.fedPulse) { _, _ in
@@ -1822,6 +2519,87 @@ private struct NativeCompanionView: View {
                 }
             }
             .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// 起名卡片，或者名字、“现在”一行和时间线；接口没开放时什么都不显示
+    @ViewBuilder
+    private var roomSection: some View {
+        let state = model.room
+        if state.available {
+            if !state.error.isEmpty && !state.loaded {
+                NativePageCard(padding: 16) {
+                    VStack(spacing: 10) {
+                        Text(state.error)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button(state.labels["retry"] ?? "重试") { model.load() }
+                            .buttonStyle(.bordered)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            } else if !state.named && !state.cardTitle.isEmpty {
+                NativePageCard(padding: 16) {
+                    VStack(spacing: 10) {
+                        Text(state.cardTitle)
+                            .font(.headline)
+                        Text(state.cardBody)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button(state.cardAction) { model.openNaming() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(session.tint)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            } else if state.named {
+                NativePageCard(padding: 14) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(state.name)
+                                .font(.title3.weight(.semibold))
+                            Spacer()
+                            Button(state.labels["edit"] ?? "编辑") { model.openEditor() }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        }
+                        if !state.notice.isEmpty {
+                            Button {
+                                model.openEditor()
+                            } label: {
+                                Text(state.notice)
+                                    .font(.footnote)
+                                    .foregroundStyle(FM.warningText)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(10)
+                                    .background(FM.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: FM.Radius.md, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if !state.now.isEmpty {
+                            Text(state.now)
+                                .font(.subheadline)
+                                .foregroundStyle(session.tint)
+                        }
+                        if !state.paused.isEmpty {
+                            Text(state.paused)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if state.loaded && state.paused.isEmpty {
+                    NativeRoomTimeline(state: state, busy: model.busy, tint: session.tint, inertIds: [model.selfId],
+                                       onNavigate: { date, filter in model.roomNavigate(date: date, filter: filter) },
+                                       onOpenPerson: { model.openRoom($0) },
+                                       onOpenPlace: { model.openPlace($0) })
+                }
+                NativeRoomPeople(title: state.labels["friends"] ?? "熟悉的小伙伴", people: state.friends) { model.openRoom($0) }
+                NativeRoomPeople(title: state.labels["neighbors"] ?? "口味像你的小伙伴", people: state.neighbors) { model.openRoom($0) }
+            }
         }
     }
 

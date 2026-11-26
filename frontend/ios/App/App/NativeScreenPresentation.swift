@@ -270,7 +270,7 @@ final class NativeContainedScreenPresenter: NSObject, UIGestureRecognizerDelegat
     private var tracking = false
     private var transitioning = false
     var onEdgeBack: (() -> Bool)?
-    /// 只在主页本身时启用：主页里推入二级页（同好、角色观察屋等）后，左边缘交给系统导航的跟手返回，
+    /// 只在主页本身时启用：主页里推入二级页（同好、小伙伴等）后，左边缘交给系统导航的跟手返回，
     /// 两个手势不能同时响应（与住民设置的 edgeGesture 相同）
     var edgeEnabled = true {
         didSet { gesture?.isEnabled = edgeEnabled }

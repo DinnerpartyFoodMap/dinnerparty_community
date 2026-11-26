@@ -5,6 +5,10 @@
 
 const { merges } = require('../categoryMerges.json');
 
+function parseCategoryNames(value) {
+    return [...new Set(String(value || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
+}
+
 const TARGETS = new Map();
 for (const [source, target] of Object.entries(merges || {})) {
     const from = String(source || '').trim();
@@ -39,4 +43,4 @@ function categoryMergeEntries() {
     return Object.entries(merges || {}).map(([source, target]) => ({ source: String(source).trim(), target: String(target).trim() }));
 }
 
-module.exports = { canonicalCategoryName, canonicalCategoryNames, categoryMergeEntries };
+module.exports = { parseCategoryNames, canonicalCategoryName, canonicalCategoryNames, categoryMergeEntries };

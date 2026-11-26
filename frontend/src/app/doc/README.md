@@ -21,7 +21,7 @@ flowchart TD
     Back[返回键 / 原生返回] --> Stack[按优先级关闭弹层或返回页面]
     Page --> Profile[头像直达我的主页]
     Profile --> MapList[收藏和创建地点清单在地图弹窗打开]
-    Profile --> Companion[角色观察屋返回个人主页]
+    Profile --> Companion[小伙伴返回个人主页]
 ```
 
 | 当前做法 | 对照与维护判断 |

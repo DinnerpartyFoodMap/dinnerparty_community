@@ -109,6 +109,32 @@ const gzCityKey = tileOf(113.2644, 23.1291, 8).join('/');
     assert.equal(anon.filter((p) => matchesPlaceFilter(p, filter({ minCost: 20 }))).length, 1, '没填人均的设了范围就不显示');
     assert.equal(anon.filter((p) => matchesPlaceFilter(p, filter({ province: '广东省', city: '广州市' }))).length, 2);
     assert.equal(expandAggregateTile(null, dict, '0/0').length, 0);
+
+    // 最细一级带 1/16 小格（sub: 16）：点放在店所在小格（z18 瓦片）的中心，不是格子重心，也不是精确坐标
+    const body = aggregateBody(LEVELS[2], gzCityKey);
+    const sub = 16;
+    const withSub = { ...body, sub, cells: body.cells.map(([x, y, gx, gy, rows]) => [x, y, gx, gy, rows.map((row) => {
+        const place = places.find((p) => p.tags === row[0]);
+        const [cx, cy] = tileOf(place.longitude, place.latitude, 14);
+        return [...row, Math.floor((worldY(place.latitude, 14) - cy) * sub) * sub + Math.floor((worldX(place.longitude, 14) - cx) * sub)];
+    })]) };
+    const subPoints = expandAggregateTile(withSub, dict, gzCityKey);
+    assert.equal(subPoints.length, 2);
+    for (const point of subPoints) {
+        const source = places.find((p) => point.category === p.tags.map((i) => dict.tags[i]).join(','));
+        assert.deepEqual(tileOf(point.longitude, point.latitude, 18), tileOf(source.longitude, source.latitude, 18), '落在店所在的小格');
+        const [x, y] = tileOf(point.longitude, point.latitude, 18);
+        assert.ok(Math.abs(worldX(point.longitude, 18) - x - 0.5) < 1e-6 && Math.abs(worldY(point.latitude, 18) - y - 0.5) < 1e-6, '取小格中心');
+        assert.notEqual(point.longitude, source.longitude, '不是精确坐标');
+        assert.deepEqual(point.aggregateCell, [14, ...tileOf(source.longitude, source.latitude, 14), 18]);
+    }
+    assert.notDeepEqual([subPoints[0].longitude, subPoints[0].latitude], [subPoints[1].longitude, subPoints[1].latitude], '同一格的两家不再重合');
+    // 没有小格编号或编号越界的行仍放在格子重心
+    const centroid = expandAggregateTile(body, dict, gzCityKey)[0];
+    const broken = expandAggregateTile({ ...withSub, cells: withSub.cells.map(([x, y, gx, gy, rows]) => [x, y, gx, gy, rows.map((row) => [...row.slice(0, 4), sub * sub])]) }, dict, gzCityKey);
+    assert.ok(broken.every((p) => p.longitude === centroid.longitude && p.latitude === centroid.latitude && p.aggregateCell.length === 3));
+    assert.ok(expandAggregateTile({ ...withSub, sub: 12 }, dict, gzCityKey).every((p) => p.aggregateCell.length === 3), 'sub 不是 2 的幂时忽略');
+
     const leaf = expandLeafTile(leafBody(gzLeafKey));
     assert.deepEqual(leaf.map((p) => p.id), [1, 2]);
     assert.equal(leaf[0].marker_only, true);
@@ -281,4 +307,4 @@ function fakeServer({ leafStatus = 200 } = {}) {
     limitedStore.dispose();
 }
 
-console.log('Marker tiles passed: tile math, band selection, anonymous aggregate points with filters, leaf rows, header-free public requests and leaf tickets, local storage, 429 stop, prefetch limits, atomic band switch, leaf fallback, overlay and local patches.');
+console.log('Marker tiles passed: tile math, band selection, anonymous aggregate points with filters and 1/16 sub-cells, leaf rows, header-free public requests and leaf tickets, local storage, 429 stop, prefetch limits, atomic band switch, leaf fallback, overlay and local patches.');

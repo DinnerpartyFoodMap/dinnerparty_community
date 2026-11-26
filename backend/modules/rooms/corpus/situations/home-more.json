@@ -1,0 +1,102 @@
+[
+  {
+    "id": "home.sheets", "scene": "home", "window": [[540, 1200]], "minutes": [10, 25], "icon": "clean",
+    "variants": [
+      { "id": "corners", "fits": ["吃得慢"], "action": "{a}把床单四个角一个个掖平", "sound": [], "detail": ["边角对着床脚"] },
+      { "id": "pillow-puff", "fits": ["果断"], "action": "{a}把枕头拍了两下才套枕套", "sound": [], "detail": ["拍出一层灰"] },
+      { "id": "wash-old", "fits": ["家常菜"], "action": "{a}先把旧床单塞进洗衣机", "sound": [], "detail": ["洗衣机转起来才回屋"] },
+      { "id": "mattress-flip", "fits": ["果断"], "action": "{a}使劲把床垫翻了个面", "sound": [], "detail": ["翻到一半卡住了"] },
+      { "id": "plain", "fits": [], "action": "{a}换下床单抱去洗衣机", "sound": ["「哗啦」"], "detail": ["枕套也一起换了"] }
+    ]
+  },
+  {
+    "id": "home.nails", "scene": "home", "window": [[1140, 1500]], "minutes": [5, 15], "icon": "clean",
+    "variants": [
+      { "id": "toe", "fits": ["吃得慢"], "action": "{a}搬了个小板凳坐着剪脚指甲", "sound": [], "detail": ["剪完一只换另一只"] },
+      { "id": "file", "fits": ["吃得慢"], "action": "{a}剪完又拿锉刀磨了一遍", "sound": ["「咔哒」"], "detail": ["磨下来的粉落在纸上"] },
+      { "id": "fast", "fits": ["果断"], "minutes": [3, 3], "action": "{a}三分钟剪完了十个指甲", "sound": [], "detail": ["指甲刀一次没停"] },
+      { "id": "night", "fits": ["夜猫子"], "window": [[1320, 1500]], "action": "{a}坐在床边就着台灯剪指甲", "sound": [], "detail": ["楼下已经没人了"] },
+      { "id": "plain", "fits": [], "action": "{a}拿出指甲刀剪指甲", "sound": [], "detail": ["指甲屑倒进了垃圾桶"] }
+    ]
+  },
+  {
+    "id": "home.repair", "scene": "home", "window": [[540, 1200]], "minutes": [10, 40], "icon": "bag",
+    "variants": [
+      { "id": "bulb", "fits": ["果断"], "action": "{a}踩在凳子上换了个灯泡", "sound": ["「咔」"], "detail": ["旧的拧下来收好"] },
+      { "id": "manual", "fits": ["爱看书"], "action": "{a}翻出说明书照着装", "sound": [], "detail": ["第一步就装反了"] },
+      { "id": "borrow-tool", "fits": ["自来熟"], "action": "{a}去邻居家借了把钳子", "sound": [], "detail": ["聊完拿着钳子回来了"] },
+      { "id": "teardown", "fits": ["嘴硬"], "action": "{a}把坏了的闹钟拆开了", "sound": ["「没事，能用」"], "detail": ["装回去多了两个螺丝"] },
+      { "id": "plain", "fits": [], "action": "{a}拿螺丝刀把松了的抽屉拧紧", "sound": [], "detail": ["螺丝拧了三圈"] }
+    ]
+  },
+  {
+    "id": "home.groceries", "scene": "home", "window": [[480, 1260]], "minutes": [5, 20], "icon": "phone",
+    "variants": [
+      { "id": "repeat-order", "fits": ["果断"], "action": "{a}把上周的订单又下了一遍", "sound": [], "detail": ["连备注都没改"] },
+      { "id": "compare-eggs", "fits": ["选择困难"], "action": "{a}在两家的鸡蛋之间来回看", "sound": [], "detail": ["最后两家都买了"] },
+      { "id": "door-note", "fits": ["社恐"], "action": "{a}在备注里写了放门口", "sound": [], "detail": ["字打了三遍"] },
+      { "id": "potatoes", "fits": ["家常菜"], "action": "{a}一次买了三斤土豆", "sound": [], "detail": ["购物车里全是土豆"] },
+      { "id": "plain", "fits": [], "action": "{a}把常买的几样加进购物车", "sound": [], "detail": ["结算页写着免配送费"] }
+    ]
+  },
+  {
+    "id": "home.call-home", "scene": "home", "window": [[1140, 1440]], "minutes": [10, 30], "icon": "phone",
+    "variants": [
+      { "id": "speaker", "fits": ["自来熟"], "action": "{a}把电话开成免提放在桌上", "sound": [], "detail": ["手上还在剥橘子"] },
+      { "id": "three-lines", "fits": ["话少"], "action": "{a}跟家里说了三句就挂了", "sound": [], "detail": ["挂了又打回去"] },
+      { "id": "recipe-ask", "fits": ["家常菜"], "action": "{a}打电话问家里红烧肉放不放糖", "sound": [], "detail": ["记在了手背上"] },
+      { "id": "nothing-wrong", "fits": ["嘴硬"], "minutes": [30, 35], "action": "{a}说没事，又聊了半小时", "sound": ["「没事」"], "detail": ["手机烫得换了只手"] },
+      { "id": "plain", "fits": [], "action": "{a}拨通了家里的电话", "sound": ["「喂」"], "detail": ["一边说一边在屋里走"] }
+    ]
+  },
+  {
+    "id": "home.photos", "scene": "home", "window": [[1260, 1500]], "minutes": [10, 30], "icon": "phone",
+    "variants": [
+      { "id": "screenshots", "fits": ["果断"], "action": "{a}把截图全选删了", "sound": [], "detail": ["删掉两百多张"] },
+      { "id": "old-trip", "fits": ["宅"], "action": "{a}翻到去年出去玩拍的照片", "sound": ["「这张」"], "detail": ["一张张放大看"] },
+      { "id": "print-nine", "fits": ["先拍照"], "action": "{a}挑了几张准备去洗出来", "sound": ["「就这些」"], "detail": ["挑了九张"] },
+      { "id": "game-album", "fits": ["打游戏"], "action": "{a}把游戏截图单独建了个相册", "sound": [], "detail": ["分了三类"] },
+      { "id": "plain", "fits": [], "action": "{a}把手机相册里的照片删了一批", "sound": [], "detail": ["一张张划过去"] }
+    ]
+  },
+  {
+    "id": "home.puzzle", "scene": "home", "window": [[1260, 1500]], "minutes": [30, 60], "icon": "game",
+    "variants": [
+      { "id": "color-sort", "fits": ["吃得慢"], "action": "{a}把拼图按颜色分成几堆", "sound": [], "detail": ["蓝色那堆最多"] },
+      { "id": "glue", "fits": ["果断"], "action": "{a}涂了层胶水把拼图固定", "sound": [], "detail": ["刷子刷到了外面"] },
+      { "id": "force-piece", "fits": ["嘴硬"], "action": "{a}硬把一块塞了进去", "sound": ["「咔」"], "detail": ["边上翘起来一角"] },
+      { "id": "blueprint", "fits": ["爱看书"], "action": "{a}照着图纸一块块找", "sound": [], "detail": ["图纸翻得起了毛"] },
+      { "id": "plain", "fits": [], "action": "{a}倒出拼图，先把边找出来", "sound": [], "detail": ["边块摆了半圈"] }
+    ]
+  },
+  {
+    "id": "home.desk", "scene": "home", "window": [[600, 1500]], "minutes": [10, 25], "icon": "clean",
+    "variants": [
+      { "id": "cables", "fits": ["吃得慢"], "action": "{a}把充电线一根根缠好", "sound": [], "detail": ["缠了四根"] },
+      { "id": "trash-paper", "fits": ["果断"], "action": "{a}把桌上的纸全扔了", "sound": ["「扔了」"], "detail": ["有一张还写着字"] },
+      { "id": "pen-cup", "fits": ["爱看书"], "action": "{a}把笔一根根插回笔筒", "sound": [], "detail": ["有根笔没水了"] },
+      { "id": "monitor-notes", "fits": ["打游戏"], "action": "{a}把显示器边上的便签撕下来", "sound": [], "detail": ["胶印擦不掉"] },
+      { "id": "plain", "fits": [], "action": "{a}清出一块桌面", "sound": [], "detail": ["抽屉里多了一摞纸"] }
+    ]
+  },
+  {
+    "id": "home.tutorial", "scene": "home", "window": [[600, 780], [960, 1140]], "minutes": [15, 40], "icon": "phone",
+    "variants": [
+      { "id": "pause-step", "fits": ["吃得慢"], "action": "{a}看一步暂停一步", "sound": ["「倒回去」"], "detail": ["手机按了十几次"] },
+      { "id": "notes", "fits": ["爱看书"], "action": "{a}把步骤抄在了便签上", "sound": [], "detail": ["贴在了抽油烟机上"] },
+      { "id": "two-times", "fits": ["吃得快"], "action": "{a}用两倍速看完了教程", "sound": [], "detail": ["进度条一下到了头"] },
+      { "id": "foreign-recipe", "fits": ["异国料理"], "action": "{a}挑了个做外国菜的教程", "sound": [], "detail": ["把缺的三样记在手机上"] },
+      { "id": "plain", "fits": [], "action": "{a}把做菜视频从头看了一遍", "sound": ["「记住了」"], "detail": ["记下了三种调料"] }
+    ]
+  },
+  {
+    "id": "home.fruit", "scene": "home", "window": [[600, 1380]], "minutes": [5, 10], "icon": "eat",
+    "variants": [
+      { "id": "peel-long", "fits": ["吃得慢"], "action": "{a}把苹果皮削成一长条", "sound": [], "detail": ["断了两次"] },
+      { "id": "salt-fruit", "fits": ["家常菜"], "action": "{a}往苹果块上撒了点盐", "sound": [], "detail": ["只撒了半勺"] },
+      { "id": "two-fruits", "fits": ["眼大肚小"], "action": "{a}削了两个苹果，只吃了一个", "sound": [], "detail": ["另一个泡在盐水里"] },
+      { "id": "juice", "fits": ["咖啡茶饮续命"], "action": "{a}把橙子切了挤了杯汁", "sound": ["「咕叽」"], "detail": ["籽掉进了杯子"] },
+      { "id": "plain", "fits": [], "action": "{a}切了个苹果，装在碗里", "sound": [], "detail": ["核留着没切"] }
+    ]
+  }
+]

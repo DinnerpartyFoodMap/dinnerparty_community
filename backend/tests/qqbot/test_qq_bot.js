@@ -107,7 +107,7 @@ async function flowToPreview(qq, { name, lat = 23.05, lng = 113.4, chat = {} }) 
     await say({ ...chat, qq, text: '！添加地点' });
     await say({ ...chat, qq, location: { name: `${name}附近`, address: '大学城', lat, lng } });
     await say({ ...chat, qq, text: `!店名 ${name}` });
-    return await say({ ...chat, qq, text: '!跳过' });
+    return await say({ ...chat, qq, text: '!描述 测试描述：招牌菜、人均和营业时间都写了' });
 }
 function testParser() {
     const real = parseLocationCard(REAL_CARD);
@@ -136,8 +136,12 @@ async function testPrivateFlowAndIdempotency() {
     assert.match(textOf(await say({ qq: '100001', text: '华南理工大学饭堂' })), /原生“位置”/, 'text cannot replace a location');
     assert.match(textOf(await say({ qq: '100001', rawCard: REAL_CARD })), /已收到“华南理工大学\(大学城校区\)”的位置，请发送店名/);
     assert.match(textOf(await say({ qq: '100001', text: '!查询 不存在的店' })), /没有找到/, 'a query in the middle keeps the draft');
-    assert.match(textOf(await say({ qq: '100001', text: '华南理工大学饭堂' })), /请发送描述/);
-    const firstReview = await say({ qq: '100001', text: '示例描述' });
+    assert.match(textOf(await say({ qq: '100001', text: '华南理工大学饭堂' })), /请发送描述，至少 15 个字/);
+    // 描述至少 15 个字：太短、跳过、清空都不收，草稿仍在等描述
+    assert.match(textOf(await say({ qq: '100001', text: '示例描述' })), /描述至少写 15 个字/);
+    assert.match(textOf(await say({ qq: '100001', text: '!跳过' })), /描述不能跳过/);
+    assert.match(textOf(await say({ qq: '100001', text: '!描述 清空' })), /描述不能清空/);
+    const firstReview = await say({ qq: '100001', text: '示例描述：饭堂三楼，两荤一素十二元' });
     assert.match(textOf(firstReview), /描述已更新。\n请核对：[\s\S]*可选补充[\s\S]*!人均 20/, 'the description goes straight to the review');
     assert.match(textOf(await say({ qq: '100009', text: '添加地点' })), /你好/, 'the bare phrase is no longer a command');
     assert.match(textOf(await say({ qq: '100001', text: '!人均 20.5' })), /正整数/, 'decimal cost is rejected, not truncated');
@@ -157,7 +161,7 @@ async function testPrivateFlowAndIdempotency() {
     const done = await say({ qq: '100001', text: `!确认提交 ${code}` });
     assert.match(textOf(done), /添加成功！在地图中查看：https:\/\/dinnerparty\.cc\/\?place=\d+/);
     const place = sql.prepare('SELECT * FROM Place').get();
-    assert.deepEqual([place.name, place.description, place.category, place.per_person_cost, place.address, place.creator_id, place.updated_by], ['华南理工大学饭堂', '示例描述', '快餐, 避雷', 20, '广东省广州市番禺区大学城内环东路', alice, alice]);
+    assert.deepEqual([place.name, place.description, place.category, place.per_person_cost, place.address, place.creator_id, place.updated_by], ['华南理工大学饭堂', '示例描述：饭堂三楼，两荤一素十二元', '快餐, 避雷', 20, '广东省广州市番禺区大学城内环东路', alice, alice]);
     assert.deepEqual([place.latitude, place.longitude], [23.050701, 113.401693]);
     assert.equal(count('QQBotSubmission'), 1);
     assert.deepEqual(sql.prepare('SELECT group_id FROM QQBotNotification WHERE place_id = ? ORDER BY group_id').all(place.id).map((r) => r.group_id), [GROUP_A, GROUP_B]);
@@ -190,7 +194,7 @@ async function testGroupIsolationAndVersions() {
     assert.deepEqual(await say({ ...inA, qq: '100002', text: '今天吃什么' }), []);
     assert.deepEqual(await say({ ...inA, qq: '100003', text: '我来回答', replyId: located[0].messageId }), [], 'other members cannot answer for the draft owner');
     assert.match(textOf(await say({ ...inA, qq: '100002', text: '东门烧腊', replyId: located[0].messageId })), /请发送描述/);
-    assert.match(textOf(await say({ ...inA, qq: '100002', text: '叉烧不错', atSelf: true })), /描述已更新。\n请核对：/, 'answering the description in the group shows the review');
+    assert.match(textOf(await say({ ...inA, qq: '100002', text: '叉烧不错，烧鹅饭二十五元一份，量大', atSelf: true })), /描述已更新。\n请核对：/, 'answering the description in the group shows the review');
     const fields = (key) => JSON.parse(sql.prepare("SELECT fields FROM QQBotDraft WHERE chat_id = ? AND sender_qq = '100002' AND status = 'active'").get(key).fields);
     assert.equal(fields(GROUP_A).name, '东门烧腊');
     assert.equal(fields(GROUP_B).name, undefined, 'group B draft is untouched');
@@ -250,11 +254,11 @@ async function testIdentityChecks() {
 }
 async function testDuplicatesAndRollback() {
     user('格蕾丝', '100008');
-    const existing = await placeService.createPlace({ name: '阿强牛肉面', latitude: 25, longitude: 116 }, null, { source: 'web' });
+    const existing = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '阿强牛肉面', latitude: 25, longitude: 116 }, null, { source: 'web' });
     const preview = await flowToPreview('100008', { name: '阿强牛肉面', lat: 25.0005, lng: 116.0005 });
     assert.match(textOf(preview), new RegExp(`附近已有名称相似的地点[\\s\\S]*阿强牛肉面（约 \\d+ 米） https://dinnerparty\\.cc/\\?place=${existing.id}`));
     // A similar place that appears after the preview sends the user back to a fresh preview.
-    await placeService.createPlace({ name: '阿强牛肉面(分店)', latitude: 25.0006, longitude: 116.0006 }, null, { source: 'web' });
+    await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '阿强牛肉面(分店)', latitude: 25.0006, longitude: 116.0006 }, null, { source: 'web' });
     assert.match(textOf(await say({ qq: '100008', text: `!确认提交 ${codeOf(preview)}` })), /附近刚出现名称相似的地点/);
     assert.match(textOf(await say({ qq: '100008', text: `!确认提交 ${codeOf(preview)}` })), /预览已失效/);
     await say({ qq: '100008', text: '!tag 回滚专用标签' });
@@ -272,20 +276,20 @@ async function testDuplicatesAndRollback() {
     assert.match(textOf(await say({ qq: '100008', text: `!确认提交 ${codeOf(preview2)}` })), /添加成功/, 'confirming again after the failure works');
     assert.equal(count('Place'), placesBefore + 1);
     // Website creation: strict validation, address column and a rollback with the notification insert.
-    await assert.rejects(async () => await placeService.createPlace({ name: '空坐标', latitude: null, longitude: 116 }, null, { source: 'web' }), /纬度必须是有效数字/);
-    await assert.rejects(async () => await placeService.createPlace({ name: '空串坐标', latitude: '', longitude: 116 }, null, { source: 'web' }), /纬度必须是有效数字/);
-    await assert.rejects(async () => await placeService.createPlace({ name: '小数人均', latitude: 25, longitude: 116, per_person_cost: 12.5 }, null, { source: 'web' }), /正整数/);
-    const web = await placeService.createPlace({ name: '网页新店', latitude: '25.1', longitude: 116.1, per_person_cost: '30', address: '网页路 2 号', category: '甜品店' }, null, { source: 'web' });
+    await assert.rejects(async () => await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '空坐标', latitude: null, longitude: 116 }, null, { source: 'web' }), /纬度必须是有效数字/);
+    await assert.rejects(async () => await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '空串坐标', latitude: '', longitude: 116 }, null, { source: 'web' }), /纬度必须是有效数字/);
+    await assert.rejects(async () => await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '小数人均', latitude: 25, longitude: 116, per_person_cost: 12.5 }, null, { source: 'web' }), /正整数/);
+    const web = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '网页新店', latitude: '25.1', longitude: 116.1, per_person_cost: '30', address: '网页路 2 号', category: '甜品店' }, null, { source: 'web' });
     assert.deepEqual([web.address, web.per_person_cost, web.latitude], ['网页路 2 号', 30, 25.1]);
     assert.equal(count('QQBotNotification', 'place_id = ?', web.id), 2);
     sql.exec("CREATE TEMP TRIGGER fail_notification BEFORE INSERT ON QQBotNotification BEGIN SELECT RAISE(ABORT, 'boom'); END;");
-    await assert.rejects(async () => await placeService.createPlace({ name: '回滚网页店', latitude: 25.2, longitude: 116.2, category: '回滚网页标签' }, null, { source: 'web' }), /boom/);
+    await assert.rejects(async () => await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '回滚网页店', latitude: 25.2, longitude: 116.2, category: '回滚网页标签' }, null, { source: 'web' }), /boom/);
     sql.exec('DROP TRIGGER fail_notification');
     assert.equal(count('Place', "name = '回滚网页店'"), 0);
     assert.equal(count('Category', "name = '回滚网页标签'"), 0);
     // With pushes switched off nothing is queued, and nothing is back-filled later.
     configure({ notify: { enabled: false, groupIds: [GROUP_A, GROUP_B] } });
-    const quiet = await placeService.createPlace({ name: '推送关闭时的店', latitude: 25.3, longitude: 116.3 }, null, { source: 'web' });
+    const quiet = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '推送关闭时的店', latitude: 25.3, longitude: 116.3 }, null, { source: 'web' });
     configure();
     assert.equal(count('QQBotNotification', 'place_id = ?', quiet.id), 0);
 }
@@ -398,7 +402,7 @@ async function testNotificationWorker() {
     worker.stop();
     const later = () => { offsetMs = BATCH_INTERVAL_MS; };
     const a = await placeService.createPlace({ name: '通知一号', latitude: 30, longitude: 120, address: '一号路', category: '快餐, 避雷', per_person_cost: 15, description: '描述'.repeat(50) }, null, { source: 'web' });
-    const b = await placeService.createPlace({ name: '通知二号', latitude: 30.1, longitude: 120.1 }, null, { source: 'web' });
+    const b = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '通知二号', latitude: 30.1, longitude: 120.1 }, null, { source: 'web' });
     sql.prepare('INSERT OR REPLACE INTO PlaceRegion (place_id, province, city, district, lat, lng, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(a.id, '浙江省', '杭州市', '西湖区', 30, 120, Date.now());
     await worker.runOnce();
@@ -425,7 +429,7 @@ async function testNotificationWorker() {
     // Explicit failure: retried later with backoff, at a half-hour boundary.
     failMode = 'failed';
     offsetMs = 0;
-    const c = await placeService.createPlace({ name: '通知三号', latitude: 30.2, longitude: 120.2 }, null, { source: 'web' });
+    const c = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '通知三号', latitude: 30.2, longitude: 120.2 }, null, { source: 'web' });
     later();
     await worker.runOnce();
     const retry = sql.prepare('SELECT * FROM QQBotNotification WHERE place_id = ?').all(c.id);
@@ -453,7 +457,7 @@ async function testNotificationWorker() {
     assert.equal(sent.length, sentBefore + 1, 'an admin retry sends it');
     // An unconfirmed forward: the bot's own forward posted around the attempt counts as sent, an old one does not.
     offsetMs = 0;
-    const f = await placeService.createPlace({ name: '转发待核对', latitude: 30.5, longitude: 120.5 }, null, { source: 'web' });
+    const f = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '转发待核对', latitude: 30.5, longitude: 120.5 }, null, { source: 'web' });
     later();
     failMode = 'timeout';
     await worker.runOnce();
@@ -469,7 +473,7 @@ async function testNotificationWorker() {
     assert.equal(sql.prepare('SELECT status FROM QQBotNotification WHERE place_id = ? AND group_id = ?').get(f.id, GROUP_B).status, 'unknown', 'an old forward does not confirm it');
     // Deleted places are skipped; crash leftovers become unknown.
     offsetMs = 0;
-    const d = await placeService.createPlace({ name: '已删除的店', latitude: 30.3, longitude: 120.3 }, null, { source: 'web' });
+    const d = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '已删除的店', latitude: 30.3, longitude: 120.3 }, null, { source: 'web' });
     sql.prepare('DELETE FROM Place WHERE id = ?').run(d.id);
     later();
     await worker.runOnce();
@@ -479,7 +483,7 @@ async function testNotificationWorker() {
     worker.stop();
     assert.equal(count('QQBotNotification', "place_id = ? AND status = 'unknown'", a.id), 2);
     client.connected = false;
-    const e = await placeService.createPlace({ name: '离线时新增', latitude: 30.4, longitude: 120.4 }, null, { source: 'web' });
+    const e = await placeService.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '离线时新增', latitude: 30.4, longitude: 120.4 }, null, { source: 'web' });
     await worker.runOnce();
     assert.equal(count('QQBotNotification', "place_id = ? AND status = 'pending' AND attempts = 0", e.id), 2, 'queued while offline');
     client.connected = true;
@@ -732,7 +736,7 @@ async function testWebRoute() {
             });
             return { status: response.status, body: await response.json() };
         };
-        const created = await post({ name: '网页接口店', latitude: 31, longitude: 121, category: '快餐，小吃', per_person_cost: 25, address: '接口路 3 号' });
+        const created = await post({ description: '测试描述：招牌菜、人均和营业时间都写了', name: '网页接口店', latitude: 31, longitude: 121, category: '快餐，小吃', per_person_cost: 25, address: '接口路 3 号' });
         assert.equal(created.status, 200, JSON.stringify(created.body));
         assert.deepEqual([created.body.creator_name, created.body.category, created.body.address], ['伊万', '快餐, 小吃', '接口路 3 号']);
         assert.equal(count('QQBotNotification', 'place_id = ?', created.body.id), 2, 'web/App creations notify');
@@ -884,10 +888,10 @@ async function testCommandInterpreter() {
     const long = '!创建测试餐厅地点，菜品很正宗，人均60左右，酸菜鱼做的很好';
     const started = await sayAsync({ qq: '166001', text: long }, fake({
         command: 'add', confidence: 0.92,
-        place: { name: '测试餐厅', description: '菜品很正宗，酸菜鱼做的很好', per_person_cost: 60, tags: ['川菜'] }
+        place: { name: '测试餐厅', description: '菜品很正宗，酸菜鱼做的很好，辣度可以选', per_person_cost: 60, tags: ['川菜'] }
     }));
     assert.equal(calls.at(-1).text, '创建测试餐厅地点，菜品很正宗，人均60左右，酸菜鱼做的很好', 'the whole message after "!" is interpreted');
-    assert.match(textOf(started), /已识别：\n店名：测试餐厅\n人均：60 元\n标签：川菜\n描述：菜品很正宗，酸菜鱼做的很好[\s\S]*发送想添加的店铺定位/);
+    assert.match(textOf(started), /已识别：\n店名：测试餐厅\n人均：60 元\n标签：川菜\n描述：菜品很正宗，酸菜鱼做的很好，辣度可以选[\s\S]*发送想添加的店铺定位/);
     const review = await say({ qq: '166001', location: { name: '测试餐厅门口', lat: 23.11, lng: 113.31 } });
     assert.match(textOf(review), /已收到定位。\n请核对：\n店名：测试餐厅[\s\S]*人均：60 元/, 'name and description known: straight to the review');
     await say({ qq: '166001', text: '!取消' });

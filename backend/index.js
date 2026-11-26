@@ -6,6 +6,13 @@ const https = require("https");
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, '.env') });
 const logger = require('./infrastructure/logger');
+// 仓库公开，JWT 回退密钥人人可见：没配好 JWT_SECRET 就不启动（否则谁都能签任意住民、管理员的 token）
+try {
+    require('./modules/accounts/services/jwtSecret').assertJwtSecretConfigured();
+} catch (error) {
+    console.error(`[startup] ${error.message}`);
+    process.exit(1);
+}
 const { requestLogger, notFoundHandler, errorHandler } = require('./http/middleware/requestLogger');
 
 // Capture legacy console.* calls from every subsequently loaded module and make
@@ -13,7 +20,7 @@ const { requestLogger, notFoundHandler, errorHandler } = require('./http/middlew
 logger.installConsoleBridge();
 logger.installProcessHandlers();
 
-const { init } = require("./infrastructure/database");
+const { db, init } = require("./infrastructure/database");
 
 const placesRouter = require("./modules/places/routes/places");
 const commentsRouter = require("./modules/community/routes/comments");
@@ -29,10 +36,11 @@ const placeRequestsRouter = require("./modules/places/routes/placeRequests");
 const dinnersRouter = require("./modules/community/routes/dinners");
 const favoritesRouter = require("./modules/preferences/routes/favorites");
 const preferencesRouter = require('./modules/preferences/routes/preferences');
+const roomsRouter = require('./modules/rooms/routes/rooms');
 const noticesRouter = require("./modules/community/routes/notices");
 const categoriesRouter = require("./modules/places/routes/categories");
 const alongRouteRouter = require("./modules/discovery/routes/alongRoute");
-const { requireAuth } = require("./modules/accounts/middleware/auth");
+const { requireAuth, requireAuthWithCode } = require("./modules/accounts/middleware/auth");
 const { startVectorRetryWorker } = require('./modules/preferences/services/placeVectorService');
 const { startUserVectorWorker } = require('./modules/preferences/services/userPreferenceService');
 
@@ -51,6 +59,7 @@ function trustProxySetting(value) {
 app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
 // 数据访问限流的计数放在 Redis（不可用时自动退回进程内计数）
 require('./http/middleware/rateLimit').useRedis(require('./infrastructure/redis'));
+require('./modules/accounts/services/loginThrottle').useRedis(require('./infrastructure/redis'));
 app.disable('x-powered-by');
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -59,6 +68,11 @@ const PORT = process.env.PORT || 7000;
 // Must run before CORS/body parsing so rejected preflights, malformed JSON and
 // aborted requests all receive the same request ID and access log coverage.
 app.use(requestLogger);
+// CORS preflights and failures also carry the room cache policy.
+app.use('/api/rooms', (_req, res, next) => {
+    res.set('Cache-Control', 'private, no-store');
+    next();
+});
 
 const STATIC_ALLOWED_ORIGINS = [
     "http://localhost:2053",
@@ -219,9 +233,14 @@ app.use('/_AMapService', require('./modules/maps/services/amapSearchBudget').cre
 // 压缩之后所有路由的 JSON 响应（地图缩小时 /places/nearby 约 3 MB → 0.4 MB），地图代理是流式转发，不经过这里
 app.use(require('./http/middleware/jsonCompression').jsonCompression());
 
+app.use('/api/rooms', roomsRouter);
 app.use('/api/journeys', express.json({ limit: '256kb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/comments', (error, req, res, next) => {
+    if (req.method !== 'POST' || req.path !== '/' || ![400, 413, 415].includes(error.status)) return next(error);
+    return res.status(error.status).json({ error: '评论请求格式无效或超出大小限制', code: 'COMMENT_INVALID' });
+});
 
 const CLIENT_AUTH_STAGES = new Set([
     'submitted',
@@ -284,7 +303,8 @@ app.use('/upload', requireAuth, require('./modules/media/routes/upload'));
 
 // mount admin routers under /admin
 app.use("/admin/users", requireAuth, adminUsersRouter);
-app.use("/admin/comments", requireAuth, adminCommentsRouter);
+app.use("/admin/comments", requireAuthWithCode, adminCommentsRouter);
+app.use('/admin/rooms', requireAuthWithCode, require('./modules/rooms/routes/adminRooms'));
 app.use("/admin/general-users", requireAuth, adminGeneralUsersRouter);
 app.use("/admin/audit", requireAuth, adminAuditRouter);
 app.use("/admin/qq-whitelist", requireAuth, adminQQWhitelistRouter);
@@ -298,12 +318,15 @@ app.use("/admin/taste-axes", requireAuth, require('./modules/admin/routes/adminT
 
 
 init();
+const stopRoomScheduler = require('./modules/rooms/services/roomScheduler').startRoomScheduler(db._raw);
+require('./modules/rooms/services/roomTextCheck').resumeTextChecks(db._raw);
 const stopRatingReputationWorker = require('./modules/ratings/services/ratingReputation').startRatingReputationWorker();
 // 启动时即建立 Redis 连接（会话存储惰性加载 redis 客户端，这里提前初始化，避免首批请求走 JWT 降级）
 require('./modules/accounts/services/sessions').getDefaultSessionStore();
 startVectorRetryWorker();
 // 新增地点初筛：上次进程退出时还没查完的地点重新排队（modules/places/doc/placeModeration.md）
 require('./modules/places/services/placeModeration').resumeModeration();
+require('./modules/community/services/residentComments').resumeCommentModeration();
 // 地点的省 / 市 / 区（地区筛选）：后台用高德逆地理编码补齐（modules/places/services/placeRegions.js）
 const stopPlaceRegionWorker = require('./modules/places/services/placeRegions').startPlaceRegionWorker();
 const stopUserVectorWorker = startUserVectorWorker();
@@ -383,6 +406,7 @@ let shutdownStarted = false;
 function gracefulShutdown(signal) {
     if (shutdownStarted) return;
     shutdownStarted = true;
+    stopRoomScheduler();
     stopRatingReputationWorker();
     stopUserVectorWorker();
     stopRatingEvidenceWorker();stopRatingTextWorker();stopRatingBundleWorker();

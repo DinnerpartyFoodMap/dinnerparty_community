@@ -1,12 +1,22 @@
 # 社区互动与反馈
 
+## 住民评论
+
+- `POST /comments` 需要登录及写权限，接收 `{ place_id, content }`。地点须公开，地点的创建者须未被提交者屏蔽。评论提交前须通过现有评分接口为该店评分。后端以 `PlaceRating.score`、`RatingStream.revision` 为快照，忽略旧客户端附带的 `rating`。
+- 正文去首尾空白并折叠连续空白为单个空格，按纯文本存储。每条评论去空白后至少 2 个码位，规整后最多 200 个码位。每人每店一条，修改保留 `id` 和 `time`，更新 `updated_at`。相同正文返回现状。新建和实际修改每个北京日共用 20 次额度，删除后额度仍保留。
+- 成功返回 `{ comment: { id, place_id, content, status, time, updated_at } }`。主要错误码为 `COMMENT_INVALID`、`COMMENT_TOO_SHORT`、`COMMENT_TOO_LONG`、`COMMENT_RATING_REQUIRED`（400），`COMMENT_PLACE_NOT_FOUND`（404），`COMMENT_QUOTA`（429）。
+- `DELETE /comments/:id` 硬删除自己的住民评论，任何审核状态都可删除。其他人的评论、系统记录和不存在的评论返回 404 `COMMENT_NOT_FOUND`，删除成功返回 `{ success: true }`。作者删除、管理删除、地点删除和账号注销统一撤回待审申请。
+- 住民评论写入 `Comment.source = 'resident'`，系统修改依据与创建者描述的 `source` 保持 `NULL`。管理员用 `GET /comments/place/:id?kind=edit` 读取系统修改记录，兼容省略 `kind` 的请求，两者均需 `manage_comments`。公开评论从单地点详情读取，初筛和复核规则见 [地点审核](../../places/doc/placeModeration.md#住民评论)。
+
+## 其他社区功能
+
 exhibitions 提供公开的 `/exhibitions`（及 `/api/exhibitions`），返回 `{ exhibitions: [...] }`，按 `event_time` 升序、ID 升序排列，未填时间的旧活动排在末尾。保留 `/exhibitions/current` 返回排序首项。接口只返回已发布展会的展示信息（含选填的展会地点 `location_name`、`latitude`、`longitude`，GCJ-02），无展会时返回 `{ exhibition: null }`。发布、下架及审计由 adminExhibitions 管理。
 
 routes：community（`/api/community`）、comments、dinners、notices；挂载前缀与别名见 index.js。services/communityPreferences 提供同意状态及同好向量匹配；feedbackDataset 为离线导出提供去标识处理与估计工具；feedbackRetention 固定 90 天保留策略的生效时间并清理到期行为（规则见 [评分服务接入](../../ratings/doc/ALGORITHM_SERVICE.md) 末尾）。
 
 随机抽取 `POST /api/community/draw`：每次抽取的 `draw_id` 作为决策 ID 写入 MapDecision 快照（surface `random`、选中的地点、范围 `radiusKm` 只接受 0.5/1/3/5/10），同一 ID 重试返回同一结果，换参数重放或用别人的上一抽当 `parent_decision_id` 回 409；反馈事件必须与快照里的 surface 和选中地点一致才计入。
 
-交互反馈 `POST /api/community/feedback`：地图上点开地点（kind `click`、surface `map`）时，前端附带当时的可见范围与缩放级别 `viewport`、标记模式 `map_mode`（`nearby` / `search` / `along` / `user`）和筛选快照 `map_filter`（前端 `placeFilterSnapshot`，规则与这里的 `mapClickFilter` 一致：标签、排除标签、人均、省 / 市 / 区，没有生效的条件为 null）。后端逐项校验后写入 MapInteractionContext；范围不合法时整条上下文不存，模式与筛选只在两者都合法时一起保存。隐私政策“同好、反馈与研究”一行已列出这些字段。离线导出 feedbackDataset 与研究包都带出这些字段，研究包规则见 [评分服务接入](../../ratings/doc/ALGORITHM_SERVICE.md) 的研究证据章节。评论、聚餐、公告目前仍在各自路由内实现业务，不强行增加空 service 包装。依赖 accounts、preferences、discovery，以及 journeys/Store 的通用 SQL/错误工具。
+交互反馈 `POST /api/community/feedback`：地图上点开地点（kind `click`、surface `map`）时，前端附带当时的可见范围与缩放级别 `viewport`、标记模式 `map_mode`（`nearby` / `search` / `along` / `user`）和筛选快照 `map_filter`（前端 `placeFilterSnapshot`，规则与这里的 `mapClickFilter` 一致：标签、排除标签、人均、省 / 市 / 区，没有生效的条件为 null）。后端逐项校验后写入 MapInteractionContext；范围不合法时整条上下文不存，模式与筛选只在两者都合法时一起保存。隐私政策“同好、反馈与研究”一行已列出这些字段。离线导出 feedbackDataset 与研究包都带出这些字段，研究包规则见 [评分服务接入](../../ratings/doc/ALGORITHM_SERVICE.md) 的研究证据章节。聚餐和公告业务在各自路由内，住民评论的提交、读取和审核逻辑在 `services/residentComments.js`。依赖 accounts、preferences、discovery，以及 journeys/Store 的通用 SQL/错误工具。
 
 ```mermaid
 flowchart TD
@@ -30,17 +40,16 @@ flowchart TD
 | 现有用户向量 + 显式标签解释 | 不展示私有来源地点；共同标签不伪造为共同收藏 |
 | MapConsent 版本随反馈校验 | 仅前端开关无法阻止旧页面继续写行为 |
 | 搜索曝光记录 propensity=null | 观察日志不能当已知随机策略概率；离线评估必须区分 |
-| 公告/评论/聚餐沿用现有路由 | 当前规模无需增加空抽象；业务增长后再提取服务 |
 
 同好入口位于本人住民主页。`GET /api/community/neighbors` 只返回最相似的 20 位（`NEIGHBOR_LIMIT`），每位带最新的 `avatar_url` / `has_avatar`（与 `userAvatar.js` 规则相同），列表与星图一次显示全部、不分页，星图用头像代替圆点。iOS App 的同好是原生二级页，网页与 Android 是 `ProfileCommunityPage`，点按都进入对方主页。公开收藏从住民主页读取，与 `discovery` 独立。旧 `/api/community/collections` 仅供旧版客户端兼容。关闭收藏公开后，旧公开读取接口也不再返回内容。 [主页接口](../../accounts/doc/README.md)
 
-`npm run test:community` 覆盖收藏可见性、同好、90 天保留与随机抽取决策链。
+`npm run test:community` 覆盖收藏可见性、同好、90 天保留与随机抽取决策链。住民评论由 `npm run test:comments`（`tests/community/test_place_comments.js`）覆盖。
 
 - COM-01：两人有兼容画像，关闭其中一人 discovery 后重查；预期其不出现在同好中，关闭方返回 disabled。核对数据库开关与响应，不只看 UI。
 - COM-02：两人画像模型或算法版本不同；预期不计算混合语义的相似度；私有来源地点不进入解释字段。
 - COM-03：持旧 consent_version 提交观察；预期不新增有效快照；同 ID 不同参数重试得到冲突，不能覆盖他人记录。
 - COM-04（`test_favorite_collection.js`）存量账号迁移后可匿名读取公开收藏。关闭公开后，主页、完整清单、偏好举例及旧接口均不披露收藏。公开清单遵循屏蔽、封禁和地点审核状态。关闭发现仅影响同好匹配。
 - COM-06（已有自动化，test_random_decision_chain）：同一 `draw_id` 重试、换范围重放、他人接续与分叉、非法范围；点开未被抽中的地点、surface 不符的反馈；地图点击带合法 / 越界 `viewport`、合法 / 非法 `map_mode` 与 `map_filter`。预期：重试结果不变，冲突 409、非法范围 400；不符的反馈不计入；只保存校验通过的上下文，模式与筛选成对出现。
-- COM-05（待自动化）：为评论、聚餐、公告补独立权限与边界矩阵，见 COM-T01；不把 test:community 的向量测试当作这三个路由的覆盖证明。
+- COM-05（部分自动化）：为评论、聚餐、公告补独立权限与边界矩阵，见 COM-T01；不把 test:community 的向量测试当作这三个路由的覆盖证明。已覆盖删除饭局（`test:auth-hardening`）：发起人可删且不记审计；别人删需要 `manage_comments`（未知的 admin_level 没有权限），删除记一条 `delete-dinner` 审计（目标为发起人，details 含饭局 id 与标题）。
 
 待办 COM-T01 / COM-T02 见 [清单](../../../doc/HISTORY_AND_TODO.md)。

@@ -89,7 +89,7 @@ async function main(){
         let banned=false;
         const service=load('../../modules/places/services/placeService.js',{'../../../infrastructure/numericAlgorithmClient':{...client,compute:async()=>{if(!banned){banned=true;sql.prepare("UPDATE User SET is_banned=1 WHERE id='creator'").run();}return {summaries:[{...empty,count:1,average:4,tier:4,distribution:{1:0,2:0,3:0,4:1}}]};}}});
         const before=sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n;
-        try{await assert.rejects(service.createPlace({name:'banned-race',category:'餐厅',latitude:30,longitude:120},'creator',{source:'web'}),e=>e.status===403);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n,before);}finally{sql.prepare("UPDATE User SET is_banned=0 WHERE id='creator'").run();}
+        try{await assert.rejects(service.createPlace({ description: '测试描述：招牌菜、人均和营业时间都写了',name:'banned-race',category:'餐厅',latitude:30,longitude:120},'creator',{source:'web'}),e=>e.status===403);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM Place').get().n,before);}finally{sql.prepare("UPDATE User SET is_banned=0 WHERE id='creator'").run();}
     });
     await check('edit rechecks current admin permission after summary await',async()=>{
         const express=require('express');sql.prepare("UPDATE User SET admin_level='YUYUKO' WHERE id='editor'").run();

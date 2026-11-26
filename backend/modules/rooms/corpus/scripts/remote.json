@@ -1,10 +1,10 @@
 [
-  { "id": "remote.one-word", "kind": "remote", "bond": [0, 0], "x": ["话多"], "y": ["话少"], "beats": [
+  { "id": "remote.one-word", "kind": "remote", "bond": [0, 0], "x": ["话多"], "y": ["话少"], "when": "dinner", "beats": [
     { "who": "x", "minutes": [3, 8], "icon": "chat", "action": "{x}在群里问晚饭吃什么", "sound": [], "detail": [] },
     { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}回了一个「面」", "sound": [], "detail": [] },
     { "who": "x", "minutes": [15, 25], "icon": "cook", "action": "{x}回了个「行」", "sound": [], "detail": ["然后去煮了面"] }
   ] },
-  { "id": "remote.same-plate", "kind": "remote", "bond": [0, 1], "x": ["先拍照"], "y": [], "beats": [
+  { "id": "remote.same-plate", "kind": "remote", "bond": [0, 1], "x": ["先拍照"], "y": [], "when": "dinner", "beats": [
     { "who": "x", "minutes": [2, 5], "icon": "phone", "action": "{x}在群里发了张晚饭的照片", "sound": [], "detail": [] },
     { "who": "y", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{y}发了一张差不多的", "sound": [], "detail": ["盘子都是同一款"] }
   ] },
@@ -13,12 +13,12 @@
     { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}听完回了一句", "sound": ["「发错了吧」"], "detail": [] },
     { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}撤回了，又发了个道歉", "sound": [], "detail": [] }
   ] },
-  { "id": "remote.which-one", "kind": "remote", "bond": [1, 2], "x": ["选择困难"], "y": ["果断"], "beats": [
+  { "id": "remote.which-one", "kind": "remote", "bond": [1, 2], "x": ["选择困难"], "y": ["果断"], "when": "dinner", "beats": [
     { "who": "x", "minutes": [3, 6], "icon": "chat", "action": "{x}问{y}今晚吃什么", "sound": [], "detail": [] },
     { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}直接甩过来一家店的定位", "sound": [], "detail": [] },
     { "who": "x", "minutes": [1, 3], "icon": "chat", "action": "{x}看了看，又问了一家", "sound": [], "detail": [] }
   ] },
-  { "id": "remote.two-rounds", "kind": "remote", "bond": [1, 2], "x": ["打游戏"], "y": ["打游戏"], "beats": [
+  { "id": "remote.two-rounds", "kind": "remote", "bond": [1, 2], "x": ["打游戏"], "y": ["打游戏"], "when": "dinner", "beats": [
     { "who": "xy", "minutes": [20, 40], "icon": "game", "star": true, "action": "{x}和{y}连麦打了两局", "sound": [], "detail": ["输了一局赢了一局"] },
     { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}说下线去吃饭了", "sound": [], "detail": [] }
   ] },
@@ -27,7 +27,7 @@
     { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}回「这本我也有」", "sound": [], "detail": [] },
     { "who": "x", "minutes": [5, 10], "icon": "chat", "action": "{x}问{y}看到哪了", "sound": [], "detail": ["{y}比{x}多看了两章"] }
   ] },
-  { "id": "remote.video-dinner", "kind": "remote", "bond": [2, 3], "x": ["话多"], "y": [], "beats": [
+  { "id": "remote.video-dinner", "kind": "remote", "bond": [2, 3], "x": ["话多"], "y": [], "when": "dinner", "beats": [
     { "who": "x", "minutes": [10, 20], "icon": "phone", "star": true, "action": "{x}给{y}打了个视频，边吃边聊", "sound": ["「你吃的什么」"], "detail": [] },
     { "who": "y", "minutes": [1, 2], "icon": "eat", "action": "{y}把碗举到了镜头前", "sound": [], "detail": [] }
   ] },
@@ -35,12 +35,12 @@
     { "who": "xy", "minutes": [5, 10], "icon": "chat", "star": true, "action": "{x}和{y}在聊下回去哪吃", "sound": [], "detail": ["列了三家，一家都没定"] },
     { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}说都行", "sound": [], "detail": [] }
   ] },
-  { "id": "remote.awake", "kind": "remote", "bond": [2, 3], "x": ["夜猫子"], "y": ["夜猫子", "夜宵党"], "beats": [
+  { "id": "remote.awake", "kind": "remote", "bond": [2, 3], "x": ["夜猫子"], "y": ["夜猫子", "夜宵党"], "when": "late", "beats": [
     { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}问{y}睡了没", "sound": [], "detail": [] },
     { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}秒回了一个「没」", "sound": [], "detail": [] },
     { "who": "xy", "minutes": [20, 20], "icon": "chat", "action": "{x}和{y}又聊了二十分钟", "sound": [], "detail": ["聊的是明天吃什么"] }
   ] },
-  { "id": "remote.recipe", "kind": "remote", "bond": [3, 3], "x": ["家常菜"], "y": ["迷糊"], "beats": [
+  { "id": "remote.recipe", "kind": "remote", "bond": [3, 3], "x": ["家常菜"], "y": ["迷糊"], "when": "dinner", "beats": [
     { "who": "y", "minutes": [2, 5], "icon": "chat", "action": "{y}问{x}番茄炒蛋先放哪个", "sound": [], "detail": [] },
     { "who": "x", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{x}直接打了个视频过来", "sound": [], "detail": [] },
     { "who": "y", "minutes": [10, 20], "icon": "cook", "action": "{y}照着做了一盘", "sound": [], "detail": ["盐还是放多了"] }

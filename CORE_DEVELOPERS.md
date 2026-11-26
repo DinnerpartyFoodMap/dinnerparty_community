@@ -4,10 +4,10 @@
 
 ## 核心开发者
 
-| GitHub 账号 | 旧仓库提交中的署名 |
+| GitHub 账号 | 提交中的署名 |
 |---|---|
 | bl3x3 | bl3x3、bl333 |
-| Chenan-LightFox | ParseeLemonade |
+| Chenan-LightFox | ParseeLemonade、chenan050315@163.com |
 | lofur | lofur、Lufor_most_cute |
 
 ## 约定

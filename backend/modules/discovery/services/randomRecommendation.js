@@ -1,7 +1,6 @@
-const { haversineDistanceKm, placeDetailCompleteness } = require('./semanticSearch');
-const { EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } = require('../../../infrastructure/aiClients');
-const { ALGORITHM_VERSION } = require('../../preferences/services/userPreferenceService');
-const { RATING_COLUMNS_SQL, isAvoidedPlace } = require('../../ratings/services/placeRatings');
+const { placeDetailCompleteness } = require('../../places/services/placeQuality');
+const { EMBEDDING_DIMENSIONS } = require('../../../infrastructure/aiClients');
+const { isUsablePreference } = require('../../preferences/services/preferenceVectorProfile');
 
 const RADIUS_KM = 5;
 const RADIUS_OPTIONS_KM = [0.5, 1, 3, 5, 10];
@@ -32,25 +31,27 @@ function readPlaceVector(blob) {
     return normalizedVector(Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => blob.readFloatLE(index * 4)));
 }
 
+function placeVectorReader(database) {
+    const readVector = database.prepare(`SELECT v.embedding FROM place_vectors v
+        JOIN Place p ON p.id = v.place_id WHERE v.place_id = ? AND p.has_vector = 1`);
+    return (placeId) => readPlaceVector(readVector.get(BigInt(placeId))?.embedding);
+}
+
 function personalizeCandidates(database, candidates, preference) {
     const fallback = { candidates, personalized: false };
-    if (!candidates.length || preference?.status !== 'ready'
-        || preference.model !== EMBEDDING_MODEL || preference.dimensions !== EMBEDDING_DIMENSIONS
-        || preference.algorithm_version !== ALGORITHM_VERSION) return fallback;
+    if (!candidates.length || !isUsablePreference(preference)) return fallback;
     const userVector = normalizedVector(preference.vector);
     const vectorCount = Number(preference.vector_place_count);
     const sourceCount = Number(preference.source_place_count);
-    if (!userVector || !Number.isFinite(vectorCount) || !Number.isFinite(sourceCount)
-        || vectorCount <= 0 || sourceCount < vectorCount) return fallback;
+    if (!userVector) return fallback;
 
     // Sparse profiles and incomplete vector coverage have less influence. At
     // least 20% of the original distribution remains available for discovery.
     const strength = MAX_PERSONALIZATION * Math.min(1, vectorCount / 5) * (vectorCount / sourceCount);
-    const readVector = database.prepare(`SELECT v.embedding FROM place_vectors v
-        JOIN Place p ON p.id = v.place_id WHERE v.place_id = ? AND p.has_vector = 1`);
+    const readVector = placeVectorReader(database);
     let hasPositiveMatch = false;
     const preferred = candidates.map((candidate) => {
-        const vector = readPlaceVector(readVector.get(BigInt(candidate.place.id))?.embedding);
+        const vector = readVector(candidate.place.id);
         let similarity = 0;
         if (vector) {
             similarity = Math.max(0, Math.min(1, vector.reduce((sum, value, index) => sum + value * userVector[index], 0)));
@@ -103,6 +104,8 @@ function recommendationWeight(place, distanceKm) {
 }
 
 async function nearbyCandidates(database, center, viewerId=null, radiusKm=RADIUS_KM) {
+    const { haversineDistanceKm } = require('./semanticSearch');
+    const { RATING_COLUMNS_SQL, isAvoidedPlace } = require('../../ratings/services/placeRatings');
     radiusKm = randomRadius(radiusKm);
     await require('../../ratings/services/ratingSummaryAdapter').ensureRatingSummaries();
     // A spherical bounding box first, then exact great-circle distance. At the
@@ -180,4 +183,4 @@ function drawRecommendation(candidates, excludedIds = [], random = Math.random, 
     return { place: selected.place, distanceKm: selected.distanceKm, candidateCount: candidates.length, personalized: selection.personalized };
 }
 
-module.exports = { randomRadius, recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, prepareChoicePersonalizer, prepareNearbyRecommendation, EMPTY_MESSAGE };
+module.exports = { randomRadius, recommendationWeight, nearbyCandidates, drawRecommendation, personalizeCandidates, placeVectorReader, prepareChoicePersonalizer, prepareNearbyRecommendation, EMPTY_MESSAGE };

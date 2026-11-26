@@ -106,9 +106,9 @@ export async function runNativeClusterBrowserTests() {
         // Exercise the DOM touch path independently, then deliver that SDK click late.
         let clusterTaps = 0;
         let expandTouch = false;
-        controller.options.onClusterClick = (node, engine) => {
+        controller.options.onClusterClick = async (node) => {
             clusterTaps += 1;
-            if (expandTouch) setZoom(engine.expansionZoom(node));
+            if (expandTouch) setZoom((await controller.getClusterInfo(node.key)).expansionZoom);
         };
         const tapEntry = Array.from(controller.entries.values())[0];
         const pointer = (type, x = 100, y = 100) => tapEntry.parts.hit.dispatchEvent(new PointerEvent(type, {
@@ -169,8 +169,10 @@ export async function runNativeClusterBrowserTests() {
         const reusePlaces = [{ id: 'touch-reuse-a', name: 'Reuse A', longitude: 120, latitude: 30 },
             { id: 'touch-reuse-b', name: 'Reuse B', longitude: 120.000001, latitude: 30.000001 }];
         controller.update({ places: reusePlaces.slice(0, 1) });
+        await until(() => controller.snapshot?.dataRevision === controller.dataRevision && !controller.renderQueue.busy, 'place fixture committed');
         const reused = Array.from(controller.entries.values())[0];
         controller.update({ places: reusePlaces });
+        await until(() => controller.snapshot?.dataRevision === controller.dataRevision && !controller.renderQueue.busy, 'cluster fixture committed');
         check(Array.from(controller.entries.values())[0] === reused && reused.node.kind === 'cluster', 'data refresh actually reuses a place entry as a cluster');
         controller.options.onClusterClick = () => { clusterTaps += 1; };
         for (const type of ['pointerdown', 'pointerup']) reused.parts.hit.dispatchEvent(new PointerEvent(type, {
@@ -181,6 +183,7 @@ export async function runNativeClusterBrowserTests() {
         let placeTaps = 0;
         controller.options.onPlaceClick = () => { placeTaps += 1; };
         controller.update({ places: reusePlaces.slice(0, 1) });
+        await until(() => controller.snapshot?.dataRevision === controller.dataRevision && !controller.renderQueue.busy, 'place fixture restored');
         check(Array.from(controller.entries.values())[0] === reused && reused.node.kind === 'place', 'the same entry can return to a single place');
         const placePress = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 4, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100 });
         reused.parts.hit.dispatchEvent(placePress);

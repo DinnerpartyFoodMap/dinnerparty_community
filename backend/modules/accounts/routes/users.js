@@ -24,13 +24,16 @@ const { saveAvatarImage } = require('../../media/services/imageStorage');
 const { getFavoriteCollection } = require('../../preferences/services/favoriteCollection');
 const { setSelfLevel, userTasteAxes } = require('../../preferences/services/tasteAxes');
 const { viewerRelation, setBlocked } = require('../services/userRelations');
+const { canReadRoom, isPaused } = require('../../rooms/services/roomAccess');
+const { cancelFutureMeets } = require('../../rooms/services/roomMeets');
 const { CREATOR_PLACES_LIMIT, listCreatorPlaces } = require('../../places/services/creatorPlaces');
 const logger = require('../../../infrastructure/logger');
 const { rateLimit } = require('../../../http/middleware/rateLimit');
+const loginThrottle = require('../services/loginThrottle');
+const { JWT_SECRET } = require('../services/jwtSecret');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-const JWT_SECRET = process.env.JWT_SECRET || "yuyuko_secret_key";
 const JWT_EXPIRES_IN = 60 * 60 * 24 * 7; // 7天（秒）
 const USER_FIELDS = `id, username, admin_level, ${avatarColumns()}`;
 
@@ -47,7 +50,7 @@ function hashPassword(password) {
  */
 async function issueSessionToken(user, req, source, { sid, client } = {}) {
     const sessionId = sid || newSessionId();
-    const token = jwt.sign({ id: user.id, username: user.username, sid: sessionId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    const token = jwt.sign({ id: user.id, username: user.username, sid: sessionId }, JWT_SECRET, { algorithm: 'HS256', expiresIn: JWT_EXPIRES_IN });
     let sessionStored = true;
     try {
         await sessionStore().createSession(user.id, {
@@ -458,11 +461,22 @@ router.post("/register", async (req, res) => {
 
 // 用户登录，返回 token
 
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
     const { username, password } = req.body || {};
-    if (!username || !password) {
+    if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
         logAuthRejected(req, 'login', 'missing_fields', username);
         return res.status(400).json({ error: "缺少字段" });
+    }
+
+    const throttle = await loginThrottle.checkLogin(req, username);
+    if (throttle.blocked) {
+        logAuthRejected(req, 'login', 'too_many_failures', username);
+        res.set('Retry-After', String(throttle.retryAfter));
+        return res.status(429).json({
+            error: `登录失败次数过多，请 ${Math.max(1, Math.ceil(throttle.retryAfter / 60))} 分钟后再试`,
+            code: 'login_throttled',
+            retry_after: throttle.retryAfter
+        });
     }
 
     const hashed = hashPassword(password);
@@ -472,9 +486,11 @@ router.post("/login", (req, res) => {
             return res.status(500).json({ error: err.message });
         }
         if (!row) {
+            await loginThrottle.recordFailure(req, username);
             logAuthRejected(req, 'login', 'invalid_credentials', username);
             return res.status(401).json({ error: "住民名或通行密码错误" });
         }
+        await loginThrottle.recordSuccess(req, username);
 
         row = withAvatarFields(row);
         row.phone_masked = phoneVerification.maskPhone(phoneVerification.userPhone(row.id));
@@ -733,17 +749,20 @@ router.patch('/me/settings', requireAuth, (req, res) => {
         return res.status(400).json({ error: 'map_settings 必须是可序列化的 JSON' });
     }
 
-    db.run('UPDATE User SET map_settings = ? WHERE id = ?', [payload, req.user.id], function (e) {
-        if (e) return res.status(500).json({ error: e.message });
-
-        db.get(`SELECT ${USER_FIELDS}, map_settings FROM User WHERE id = ?`, [req.user.id], (err2, updated) => {
-            if (err2) return res.status(500).json({ error: err2.message });
-            if (updated && updated.map_settings) {
-                try { updated.map_settings = JSON.parse(updated.map_settings); } catch (ex) { /* ignore */ }
-            }
-            return res.json({ user: withAvatarFields(updated) });
-        });
-    });
+    try {
+        const updated = db._raw.transaction(() => {
+            db._raw.prepare('UPDATE User SET map_settings = ? WHERE id = ?').run(payload, req.user.id);
+            if (isPaused(payload)) cancelFutureMeets(db._raw, req.user.id);
+            return db._raw.prepare(`SELECT ${USER_FIELDS}, map_settings FROM User WHERE id = ?`).get(req.user.id);
+        }).immediate();
+        if (updated?.map_settings) {
+            try { updated.map_settings = JSON.parse(updated.map_settings); } catch { /* keep legacy values */ }
+        }
+        return res.json({ user: withAvatarFields(updated) });
+    } catch (error) {
+        res.locals.unhandledError = error;
+        return res.status(500).json({ error: error.message });
+    }
 });
 
 // 记录地图“定位”得到的位置（GCJ-02），只保留最近一次，供 QQ Bot 的 !随机 作为推荐中心
@@ -850,7 +869,7 @@ router.get('/:id/profile', attachViewer, async (req, res) => {
     try {
         const profile = await getUserProfile(req.params.id, req.viewer || null);
         if (!profile) return res.status(404).json({ error: '住民不存在' });
-        res.json(profile);
+        res.json({ ...profile, room: canReadRoom(db._raw, req.viewer?.id, req.params.id) });
     } catch (error) {
         res.locals.unhandledError = error;
         res.status(500).json({ error: '住民主页加载失败，请稍后重试' });
@@ -892,7 +911,10 @@ const setBlockedRoute = (blocked) => (req, res) => {
         const user = db._raw.prepare('SELECT id FROM User WHERE id = ?').get(req.params.id);
         if (!user) return res.status(404).json({ error: '住民不存在' });
         if (String(user.id) === String(req.user.id)) return res.status(400).json({ error: '不能屏蔽自己' });
-        setBlocked(req.user.id, user.id, blocked);
+        db._raw.transaction(() => {
+            setBlocked(req.user.id, user.id, blocked);
+            if (blocked) cancelFutureMeets(db._raw, req.user.id, Date.now(), user.id);
+        }).immediate();
         logger.info(blocked ? 'User blocked' : 'User unblocked', {
             event: blocked ? 'accounts.user.blocked' : 'accounts.user.unblocked', userId: req.user.id, targetId: user.id
         });

@@ -148,7 +148,7 @@ export function startFrameProbe() {
         running = false;
         window.cancelAnimationFrame(raf);
         if (!deltas.length) return { frames: 0, p95: 0, max: 0 };
-        const sorted = deltas.slice(1).sort((a, b) => a - b);
+        const sorted = deltas.slice().sort((a, b) => a - b);
         if (!sorted.length) return { frames: deltas.length, p95: 0, max: 0 };
         const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
         const max = sorted[sorted.length - 1];

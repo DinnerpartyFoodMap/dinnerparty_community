@@ -212,11 +212,14 @@ const TOUCH_STEP = 12;
 const TOUCH_DEBOUNCE_MS = 60;
 const TOUCH_MAX_WAIT_MS = 250;
 const TOUCH_REFRESH_MS = 2000;
+// 会走动的网页元素（标了 data-native-touch-live，比如底栏小伙伴）：不进网格采样，单独按这个间隔量位置
+const LIVE_TOUCH_MS = 150;
+const LIVE_TOUCH_SELECTOR = '[data-native-touch-live]';
 
 /**
  * 按网格在地图画布上调用 elementFromPoint：命中画布自身或它的祖先（页面外壳）的位置交给原生地图，
  * 命中任何别的网页元素（按钮、公告、面板、遮罩）时，把那个元素的矩形作为“网页区域”。
- * 与网页自己的点击判定一致，新增的网页控件不需要登记。
+ * 与网页自己的点击判定一致，新增的网页控件不需要登记。会走动的元素由 liveTouchHoles 另算。
  */
 export function sampleTouchHoles({ canvas, rect, step = TOUCH_STEP, elementFromPoint }) {
     const holes = [];
@@ -227,6 +230,7 @@ export function sampleTouchHoles({ canvas, rect, step = TOUCH_STEP, elementFromP
             if (!el || seen.has(el)) continue;
             seen.add(el);
             if (el === canvas || canvas.contains(el) || el.contains(canvas)) continue;
+            if (el.closest?.(LIVE_TOUCH_SELECTOR)) continue;
             const box = el.getBoundingClientRect();
             const left = Math.max(rect.left, box.left), top = Math.max(rect.top, box.top);
             const right = Math.min(rect.left + rect.width, box.right), bottom = Math.min(rect.top + rect.height, box.bottom);
@@ -240,6 +244,19 @@ export function sampleTouchHoles({ canvas, rect, step = TOUCH_STEP, elementFromP
         .map((r) => ({ x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top }));
 }
 
+/** 会走动的网页元素此刻的矩形（裁到地图画布内）；元素自己 pointer-events 为 none 时不算 */
+export function liveTouchHoles({ rect, elements }) {
+    const holes = [];
+    for (const el of elements) {
+        if (typeof getComputedStyle === 'function' && getComputedStyle(el).pointerEvents === 'none') continue;
+        const box = el.getBoundingClientRect();
+        const left = Math.max(rect.left, box.left), top = Math.max(rect.top, box.top);
+        const right = Math.min(rect.left + rect.width, box.right), bottom = Math.min(rect.top + rect.height, box.bottom);
+        if (right > left && bottom > top) holes.push({ x: left, y: top, width: right - left, height: bottom - top });
+    }
+    return holes;
+}
+
 class NativeMapTouch {
     constructor(view) {
         this.view = view;
@@ -249,7 +266,11 @@ class NativeMapTouch {
         this.timer = 0;
         this.firstPending = 0;
         this.interval = 0;
+        this.liveInterval = 0;
+        this.gridRect = null;
+        this.gridHoles = [];
         this.schedule = this.schedule.bind(this);
+        this.refreshLive = this.refreshLive.bind(this);
         this.observer = typeof MutationObserver !== 'undefined' ? new MutationObserver(this.schedule) : null;
         this.stopOverlays = subscribeOverlays((list) => {
             // 模态浮层打开：立刻把触摸全交给网页，不等采样
@@ -267,13 +288,25 @@ class NativeMapTouch {
         if (this.active) {
             this.observer?.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class', 'hidden', 'inert', 'aria-hidden'] });
             if (!this.interval) this.interval = window.setInterval(this.schedule, TOUCH_REFRESH_MS);
+            if (!this.liveInterval) this.liveInterval = window.setInterval(this.refreshLive, LIVE_TOUCH_MS);
             this.schedule();
         } else {
             this.observer?.disconnect();
             window.clearInterval(this.interval);
+            window.clearInterval(this.liveInterval);
             this.interval = 0;
+            this.liveInterval = 0;
             this._send(false);
         }
+    }
+
+    /** 走动的元素只量自己的矩形，和上一次网格采样的结果合起来发；位置没变时 _send 去重 */
+    refreshLive() {
+        if (!this.active || !this.gridRect) return;
+        const elements = document.querySelectorAll(LIVE_TOUCH_SELECTOR);
+        if (!elements.length && !this.liveCount) return;
+        this.liveCount = elements.length;
+        this._send(true, this.gridRect, [...liveTouchHoles({ rect: this.gridRect, elements }), ...this.gridHoles]);
     }
 
     schedule() {
@@ -297,7 +330,12 @@ class NativeMapTouch {
         const rect = { left: Math.max(0, box.left), top: Math.max(0, box.top), width: Math.min(window.innerWidth, box.right) - Math.max(0, box.left), height: Math.min(window.innerHeight, box.bottom) - Math.max(0, box.top) };
         if (rect.width <= 0 || rect.height <= 0) return this._send(false);
         const holes = sampleTouchHoles({ canvas, rect, elementFromPoint: (x, y) => document.elementFromPoint(x, y) });
-        this._send(true, rect, holes);
+        this.gridRect = rect;
+        this.gridHoles = holes;
+        const live = document.querySelectorAll(LIVE_TOUCH_SELECTOR);
+        this.liveCount = live.length;
+        // 走动的元素放在前面：网页区域有条数上限，超出时先丢网格里的
+        this._send(true, rect, [...liveTouchHoles({ rect, elements: live }), ...holes]);
         // 工具栏、状态栏挡住的边距：苹果地图标志与“法律信息”放在边距之内
         const insets = getMapSafeInsets(canvas);
         const key = `${Math.round(insets.top)}|${Math.round(insets.bottom)}`;
@@ -308,6 +346,11 @@ class NativeMapTouch {
     }
 
     _send(active, rect = null, holes = []) {
+        // 整个交给网页（模态浮层、画布不可见）之后，走动元素的刷新也停下，等下一次网格采样
+        if (!active) {
+            this.gridRect = null;
+            this.gridHoles = [];
+        }
         const payload = active ? { active: true, rect: encodeRect(rect), holes: sanitizeHoles(holes) } : { active: false, rect: null, holes: [] };
         const key = JSON.stringify(payload);
         if (key === this.lastSent) return;
@@ -319,6 +362,7 @@ class NativeMapTouch {
         this.active = false;
         window.clearTimeout(this.timer);
         window.clearInterval(this.interval);
+        window.clearInterval(this.liveInterval);
         this.observer?.disconnect();
         this.stopOverlays();
         this.stopLifecycle();

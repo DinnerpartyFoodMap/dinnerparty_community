@@ -1,15 +1,16 @@
 // iOS 原生住民主页（NativeProfilePlugin.swift）的网页侧会话。
 // 网页取 profile、执行屏蔽 / 偏好 / 小组件请求；原生只显示网页整理好的文案与雷达数据。
 // 原生经 profileEvent 发来请求，网页按 requestId 用 respond 回传最新视图模型（profile / community / companion）。
-// 2026-11-20 起同好、角色观察屋与同好点开的其他住民主页都是原生主页里推入的二级页（不再先关闭主页）：
+// 2026-11-20 起同好、小伙伴与同好点开的其他住民主页都是原生主页里推入的二级页（不再先关闭主页）：
 // loadProfile 读取页面栈里别的住民（values.userId），loadCommunity* / saveCommunitySettings / clearInteractions 驱动同好页，
-// loadCompanion / setCompanionEnabled / chooseCompanion 驱动角色观察屋，openSettings 让网页在主页之上打开原生住民设置。
+// loadCompanion / setCompanionEnabled / chooseCompanion 驱动小伙伴，openSettings 让网页在主页之上打开原生住民设置。
 // openCommunity / settings / companion 三个结束动作只留给旧安装包。
-export const PROFILE_ACTIONS = Object.freeze(['back', 'openPlace', 'openCommunity', 'openFavorites', 'my-locations', 'settings', 'companion', 'logout']);
+// companionName / companionEdit：原生小伙伴页的“起名”“编辑”，收起主页后在网页小伙伴页里填（表单只在网页）
+export const PROFILE_ACTIONS = Object.freeze(['back', 'openPlace', 'openCommunity', 'openFavorites', 'my-locations', 'settings', 'companion', 'companionName', 'companionEdit', 'logout']);
 export const PROFILE_EVENTS = Object.freeze([
     'setTasteLevel', 'saveWidgets', 'setBlocked', 'setCollectionVisibility', 'reload',
     'loadProfile', 'loadCommunity', 'loadCommunitySettings', 'saveCommunitySettings', 'clearInteractions',
-    'loadCompanion', 'setCompanionEnabled', 'chooseCompanion', 'openSettings'
+    'loadCompanion', 'setCompanionEnabled', 'chooseCompanion', 'openSettings', 'roomNavigate', 'loadRoom', 'reportUser'
 ]);
 const TASTE_AXES = ['homestyle', 'noodles', 'hotpotBbq', 'dessert', 'drinks', 'foreign'];
 const WIDGET_KINDS = ['collection', 'recent', 'favorite'];
@@ -42,9 +43,11 @@ export function pickNativeProfileValues(type, values) {
     if (type === 'setBlocked') {
         if (typeof values.blocked !== 'boolean') return null;
         // 页面栈里别的住民：带上对方编号；不带时是会话打开的那位
-        if (values.userId === undefined) return { blocked: values.blocked };
+        // report: false 时只屏蔽不打开举报（小伙伴页的「屏蔽这位住民」）；不带时照旧屏蔽后打开举报
+        const report = values.report === false ? { report: false } : {};
+        if (values.userId === undefined) return { blocked: values.blocked, ...report };
         const userId = clip(values.userId, 64);
-        return userId ? { blocked: values.blocked, userId } : null;
+        return userId ? { blocked: values.blocked, userId, ...report } : null;
     }
     if (type === 'setCollectionVisibility') {
         return typeof values.isPublic === 'boolean' ? { isPublic: values.isPublic } : null;
@@ -67,6 +70,28 @@ export function pickNativeProfileValues(type, values) {
     if (type === 'setCompanionEnabled') {
         return typeof values.enabled === 'boolean' ? { enabled: values.enabled } : null;
     }
+    if (type === 'roomNavigate') {
+        // 翻日期、切筛选：date 为空是今天
+        const date = values.date === undefined || values.date === null || values.date === '' ? null : clip(values.date, 10);
+        if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+        const filter = values.filter === undefined ? 'all' : clip(values.filter, 16);
+        if (!['all', 'moments', 'meets'].includes(filter)) return null;
+        return { date, filter };
+    }
+    if (type === 'loadRoom') {
+        // 别人的小伙伴：userId 必填，date 为空是今天
+        const userId = clip(values.userId, 64);
+        if (!userId || !/^[A-Za-z0-9-]+$/.test(userId)) return null;
+        const date = values.date === undefined || values.date === null || values.date === '' ? null : clip(values.date, 10);
+        if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+        const filter = values.filter === undefined ? 'all' : clip(values.filter, 16);
+        if (!['all', 'moments', 'meets'].includes(filter)) return null;
+        return { userId, date, filter };
+    }
+    if (type === 'reportUser') {
+        const userId = clip(values.userId, 64);
+        return userId && /^[A-Za-z0-9-]+$/.test(userId) ? { userId, name: clip(values.name, 64) } : null;
+    }
     if (type === 'chooseCompanion') {
         const id = clip(values.id, 64);
         return id ? { id } : null;
@@ -76,7 +101,7 @@ export function pickNativeProfileValues(type, values) {
 }
 
 /** 回传原生的视图模型：只转发这几个对象 */
-const RESPONSE_MODELS = ['profile', 'community', 'companion'];
+const RESPONSE_MODELS = ['profile', 'community', 'companion', 'room'];
 
 // 每次打开都有独立 id：关闭旧主页不会收起新主页，异步完成后不再处理已经离开的主页。
 export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, onOpenPlace, onOpenCommunity, onAction, onError, retryDelay = 100 }) {

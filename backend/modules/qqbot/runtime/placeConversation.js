@@ -128,7 +128,7 @@ function promptFor(draft, ctx) {
             return { text: `${where}请发送店名。${hint}`, track: 'prompt' };
         }
         case 'description':
-            return { text: `请发送描述；暂时不写可以用 !跳过。${hint}`, track: 'prompt' };
+            return { text: `请发送描述，至少 ${placeService.PLACE_DESCRIPTION_MIN_LENGTH} 个字（招牌菜、价格、营业时间或怎么找到）。${hint}`, track: 'prompt' };
         default:
             return { text: '草稿已就绪，发送 !提交 查看核对信息。', track: 'prompt' };
     }
@@ -161,7 +161,9 @@ function parseName(value) {
 
 function parseDescription(value) {
     const result = placeService.normalizePlaceDescription(value);
-    return result.error ? { error: result.error } : { value: result.value };
+    if (result.error) return { error: result.error };
+    const tooShort = placeService.checkPlaceDescriptionMinLength(result.value);
+    return tooShort ? { error: tooShort.error } : { value: result.value };
 }
 
 function parseTags(value) {
@@ -310,16 +312,12 @@ function setField(ctx, field, args) {
         fields.name = parsed.value;
         message = `店名已设为“${parsed.value}”。`;
     } else if (field === 'description') {
-        if (!value) return [{ text: '用法：!描述 内容，或 !描述 清空' }];
-        if (CLEAR_WORDS.has(value)) {
-            fields.description = '';
-            message = '描述已清空。';
-        } else {
-            const parsed = parseDescription(value);
-            if (parsed.error) return [{ text: parsed.error }];
-            fields.description = parsed.value;
-            message = '描述已更新。';
-        }
+        if (!value) return [{ text: `用法：!描述 内容（至少 ${placeService.PLACE_DESCRIPTION_MIN_LENGTH} 个字）` }];
+        if (CLEAR_WORDS.has(value)) return [{ text: `描述不能清空，至少写 ${placeService.PLACE_DESCRIPTION_MIN_LENGTH} 个字。` }];
+        const parsed = parseDescription(value);
+        if (parsed.error) return [{ text: parsed.error }];
+        fields.description = parsed.value;
+        message = '描述已更新。';
     } else if (field === 'cost') {
         if (!value) return [{ text: '用法：!人均 20，或 !人均 清空' }];
         if (CLEAR_WORDS.has(value)) {
@@ -398,13 +396,11 @@ function requestLocation(ctx) {
 function skipStep(ctx) {
     const draft = loadActiveDraft(ctx);
     if (!draft) return [NO_DRAFT];
-    if (draft.step !== 'description') {
-        if (draft.step === 'location' || draft.step === 'name') return [{ text: '定位和店名不能跳过。' }];
-        return [{ text: '当前没有可以跳过的步骤，可以发送 !提交 查看预览。' }];
+    if (draft.step === 'location' || draft.step === 'name') return [{ text: '定位和店名不能跳过。' }];
+    if (draft.step === 'description') {
+        return [{ text: `描述不能跳过，至少写 ${placeService.PLACE_DESCRIPTION_MIN_LENGTH} 个字，直接发送描述内容即可。` }];
     }
-    const fields = { ...draft.fields, description: '' };
-    const saved = saveFields(draft, fields, { now: ctx.now, step: computeStep(fields) });
-    return afterFieldChange(draft, ctx, '已跳过描述。', saved);
+    return [{ text: '当前没有可以跳过的步骤，可以发送 !提交 查看预览。' }];
 }
 
 function pausedReply(draft) {

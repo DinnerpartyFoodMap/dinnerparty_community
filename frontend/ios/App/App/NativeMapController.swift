@@ -20,7 +20,7 @@ final class NativeMapController: NSObject {
     static let worldZoom = log2(MKMapSize.world.width / 256)
     /// 拖动、缩放过程中的相机事件最多这么频繁（秒）：网页据此在移动中切换聚合层级，间隔即最大延迟
     static let changeInterval: CFTimeInterval = 0.05
-    /// 一次转场最多播放这么多个节点的动画（网页 LIMITS.travelers）；超出时直接到终态
+    /// 一次转场最多启动这么多个屏内标记动画。缓冲区节点不占预算。
     static let animatedNodeLimit = 400
     /// 屏幕外这么远的节点不播放动画（网页 ONSCREEN_MARGIN）
     static let onscreenMargin: CGFloat = 80
@@ -36,7 +36,7 @@ final class NativeMapController: NSObject {
 
     private(set) var style = NativeMapMarkerStyle()
     private var nodes: [String: NativeMapNodeAnnotation] = [:]
-    private var ghosts: [NativeMapNodeAnnotation] = []
+    private var ghostsByTransition: [Int: [NativeMapNodeAnnotation]] = [:]
     private var transition = 0
     private var selectedId: String?
     private var overlayAnnotations: [String: NativeMapOverlayAnnotation] = [:]
@@ -89,7 +89,7 @@ final class NativeMapController: NSObject {
         mapView.removeAnnotations(mapView.annotations)
         mapView.removeOverlays(mapView.overlays)
         nodes.removeAll()
-        ghosts.removeAll()
+        ghostsByTransition.removeAll()
         overlayAnnotations.removeAll()
         polylines.removeAll()
         selectedId = nil
@@ -261,16 +261,34 @@ final class NativeMapController: NSObject {
     /// 网页的一份新快照与转场计划。沿用的节点原地更新（位置变了从旧位置滑过去，数量变了轻微回弹）；
     /// 新节点按计划从父聚合飞出、作为汇合目标回弹出现，或淡入；离开的节点吸向父聚合、原地收拢或淡出后移除。
     func setNodes(_ inputs: [NativeMapNodeInput], plan: NativeMapTransitionPlan, animate requested: Bool, selected: String?) {
-        finishTransitions()
         transition += 1
         let version = transition
         let reduced = UIAccessibility.isReduceMotionEnabled
-        let animate = requested && !mapView.isHidden && mapView.window != nil && inputs.count <= Self.animatedNodeLimit
+        let animate = requested && !mapView.isHidden && mapView.window != nil
+        var remainingAnimations = Self.animatedNodeLimit
+        func takeAnimationSlot() -> Bool {
+            guard remainingAnimations > 0 else { return false }
+            remainingAnimations -= 1
+            return true
+        }
+        let visibleRect = mapView.visibleMapRect
+        let bounds = mapView.bounds
+        let margin = Double(Self.onscreenMargin)
+        let animationRect = visibleRect.insetBy(dx: -visibleRect.width * margin / max(1, Double(bounds.width)),
+                                               dy: -visibleRect.height * margin / max(1, Double(bounds.height)))
+        func visibleToAnimation(_ coordinate: CLLocationCoordinate2D) -> Bool {
+            let point = MKMapPoint(coordinate)
+            let world = MKMapSize.world.width
+            return animationRect.contains(point)
+                || animationRect.contains(MKMapPoint(x: point.x - world, y: point.y))
+                || animationRect.contains(MKMapPoint(x: point.x + world, y: point.y))
+        }
         selectedId = selected
         let previous = nodes
         var next: [String: NativeMapNodeAnnotation] = [:]
         var consumed = Set<String>()
         var added: [NativeMapNodeAnnotation] = []
+        var exiting: [NativeMapNodeAnnotation] = []
         let deadline = CACurrentMediaTime() + 0.2
 
         CATransaction.begin()
@@ -282,11 +300,14 @@ final class NativeMapController: NSObject {
             if let previousKey, !consumed.contains(previousKey), let annotation = previous[previousKey] {
                 // 沿用：同一个视图，原地更新
                 consumed.insert(previousKey)
-                let oldCount = annotation.count
-                let wasCluster = annotation.cluster
+                let recounted = annotation.cluster && input.cluster && annotation.count != input.count && !reduced
+                let shapeChanged = annotation.cluster != input.cluster || annotation.count != input.count || annotation.glyph != input.glyph
+                let appearanceChanged = shapeChanged || annotation.name != input.name || annotation.selected != isSelected
                 let moved = annotation.coordinate.latitude != input.coordinate.latitude || annotation.coordinate.longitude != input.coordinate.longitude
                 let reanchor = plan.reanchor.contains(input.id)
-                let fromPoint = moved && !reanchor ? point(annotation.coordinate) : .zero
+                let animatesMove = moved && !reanchor
+                let fromPoint = animate && animatesMove ? point(annotation.coordinate) : .zero
+                if shapeChanged || animatesMove { annotation.entrance = nil }
                 annotation.apply(input, selected: isSelected)
                 if moved {
                     if reanchor {
@@ -297,17 +318,19 @@ final class NativeMapController: NSObject {
                 }
                 next[input.id] = annotation
                 guard let view = mapView.view(for: annotation) as? NativeMapNodeView else { continue }
-                view.configure(annotation, style: style)
-                guard animate, isOnScreen(view) else { continue }
-                if moved && !reanchor {
-                    let to = point(input.coordinate)
-                    view.playMove(from: CGPoint(x: fromPoint.x - to.x, y: fromPoint.y - to.y), reduced: reduced)
-                }
-                if wasCluster && input.cluster && oldCount != input.count && !reduced { view.playRecount() }
+                if shapeChanged || animatesMove { view.finishAnimations() }
+                if appearanceChanged { view.configure(annotation, style: style) }
+                guard animate, (animatesMove || recounted), isOnScreen(view) else { continue }
+                let to = animatesMove ? point(input.coordinate) : fromPoint
+                let offset = CGPoint(x: fromPoint.x - to.x, y: fromPoint.y - to.y)
+                let visibleMove = abs(offset.x) > 0.5 || abs(offset.y) > 0.5
+                guard (visibleMove || recounted), takeAnimationSlot() else { continue }
+                if visibleMove { view.playMove(from: offset, reduced: reduced) }
+                if recounted { view.playRecount() }
                 continue
             }
             let annotation = NativeMapNodeAnnotation(input: input, selected: isSelected)
-            if animate {
+            if animate, visibleToAnimation(input.coordinate), takeAnimationSlot() {
                 if let parentKey = plan.splitFrom[input.id], let parent = previous[parentKey], !reduced {
                     // 从父聚合的位置飞出；起始大小按父聚合与自己的高度比缩小（网页 parentScale × 0.7）
                     let parentHeight = NativeMapGlyph.size(cluster: parent.cluster, count: parent.count, style: style).height
@@ -326,14 +349,15 @@ final class NativeMapController: NSObject {
 
         var removeNow: [NativeMapNodeAnnotation] = []
         for (key, annotation) in previous where !consumed.contains(key) {
-            guard animate, let view = mapView.view(for: annotation) as? NativeMapNodeView, isOnScreen(view) else {
+            guard animate, let view = mapView.view(for: annotation) as? NativeMapNodeView, isOnScreen(view), takeAnimationSlot() else {
                 removeNow.append(annotation)
                 continue
             }
             // 残影：只做视觉过渡、不可点，转场结束后移除
             annotation.ghost = true
-            view.configure(annotation, style: style)
-            ghosts.append(annotation)
+            view.finishAnimations()
+            view.configureInteraction(annotation)
+            exiting.append(annotation)
             if let targetKey = plan.mergeInto[key], let target = next[targetKey], !reduced {
                 let from = point(annotation.coordinate)
                 let to = point(target.coordinate)
@@ -346,28 +370,26 @@ final class NativeMapController: NSObject {
         }
 
         nodes = next
+        if !exiting.isEmpty { ghostsByTransition[version] = exiting }
         if !removeNow.isEmpty { mapView.removeAnnotations(removeNow) }
         if !added.isEmpty { mapView.addAnnotations(added) }
         CATransaction.commit()
     }
 
-    /// 新的手势、新的快照到来时：进行中的转场立即收敛到终态（视图回到静止位置，残影移除）
+    /// 新手势接管相机时收敛上一轮转场。
     private func finishTransitions() {
-        transition += 1
         for annotation in nodes.values {
             annotation.entrance = nil
             (mapView.view(for: annotation) as? NativeMapNodeView)?.finishAnimations()
         }
-        if !ghosts.isEmpty {
-            mapView.removeAnnotations(ghosts)
-            ghosts.removeAll()
-        }
+        let ghosts = ghostsByTransition.values.flatMap { $0 }
+        ghostsByTransition.removeAll()
+        if !ghosts.isEmpty { mapView.removeAnnotations(ghosts) }
     }
 
     private func completeTransition(_ version: Int) {
-        guard version == transition, !ghosts.isEmpty else { return }
+        guard let ghosts = ghostsByTransition.removeValue(forKey: version) else { return }
         mapView.removeAnnotations(ghosts)
-        ghosts.removeAll()
     }
 
     private func point(_ coordinate: CLLocationCoordinate2D) -> CGPoint {
@@ -1018,6 +1040,10 @@ final class NativeMapNodeView: MKAnnotationView {
         }
         clusteringIdentifier = nil
         displayPriority = .required
+        configureInteraction(node)
+    }
+
+    func configureInteraction(_ node: NativeMapNodeAnnotation) {
         // 层级与网页 Z_INDEX 相同的先后：残影 < 单点 < 聚合（越大越靠上）< 选中
         let base = MKAnnotationViewZPriority.defaultUnselected.rawValue
         if node.ghost {

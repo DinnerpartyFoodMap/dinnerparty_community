@@ -26,6 +26,22 @@ function getLatestStoredToken() {
 // AI 初筛拦下的新地点（request_type = 'create'）和修改申请在同一个列表里复核，
 // 见 backend/modules/places/doc/placeModeration.md
 const isCreateRequest = (request) => !!request && request.request_type === 'create';
+// 住民评论被 AI 初筛拦下后的复核（request_type = 'comment'）：通过即公开评论，驳回则只有作者能看到
+const isCommentRequest = (request) => !!request && request.request_type === 'comment';
+
+/** 通过 / 驳回按钮与确认框里的说明：新增复核、评论复核、普通修改申请各不相同 */
+function reviewCopy(request) {
+    if (isCreateRequest(request)) {
+        return { approve: t('admin:places.createApproveAction'), reject: t('admin:places.createRejectAction'),
+            approveImpact: t('admin:places.createApproveImpact'), rejectImpact: t('admin:places.createRejectImpact') };
+    }
+    if (isCommentRequest(request)) {
+        return { approve: t('admin:places.commentApproveAction'), reject: t('admin:places.commentRejectAction'),
+            approveImpact: t('admin:places.commentApproveImpact'), rejectImpact: t('admin:places.commentRejectImpact') };
+    }
+    return { approve: t('admin:places.approveAction'), reject: t('admin:places.rejectAction'),
+        approveImpact: t('admin:places.approveImpact'), rejectImpact: t('admin:places.rejectImpact') };
+}
 
 function storedImages(value) {
     try {
@@ -126,9 +142,8 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
     const review = async (target, action) => {
         const id = target.id;
         const approve = action === 'approve';
-        const impact = isCreateRequest(target)
-            ? (approve ? t('admin:places.createApproveImpact') : t('admin:places.createRejectImpact'))
-            : (approve ? t('admin:places.approveImpact') : t('admin:places.rejectImpact'));
+        const copy = reviewCopy(target);
+        const impact = approve ? copy.approveImpact : copy.rejectImpact;
         if (!(await confirm(t('admin:places.confirmReview', { action: approve ? t('admin:places.approve') : t('admin:places.reject'), id, place_id: target.place_id || '-', requester_id: target.requester_id || '-', impact })))) return;
         setProcessing(p => ({ ...p, [id]: true }));
         const thisFetchId = ++fetchIdRef.current; // bump to mark new action
@@ -210,8 +225,8 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
         <ActionMenu
             disabled={processing[request.id]}
             items={[
-                { key: 'approve', label: isCreateRequest(request) ? t('admin:places.createApproveAction') : t('admin:places.approveAction'), onClick: () => review(request, 'approve') },
-                { key: 'reject', label: isCreateRequest(request) ? t('admin:places.createRejectAction') : t('admin:places.rejectAction'), tone: 'danger', onClick: () => review(request, 'reject') }
+                { key: 'approve', label: reviewCopy(request).approve, onClick: () => review(request, 'approve') },
+                { key: 'reject', label: reviewCopy(request).reject, tone: 'danger', onClick: () => review(request, 'reject') }
             ]}
         />
     );
@@ -229,9 +244,23 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
             <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('admin:places.moderation.label')}</span>
             {(request.moderation?.decision?.reasons || []).map((reason) => (
                 <span key={reason} style={{ padding: '1px 8px', borderRadius: 999, fontSize: 12, border: '1px solid color-mix(in srgb, var(--color-warning) 55%, var(--color-border))', background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)' }}>
-                    {reasonLabels[reason] || reason}
+                    {(isCommentRequest(request) && reason === 'unrelated' ? t('admin:places.moderation.reason.commentUnrelated') : reasonLabels[reason]) || reason}
                 </span>
             ))}
+        </div>
+    );
+
+    // 评论复核：拦截原因与 AI 说明、地点、作者和评论当前内容（作者删掉或改过时提示，复核会返回冲突）
+    const renderCommentReview = (request) => (
+        <div style={{ display: 'grid', gap: 8 }}>
+            {request.moderation && renderModerationReasons(request)}
+            {request.note && <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>{request.note}</div>}
+            <JsonTable value={{
+                [t('admin:places.moderation.field.place')]: request.place_name || request.place_id || null,
+                [t('admin:places.moderation.field.author')]: request.comment?.username || request.requester_id || null,
+                [t('admin:places.moderation.field.comment')]: request.comment?.content ?? request.proposed?.content ?? null
+            }} />
+            {!request.comment && <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{t('admin:places.commentMissing')}</div>}
         </div>
     );
 
@@ -301,17 +330,20 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                                             <article key={request.id} style={{ padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-surface)' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                                                     <div style={{ minWidth: 0 }}>
-                                                        <div style={{ fontWeight: 700 }}>{isCreateRequest(request) ? tx('admin:places.createTitle', { id: request.id }) : tx('admin:places.requestTitle', { id: request.id })}</div>
+                                                        <div style={{ fontWeight: 700 }}>{isCreateRequest(request) ? tx('admin:places.createTitle', { id: request.id })
+                                                            : isCommentRequest(request) ? tx('admin:places.commentTitle', { id: request.id }) : tx('admin:places.requestTitle', { id: request.id })}</div>
                                                         <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-secondary)', overflowWrap: 'anywhere' }}>
                                                             {isCreateRequest(request)
                                                                 ? tx('admin:places.createMeta', { place_id: request.place_id || '-', creator: request.place?.creator_name || request.requester_id || '-' })
-                                                                : tx('admin:places.requestMeta', { place_id: request.place_id || '-', requester_id: request.requester_id || '-' })}
+                                                                : isCommentRequest(request)
+                                                                    ? tx('admin:places.commentMeta', { place: request.place_name || request.place_id || '-', author: request.comment?.username || request.requester_id || '-' })
+                                                                    : tx('admin:places.requestMeta', { place_id: request.place_id || '-', requester_id: request.requester_id || '-' })}
                                                         </div>
                                                     </div>
                                                     {renderReviewActions(request)}
                                                 </div>
                                                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--color-border)' }}>
-                                                    {isCreateRequest(request) ? renderCreateReview(request) : (
+                                                    {isCreateRequest(request) ? renderCreateReview(request) : isCommentRequest(request) ? renderCommentReview(request) : (
                                                         <>
                                                             {request.moderation && <div style={{ marginBottom: 8 }}>{renderModerationReasons(request)}</div>}
                                                             <JsonTable value={request.proposed} />
@@ -352,11 +384,13 @@ export default function AdminPlaces({ backendUrl = null, onOpenPlace = null }) {
                                                 <tr key={r.id} style={{ background: idx % 2 === 0 ? 'var(--color-bg-overlay)' : undefined }}>
                                                     <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.id}>{r.id}</td>
                                                     <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.place_id}>{r.place_id}</td>
-                                                    <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.requester_id}>{(isCreateRequest(r) && r.place?.creator_name) || r.requester_id}</td>
+                                                    <td style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.requester_id}>{(isCreateRequest(r) && r.place?.creator_name) || (isCommentRequest(r) && r.comment?.username) || r.requester_id}</td>
                                                     <td style={{ minWidth: 100 }}>{r.created_time}</td>
-                                                    <td>{isCreateRequest(r) ? <>{r.status}<div style={{ fontSize: 12, color: 'var(--color-warning)' }}>{t('admin:places.typeCreate')}</div></> : r.status}</td>
+                                                    <td>{isCreateRequest(r) || isCommentRequest(r)
+                                                        ? <>{r.status}<div style={{ fontSize: 12, color: 'var(--color-warning)' }}>{isCreateRequest(r) ? t('admin:places.typeCreate') : t('admin:places.typeComment')}</div></>
+                                                        : r.status}</td>
                                                     <td style={{ maxWidth: 420, verticalAlign: 'top' }}>
-                                                        {isCreateRequest(r) ? renderCreateReview(r) : (
+                                                        {isCreateRequest(r) ? renderCreateReview(r) : isCommentRequest(r) ? renderCommentReview(r) : (
                                                             <>
                                                                 {r.moderation && <div style={{ marginBottom: 6 }}>{renderModerationReasons(r)}</div>}
                                                                 <JsonTable value={r.proposed} />

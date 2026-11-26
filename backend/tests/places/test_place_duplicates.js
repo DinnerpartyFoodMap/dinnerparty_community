@@ -44,7 +44,7 @@ require('../../infrastructure/numericAlgorithmClient').compute = async (_operati
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token(user)}` }, body: JSON.stringify(body)
     });
     const count = (name) => sql.prepare('SELECT COUNT(*) AS n FROM Place WHERE name = ?').get(name).n;
-    const shop = { name: '卡顿面馆', latitude: 23.123456, longitude: 113.654321, rating: 4 };
+    const shop = { name: '卡顿面馆', description: '测试描述：招牌菜、人均和营业时间都写了', latitude: 23.123456, longitude: 113.654321, rating: 4 };
     try {
         // 同时到达的三次相同提交：只建一个，其余两次 409 且标为本人
         const responses = await Promise.all([post(owner, shop), post(owner, shop), post(owner, shop)]);

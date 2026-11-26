@@ -10,6 +10,8 @@ const {
     normalizeCategoryList,
     normalizePlainTextField,
     normalizePlaceDescription,
+    checkPlaceDescriptionMinLength,
+    placeDescriptionChanged,
     normalizePlaceCoordinates,
     normalizePerPersonCost,
     syncCategoryRegistry,
@@ -21,6 +23,7 @@ const { getUserPreference } = require('../../preferences/services/userPreference
 const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
 const { viewerPlaceSql, canViewPlace } = require('../services/placeVisibility');
 const { notBlockedSql } = require('../../accounts/services/userRelations');
+const { commentsForPlace } = require('../../community/services/residentComments');
 const { afterOwnerEdit, checkOwnerEdit, reviewNote, withdrawCreationRequests } = require('../services/placeModeration');
 const { listPlaces } = require('../services/placeList');
 const { rateLimit } = require('../../../http/middleware/rateLimit');
@@ -228,6 +231,7 @@ router.get('/:id/edit-context',requireAuth,(req,res)=>{
 });
 // 获取单个地点（隐藏中的地点只给创建者和管理员）；按去重地点数限流
 router.get("/:id", attachViewer, rateLimit('detail', { member: placeIdMember }), (req, res) => {
+    res.set('Cache-Control', 'private, no-store');
     const sql = `SELECT p.*, u.username AS creator_name, uu.username AS updated_by_name, pr.province, pr.city, pr.district,${RATING_COLUMNS_SQL}
                  FROM Place p
                  LEFT JOIN User u ON p.creator_id = u.id
@@ -235,11 +239,19 @@ router.get("/:id", attachViewer, rateLimit('detail', { member: placeIdMember }),
                  LEFT JOIN PlaceRegion pr ON pr.place_id = p.id
                  WHERE p.id = ?`;
     db.get(sql, [req.params.id], async (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!row || !canViewPlace(row, req.viewer)) return res.status(404).json({ error: "地点不存在" });
+        if (err) {
+            res.locals.unhandledError = err;
+            return res.status(500).json({ error: '地点详情读取失败，请稍后重试', code: 'PLACE_READ_FAILED' });
+        }
+        if (!row || !canViewPlace(row, req.viewer)) return res.status(404).json({ error: '地点不存在', code: 'PLACE_NOT_FOUND' });
         const projected=visibleProjectedRows(await projectRatingViews([row],req.viewer?.id),req.viewer,true)[0];
-        if(!projected)return res.status(404).json({error:'地点不存在'});
-        res.json(projected);
+        if (!projected) return res.status(404).json({ error: '地点不存在', code: 'PLACE_NOT_FOUND' });
+        try {
+            res.json({ ...projected, comments: commentsForPlace(projected.id, req.viewer?.id) });
+        } catch (error) {
+            res.locals.unhandledError = error;
+            res.status(500).json({ error: '地点评论读取失败，请稍后重试', code: 'COMMENT_READ_FAILED' });
+        }
     });
 });
 
@@ -343,6 +355,10 @@ router.put("/:id", requireAuth, (req, res) => {
             }
         }
         if (Object.keys(updates).length === 0) return res.status(400).json({ error: "没有提供要更新的字段" });
+        if (updates.description !== undefined && placeDescriptionChanged(updates.description, place.description)) {
+            const tooShort = checkPlaceDescriptionMinLength(updates.description);
+            if (tooShort) return res.status(400).json({ error: tooShort.error });
+        }
 
         // 创建者（非管理员）改自己已公开的地点：先过 AI 初筛（doc/placeModeration.md）。改出明显不合规的内容时
         // 这次修改不生效，转成修改申请交管理员审核，地点对所有人保持原样

@@ -2,6 +2,8 @@
 
 `GET /users/:id/profile` 支持匿名访问，返回住民名、头像 URL、观看者关系、城市、六类餐饮偏好，以及 `collection`、`recent`、`favorite` 三类预览，每类最多 5 个地点。收藏按公开设置返回，只有本人收到 `collection_visibility`。`favorite` 来自住民自己评为「均线之上」及以上的地点。`PUT /users/me/profile { widgets, hidden_widgets }` 保存地点栏的显隐。「我创建的地点」（`recent`）不能关闭（2026-11-20）：`hidden_widgets` 只保存 `favorite`，旧客户端发来的 `recent` 照常接受但不保存，旧数据里隐藏的 `recent` 读取时重新显示，访客也总能看到公开的创建地点。缺省设置下两栏都显示。`widgets` 保留旧版第二栏选择，旧客户端只更新这个字段时会保留显隐设置。`PUT /users/me/taste { axis, level }` 保存自己的偏好等级，`null` 恢复自动推断。访客的偏好数据不含收藏明细。屏蔽对象的主页不返回小组件。`GET /users/me` 的 `rejected_place_count` 用于头像和创建地点栏提示。 [六类餐饮偏好](../../preferences/doc/TASTE_AXES.md)
 
+`GET /users/:id/profile` 的布尔字段 `room` 表示当前登录查看者可打开对方的小伙伴页面。本人已入住且在功能开放范围内时为真，游客为假；互访遵守住民可见性、地图开关、封禁和双向屏蔽规则。 [小伙伴披露规则](../../rooms/doc/README.md#披露和取消)
+
 `GET /users/:id/favorites` 读取完整清单，支持匿名查看公开收藏。`GET` 和 `PUT /api/favorites/visibility` 读取与更新本人的 `{ is_public }`。`User.favorites_public` 默认为公开，对既有和新增账户生效。收藏条目来自 `Favorite`，同好匹配开关独立。服务端应用本人身份、屏蔽、封禁和地点审核规则。
 
 主页的 `content.recent` 与创建地点列表共用审核可见性。本人可看到自己创建的待审核地点，访客只看公开地点。`PATCH /users/me/settings` 的 `map_settings.companion_enabled` 保存观察屋开关，缺省开启。
@@ -53,6 +55,8 @@ flowchart TD
 | 短信验证码 | 本站生成并校验，阿里云只下发 | 用 dypns 的 `##code##` 与 CheckSmsVerifyCode 可省本地表，但错误次数、用途与申请人绑定不受我们控制，且境外号码走另一个产品 |
 | 登录状态 | JWT sid + Redis 多设备索引，兼容旧无 sid token | 完全无状态 token 简单，但无法按设备撤销 |
 | Redis 故障 | JWT 合法时继续认证，记录降级 | 故障时拒绝更严格，但会影响所有登录用户；当前行为有已撤销 token 暂时有效的取舍 |
+| JWT 密钥 | `services/jwtSecret.js` 统一读取；`index.js` 启动时 `JWT_SECRET` 没设、等于代码里的回退值或短于 32 个字符就拒绝启动；签发与校验都限定 HS256 | 仓库公开，回退值人人可见，加上 Redis 故障时只验 JWT，任何人都能签出管理员 token；回退值只留给测试脚本 |
+| 登录失败限流 | `services/loginThrottle.js`：只数密码错误，同一时间窗内按账号 + IP 段、IP 段、账号三个计数，任一到额度即 429（`code: 'login_throttled'`，带 `Retry-After`），正确密码也拒绝；登录成功只清账号 + IP 段的计数。始终拦截，不受 `ANTI_SCRAPE_MODE` 影响；额度用 `LOGIN_FAILURE_LIMITS` 覆盖。计数在 Redis，不可用时退回进程内，出错放行 | 只按账号锁会让别人故意输错就把住民锁在外面，所以账号总计数额度放宽；IP 段计数依赖 `TRUST_PROXY` 配对，否则客户端能伪造 X-Forwarded-For 绕过，这时只剩账号总计数兜底 |
 | 位置 | 每用户覆盖一条最近定位 | 不保存轨迹；Bot 随机推荐只需要一个中心 |
 
 测试见 [案例库](TEST_CASES.md)。历史：`d285076` 验证码与重置，`13576c8` 最近定位。待办 ACC-01 / ACC-02 见 [维护清单](../../../doc/HISTORY_AND_TODO.md)。

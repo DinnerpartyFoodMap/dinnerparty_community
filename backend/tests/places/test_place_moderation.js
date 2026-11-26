@@ -135,7 +135,7 @@ async function main() {
     const notified = (id) => sql.prepare('SELECT COUNT(*) AS n FROM QQBotNotification WHERE place_id = ?').get(id).n;
     const openRequest = (id) => sql.prepare("SELECT * FROM PlaceRequest WHERE place_id = ? AND request_type = 'create' AND status = 'pending'").get(id);
     const create = async (who, fields) => {
-        const res = await call('POST', '/places', who, { latitude: 23.1, longitude: 113.3, description: '招牌牛肉面，汤底浓，人均二十', ...fields });
+        const res = await call('POST', '/places', who, { latitude: 23.1, longitude: 113.3, description: '招牌牛肉面，汤底浓，人均二十元', ...fields });
         assert.equal(res.status, 200, res.text);
         return res.body;
     };
@@ -208,14 +208,14 @@ async function main() {
     assert.equal((await call('POST', `/place-requests/${request.id}/review`, 'admin', { action: 'reject' })).status, 409);
     assert.ok(sql.prepare("SELECT 1 FROM AdminAudit WHERE action = 'place-moderation-review' AND admin_id = ?").get(users.admin));
 
-    // 4. 描述明显简略：本地规则拦下（模型说没问题也一样）；创建者补充描述后重新初筛，通过就公开，申请自动撤回
-    const brief = await create('owner', { name: '沙县小吃', description: '好' });
+    // 4. 描述明显简略（同一个字重复，字数够 15 也算）：本地规则拦下（模型说没问题也一样）；创建者补充描述后重新初筛，通过就公开，申请自动撤回
+    const brief = await create('owner', { name: '沙县小吃', description: '好'.repeat(15) });
     await idle();
     assert.equal(statusOf(brief.id), 'pending');
     const briefRequest = openRequest(brief.id);
     assert.deepEqual(JSON.parse(briefRequest.moderation).decision.reasons, ['brief']);
     assert.match(briefRequest.note, /描述为空/);
-    const edited = await call('PUT', `/places/${brief.id}`, 'owner', { description: '拌面和蒸饺都不错，十块钱吃饱' });
+    const edited = await call('PUT', `/places/${brief.id}`, 'owner', { description: '拌面和蒸饺都不错，十块钱就能吃饱' });
     assert.equal(edited.status, 200);
     assert.equal(edited.body.moderation_status, 'checking');
     await idle();
@@ -235,7 +235,7 @@ async function main() {
     assert.equal((await call('GET', `/places/${ad.id}`, 'other')).status, 404);
     assert.equal((await call('GET', `/places/${ad.id}`, 'owner')).body.moderation_status, 'rejected');
     const textCallsBefore = calls.text.length;
-    const resubmitted = await call('PUT', `/places/${ad.id}`, 'owner', { description: '炭烤生蚝和羊肉串，人均八十' });
+    const resubmitted = await call('PUT', `/places/${ad.id}`, 'owner', { description: '炭烤生蚝和羊肉串，人均八十元左右' });
     assert.equal(resubmitted.body.moderation_status, 'pending');
     await idle();
     assert.equal(calls.text.length, textCallsBefore, 'a rejected place is not sent to the model again');
@@ -295,7 +295,7 @@ async function main() {
     assert.equal(sql.prepare('SELECT status FROM PlaceRequest WHERE id = ?').get(cappedRequest.id).status, 'withdrawn');
 
     // 11. 管理员新建：直接公开，不建初筛任务
-    const byAdmin = await create('admin', { name: '管理员的电影院', description: '' });
+    const byAdmin = await create('admin', { name: '管理员的电影院' });
     assert.equal(byAdmin.moderation_status, 'visible');
     await idle();
     assert.equal(sql.prepare('SELECT 1 FROM PlaceModeration WHERE place_id = ?').get(byAdmin.id), undefined);
@@ -317,7 +317,7 @@ async function main() {
 
     // 14. 关闭初筛：新地点直接公开（旧行为）
     process.env.PLACE_MODERATION_ENABLED = 'false';
-    const off = await create('owner', { name: '关闭时的电影院', description: '' });
+    const off = await create('owner', { name: '关闭时的电影院' });
     assert.equal(off.moderation_status, 'visible');
     process.env.PLACE_MODERATION_ENABLED = 'true';
 
@@ -325,16 +325,16 @@ async function main() {
     const textCalls = () => calls.text.length;
     const placeRow = (id) => sql.prepare('SELECT * FROM Place WHERE id = ?').get(id);
     let before = textCalls();
-    const priceOnly = await call('PUT', `/places/${good.id}`, 'owner', { name: '好吃牛肉面', description: '招牌牛肉面，汤底浓，人均二十', per_person_cost: 25 });
+    const priceOnly = await call('PUT', `/places/${good.id}`, 'owner', { name: '好吃牛肉面', description: '招牌牛肉面，汤底浓，人均二十元', per_person_cost: 25 });
     assert.equal(priceOnly.status, 200, priceOnly.text);
     assert.equal(priceOnly.body.per_person_cost, 25);
     assert.equal(textCalls(), before, 'unchanged text is not sent to the model');
-    const fine = await call('PUT', `/places/${good.id}`, 'owner', { description: '招牌牛肉面，汤底浓，加了卤蛋' });
+    const fine = await call('PUT', `/places/${good.id}`, 'owner', { description: '招牌牛肉面，汤底浓，加了卤蛋和青菜' });
     assert.equal(fine.status, 200);
     assert.equal(textCalls(), before + 1);
-    assert.equal(calls.text.at(-1).description, '招牌牛肉面，汤底浓，加了卤蛋', 'the model judges the edited content');
+    assert.equal(calls.text.at(-1).description, '招牌牛肉面，汤底浓，加了卤蛋和青菜', 'the model judges the edited content');
 
-    const held = await call('PUT', `/places/${good.id}`, 'owner', { name: '广告牛肉面', description: '加微信领券' });
+    const held = await call('PUT', `/places/${good.id}`, 'owner', { name: '广告牛肉面', description: '加微信领券，进群每天发优惠码，扫码下单' });
     assert.equal(held.status, 202, held.text);
     assert.deepEqual([held.body.pending_review, held.body.reasons], [true, ['harmful']]);
     assert.deepEqual([placeRow(good.id).name, placeRow(good.id).moderation_status], ['好吃牛肉面', 'visible'], 'the place keeps its old content');
@@ -346,14 +346,14 @@ async function main() {
     const listedEdit = (await call('GET', '/place-requests', 'admin')).body.find((r) => r.id === heldRequest.id);
     assert.deepEqual(listedEdit.moderation.decision.reasons, ['harmful']);
     assert.equal((await call('POST', `/place-requests/${heldRequest.id}/review`, 'admin', { action: 'approve' })).status, 200);
-    assert.deepEqual([placeRow(good.id).name, placeRow(good.id).description], ['广告牛肉面', '加微信领券'], 'approval applies the held edit');
+    assert.deepEqual([placeRow(good.id).name, placeRow(good.id).description], ['广告牛肉面', '加微信领券，进群每天发优惠码，扫码下单'], 'approval applies the held edit');
 
-    // “简略”只在这次改了描述时才算：老地点描述本来是空的，改名不拦；把描述改成一个字要拦
+    // “简略”只在这次改了描述时才算：老地点描述本来是空的，改名不拦；把描述改成同一个字重复 15 遍要拦（少于 15 字在保存前就被拒）
     textBehavior = () => ({ flagged: true, reasons: ['brief'], confidence: 0.9, summary: '描述为空' });
     const legacy = Number(sql.prepare("INSERT INTO Place (name, description, latitude, longitude, creator_id) VALUES ('老店', '', 23.4, 113.4, ?)").run(users.owner).lastInsertRowid);
     assert.equal((await call('PUT', `/places/${legacy}`, 'owner', { name: '老店新名',rating:3 })).status, 200);
     assert.equal(placeRow(legacy).name, '老店新名');
-    const shortened = await call('PUT', `/places/${legacy}`, 'owner', { description: '好' });
+    const shortened = await call('PUT', `/places/${legacy}`, 'owner', { description: '好'.repeat(15) });
     assert.deepEqual([shortened.status, shortened.body.reasons], [202, ['brief']]);
     textBehavior = null;
 
@@ -374,7 +374,7 @@ async function main() {
     assert.equal((await call('PUT', `/places/${good.id}`, 'admin', { name: '管理员改的电影院',no_experience:true })).status, 200);
     assert.equal(textCalls(), before);
     textBehavior = () => { throw new Error('upstream timed out'); };
-    const failedEdit = await call('PUT', `/places/${failing.id}`, 'owner', { description: '新写的描述：汤底浓郁' });
+    const failedEdit = await call('PUT', `/places/${failing.id}`, 'owner', { description: '新写的描述：汤底浓郁，面条筋道' });
     textBehavior = null;
     assert.equal(failedEdit.status, 200);
     assert.equal(textCalls(), before + 1, 'edits are not retried while the user waits');

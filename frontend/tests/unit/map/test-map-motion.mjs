@@ -327,6 +327,30 @@ assert.ok(sawSplit && sawMerge, '夹具没有覆盖拆分与合并');
     assert.deepEqual(planTransition(fine, coarse).mergeInto, new Map([['place:56', parent.key], ['place:57', parent.key]]));
 }
 
+// ---- 带 1/16 小格的城市级：同一格里分开显示的匿名点，各自对应落在自己小格里的明细 ----
+{
+    const city = { kind: 'aggregate', tile: 8, cell: 14, minZoom: 11, maxZoom: 12, sub: 16 };
+    const leaf = { kind: 'leaf', tile: 12, minZoom: 13 };
+    const row = [[], -1, -1, 0];
+    // 小格 0（西北角）和 255（东南角）：在 12 级相距超过聚合半径，各显示一个点
+    const anonymous = expandAggregateTile({ z: 8, cell: 14, sub: 16, cells: [[0, 0, 3, 3, [[...row, 0], [...row, 255]]]] },
+        { tags: [], regions: [] }, '128/128');
+    const [nw, se] = [...anonymous].sort((a, b) => a.longitude - b.longitude);
+    const coarse = tileSnap(anonymous, 12, city);
+    assert.equal(coarse.visibleNodes.length, 2, '同一格的两家在 12 级分开显示');
+    const fine = tileSnap([
+        { id: 61, longitude: nw.longitude + 0.0002, latitude: nw.latitude - 0.0002 },
+        { id: 62, longitude: se.longitude - 0.0002, latitude: se.latitude + 0.0002 }
+    ], 13, leaf);
+    const split = planTransition(coarse, fine);
+    assert.deepEqual(split.reuse, new Map([['place:61', nw.aggregateKey], ['place:62', se.aggregateKey]]), '按小格对应，不因同格而串到一个点上');
+    assert.deepEqual(split.keepAnchor, new Set(['place:61', 'place:62']));
+    assert.deepEqual(planTransition(fine, coarse).reuse, new Map([[nw.aggregateKey, 'place:61'], [se.aggregateKey, 'place:62']]));
+    // 明细缺块时用带小格的匿名点补位，补到后同样按小格接上
+    const fallback = tileSnap(anonymous, 13, leaf);
+    assert.deepEqual(planTransition(fallback, fine).reuse, new Map([['place:61', nw.aggregateKey], ['place:62', se.aggregateKey]]));
+}
+
 // ---- 成员签名与顺序无关 ----
 assert.equal((hashString('a') ^ hashString('b')) >>> 0, (hashString('b') ^ hashString('a')) >>> 0);
 

@@ -108,6 +108,8 @@ export function markdownToPlainText(text) {
 // ---- iOS 原生卡片 ----
 
 const escapeNative = (text) => text.replace(/[\\`*_~[\]<]/g, '\\$&');
+/** 纯文本放进原生行内 Markdown 前转义（住民评论接在简介后面时用） */
+export const escapeNativeInline = (text) => escapeNative(String(text ?? ''));
 // 链接地址里的括号编码掉，免得不成对的 ) 提前结束链接
 const nativeHref = (href) => (/^(https?:|mailto:)/i.test(href || '') ? href.replace(/\(/g, '%28').replace(/\)/g, '%29') : null);
 

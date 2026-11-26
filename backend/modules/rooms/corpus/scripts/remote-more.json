@@ -1,0 +1,81 @@
+[
+  { "id": "remote.group-poll", "kind": "remote", "bond": [0, 0], "x": ["选择困难"], "y": ["果断"], "beats": [
+    { "who": "x", "minutes": [2, 4], "icon": "chat", "action": "{x}在群里发了个周末去哪吃的投票", "sound": [], "detail": ["列了四个选项"] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}三秒钟投了第一个", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{x}又往投票里加了第五个选项", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.group-jielong", "kind": "remote", "bond": [0, 0], "x": ["自来熟"], "y": ["迷糊"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}在群里发了个周末拼单接龙", "sound": [], "detail": ["自己排在一号"] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}复制错了格式，把{x}顶掉了", "sound": ["「手滑了」"], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}重新把自己加回了二号", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.typo-fix", "kind": "remote", "bond": [0, 0], "x": ["迷糊"], "y": ["爱操心"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}在群里把一家店名打错了一个字", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}回了一个字帮{x}改了过来", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}重新发了一遍正确的", "sound": ["「打太快了」"], "detail": [] }
+  ] },
+  { "id": "remote.guess-drink", "kind": "remote", "bond": [0, 1], "x": ["先拍照"], "y": ["咖啡茶饮续命"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "phone", "action": "{x}在群里发了张下午拍的杯子照", "sound": [], "detail": ["没拍到店名"] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}光看杯套就报出了品名", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}回了个「还真是」", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.rain-forecast", "kind": "remote", "bond": [0, 1], "x": ["早起"], "y": ["宅"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}往群里转了条明天下雨的通知", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}回了一句「正好不出门」", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}回了个「我还要出门」", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.long-voice", "kind": "remote", "bond": [1, 2], "x": ["话多"], "y": ["话少"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}给{y}发了条五十八秒的语音", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "phone", "action": "{y}点了个转文字看完", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}回了一句「行」", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.same-show", "kind": "remote", "bond": [1, 2], "x": ["宅"], "y": ["宅"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "tv", "action": "{x}拍了张正在看的剧发给{y}", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "tv", "star": true, "action": "{y}回了张一模一样的画面", "sound": [], "detail": ["进度条差了三分钟"] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}立刻发了句「别剧透」", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.tomorrow-menu", "kind": "remote", "bond": [1, 2], "x": ["早起"], "y": ["随缘"], "beats": [
+    { "who": "x", "minutes": [2, 4], "icon": "phone", "action": "{x}把明天午饭的菜单截图发给{y}", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [2, 4], "icon": "phone", "star": true, "action": "{y}用红笔画了两个圈发回来", "sound": [], "detail": ["圈得歪歪扭扭"] }
+  ] },
+  { "id": "remote.brushed-teeth", "kind": "remote", "bond": [1, 2], "x": ["打游戏"], "y": ["早起"], "when": "late", "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "game", "action": "{x}给{y}发了个组队邀请", "sound": ["「来一局」"], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}回「已经刷完牙了」", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "game", "action": "{x}把邀请撤了回来", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.blurry-cat", "kind": "remote", "bond": [2, 3], "x": ["先拍照"], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "phone", "action": "{x}发给{y}一张路上拍的猫", "sound": [], "detail": ["整张都是糊的"] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}回「糊了」", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{x}又连发三张，张张都糊", "sound": ["「跑太快了」"], "detail": [] }
+  ] },
+  { "id": "remote.not-hungry", "kind": "remote", "bond": [2, 3], "x": ["夜宵党"], "y": ["嘴硬"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "phone", "action": "{x}翻出上周的烧烤照发给{y}", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}回「我不饿」", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [10, 10], "icon": "chat", "star": true, "action": "{y}过十分钟问{x}明天几点去", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.book-receipt", "kind": "remote", "bond": [2, 3], "x": ["爱看书"], "y": ["迷糊"], "beats": [
+    { "who": "y", "minutes": [2, 4], "icon": "book", "action": "{y}翻从{x}那借的书，掉出张小票", "sound": [], "detail": ["夹在第八十页"] },
+    { "who": "y", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{y}拍给{x}看，问是不是书签", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}说找了半个月了", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.speaker-call", "kind": "remote", "bond": [2, 3], "x": ["话多"], "y": ["爱看书"], "beats": [
+    { "who": "x", "minutes": [15, 15], "icon": "phone", "action": "{x}给{y}打语音，一气说了十五分钟", "sound": [], "detail": ["{y}开着免提翻书"] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}突然问{y}有没有在听", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}把{x}最后一句原样背了一遍", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.left-umbrella", "kind": "remote", "bond": [3, 3], "x": ["迷糊"], "y": ["爱操心"], "beats": [
+    { "who": "y", "minutes": [1, 2], "icon": "phone", "action": "{y}拍了张桌上的折伞发给{x}", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{x}回「那不是我的吗」", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}说下回碰面带过去", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.saturday-time", "kind": "remote", "bond": [3, 3], "x": ["果断"], "y": ["爱睡觉"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}给{y}发了五个字「周六十点半」", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}回「十一点」", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{x}回「十点四十五，不改了」", "sound": [], "detail": [] }
+  ] },
+  { "id": "remote.offline-link", "kind": "remote", "bond": [3, 3], "x": ["夜猫子"], "y": ["话多"], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}给{y}发了句「我下了」", "sound": [], "detail": [] },
+    { "who": "x", "minutes": [5, 5], "icon": "phone", "star": true, "action": "{x}五分钟后又转了条链接给{y}", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}回「不是下了吗」", "sound": [], "detail": [] }
+  ] }
+]

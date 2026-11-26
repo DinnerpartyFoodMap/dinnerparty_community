@@ -1,6 +1,6 @@
-# 角色观察屋
+# 小伙伴
 
-点击地图头像进入「我的主页」，在「调整小组件」下方点「角色观察屋」。网页与 Android 打开 `/settings/companions`，观察屋返回个人主页。iOS App 是住民主页里推入的原生 SwiftUI 二级页（2026-11-20，见 [住民主页](../../profile/doc/README.md#二级页2026-11-20)）：同样的开关、饱食度与切换角色，内置角色显示静态预览，没有 Live2D 动画和兑换表单，数据由网页 `buildCompanionViewModel` 整理。未登录时地图底栏不显示小伙伴（`App.jsx` 只在登录后传 `companion`）。「开启角色观察屋」默认开启，保存到账号 `map_settings.companion_enabled`。关闭后隐藏房间里的角色及地图底栏角色，打卡自动投喂仍记入原角色的饱食度。只想隐藏底栏角色时，可在个性化地图关闭 `companion_roaming`。`useCompanion.js` 同步账号的当前角色、饱食度与已拥有的角色。打卡成功通知 WebView 刷新状态，饱食度变化触发爱心反馈。手机底栏上方的角色不截取地图触摸。
+点击地图头像进入「我的主页」，在「调整小组件」下方点「小伙伴」。网页与 Android 打开 `/settings/companions`，小伙伴页返回个人主页。iOS App 是住民主页里推入的原生 SwiftUI 二级页（2026-11-20，见 [住民主页](../../profile/doc/README.md#二级页2026-11-20)）：同样的开关、饱食度与切换角色，内置角色显示静态预览，没有 Live2D 动画和兑换表单，数据由网页 `buildCompanionViewModel` 整理。未登录时地图底栏不显示小伙伴（`App.jsx` 只在登录后传 `companion`）。「开启小伙伴」默认开启，保存到账号 `map_settings.companion_enabled`。关闭后隐藏房间里的角色及地图底栏角色，打卡自动投喂仍记入原角色的饱食度。只想隐藏底栏角色时，可在个性化地图关闭 `companion_roaming`。`useCompanion.js` 同步账号的当前角色、饱食度与已拥有的角色。打卡成功通知 WebView 刷新状态，饱食度变化触发爱心反馈。手机底栏上方的角色不截取地图触摸。
 
 ## 内置饭桶
 
@@ -10,9 +10,48 @@
 
 `npm run build` 和 `npm run build:mobile` 在构建前从 Live2D 官方地址准备 Cubism Core。生成的供应商运行时位于 `src/companion/runtime/`，由 Git 忽略并在构建时一起打包。已准备过 Core 的构建可以离线运行。开发时可先执行 `node scripts/prepare-live2d-core.mjs` 再启动 Vite。发版时按 [Live2D SDK 发布许可](https://www.live2d.com/en/sdk/license/) 核对项目适用的条款。
 
+## 小伙伴页：起名和一天（2026-11-25，P1）
+
+页面从上到下：舞台和饱食度、`CompanionRoom.jsx`（起名卡片，或名字、“现在”一行、时间线、名场面）、切换角色、兑换码，「开启小伙伴」开关在最下面；关掉开关只剩开关。数据来自后端 `modules/rooms`（`/api/rooms`，见 [后端文档](../../../../backend/modules/rooms/doc/README.md)），`roomApi.js` 取数；接口 404（`ROOMS_AUDIENCE` 没开）时 `CompanionRoom` 不渲染，页面和以前一样。
+
+- **起名**（`RoomNameFlow.jsx`，底部面板三步）：名字 → 谁能看到（`RoomAudienceFields`：谁能看、和别的小伙伴互动、所在城市；选“只有我”时互动关闭置灰）→ 前 6 道题（上一题、这题跳过、以后再答）。一次提交 `POST /api/rooms/me/name`。填了东西再关先确认。名字的本地检查 `roomNameProblem` 只为及时提示，规则以后端为准：1 到 12 个字、不能全是标点、不能等于当前角色的默认名、不能带链接和联系方式。
+- **时间线**（`RoomTimeline.jsx`，视图模型 `roomViewModel.js`）：一天从起床到睡着，过零点的排在最后；分段上午、下午、晚上、深夜；筛选全部、名场面、互动；一次外出、一段剧情归成一组；睡着那条不写时长；今天只显示已经发生的，下一条开始时（30 秒到 10 分钟之间）和回到前台时再取；最早翻到起名那天或 30 天前。
+- **编辑性格**（`RoomSheetEditor.jsx`，全屏面板）：名字、标签（互斥的一对互换，最多 10 个；取消过的推测标签记进 `untagged`）、20 道题（再点取消）、小习惯（最多 3 个）、口头禅（最多 3 句、每句 8 字以内）、谁能看到。有未保存修改时关面板先确认。
+- **iOS**：原生小伙伴页（`NativeProfilePlugin.swift`）显示同样的名字、“现在”、翻日期、筛选和时间线，快照由 `roomNativeModel.js` 算好经 `buildCompanionViewModel` 的 `room` 交给原生，翻日期和筛选是事件 `roomNavigate`。起名和编辑的表单只在网页：原生的“起名”“编辑”是结束动作 `companionName` / `companionEdit`，收起主页后打开 `/settings/companions?room=name|edit`，网页读到起名状态后直接弹出对应表单。名场面列表也只在网页（原生用“名场面”筛选看当天的）。
+- **面板边距**：起名、编辑、名场面三个面板的内容边距都是 `roomPanel.js` 的 `PANEL_BODY`。
+
+## 小伙伴之间：熟悉的小伙伴、别人的小伙伴（2026-11-26，P2）
+
+后端每天给小伙伴排拼桌和隔空聊天，熟悉度随之上涨（见 [后端文档](../../../../backend/modules/rooms/doc/README.md)）。前端这一期加了下面几处。
+
+- **自己的小伙伴页**（`CompanionRoom.jsx`）：
+  - 名字或口头禅没通过检查时，名字下方一条提示，点了进编辑页（`roomTextProblems`，数据是 `GET /api/rooms/me` 的 `texts`）。检查中不提示，只在编辑页标出。
+  - 名场面入口下面是两块，没有人时整块不显示（`RoomPeople.jsx`）：
+    - 「熟悉的小伙伴」：`day.owner.friends` 里点头之交以上的，最多 3 只（`roomFriends`）。
+    - 「口味像你的小伙伴」：`GET /api/rooms/me/neighbors`，最多 5 只，失败就不显示。
+- **编辑页**：已保存的名字旁写检查状态（检查中时别人看到的是默认名；没通过时只有自己看得到），每句口头禅旁标“检查中”或“没通过”（`roomTextStatus`）。
+- **别人的小伙伴**（`OtherRoomPage.jsx`，路由 `/users/<id>/room`，只读）：
+  - 内容：大号圆头像、名字、「{主人名} 的小伙伴」（点了进主人主页）、你们的熟悉程度（没互动过不显示）、性格标签和小习惯名、“现在”一行、时间线、名场面。不加载对方的 Live2D，没有饱食度。
+  - 右上角菜单：举报（意见反馈预填 `userReportPrefill`）；屏蔽这位住民（确认框写清后果，`POST /users/:id/block`，成功后退出这一页，不打开举报）。
+  - 没登录（401）显示「登录后才能看别人的小伙伴」和登录按钮；其他看不到的情况（404）统一「没有找到这个小伙伴」，不说原因。
+  - 打开自己的 `/users/<自己>/room` 时显示自己的小伙伴页。
+- **入口**（`App.jsx` 的 `openRoom`：点自己的回到 `/settings/companions`，点别人的进 `/users/<id>/room`）：
+  - 别人的住民主页（`UserProfilePage.jsx`）：主页响应 `room` 为真时有按钮「去看 Ta 的小伙伴」。
+  - 时间线里剧情的头像（自己的头像点了没有反应）。
+  - 熟悉的小伙伴、口味像你的小伙伴。
+- **大头照**：后端给站内路径（`/api/skins/packs/avatar/<grant>`）或 `null`；`fetchRoomDay` / `fetchRoomNeighbors` 补上接口地址（`roomAvatarUrl`），`null` 用饭桶的 `avatar.png`。
+- **iOS**：
+  - 别人的小伙伴是原生主页里推入的页面（路由 `.room(userId)`，`NativeOtherRoomView`），数据由事件 `loadRoom { userId, date, filter }` 取，网页用 `buildOtherRoomNativeModel` 算好回传 `room`。
+  - 推入它的地方：别人主页的「去看 Ta 的小伙伴」（视图模型 `canOpenRoom`）、时间线头像（行里的 `avatars` 带 `userId`）、自己小伙伴页的熟悉的小伙伴和口味像你的小伙伴（快照 `friends` / `neighbors`）。点主人名回到对方主页（上一页就是时直接返回）。
+  - 举报是事件 `reportUser`，网页打开预填的举报表，原生先收起主页；屏蔽走 `setBlocked`，带 `report: false` 时只屏蔽不打开举报，成功后退回上一页。
+  - 组标题带店时（行的 `placeId`）点了回地图开这家店（结束动作 `openPlace`）。
+  - 网页路由 `/users/<id>/room` 在 iOS 打开对方的原生主页并直接推入小伙伴页（快照 `initialPage: 'room'`）。
+
 ## 底栏状态
 
 底栏角色由 `CompanionRoam.jsx` 渲染。`companionDirector.js` 是状态机，`companionBehavior.js` 放触发规则和数值，`companionActor.js` 负责移动。
+
+登录后（注册完也一样）底栏就有默认的饭桶，不用先起名。点它进入小伙伴页（2026-11-25）：网页和安卓打开 `/settings/companions`，返回回到地图；iOS 打开原生主页并直接推入小伙伴页（`/users/<自己>?page=companion` → 快照字段 `initialPage`），返回先回到主页。只有身体那一层接触摸（`fm-companion-roam__body--tap`），外框、影子不挡地图。它一直在走动，所以标了 `data-native-touch-live`：iOS 原生底图不把它算进 12px 网格采样，而是每 150ms 量一次它的实时矩形作为网页区域（`nativeMapView.js` 的 `liveTouchHoles`）。
 
 | 状态 | 什么时候 | 做什么 |
 | --- | --- | --- |
@@ -78,6 +117,6 @@
 
 ## 额外角色
 
-网页观察屋和主题皮肤页共用兑换表单，角色和皮肤都按账号持有。选择已拥有的额外角色时获取版本和临时下载授权。资源格式和部署目录见 [皮肤与角色兑换](../../../../backend/modules/skins/doc/README.md#远程资源包)。
+网页小伙伴页和主题皮肤页共用兑换表单，角色和皮肤都按账号持有。选择已拥有的额外角色时获取版本和临时下载授权。资源格式和部署目录见 [皮肤与角色兑换](../../../../backend/modules/skins/doc/README.md#远程资源包)。
 
-窄屏网页把活动区域放在搜索栏上方，应用内角色沿用底栏位置。验收覆盖无外部资源服务时显示饭桶、退出登录或更换账号时不沿用他人角色、同一账号换设备显示已拥有内容、地图开关关闭后观察屋仍可用，以及 iPhone 与 Android 底栏上的活动和投喂反馈。
+窄屏网页把活动区域放在搜索栏上方，应用内角色沿用底栏位置。验收覆盖无外部资源服务时显示饭桶、退出登录或更换账号时不沿用他人角色、同一账号换设备显示已拥有内容、地图开关关闭后小伙伴页仍可用，以及 iPhone 与 Android 底栏上的活动和投喂反馈。

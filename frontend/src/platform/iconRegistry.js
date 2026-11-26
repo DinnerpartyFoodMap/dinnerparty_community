@@ -22,6 +22,10 @@ const ICONS = Object.freeze({
     guide: ['help', 'questionmark.circle'],
     feedback: ['feedback', 'exclamationmark.bubble'],
     retry: ['refresh', 'arrow.clockwise'],
+    // 小伙伴时间线
+    prevDay: ['chevron_left', 'chevron.left'],
+    nextDay: ['chevron_right', 'chevron.right'],
+    moments: ['star', 'star'],
     // 地点与店卡
     place: ['location_on', 'mappin.and.ellipse'],
     placeRow: ['location_on', 'mappin.circle.fill'],
@@ -35,6 +39,7 @@ const ICONS = Object.freeze({
     hidden: ['visibility_off', 'eye.slash'],
     diaries: ['auto_stories', 'book.pages'],
     comments: ['chat_bubble', 'text.bubble'],
+    writeComment: ['add_comment', 'square.and.pencil'],
     details: ['info', 'info.circle'],
     addPhoto: ['add_photo_alternate', 'photo.badge.plus'],
     photo: ['image', 'photo'],

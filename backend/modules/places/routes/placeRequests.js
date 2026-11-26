@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { db } = require("../../../infrastructure/database");
-const { requireAuth } = require("../../accounts/middleware/auth");
+const { requireAuth, requireAuthWithCode } = require("../../accounts/middleware/auth");
 const requireAdmin = require("../../admin/middleware/adminAuth");
 const { insertAdminAction } = require("../../admin/services/adminAudit");
 const { queuePlaceVectorSync } = require('../../preferences/services/placeVectorService');
@@ -11,6 +11,8 @@ const { normalizePlaceCoordinates, normalizePlaceDescription } = require('../ser
 const { reviewCreationRequestSync } = require('../services/placeModeration');
 const { wakeNotificationWorker } = require('../services/placeNotifications');
 const { RATING_COLUMNS_SQL } = require('../../ratings/services/placeRatings');
+const { ensureRatingSummaries } = require('../../ratings/services/ratingSummaryAdapter');
+const { applyCommentReview, commentForReview } = require('../../community/services/residentComments');
 
 // 提交地点修改申请（需登录）
 router.post("/", requireAuth, (req, res) => {
@@ -41,6 +43,7 @@ function reviewFailure(status, code, message) {
 const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId }) => {
     const reqRow = db._raw.prepare('SELECT * FROM PlaceRequest WHERE id = ?').get(id);
     if (!reqRow) throw reviewFailure(404, 'PLACE_REQUEST_NOT_FOUND', '申请不存在');
+    if (reqRow.request_type === 'comment') return applyCommentReview(reqRow, tryParseJSON(reqRow.proposed), action, adminId);
     if (reqRow.status !== 'pending') {
         throw reviewFailure(409, 'PLACE_REQUEST_ALREADY_REVIEWED', '此申请已被处理');
     }
@@ -134,30 +137,44 @@ const reviewPlaceRequestTransaction = db._raw.transaction(({ id, action, adminId
 
 // 管理员获取所有申请（需 manage_places 权限）。新增复核申请（request_type = 'create'）
 // 另带地点当前内容 place 和 AI 报告 moderation
-router.get("/", requireAuth, requireAdmin("manage_places"), require('../../ratings/services/ratingSummaryAdapter').ratingsReadMiddleware, (req, res) => {
-    db.all("SELECT * FROM PlaceRequest ORDER BY created_time DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+router.get("/", requireAuthWithCode, requireAdmin("manage_places", { codedErrors: true }), async (req, res) => {
+    res.set('Cache-Control', 'private, no-store');
+    try {
+        // Only creation reviews include a rating summary.
+        if (db._raw.prepare("SELECT 1 FROM PlaceRequest WHERE request_type = 'create' AND status = 'pending' LIMIT 1").get()) {
+            await ensureRatingSummaries();
+        }
+        const rows = db._raw.prepare('SELECT * FROM PlaceRequest ORDER BY created_time DESC').all();
         const selectPlace = db._raw.prepare(`SELECT p.*, u.username AS creator_name,${RATING_COLUMNS_SQL}
             FROM Place p LEFT JOIN User u ON u.id = p.creator_id WHERE p.id = ?`);
         const parsed = rows.map(r => {
             const row = { ...r, request_type: r.request_type || 'modify', proposed: tryParseJSON(r.proposed), moderation: r.moderation ? tryParseJSON(r.moderation) : null };
             if (row.request_type === 'create' && row.status === 'pending') row.place = selectPlace.get(r.place_id) || null;
+            if (row.request_type === 'comment' && row.status === 'pending') {
+                const { place_name = null, ...comment } = commentForReview(row, row.proposed?.comment_id) || {};
+                row.place_name = place_name;
+                row.comment = comment.id == null ? null : comment;
+            }
             if (row.request_type === 'check_in' && row.status === 'pending' && Array.isArray(row.proposed?.checkin_images)) {
                 row.photo_previews = row.proposed.checkin_images.map(url => require('../services/placeCheckIns').photoPreviewUrl(url)).filter(Boolean);
             }
             return row;
         });
-        res.json(parsed);
-    });
+        return res.json(parsed);
+    } catch (error) {
+        if (error.publicMessage) return res.status(error.status || 503).json({ error: error.publicMessage, code: error.code || 'PLACE_REQUEST_READ_FAILED' });
+        res.locals.unhandledError = error;
+        return res.status(500).json({ error: '读取修改申请失败，请稍后重试', code: 'PLACE_REQUEST_READ_FAILED' });
+    }
 });
 
 // 管理员审核（批准或驳回）
-router.post("/:id/review", requireAuth, requireAdmin("manage_places"), (req, res) => {
+router.post("/:id/review", requireAuthWithCode, requireAdmin("manage_places", { codedErrors: true }), (req, res) => {
     const id = req.params.id;
-    const { action } = req.body; // approve / reject
+    const { action } = req.body || {}; // approve / reject
     const adminId = req.user && req.user.id;
-    if (!id || !action) return res.status(400).json({ error: "缺少参数" });
-    if (!["approve", "reject"].includes(action)) return res.status(400).json({ error: "无效的 action" });
+    if (!id || !action) return res.status(400).json({ error: '缺少参数', code: 'PLACE_REQUEST_REVIEW_INVALID' });
+    if (!["approve", "reject"].includes(action)) return res.status(400).json({ error: '无效的 action', code: 'PLACE_REQUEST_REVIEW_INVALID' });
 
     let result;
     try {
@@ -167,7 +184,7 @@ router.post("/:id/review", requireAuth, requireAdmin("manage_places"), (req, res
             return res.status(error.status || 400).json({ error: error.publicMessage, code: error.code });
         }
         res.locals.unhandledError = error;
-        return res.status(500).json({ error: '审批失败，请稍后重试' });
+        return res.status(500).json({ error: '审批失败，请稍后重试', code: 'PLACE_REQUEST_REVIEW_FAILED' });
     }
 
     res.json({ success: true });

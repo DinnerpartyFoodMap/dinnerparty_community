@@ -17,7 +17,7 @@ import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { t } from '../i18n/index.js';
 import './profile.css';
 
-export default function UserProfilePage({ backendUrl, token, userId, currentUser, onOpenPlace, onOpenFeedback, onRequireAuth, onOpenCommunity, onAction, onBack }) {
+export default function UserProfilePage({ backendUrl, token, userId, currentUser, onOpenPlace, onOpenFeedback, onRequireAuth, onOpenCommunity, onOpenRoom, onAction, onBack }) {
     const showTip = useTips();
     const confirm = useConfirm();
     const accent = getThemeColor() || DEFAULT_PRIMARY;
@@ -132,6 +132,9 @@ export default function UserProfilePage({ backendUrl, token, userId, currentUser
                     </div>
                 </div>
                 {self && token && onOpenCommunity && <Button className="fm-profile__header-action" variant="secondary" onClick={onOpenCommunity}>{t('journey:common.feature.community')}</Button>}
+                {/* 对方的小伙伴对你可见时（后端 profile.room）：去看 Ta 的小伙伴 */}
+                {!self && profile.room === true && !relation.blocked && onOpenRoom && <Button className="fm-profile__header-action" variant="secondary"
+                    onClick={() => onOpenRoom(user.id)}>{t('companion:room.visit')}</Button>}
                 {relation.can_block && (relation.blocked
                     ? <Button className="fm-profile__header-action" onClick={() => setBlocked(false)} disabled={busy}>{t('profile:unblock')}</Button>
                     : <Button className="fm-profile__header-action" variant="destructive" onClick={() => setBlocked(true)} disabled={busy}>{t('profile:blockAndReport')}</Button>)}

@@ -1,7 +1,7 @@
 const { db } = require('../../../infrastructure/database');
 const { insertAdminAction } = require('../../admin/services/adminAudit');
 const { normalizeImageUrls } = require('../../media/services/imageUrls');
-const { normalizePlaceCoordinates, normalizePlaceDescription } = require('./placeService');
+const { normalizePlaceCoordinates, normalizePlaceDescription, checkPlaceDescriptionMinLength, placeDescriptionChanged } = require('./placeService');
 const { isPublicPlace } = require('./placeVisibility');
 
 function placeRequestFailure(status, code, message) {
@@ -33,6 +33,8 @@ const createTransaction = db._raw.transaction(({ placeId, requesterId, proposed,
     if (proposed.description !== undefined) {
         const normalized = normalizePlaceDescription(proposed.description);
         if (normalized.error) throw placeRequestFailure(400, 'INVALID_PLACE_DESCRIPTION', normalized.error);
+        const tooShort = placeDescriptionChanged(normalized.value, place.description) && checkPlaceDescriptionMinLength(normalized.value);
+        if (tooShort) throw placeRequestFailure(400, 'PLACE_DESCRIPTION_TOO_SHORT', tooShort.error);
         description = { description: normalized.value };
     }
     const content = Object.fromEntries(Object.entries(proposed).filter(([key]) => PLACE_REQUEST_FIELDS.includes(key)));

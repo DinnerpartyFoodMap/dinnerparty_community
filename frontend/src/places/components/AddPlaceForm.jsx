@@ -9,6 +9,7 @@ import ScrollableView from "../../components/layout/ScrollableView";
 import CategorySelector from "./CategorySelector";
 import { t } from "../../i18n/index.js";
 import { RATING_TIERS, tierLabel, tierHint, EXPLORE_TAG, hasExploreTag, toggleCategoryTag } from "../rating";
+import { PLACE_DESCRIPTION_MIN_LENGTH, placeDescriptionLength, placeDescriptionTooShort } from "../placeDescription";
 import { emptyPlaceContent, placeDraftSource, openPlaceDraft, placeContentKey, persistPlaceDraft, discardPlaceDraft } from "../addPlaceDraft";
 
 export default function AddForm({ backendUrl, token, userId, defaultPos, defaultName = "", defaultCategory = "", defaultDescription = "", defaultAddress = "", onCancel, onSubmit, submitting = false, actionRef = null }) {
@@ -27,6 +28,8 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
     // 创建者的评价：必须自己选一档，不预选
     const [chosenRating, setChosenRating] = useState(opening.content.chosenRating);
     const [ratingMissing, setRatingMissing] = useState(false);
+    const [descriptionMissing, setDescriptionMissing] = useState(false);
+    const descriptionCount = placeDescriptionLength(description);
     // 带“待探索”标签（还没去过）时不需要评价；勾选框与标签选择器改的是同一个分类串
     const exploring = hasExploreTag(category);
     const setExploring = (on) => {
@@ -75,6 +78,11 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
     const handle = () => {
         if (submitting) return;
         if (!name) { showTip(t('map:addForm.nameRequired')); return; }
+        if (placeDescriptionTooShort(description)) {
+            setDescriptionMissing(true);
+            showTip(t('map:addForm.descriptionTooShort', { min: PLACE_DESCRIPTION_MIN_LENGTH }));
+            return;
+        }
         if (!exploring && chosenRating == null) { setRatingMissing(true); showTip(t('map:addForm.ratingRequired')); return; }
         const payload = {
             name,
@@ -120,8 +128,17 @@ export default function AddForm({ backendUrl, token, userId, defaultPos, default
                 />
             </div>
             <div style={{ marginTop: 8 }}>
-                {/* 描述可以写多行，支持基础 Markdown（与后端一致最多 1000 字） */}
-                <TextArea markdown rows={3} maxLength={1000} placeholder={t('map:common.label.description')} value={description} onChange={(e) => setDescription(e.target.value)} style={{ width: "100%", minHeight: 72 }} />
+                {/* 描述可以写多行，支持基础 Markdown（与后端一致 15–1000 字，最少字数不算空白） */}
+                <TextArea markdown rows={3} maxLength={1000} placeholder={t('map:common.label.description')} value={description}
+                    onChange={(e) => { setDescription(e.target.value); if (descriptionMissing && !placeDescriptionTooShort(e.target.value)) setDescriptionMissing(false); }}
+                    aria-invalid={descriptionMissing || undefined} aria-describedby="add-place-description-hint"
+                    style={{ width: "100%", minHeight: 72 }} />
+                <div id="add-place-description-hint" role={descriptionMissing ? 'alert' : undefined}
+                    style={{ marginTop: 2, fontSize: 12, color: descriptionMissing ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                    {descriptionMissing
+                        ? t('map:addForm.descriptionTooShort', { min: PLACE_DESCRIPTION_MIN_LENGTH })
+                        : t('map:addForm.descriptionHint', { min: PLACE_DESCRIPTION_MIN_LENGTH, count: descriptionCount })}
+                </div>
             </div>
             <div style={{ marginTop: 8 }}>
                 <TextInput

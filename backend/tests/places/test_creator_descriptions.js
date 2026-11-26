@@ -29,7 +29,7 @@ async function main(){
  result=run();assert.equal(result.status,0,result.stderr);assert.equal(sql.prepare('SELECT COUNT(*) n FROM Comment').get().n,4,'repeated transfer creates no extra comments');
  sql.prepare("UPDATE User SET qq='10002' WHERE id='editor'").run();fs.writeFileSync(csv,'名称,创建人,qq\nplace1,editor,10002\nplace2,editor,10002\n');
  sql.exec("CREATE TRIGGER creator_test_rollback BEFORE UPDATE OF creator_id ON Place WHEN NEW.id=2 BEGIN SELECT RAISE(ABORT,'owner-text rollback'); END;");result=run();assert.equal(result.status,1);assert.equal(sql.prepare('SELECT user_id FROM CreatorDescription WHERE place_id=1').get().user_id,'new');assert.equal(sql.prepare("SELECT score FROM PlaceRating WHERE place_id=1 AND user_id='new'").get().score,2,'a later failure rolls back owner, descriptor and attached score together');sql.exec('DROP TRIGGER creator_test_rollback');
- const created=await require('../../modules/places/services/placeService').createPlace({name:'created',description:'拿铁20元，奶泡细腻',category:'咖啡',latitude:23,longitude:113,rating:4,rating_input_kind:'explicit'},'new',{source:'web'});
+ const created=await require('../../modules/places/services/placeService').createPlace({name:'created',description:'拿铁20元，奶泡细腻，豆子偏酸',category:'咖啡',latitude:23,longitude:113,rating:4,rating_input_kind:'explicit'},'new',{source:'web'});
  assert.equal(sql.prepare('SELECT user_id FROM CreatorDescription WHERE place_id=?').get(created.id).user_id,'new');
  console.log('Creator text migration and script transfer passed: whole legacy description, initial submissions, attached default vote, conflicts, independent edits, empty text, expiry and idempotence.');
 }

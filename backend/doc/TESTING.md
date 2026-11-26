@@ -32,8 +32,11 @@
 | 评分 | npm run test:ratings | schema、数学权重、批处理、HTTP 与配额 |
 | 发现 | npm run test:search / test:random | 排序、降级、地理边界、概率 |
 | 偏好与社区 | npm run test:preferences / test:community | 行为去重、画像、同好隐私 |
+| 住民评论 | npm run test:comments | 提交校验、每日额度、初筛与复核状态、详情里的评论、删除连带、与修改记录隔离（评分汇总读取用替身，不需要私有算法服务） |
 | 日记 | npm run test:journeys / test:journey-resolution / test:journey-publication | 修订、澄清、公开快照、幂等提交 |
-| 观察屋 | npm run test:rooms | 固定语料的字数、占位符、禁用词、住民之间的分寸和成批比例 |
+| 小伙伴 | npm run test:rooms | `node tests/rooms/run.js` 在独立进程运行 `tests/rooms/test_*.js`，任一失败即返回非零。覆盖语料、模拟、预览、名字校验及 P2 服务层冒烟 |
+| 小伙伴 HTTP 接口 | 待自动化 | 覆盖开放范围、互访和主页 `room`、访客限流、取消剧情、管理员审计及大头照授权，见 [测试案例](../modules/rooms/doc/TEST_CASES.md) |
+| 观察屋快照预览 | npm run room:preview -- --sample 10 --days 3 / npm run room:tags:report | 人工阅读时间线与剧本，核对推断、城市统计及快照 SHA256。默认只读打开 `backend/snapshot.sqlite`，可用 `--db <file>` 指定快照 |
 | Bot 与图片 | npm run test:qq-bot / test:images | 协议替身、草稿、通知、隐私、OSS 迁移 |
 | 技术能力 | npm run test:ai-clients / test:logging / test:migration | 上游异常、脱敏、客户端源端口、日志保留下限、旧 schema |
 | 资源路径 | node tests/infrastructure/test_resource_paths.js | 更换 cwd 后相对 DB_FILE、默认上传与日志仍指向既有位置；也由 npm test 执行 |

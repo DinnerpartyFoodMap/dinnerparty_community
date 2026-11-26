@@ -1,5 +1,19 @@
 /* 地图标记：同根承载图标、名称与数量。外层由 AMap 定位，这里不对外层添加 transform 或 transition。 */
 
+.fm-marker-retry {
+    position: absolute;
+    z-index: 1500;
+    left: 50%;
+    top: 100px;
+    transform: translateX(-50%);
+    padding: 10px 16px;
+    border: 1px solid var(--theme-primary);
+    border-radius: var(--radius-sm, 8px);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    cursor: pointer;
+}
+
 .fm-marker {
     position: relative;
     width: 0;
@@ -126,6 +140,15 @@
 .fm-marker[data-ghost],
 .fm-marker[data-ghost] .fm-marker__hit {
     pointer-events: none;
+}
+
+.fm-marker[data-pending] .fm-marker__hit {
+    pointer-events: none;
+}
+
+.fm-marker[data-staged],
+.fm-marker[data-retired] {
+    visibility: hidden;
 }
 
 /* 减少动态效果：名称直接显隐 */

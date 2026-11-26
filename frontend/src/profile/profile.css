@@ -148,6 +148,7 @@
 }
 .fm-profile__header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
@@ -158,7 +159,8 @@
 }
 .fm-profile__identity {
     min-width: 0;
-    flex: 1;
+    /* 头栏按钮多时（看别人：去看 Ta 的小伙伴、屏蔽并举报）按钮换到下一行，不挤住民名 */
+    flex: 1 1 180px;
     display: flex;
     align-items: center;
     gap: var(--space-3);

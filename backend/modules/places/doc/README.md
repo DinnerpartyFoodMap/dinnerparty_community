@@ -1,5 +1,11 @@
 # 地点与修改申请
 
+## 住民评论
+
+`GET /places/:id` 返回 `comments`，每项包含 `id`、`user_id`、`username`、`content`、`status`、`time`、`updated_at`、`mine`。先选最近的 50 条可见评论，排除本人、封禁作者和观看者屏蔽的作者。登录时额外返回自己的那一条，任何审核状态都可见，并标记 `mine: true`。结果按 `time`、`id` 升序排列。评论独立于地点描述，只有单个地点详情返回评论。
+
+住民在已有评分的公开地点发表或修改评论，写入与删除接口见 [社区互动](../../community/doc/README.md#住民评论)。初筛拦下的评论以 `request_type = 'comment'` 进入地点修改申请页，见 [审核流程](placeModeration.md#住民评论)。
+
 ## 地点打卡
 
 已登录住民可在公开地点卡片提交打卡。 `POST /places/:id/check-ins` 接收 JSON，带照片时改用 multipart 表单，`payload` 是同一份 JSON，`photos` 最多 3 张，每张最多 3 MB。首次提交必填 `request_id` 与 `fix`，描述和四档评分均选填。服务端用当前店铺坐标和同一坐标系的设备定位计算距离，要求距离严格小于 50 米、报告精度不大于 25 米、定位不超过 15 秒。打卡响应与数据库不保存设备经纬度。按北京时间每日最多 5 家，同店每日一次。
@@ -18,7 +24,7 @@
 
 `services/placeTiles.js` + `routes/placeTiles.js`（挂在 `/places/tiles`，在 `/places` 之前），前端 `frontend/src/map/markerTiles.js` 按同样的级别和格式读取，两边一起改（`test:place-tiles` 用前端的展开与筛选函数读真实瓦片对照）：
 
-- 三级聚合瓦片：z2 / z5 / z8 瓦片，格子 z9 / z12 / z14（约 70 / 8.8 / 2.2 km），分别给 z0–7、z8–10、z11–12。每个格子是成员重心（取整到 1/8 格）和每家店匿名的一行 `[标签编号, 人均或 -1, 地区编号或 -1, 图标类型]`（0 普通、1 避雷、2 待探索，`isAvoidedPlace` 与 `hasExploreTag`），按内容排序。**不带 id、店名、单店坐标**：拉齐这些瓦片也对不上具体的店，id 只出现在明细瓦片和单店接口里，两处都有额度。
+- 三级聚合瓦片：z2 / z5 / z8 瓦片，格子 z9 / z12 / z14（约 70 / 8.8 / 2.2 km），分别给 z0–7、z8–10、z11–12。每个格子是成员重心（取整到 1/8 格）和每家店匿名的一行 `[标签编号, 人均或 -1, 地区编号或 -1, 图标类型]`（0 普通、1 避雷、2 待探索，`isAvoidedPlace` 与 `hasExploreTag`），按内容排序。z14 一级（`sub: 16`，瓦片里也有 `sub`）的行多一项：店所在的格内 1/16 小格编号 `y * 16 + x`（小格即 z18 瓦片，约 140 m），前端把匿名点放在小格中心，放大到 z13 换明细时标记按本地 3720 家算中位挪 3 px、最多 6 px（用格子重心时中位 18 px、最多 111 px）。代价是公开的位置变细：本地数据里 79% 的店是所在小格里唯一的一家（2.2 km 格子里唯一的是 24%），加上标签、人均、地区，能缩到一个街区内的几家高德 POI。**不带 id、店名、精确坐标**：id 只出现在明细瓦片和单店接口里，两处都有额度。
 - 明细瓦片：z12，字段与旧快照相同（id、店名、坐标、标签、人均、省市区、评价汇总），z13 起显示。
 - 字典：标签名、地区名（按地点 id 顺序第一次出现编号）；清单：版本、各级参数、每块瓦片的内容哈希（12 位）。
 
@@ -31,7 +37,7 @@
 
 标签合并与“待探索”：相同或相近的标签由 `categoryMerges.json`（源标签 → 保留的标签）合并，`services/categoryMerges.js` 在 `placeService.normalizeCategoryList`（所有写入路径）、列表筛选和 `POST /categories` 里换成保留的标签；既有数据用 `npm run categories:merge` 一次性合并（默认预览，`--db <file>` 指定库，`--apply` 先备份；只改 `Place.category` 与待处理申请的 `proposed.category`，不改修改时间和修改人）。“待探索”标签（`ratings/services/ratingWarning.js` 的 `EXPLORE_TAG`，与前端 `places/rating.js` 保持一致；`seeds/categories.json` 里是常用标签）表示还没去过、先标记的地点：创建时不写创建者评分（`rating_input_kind = 'none'`），没人评价前地图上显示问号图标。
 
-入口：routes 下 places、placeRequests、categories、placeShare。新增地点和创建者修改自己的地点都先经 DeepSeek 初筛（文字和图片），明显不合规的新地点只给创建者看、修改先不生效，交管理员在地点申请页复核，流程、提示词与可见性规则见 [placeModeration.md](placeModeration.md)。公共业务入口 `services/placeService.js` 同时服务 Web/App 和 Bot；日记发布通过既有底层地图关联流程复用地点规则。`placeRequestService.js` 处理申请审核，`placeNotifications.js` 写持久通知并唤醒 Bot。`placeCard.js` 负责分享文本与图片规则，实际图像存储由 media 提供。地点描述支持 Markdown（规则见前端 [components 文档](../../../../frontend/src/components/doc/README.md)），后端只在不能显示格式的地方用 `markdownText.js`（marked，与前端锁定同一版本；marked 18 只有 ES 模块，需要 Node 22.12+ 才能 require，更旧的 Node 退回只去标签）转纯文本：分享页 `/p/:id` 的卡片与正文、QQ 机器人的搜索 / 随机 / 新地点推送与图文卡片。描述在所有写入路径上统一由 `normalizePlaceDescription()` 校验（去首尾空白、最多 1000 字、接受 HTML）：新增、编辑 `PUT /places/:id`、提交修改申请、批准修改申请（校验前提交的超长申请不能批准，可驳回）与 QQ 机器人草稿；店名、分类、地址、标签仍只接受纯文本。
+入口：routes 下 places、placeRequests、categories、placeShare。新增地点和创建者修改自己的地点都先经 DeepSeek 初筛（文字和图片），明显不合规的新地点只给创建者看、修改先不生效，交管理员在地点申请页复核，流程、提示词与可见性规则见 [placeModeration.md](placeModeration.md)。公共业务入口 `services/placeService.js` 同时服务 Web/App 和 Bot；日记发布通过既有底层地图关联流程复用地点规则。`placeRequestService.js` 处理申请审核，`placeNotifications.js` 写持久通知并唤醒 Bot。`placeCard.js` 负责分享文本与图片规则，实际图像存储由 media 提供。地点描述支持 Markdown（规则见前端 [components 文档](../../../../frontend/src/components/doc/README.md)），后端只在不能显示格式的地方用 `markdownText.js`（marked，与前端锁定同一版本；marked 18 只有 ES 模块，需要 Node 22.12+ 才能 require，更旧的 Node 退回只去标签）转纯文本：分享页 `/p/:id` 的卡片与正文、QQ 机器人的搜索 / 随机 / 新地点推送与图文卡片。描述在所有写入路径上统一由 `normalizePlaceDescription()` 校验（去首尾空白、最多 1000 字、接受 HTML）：新增、编辑 `PUT /places/:id`、提交修改申请、批准修改申请（校验前提交的超长申请不能批准，可驳回）与 QQ 机器人草稿；店名、分类、地址、标签仍只接受纯文本。描述还至少要 15 个字（`PLACE_DESCRIPTION_MIN_LENGTH`，去掉所有空白后按字符数，emoji 算一个；`checkPlaceDescriptionMinLength()`）：新增地点（网页 / App、QQ 机器人）必须满足；编辑 `PUT /places/:id` 和提交修改申请只在描述有改动时检查（与现有描述去首尾空白后比较），老地点描述本来就短时改别的字段不受影响，太短的修改申请返回 `PLACE_DESCRIPTION_TOO_SHORT`；批准修改申请、打卡补充描述和公开日记建的标记不检查。前端同规则在 `frontend/src/places/placeDescription.js`。AI 初筛的「简略」规则仍在，管的是够字数但没内容的描述（如同一个字重复）。
 
 ```mermaid
 flowchart TD
@@ -65,6 +71,6 @@ flowchart TD
 
 `routes/placeVisits.js`（`/api/visits`：状态、查看、到访推断与“是否去过”回答）挂在本模块，规则见 [到访与兴趣信号](../../preferences/doc/INTEREST_V3.md) 与 [评分迁移](../../ratings/doc/RATING_MIGRATION.md)。修改记录只保存描述里新增的文字，见 [编辑文本证据](../../ratings/doc/EDIT_TEXT_EVIDENCE.md)。
 
-数据：Place（含 moderation_status）、PlaceRegion、Category、PlaceRequest（request_type 区分修改申请与新增复核）、PlaceModeration；跨模块写入涉及 PlaceRating、QQBotNotification。测试：[案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+数据：Place（含 moderation_status）、PlaceRegion、Category、PlaceRequest（request_type 区分修改、新增复核、打卡和评论）、PlaceModeration。跨模块读写涉及 Comment、PlaceRating、QQBotNotification。测试见 [案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
 
 展会地点（denpawave Micro 跳转后定位到展馆）见 [展会场地点位](../../../doc/EXHIBITION_VENUE_LINK.md)：**场馆不进 `Place`**，只在 `modules/venues` 里存坐标；前端 `?venue=` 待做。

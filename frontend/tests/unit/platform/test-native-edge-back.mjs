@@ -103,7 +103,7 @@ assert.doesNotMatch(between(preview, 'case .began:', 'case .ended:'), /onEdgeBac
 assert.match(preview, /case \.ended:[\s\S]*NativeBackGestureRegion\.commits[\s\S]*onEdgeBack\?\(\)/);
 assert.match(preview, /case \.cancelled, \.failed:[\s\S]*restoreEdgePreview/);
 assert.match(profile, /screenPresenter\.dismiss\(host[\s\S]*?completeDismissal\(host\)/, 'removal ends the pending bridge session');
-// 2026-11-20：同好、角色观察屋、同好点开的住民主页推入主页自己的页面栈，主页不先关闭；
+// 2026-11-20：同好、小伙伴、同好点开的住民主页推入主页自己的页面栈，主页不先关闭；
 // 推入后整页侧滑停用，左边缘交给系统跟手返回（返回途中露出主页）
 assert.match(contained, /var edgeEnabled = true \{\s*didSet \{ gesture\?\.isEnabled = edgeEnabled \}/);
 assert.match(contained, /gesture\.isEnabled = edgeEnabled\s*\n\s*view\.addGestureRecognizer\(gesture\)/);

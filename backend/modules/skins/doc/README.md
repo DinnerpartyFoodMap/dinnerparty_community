@@ -1,6 +1,6 @@
 # 主题皮肤与兑换码
 
-入口：`routes/skins.js`（挂载 `/api/skins`，全部需要登录）、管理端 `../admin/routes/adminSkinCodes.js`（挂载 `/admin/skin-codes`，独立权限 `manage_skin_codes`，仅 YUYUKO）。服务 `services/skinService.js`，建表 `services/skinSchema.js`，可兑换皮肤登记在 `catalog.json`。
+入口为 `routes/skins.js`（挂载 `/api/skins`），账号接口需要登录，资源文件通过签名地址获取。管理端 `../admin/routes/adminSkinCodes.js` 挂载于 `/admin/skin-codes`，权限为 `manage_skin_codes`（仅 YUYUKO）。服务 `services/skinService.js`，建表 `services/skinSchema.js`，可兑换皮肤登记在 `catalog.json`。
 
 兑换码沿用旧的 `InviteCode` 表（`code` / `max_uses` / `current_uses` 不变），新增 `skin_id`、`note`、`created_by`、`expires_time`、`revoked` 列：`skin_id` 非空的行才是皮肤兑换码；注册改为 QQ 验证码后留下的旧邀请码 `skin_id` 为空，既不能兑换，也不出现在管理列表里。`UserSkin(user_id, skin_id)` 记录已解锁的皮肤（随账号删除），`User.active_skin` 是正在使用的一套，空表示默认样式。
 
@@ -40,6 +40,8 @@ flowchart TD
 在资源服务器用 `RESOURCE_PACK_DIR` 指定私有目录，默认是仓库根目录的 `.private/resource-packs`。`catalog.json` 的 `companions` 和 `skins` 接受 `{ "id": "fox", "name": "小狐狸", "version": "1", "entry": "fox.model3.json" }` 结构。角色文件放在 `companion/<id>/<version>/`，包含 `.model3.json`、`.moc3`、纹理和动作。远程主题皮肤放在 `skin/<id>/<version>/`，入口填 `skin.json`，沿用现有皮肤清单格式和位图。修改同一资源时递增 `version`，目录和清单应一起部署。额外角色和皮肤不入公开库。
 
 `GET /api/skins/packs/:type/:id` 先检查登录及账号权益，再签发五分钟有效的资源路径。文件路由再次校验授权、版本、数据文件扩展名和实际目录。签发和读取由同一服务处理，多进程部署使用相同的 `JWT_SECRET`。随包火柴人不通过此接口下载。后端 `test:skins` 覆盖旧码、账号权限、单次扣减及签名下载。
+
+`companions` 的条目可加 `"avatar": "avatar.png"`，指向该版本目录中的 PNG 或 WebP。小伙伴接口用 `avatarUrl(pack)` 签发 `GET /api/skins/packs/avatar/:grant` 的地址，有效期 24 小时，授权绑定版本和单个文件。验签通过即可取图，无需拥有角色。该授权与模型的 `access` 授权使用不同的受众。授权过期或失效返回 403。内置角色和未配置大头照的远程角色返回 `avatar: null`。
 
 | 选择 | 当前实现 | 替代与代价 |
 | --- | --- | --- |

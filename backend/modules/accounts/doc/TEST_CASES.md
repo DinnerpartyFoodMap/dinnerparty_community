@@ -37,6 +37,13 @@
 - 预期：短密码不消费成功码；成功后旧密码和全部旧会话失效，新会话可用；同码重放失败。
 - 自动化：test:qq-verification、test:sessions。
 
+### ACC-C12 JWT 密钥与登录失败限流
+
+- 前置：临时库，alice / bob 两个账号，进程内计数。
+- 操作：检查空密钥、回退值、短密钥；用 HS384 和 alg=none 签 alice 的 token 请求 `/users/me`；同一 IP 段对 alice 连续输错到账号 + IP 段额度后用正确密码登录；同 IP 段登录 bob、别的 IP 段登录 alice；差一次到额度时成功登录再连续输错；同一 /24 轮换账号名输错到 IP 段额度；密码传对象。
+- 预期：三种密钥都报问题；非 HS256 token 401；锁定后正确密码也 429 且带 Retry-After，bob 和别的 IP 段不受影响；成功登录清零账号 + IP 段计数；IP 段额度覆盖整个 /24、不影响其他段；类型不对 400。
+- 自动化：test:auth-hardening（同一脚本还覆盖删除他人饭局的权限与审计，见 community 的 COM-05）。
+
 ### ACC-C06 Redis 故障与封禁
 
 - 前置：签名有效 token，Redis 替身抛连接错误；另有未到期与到期封禁用户。

@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const { db } = require("../../../infrastructure/database");
 const { requireAuth } = require("../../accounts/middleware/auth");
+const { hasPermission } = require("../../admin/services/adminPermissions");
+const { insertAdminAction } = require("../../admin/services/adminAudit");
 
 const TITLE_MAX = 120;
 const DESCRIPTION_MAX = 1200;
@@ -184,7 +186,7 @@ router.post("/", requireAuth, (req, res) => {
 
 router.delete("/:id", requireAuth, (req, res) => {
     db.get(
-        `SELECT id, creator_id
+        `SELECT id, creator_id, title
          FROM DinnerEvent
          WHERE id = ?`,
         [req.params.id],
@@ -193,13 +195,21 @@ router.delete("/:id", requireAuth, (req, res) => {
             if (!row) return res.status(404).json({ error: "聚餐活动不存在" });
 
             const isCreator = String(row.creator_id) === String(req.user.id);
-            const isAdmin = !!(req.user && req.user.admin_level);
-            if (!isCreator && !isAdmin) {
+            // 删别人的饭局按内容管理处理：走权限表（manage_comments），并记审计
+            const asModerator = !isCreator && hasPermission(req.user, "manage_comments");
+            if (!isCreator && !asModerator) {
                 return res.status(403).json({ error: "仅活动发起人或管理员可删除该聚餐" });
             }
 
             db.run("DELETE FROM DinnerEvent WHERE id = ?", [req.params.id], function (e2) {
                 if (e2) return res.status(500).json({ error: e2.message });
+                if (asModerator) {
+                    try {
+                        insertAdminAction(req.user.id, "delete-dinner", row.creator_id, JSON.stringify({ dinner_id: row.id, title: row.title }));
+                    } catch (auditError) {
+                        res.locals.unhandledError = auditError;
+                    }
+                }
                 return res.json({ success: true, id: Number(req.params.id) });
             });
         }

@@ -3,8 +3,9 @@
 //
 // 1. 清单 GET /places/tiles/manifest：各级瓦片的内容哈希（公共缓存，约一分钟跟上修改）；字典 /tiles/<哈希>/dict：标签名、地区名。
 // 2. 三级聚合瓦片（z2 / z5 / z8 瓦片，格子 z9 / z12 / z14）：格子位置、每家店匿名的一行（标签、人均、地区、图标类型）。
-//    这里把每一行展开成一个“匿名点”（aggregate: true，没有店名），同一格的点坐标相同，交给现有聚合引擎就成了
-//    一个聚合点；筛选（places/placeFilter.js）照常作用在这些点的标签、人均、地区上，聚合数跟着变。
+//    这里把每一行展开成一个“匿名点”（aggregate: true，没有店名）交给现有聚合引擎。前两级同一格的点都放在格子重心；
+//    最细一级（瓦片带 sub）的行带店所在的 1/16 小格（约 140 m），点放在小格中心，换到明细时只挪几个像素，
+//    aggregateCell 的第 4 项记下小格的级别（z18）。筛选（places/placeFilter.js）照常作用在这些点的标签、人均、地区上。
 // 3. 明细瓦片（z12）：店名、精确坐标、评价汇总，与旧快照的字段相同（marker_only，打开卡片时再读 GET /places/:id）。
 //    按 IP / 账号限流（登录后带票据 ?t=），只在浏览器和 IndexedDB 里缓存。拿不到的那块用城市级聚合顶上。
 //
@@ -16,6 +17,7 @@
 import { placeKey } from './cluster/engine.js';
 import { computeLogicalZoom, expandBounds, normalizeViewBounds } from './cluster/snapshot.js';
 import { readCache, writeCache, deleteCache } from '../platform/cacheStore.js';
+import { collectInSlices, yieldTask } from './cluster/cooperative.js';
 
 export const GLYPH_KINDS = Object.freeze(['place', 'avoid', 'unexplored']);
 /** 换到明细级时等待补位瓦片的预算 */
@@ -54,12 +56,47 @@ export function tileKeysForBounds(bounds, z, limit = MAX_TILES_PER_LEVEL) {
     if (!bounds) return [];
     const [x0, y0] = tileOf(bounds.minLng, bounds.maxLat, z);
     const [x1, y1] = tileOf(bounds.maxLng, bounds.minLat, z);
-    const keys = [];
+    limit = Math.max(0, Math.floor(Number(limit) || 0));
+    if (!limit || x1 < x0 || y1 < y0) return [];
+    const keys = [], heap = [], seen = new Set();
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
-    for (let x = x0; x <= x1; x += 1) for (let y = y0; y <= y1; y += 1) keys.push({ key: `${x}/${y}`, d: (x - cx) ** 2 + (y - cy) ** 2 });
-    keys.sort((a, b) => a.d - b.d);
-    return keys.slice(0, limit).map((item) => item.key);
+    const compare = (a,b) => a.d - b.d || a.x - b.x || a.y - b.y;
+    const push = (x,y) => {
+        const key = `${x}/${y}`;
+        if (x < x0 || x > x1 || y < y0 || y > y1 || seen.has(key)) return;
+        seen.add(key);
+        const item = {x,y,key,d:(x-cx)**2+(y-cy)**2};
+        let i = heap.length;
+        heap.push(item);
+        while (i > 0) {
+            const parent = (i-1) >> 1;
+            if (compare(heap[parent],item) <= 0) break;
+            heap[i] = heap[parent]; i = parent;
+        }
+        heap[i] = item;
+    };
+    const pop = () => {
+        const first = heap[0], last = heap.pop();
+        if (heap.length) {
+            let i = 0;
+            while (i*2+1 < heap.length) {
+                let child = i*2+1;
+                if (child+1 < heap.length && compare(heap[child+1],heap[child]) < 0) child++;
+                if (compare(last,heap[child]) <= 0) break;
+                heap[i] = heap[child]; i = child;
+            }
+            heap[i] = last;
+        }
+        return first;
+    };
+    push(Math.floor(cx),Math.floor(cy));
+    while (heap.length && keys.length < limit) {
+        const {x,y,key} = pop();
+        keys.push(key);
+        push(x-1,y); push(x+1,y); push(x,y-1); push(x,y+1);
+    }
+    return keys;
 }
 
 /** 当前逻辑缩放该用哪一级：{ kind: 'aggregate', tile, cell, minZoom, maxZoom } 或 { kind: 'leaf', tile, minZoom } */
@@ -86,25 +123,30 @@ export function nextBandZoom(manifest, zoom) {
 // ---- 展开瓦片 ----
 
 /** 聚合瓦片 → 匿名点（每家店一个，同一格坐标相同）。key 为 agg:<格子级>/<x>/<y>#<序号> */
-export function expandAggregateTile(body, dict, tileKey) {
-    if (!body || !Array.isArray(body.cells) || !dict) return [];
+function* aggregateRows(body, dict, tileKey) {
+    if (!body || !Array.isArray(body.cells) || !dict) return;
     const [tx, ty] = tileKey.split('/').map(Number);
     const shift = 2 ** (body.cell - body.z);
-    const out = [];
+    // 格内小格：sub 必须是 2 的幂，小格就是 cell + log2(sub) 级的瓦片
+    const subBits = Number.isInteger(body.sub) && body.sub > 1 ? Math.log2(body.sub) : NaN;
+    const sub = Number.isInteger(subBits) ? body.sub : 0;
     for (const cell of body.cells) {
         if (!Array.isArray(cell) || !Array.isArray(cell[4])) continue;
         const cellX = tx * shift + cell[0];
         const cellY = ty * shift + cell[1];
-        const longitude = lngOf(cellX + (cell[2] + 0.5) / 8, body.cell);
-        const latitude = latOf(cellY + (cell[3] + 0.5) / 8, body.cell);
-        cell[4].forEach((row, index) => {
-            const [tags, cost, region, glyph] = row;
+        const centroid = [lngOf(cellX + (cell[2] + 0.5) / 8, body.cell), latOf(cellY + (cell[3] + 0.5) / 8, body.cell)];
+        for (const [index, row] of cell[4].entries()) {
+            const [tags, cost, region, glyph, subIndex] = row;
             const names = Array.isArray(tags) ? tags.map((i) => dict.tags[i]).filter(Boolean) : [];
             const regionNames = region >= 0 && Array.isArray(dict.regions[region]) ? dict.regions[region] : null;
-            out.push({
+            const inCell = sub && Number.isInteger(subIndex) && subIndex >= 0 && subIndex < sub * sub;
+            const [longitude, latitude] = inCell
+                ? [lngOf(cellX + (subIndex % sub + 0.5) / sub, body.cell), latOf(cellY + (Math.floor(subIndex / sub) + 0.5) / sub, body.cell)]
+                : centroid;
+            yield {
                 aggregateKey: `agg:${body.cell}/${cellX}/${cellY}#${index}`,
                 aggregate: true,
-                aggregateCell: [body.cell, cellX, cellY],
+                aggregateCell: inCell ? [body.cell, cellX, cellY, body.cell + subBits] : [body.cell, cellX, cellY],
                 name: '',
                 longitude,
                 latitude,
@@ -114,21 +156,29 @@ export function expandAggregateTile(body, dict, tileKey) {
                 city: regionNames ? regionNames[1] : null,
                 district: regionNames ? regionNames[2] : null,
                 glyph: GLYPH_KINDS[glyph] || 'place'
-            });
-        });
+            };
+        }
     }
-    return out;
+}
+
+export function expandAggregateTile(body, dict, tileKey) {
+    return Array.from(aggregateRows(body, dict, tileKey));
 }
 
 /** 明细瓦片 → 地点（marker_only：打开卡片时再补全） */
 export function expandLeafTile(body) {
-    if (!body || !Array.isArray(body.fields) || !Array.isArray(body.rows)) return [];
+    return Array.from(leafRows(body));
+}
+
+function* leafRows(body) {
+    if (!body || !Array.isArray(body.fields) || !Array.isArray(body.rows)) return;
     const fields = body.fields.map(String);
-    return body.rows.filter(Array.isArray).map((row) => {
+    for (const row of body.rows) {
+        if (!Array.isArray(row)) continue;
         const place = { marker_only: true };
-        for (let i = 0; i < fields.length; i += 1) place[fields[i]] = row[i] === undefined ? null : row[i];
-        return place;
-    });
+        fields.forEach((field,index) => { place[field] = row[index] === undefined ? null : row[index]; });
+        yield place;
+    }
 }
 
 function connectionIsSlow() {
@@ -337,7 +387,8 @@ export class MarkerTileSource {
                 body = await res.json();
                 Promise.resolve().then(() => this.writeStored(storageKey, { hash, body })).catch(() => {});
             }
-            const places = leaf ? expandLeafTile(body) : expandAggregateTile(body, dict, key);
+            const places = await collectInSlices(leaf ? leafRows(body) : aggregateRows(body, dict, key));
+            if (this.hashOf(z, key) !== hash) return null;
             this.tiles.set(`${z}/${key}`, { hash, places });
             this._emit();
             return places;
@@ -416,6 +467,7 @@ export class MarkerTileStore {
         this.switchWaitMs = switchWaitMs;
         this.view = null;            // { bounds, logicalZoom }
         this.displayBand = null;
+        this.displayBounds = null;
         this.targetBand = null;
         this.switchToken = 0;
         this.overlay = { own: [], hiddenIds: new Set(), signature: '[]|' };
@@ -427,6 +479,7 @@ export class MarkerTileStore {
     }
 
     dispose() {
+        this.disposed = true;
         this.switchToken += 1;
         this._unsubscribe?.();
         this._unsubscribe = null;
@@ -464,8 +517,7 @@ export class MarkerTileStore {
         this.version += 1;
     }
 
-    _coverage(band) {
-        const bounds = this.view?.bounds;
+    _coverage(band, bounds = this.view?.bounds) {
         if (!bounds || !band) return [];
         if (band.kind === 'leaf') return tileKeysForBounds(bounds, band.tile).filter((key) => this.source.hashOf(band.tile, key));
         return tileKeysForBounds(expandBounds(bounds, AGGREGATE_BUFFER), band.tile).filter((key) => this.source.hashOf(band.tile, key));
@@ -514,12 +566,14 @@ export class MarkerTileStore {
         const loads = this._neededLoads(band);
         const promises = loads.map(([z, key]) => this.source.load(z, key));
         if (bandId(band) === bandId(this.displayBand)) {
+            this.displayBounds = normalized;
             this._bump();
             return true;
         }
         const ready = loads.every(([z, key]) => this.source.peek(z, key) !== undefined);
         if (ready || !this.displayBand) {
             this.displayBand = band;
+            this.displayBounds = normalized;
             this._bump();
             return true;
         }
@@ -533,6 +587,7 @@ export class MarkerTileStore {
         Promise.all([Promise.allSettled(targetLoads), fallbackReady]).then(() => {
             if (token !== this.switchToken || bandId(this.displayBand) === bandId(band)) return;
             this.displayBand = band;
+            this.displayBounds = this.view.bounds;
             this._bump();
             this._notify();
         });
@@ -553,6 +608,7 @@ export class MarkerTileStore {
             const ready = this._neededLoads(this.targetBand).every(([z, key]) => this.source.peek(z, key) !== undefined);
             if (!ready) return;
             this.displayBand = this.targetBand;
+            this.displayBounds = this.view.bounds;
         }
         this._bump();
         this._notify();
@@ -622,15 +678,32 @@ export class MarkerTileStore {
         return this._compose().list;
     }
 
-    _leafRows(band) {
-        const out = [];
+    async allAsync({signal} = {}) {
+        const version = this.version;
+        const cancelled = () => signal?.aborted || this.disposed || version !== this.version;
+        if (cancelled()) throw new DOMException('Cancelled','AbortError');
+        if (this._memo?.version === version && this.now() < this._memo.expiresAt) return this._memo.list;
+        const task = this._composeSteps();
+        let started = performance.now(), step;
+        while (true) {
+            if (cancelled()) { task.return(); throw new DOMException('Cancelled','AbortError'); }
+            step = task.next();
+            if (step.done) break;
+            if (performance.now()-started >= 4) { await yieldTask(); started = performance.now(); }
+        }
+        if (cancelled()) throw new DOMException('Cancelled','AbortError');
+        if (this._memo?.version !== version || this.now() >= this._memo.expiresAt) this._memo = step.value;
+        return this._memo.list;
+    }
+
+    *_leafRows(band) {
         const fallback = this._fallbackLevel();
         const fallbackShift = fallback ? 2 ** (band.tile - fallback.tile) : 1;
         const fallbackCellShift = fallback ? 2 ** (fallback.cell - band.tile) : 1;
-        for (const key of this._coverage(band)) {
+        for (const key of this._coverage(band, this.displayBounds)) {
             const leaf = this.source.peek(band.tile, key);
             if (leaf) {
-                out.push(...leaf);
+                yield* leaf;
                 continue;
             }
             // 这块明细还没到或拿不到：用城市级聚合里落在这块里的格子顶上
@@ -641,30 +714,41 @@ export class MarkerTileStore {
             if (!parent) continue;
             for (const place of parent) {
                 const [, cellX, cellY] = place.aggregateCell;
-                if (Math.floor(cellX / fallbackCellShift) === x && Math.floor(cellY / fallbackCellShift) === y) out.push(place);
+                yield Math.floor(cellX / fallbackCellShift) === x && Math.floor(cellY / fallbackCellShift) === y ? place : null;
             }
         }
-        return out;
     }
 
     _compose() {
         const now = this.now();
         if (this._memo?.version === this.version && now < this._memo.expiresAt) return this._memo;
+        const task = this._composeSteps();
+        let step;
+        do { step = task.next(); } while (!step.done);
+        this._memo = step.value;
+        return this._memo;
+    }
+
+    *_composeSteps() {
+        const now = this.now(), version = this.version;
         const band = this.displayBand;
         const byKey = new Map();
         let expiresAt = Infinity;
         if (band && band.kind === 'aggregate') {
-            for (const key of this._coverage(band)) {
+            for (const key of this._coverage(band, this.displayBounds)) {
                 const places = this.source.peek(band.tile, key);
-                if (places) for (const place of places) byKey.set(place.aggregateKey, place);
+                if (places) for (const place of places) { yield; byKey.set(place.aggregateKey, place); }
             }
         } else if (band) {
             for (const place of this._leafRows(band)) {
+                yield;
+                if (!place) continue;
                 const key = placeKey(place);
                 if (key) byKey.set(key, place);
             }
             // 本地修改：明细瓦片追上了（字段一致、或删除的已不在）就去掉
             for (const [key, patch] of this.patches) {
+                yield;
                 if (now - patch.at >= this.patchTtlMs) {
                     this.patches.delete(key);
                     continue;
@@ -678,13 +762,17 @@ export class MarkerTileStore {
                 if (patch.place) byKey.set(key, patch.place);
                 else byKey.delete(key);
             }
-            for (const id of this.overlay.hiddenIds) byKey.delete(`place:${id}`);
+            for (const id of this.overlay.hiddenIds) { yield; byKey.delete(`place:${id}`); }
         }
-        for (const place of this.overlay.own) byKey.set(placeKey(place), place);
+        for (const place of this.overlay.own) { yield; byKey.set(placeKey(place), place); }
         const previous = this._memo;
-        const list = Array.from(byKey.values());
-        const same = previous && previous.list.length === list.length && previous.list.every((place, index) => place === list[index]);
-        this._memo = { version: this.version, byKey, list: same ? previous.list : list, expiresAt };
-        return this._memo;
+        const list = [];
+        let same = previous && previous.list.length === byKey.size;
+        for (const place of byKey.values()) {
+            yield;
+            if (same && previous.list[list.length] !== place) same = false;
+            list.push(place);
+        }
+        return {version,byKey,list:same ? previous.list : list,expiresAt};
     }
 }

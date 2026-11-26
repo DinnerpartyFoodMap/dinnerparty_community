@@ -1,6 +1,7 @@
 const { randomUUID, createHash } = require('node:crypto');
 const { sql, now, fail, string, date, ownedMedia, normalizeDocument } = require('./journeyStore');
 const algorithms = require('./journeyAlgorithmClient');
+const logger = require('../../../infrastructure/logger');
 
 // Authorization, durable jobs and persistence stay here. All model credentials
 // and calculation implementations belong to the separately deployed service.
@@ -110,7 +111,10 @@ function startJourneyWorker() {
                     sql.prepare("UPDATE JourneyJob SET status='ready',output=?,updated_at=? WHERE id=? AND status='running'").run(JSON.stringify(output),now(),job.id);
                 }).immediate();
             } catch (error) {
-                const message=error?.userFacing?error.message:'生成失败或上游超时；原始输入仍保留，可重试或手动编辑';
+                // Only codes and status: never the input, model output or upstream bodies.
+                logger.warn('Journey generation failed', {event:'journey.generation.failed', job_id:job.id, kind:input?.kind||'generate',
+                    status:error?.status??null, code:error?.code||error?.name||'unknown', user_facing:!!error?.userFacing, since_created_ms:Date.now()-Date.parse(job.created_at)});
+                const message=error?.userFacing?error.message:error?.code==='timeout'?'日记算法服务超时；原始输入仍保留，可重试或手动编辑':'生成失败；原始输入仍保留，可重试或手动编辑';
                 sql.prepare("UPDATE JourneyJob SET status='failed',error=?,updated_at=? WHERE id=? AND status='running'").run(message,now(),job.id);
             } finally { activeController=undefined; }
         } catch (error) {

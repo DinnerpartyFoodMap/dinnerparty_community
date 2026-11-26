@@ -124,7 +124,8 @@
         "brief": "描述过于简略",
         "unrelated": "与美食和东方无关",
         "harmful": "文字含不良信息",
-        "image": "图片含不良信息"
+        "image": "图片含不良信息",
+        "commentUnrelated": "与地点无关"
       },
       "flaggedImage": "被标出的图片",
       "field": {
@@ -134,7 +135,10 @@
         "address": "地址",
         "cost": "人均",
         "exterior": "门面图",
-        "menu": "菜单图"
+        "menu": "菜单图",
+        "place": "地点",
+        "author": "作者",
+        "comment": "评论"
       }
     },
     "confirmReview": "确认{{action}}申请 #{{id}}？\n对象：地点 {{place_id}}，申请人 {{requester_id}}。\n{{impact}}",
@@ -165,7 +169,15 @@
       "creator": "创建者",
       "note": "备注",
       "imageCount": "{{count}} 张"
-    }
+    },
+    "commentTitle": "评论复核 #{{id}}",
+    "commentMeta": "地点：{{place}} · 作者：{{author}}",
+    "typeComment": "评论复核",
+    "commentApproveImpact": "通过后评论对所有住民显示。",
+    "commentRejectImpact": "驳回后评论继续对其他住民隐藏，只有作者能看到；作者修改后会重新提交审核。",
+    "commentApproveAction": "通过，公开评论…",
+    "commentRejectAction": "驳回，继续隐藏…",
+    "commentMissing": "评论已删除或已被作者修改"
   },
   "qqWhitelist": {
     "forbidden": "权限不足，无法获取QQ白名单",

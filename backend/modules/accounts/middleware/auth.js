@@ -5,7 +5,8 @@ const { refreshBanState } = require('../services/userAccess');
 const { avatarColumns, withAvatarFields } = require('../services/userAvatar');
 const logger = require('../../../infrastructure/logger');
 
-const JWT_SECRET = process.env.JWT_SECRET || "yuyuko_secret_key";
+const { JWT_SECRET } = require('../services/jwtSecret');
+const JWT_VERIFY_OPTIONS = { algorithms: ['HS256'] };
 
 // 可在测试中替换为内存实现。
 let sessionStoreOverride = null;
@@ -34,7 +35,8 @@ function loadUserById(userId) {
     });
 }
 
-async function requireAuth(req, res, next) {
+async function requireAuth(req, res, next, codedErrors = false, accessError) {
+    const reject = (status, code, error, extra) => res.status(status).json(codedErrors ? { error, code } : { error, ...extra });
     const token = extractBearerToken(req);
     if (!token) {
         logger.warn('Authentication rejected', {
@@ -43,12 +45,12 @@ async function requireAuth(req, res, next) {
             method: req.method,
             path: req.path
         });
-        return res.status(401).json({ error: "未提供授权 token" });
+        return reject(401, 'AUTH_REQUIRED', '未提供授权 token');
     }
 
     let payload;
     try {
-        payload = jwt.verify(token, JWT_SECRET);
+        payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY_OPTIONS);
     } catch (e) {
         logger.warn('Authentication rejected', {
             event: 'security.auth.rejected',
@@ -56,7 +58,7 @@ async function requireAuth(req, res, next) {
             method: req.method,
             path: req.path
         });
-        return res.status(401).json({ error: "无效或已过期的 token" });
+        return reject(401, 'AUTH_INVALID_TOKEN', '无效或已过期的 token');
     }
 
     const userId = payload && payload.id;
@@ -67,7 +69,7 @@ async function requireAuth(req, res, next) {
             method: req.method,
             path: req.path
         });
-        return res.status(401).json({ error: "无效或已过期的 token" });
+        return reject(401, 'AUTH_INVALID_TOKEN', '无效或已过期的 token');
     }
 
     try {
@@ -87,7 +89,7 @@ async function requireAuth(req, res, next) {
                 method: req.method,
                 path: req.path
             });
-            return res.status(401).json({ error: "通行凭证已失效，请重新核验" });
+            return reject(401, 'AUTH_SESSION_INVALID', '通行凭证已失效，请重新核验');
         }
 
         const user = await loadUserById(userId);
@@ -99,8 +101,11 @@ async function requireAuth(req, res, next) {
                 method: req.method,
                 path: req.path
             });
-            return res.status(404).json({ error: "住民不存在" });
+            return reject(404, 'AUTH_USER_NOT_FOUND', '住民不存在');
         }
+
+        const denied = accessError?.(user);
+        if (denied) return reject(denied.status, denied.code, denied.publicMessage);
 
         // handle banned users: auto-unban if expired, otherwise restrict non-read methods
         if (refreshBanState(user)) {
@@ -114,7 +119,7 @@ async function requireAuth(req, res, next) {
                     method: req.method,
                     path: req.path
                 });
-                return res.status(403).json({ error: "通行凭证已受限，仅允许查看内容", reason: user.ban_reason || null });
+                return reject(403, 'AUTH_USER_BANNED', '通行凭证已受限，仅允许查看内容', { reason: user.ban_reason || null });
             }
             // else continue but keep user info
         }
@@ -133,7 +138,7 @@ async function requireAuth(req, res, next) {
             path: req.path,
             error: err
         });
-        return res.status(500).json({ error: "鉴权失败", detail: err.message });
+        return reject(500, 'AUTH_FAILED', '鉴权失败', { detail: err.message });
     }
 }
 
@@ -147,7 +152,7 @@ async function attachViewer(req, res, next) {
     const token = extractBearerToken(req);
     if (!token) return next();
     try {
-        const payload = jwt.verify(token, JWT_SECRET);
+        const payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY_OPTIONS);
         if (!payload || !payload.id) return next();
         const session = await sessionStore().verifySession(payload, token);
         if (!session.ok) return next();
@@ -160,4 +165,5 @@ async function attachViewer(req, res, next) {
     return next();
 }
 
-module.exports = { requireAuth, attachViewer, extractBearerToken, setSessionStoreForTesting, sessionStore };
+const requireAuthWithCode = (req, res, next) => requireAuth(req, res, next, true);
+module.exports = { requireAuth, requireAuthWithCode, attachViewer, extractBearerToken, setSessionStoreForTesting, sessionStore };

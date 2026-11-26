@@ -15,6 +15,7 @@ const director = () => window.__foodmapCompanion;
 function Harness() {
     const [fedAt, setFedAt] = useState(() => iso(Date.now() - 10 * HOUR));
     const [drawer, setDrawer] = useState(false);
+    const [opened, setOpened] = useState(0);
     const companion = { active: DEFAULT_COMPANION, satiety: 3, owned: [], fed_at: fedAt, adopted_at: iso(Date.now() - 99 * HOUR) };
     const button = (label, onClick) => <button type="button" data-test={label} onClick={onClick}>{label}</button>;
     return <MotionProvider>
@@ -28,6 +29,7 @@ function Harness() {
                 {button('sleep', () => { const d = director(); d.lastActivity = Date.now() - 10 * 60e3; d.restart(); })}
                 {button('wake', () => director().noteActivity())}
                 <span data-test="phase" />
+                <span data-test="opened">{opened}</span>
             </div>
             <div style={{ position: 'absolute', left: 12, right: 12, bottom: 4, height: 72 + (drawer ? 280 : 0), borderRadius: 32,
                 background: 'rgba(255,255,255,0.75)', zIndex: 2500, transition: 'height 400ms cubic-bezier(0.2, 0.9, 0.3, 1)' }} />
@@ -35,7 +37,8 @@ function Harness() {
                 {[0, 1, 2].map((key) => <div key={key} style={{ width: 44, height: 44, borderRadius: '50%', background: '#3a6ea5' }} />)}
             </div>}
             <CompanionRoam backendUrl="" token={null} companion={companion} bottom={80}
-                drawer={{ open: drawer, dragging: false, height: drawer ? 280 : 0 }} column={undefined} />
+                drawer={{ open: drawer, dragging: false, height: drawer ? 280 : 0 }} column={undefined}
+                onOpen={() => setOpened((count) => count + 1)} />
         </div>
     </MotionProvider>;
 }

@@ -41,7 +41,7 @@ flowchart TD
 - 原生侧：`FoodMapBridgeViewController` 用 `FoodMapWebView`（WKWebView 子类）创建 WebView，把 MKMapView 放在它下面；网页接管后 WebView 变透明，`hitTest` 按网页上报的触摸区域把地图画布上的触摸交给底图。WebView 重载时插件收起底图、恢复不透明。左边缘侧滑手势挂在容器上，地图区域的触摸也能识别。
 - `nativeMapChrome.js` 协议 v17：iOS 18 起都由原生控件接管，capabilities 不再上报 `supportsGlass`；`useMapChrome` 把住民的「原生玻璃按钮」偏好作为 `glass` 随状态下发，原生在 iOS 26 且为真时画 Liquid Glass，否则用不透明材质。偏好不再决定是否接管。
 - 协议 v19（2026-11-20）：面板白名单加 `rating` / `checkIn`（店卡的评价与打卡）；分组样式加 `stat` / `note` / `bars` / `grid` / `photos` / `input`（`input` 带 `field`，原生输入经 sheet 事件 `type: 'input'` 回传 `rowId` 与 `text`，截断到 `NATIVE_SHEET_INPUT_LIMIT`），行加 `value`（0–1）与 `selected`，语气加 `success`，面板 `locked` 时原生不关闭。快照由 `places/ratingChromeSheet.js`、`places/checkInChromeSheet.js` 生成。
-- 布局事件带 `drawer: { open, dragging, height }`（2026-11-20，仍是 v18，旧版原生不带时当作收起）：`open` 表示更多功能已展开，`dragging` 表示手指正在拖工具栏，`height` 是展开后工具栏上沿升高的 CSS 像素。开始拖动、展开或收起时，原生在下一轮主循环立即回传，不走 60ms 防抖；松手时的拖动结束和展开合并成一次发送。`readDrawerLayout` 负责清洗，`useMapChrome` 把结果作为 `drawerMotion` 交给底栏小伙伴起飞（见 [角色观察屋](../../companion/doc/README.md#底栏状态)）。`readFloatingRect` 从布局的 slot 里取右侧浮动按钮组（列表 / 筛选 / 定位）的外框，`useMapChrome` 作为 `floatingRect` 交给底栏小伙伴攀爬；更多功能展开或拖动时按钮随抽屉上移，这时不更新。
+- 布局事件带 `drawer: { open, dragging, height }`（2026-11-20，仍是 v18，旧版原生不带时当作收起）：`open` 表示更多功能已展开，`dragging` 表示手指正在拖工具栏，`height` 是展开后工具栏上沿升高的 CSS 像素。开始拖动、展开或收起时，原生在下一轮主循环立即回传，不走 60ms 防抖；松手时的拖动结束和展开合并成一次发送。`readDrawerLayout` 负责清洗，`useMapChrome` 把结果作为 `drawerMotion` 交给底栏小伙伴起飞（见 [小伙伴](../../companion/doc/README.md#底栏状态)）。`readFloatingRect` 从布局的 slot 里取右侧浮动按钮组（列表 / 筛选 / 定位）的外框，`useMapChrome` 作为 `floatingRect` 交给底栏小伙伴攀爬；更多功能展开或拖动时按钮随抽屉上移，这时不更新。
 
 ## iOS 返回手势热区（2026-11-05）
 
@@ -60,7 +60,7 @@ Swift 的 `NativeBackGestureRegion` 统一两档，`UIPanGestureRecognizer` 在 
 `NativeAlongRoutePlugin.swift` 与 `NativeProfilePlugin.swift` 沿用“网页执行业务、原生只显示白名单快照”的模式：
 
 - 顺路吃：网页解析高德行程、规划路线、在地图上画线并查询沿途地点；原生 SwiftUI 面板只收集条件、显示网页格式化好的路线与地点。编排在 `src/discovery/alongRouteController.js`，会话与字段白名单在 `src/platform/nativeAlongRoute.js`，入口 `useNativeAlongRoute.js`。
-- 住民主页由原生显示头像、六轴雷达、收藏和第二栏小组件。网页执行屏蔽、偏好、小组件和收藏公开状态请求。完整收藏使用共用网页页。2026-11-20 起同好、角色观察屋和同好点开的住民主页是主页页面栈里的原生二级页，住民设置叠在主页之上打开，主页都不先关闭（见 [住民主页](../../profile/doc/README.md#二级页2026-11-20)）。 [视图模型](../../profile/profileViewModel.js) · [会话](../nativeProfile.js)
+- 住民主页由原生显示头像、六轴雷达、收藏和第二栏小组件。网页执行屏蔽、偏好、小组件和收藏公开状态请求。完整收藏使用共用网页页。2026-11-20 起同好、小伙伴和同好点开的住民主页是主页页面栈里的原生二级页，住民设置叠在主页之上打开，主页都不先关闭（见 [住民主页](../../profile/doc/README.md#二级页2026-11-20)）。 [视图模型](../../profile/profileViewModel.js) · [会话](../nativeProfile.js)
 - 两者在 iOS 26+ 使用系统 Liquid Glass；更早系统退回 `regularMaterial`。插件不可用、打开失败或请求失败时回到网页顺路面板 / `UserProfilePage`，不静默成功。真机检查见 native/doc。
 
 ## 管理后台与日记原生页

@@ -10,7 +10,7 @@ const builtInPreview = `${import.meta.env.BASE_URL}${DEFAULT_COMPANION_PREVIEW}`
 /**
  * mood：'aloft' 时飞在空中的姿态（抬头、略向后仰），null 为平常。只在 Live2D 动起来时有效。
  * onScene(scene | null)：Live2D 就绪 / 卸载时交出场景（loop / play / face / setMood），底栏小伙伴由状态机控制动作；
- * reactToFeed：饱食度上涨时自己点头冒爱心（观察屋里用；底栏由状态机庆祝，传 false）。
+ * reactToFeed：饱食度上涨时自己点头冒爱心（小伙伴页里用；底栏由状态机庆祝，传 false）。
  */
 export default function CompanionFigure({ backendUrl, token, companion, showStatus = false, mood = null, onScene = null, reactToFeed = true }) {
     const container = useRef(null);

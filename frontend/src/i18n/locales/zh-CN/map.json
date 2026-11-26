@@ -94,6 +94,8 @@
     "submit": "提交",
     "ratingLabel": "你的评价",
     "ratingRequired": "请选择你的评价",
+    "descriptionHint": "至少 {{min}} 个字，已写 {{count}} 个字",
+    "descriptionTooShort": "描述至少写 {{min}} 个字（不算空格），可以写招牌菜、价格、营业时间或怎么找到",
     "explore": "待探索：还没去过，先标记",
     "exploreHint": "带“待探索”标签的地点不需要评价，有人评价前地图上显示问号图标",
     "draft": {
@@ -210,7 +212,9 @@
       "loadFailed": "评价加载失败 {{status}}",
       "saveFailed": "评价失败 {{status}}",
       "withdrawFailed": "撤回评价失败 {{status}}"
-    }
+    },
+    "commentFailed": "评论提交失败 {{status}}",
+    "commentDeleteFailed": "评论删除失败 {{status}}"
   },
   "panel": {
     "close": "关闭{{title}}"
@@ -705,6 +709,40 @@
     "ok": "好",
     "timeout": "请求超时，请稍后重试",
     "failed": "提交失败，请稍后重试"
+  },
+  "placeComments": {
+    "anonymous": "住民",
+    "line": "{{username}}：{{content}}",
+    "more": "还有 {{count}} 条评论未显示",
+    "write": "写评论",
+    "editMine": "修改我的评论",
+    "status": {
+      "reviewing": "审核中，暂时只有你能看到",
+      "rejected": "未通过审核，只有你能看到",
+      "wrap": "（{{note}}）"
+    },
+    "form": {
+      "title": "评论",
+      "titleWithName": "评论 — {{name}}",
+      "comment": "评论",
+      "placeholder": "写下你的评论",
+      "notice": "评论会以「住民名：评论」接在描述末尾，通过审核后其他住民才能看到。",
+      "count": "{{count}} / {{max}}",
+      "rejectedNotice": "这条评论未通过审核，修改后会重新提交审核。",
+      "rating": "我的评价（必填）",
+      "ratingRequired": "请选择你的评价",
+      "submit": "提交",
+      "tooShort": "评论至少 {{min}} 个字",
+      "tooLong": "评论最多 {{max}} 个字",
+      "failed": "评论提交失败：{{message}}",
+      "published": "评论已发布",
+      "submitted": "评论已提交，审核通过后其他住民就能看到",
+      "delete": "删除评论",
+      "deleteTitle": "删除这条评论？",
+      "deleted": "评论已删除",
+      "deleteFailed": "评论删除失败：{{message}}",
+      "discardTitle": "放弃这次评论？"
+    }
   },
   "venues": {
     "notPlaced": "这个展会地点还没在饭联地图标记位置",

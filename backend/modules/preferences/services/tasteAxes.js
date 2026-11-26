@@ -1,10 +1,21 @@
 const crypto = require('node:crypto');
-const { db, isVectorSearchAvailable } = require('../../../infrastructure/database');
-const { decodeVector } = require('./userPreferenceService');
+const { decodeVector } = require('./vectorCodec');
 const { completeDeepseekJson, hasDeepseekConfiguration } = require('../../../infrastructure/aiClients');
-const { parseCategoryNames } = require('../../places/services/placeService');
+const { parseCategoryNames } = require('../../places/services/categoryMerges');
 const { publicPlaceSql } = require('../../places/services/placeVisibility');
 const { classifyRatingEvidence } = require('../../ratings/services/ratingSourcePolicy');
+
+const defaultDatabase = () => require('../../../infrastructure/database').db._raw;
+
+function hasVectorSearch(database) {
+    try {
+        database.prepare('SELECT embedding FROM place_vectors LIMIT 0').get();
+        return true;
+    } catch (error) {
+        if (/no such (?:table|module): (?:\w+\.)?(?:place_vectors|vec0)\b/.test(error.message)) return false;
+        throw error;
+    }
+}
 
 // 住民主页的“六类餐饮偏好”雷达（见 ../doc/TASTE_AXES.md）：店铺分类 → 住民反馈 → 六轴分数。
 // 每一轴回答“你有多喜欢这类餐饮”，各轴独立，不求和、不算面积；没有依据的轴是“待了解”（null），不是 0。
@@ -90,7 +101,7 @@ function classificationInputHash(place) {
         .digest('hex');
 }
 
-function storedClasses(database = db._raw) {
+function storedClasses(database = defaultDatabase()) {
     const map = new Map();
     for (const row of database.prepare('SELECT place_id, axes, source, input_hash FROM PlaceTasteClass').iterate()) {
         let axes = [];
@@ -114,7 +125,7 @@ function resolvePlaceAxes(place, stored) {
     return { axes: [], source: 'unknown' };
 }
 
-function placeAxesMap(placeIds, database = db._raw) {
+function placeAxesMap(placeIds, database = defaultDatabase()) {
     const result = new Map();
     if (!placeIds.length) return result;
     const stored = storedClasses(database);
@@ -132,7 +143,7 @@ const scoreFromRating = (score) => (score - 2.5) / 1.5;
 const toDisplay = (score) => Math.round(((score + 1) / 2) * 1000) / 1000;
 
 /** 一位住民的证据：每家店一份（有评价用评价；只收藏的算弱的正向线索） */
-function eligibleRatings(database = db._raw, userId = null) {
+function eligibleRatings(database = defaultDatabase(), userId = null) {
     const revisions = new Map();
     for (const row of database.prepare(`SELECT * FROM RatingRevision ${userId === null ? '' : 'WHERE user_id = ?'} ORDER BY revision`).iterate(...(userId === null ? [] : [userId]))) {
         const key = JSON.stringify([row.user_id, row.place_id]);
@@ -149,7 +160,7 @@ function cacheKey(database, prototype = false) {
     return JSON.stringify([CLASSIFIER_VERSION,row.prototype_revision,...(prototype?[]:[row.evidence_revision])]);
 }
 
-function userEvidence(userId, database = db._raw) {
+function userEvidence(userId, database, now) {
     const evidence = new Map();
     if (database.prepare('SELECT is_banned FROM User WHERE id=?').get(userId)?.is_banned) return evidence;
     for (const row of eligibleRatings(database, userId)) {
@@ -162,7 +173,7 @@ function userEvidence(userId, database = db._raw) {
         else evidence.set(row.place_id, { placeId: row.place_id, rating: null, favorite: true, x: FAVORITE_SIGNAL, w: FAVORITE_WEIGHT });
     }
     const strengths={detail_open:0.03,detail_dwell:0.12,navigation:0.25,share:0.1,share_copy:0.05};
-    for(const row of database.prepare(`SELECT e.* FROM UserBehaviorEvent e JOIN Place p ON p.id=e.place_id WHERE e.user_id=? AND e.contributes=1 AND e.occurred_at>=? AND e.occurred_at<=? AND ${publicPlaceSql('p')}`).all(userId,Date.now()-90*86400000,Date.now())){
+    for(const row of database.prepare(`SELECT e.* FROM UserBehaviorEvent e JOIN Place p ON p.id=e.place_id WHERE e.user_id=? AND e.contributes=1 AND e.occurred_at>=? AND e.occurred_at<=? AND ${publicPlaceSql('p')}`).all(userId,now-90*86400000,now)){
         if(!strengths[row.event_type])continue;
         const current=evidence.get(row.place_id);if(current?.rating!==null&&current?.rating!==undefined||current?.favorite)continue;
         const weight=strengths[row.event_type]*(row.event_type==='detail_dwell'?Math.min(1,(row.duration_ms||0)/60000):1);
@@ -174,7 +185,7 @@ function userEvidence(userId, database = db._raw) {
 let populationCache = null;
 
 /** 全站每轴的平均倾向（收缩的目标）；没有任何证据的轴是 0（中性） */
-function populationMeans(database = db._raw, now = Date.now()) {
+function populationMeans(database = defaultDatabase(), now = Date.now()) {
     const key = cacheKey(database);
     if (populationCache && populationCache.database === database && populationCache.key === key && now - populationCache.at < POPULATION_TTL_MS) return populationCache.value;
     const totals = Object.fromEntries(TASTE_AXES.map((axis) => [axis, { sum: 0, weight: 0 }]));
@@ -200,7 +211,7 @@ function axisScore(items, userMean) {
     return items.reduce((sum,item)=>sum+item.w*(item.rating===null?item.x:Math.max(-1,Math.min(1,item.x-0.25*userMean))),0)/(weight+PRIOR_WEIGHT);
 }
 
-function selfLevels(userId, database = db._raw) {
+function selfLevels(userId, database = defaultDatabase()) {
     const levels = {};
     for (const row of database.prepare('SELECT axis, level FROM UserTastePreference WHERE user_id = ?').iterate(userId)) {
         if (AXIS_SET.has(row.axis) && SELF_LEVELS.includes(row.level)) levels[row.axis] = row.level;
@@ -222,7 +233,7 @@ let prototypeCache = null;
 let prototypePending = null;
 let nullModelCache = new WeakMap();
 
-function placeVector(placeId, database = db._raw) {
+function placeVector(placeId, database = defaultDatabase()) {
     const row = database.prepare('SELECT embedding FROM place_vectors WHERE place_id = ?').get(placeId);
     return row ? decodeVector(row.embedding) : null;
 }
@@ -240,7 +251,7 @@ function cosine(left, right) {
 }
 
 /** 六类的典型方向（已去掉平均向量）与可作随机参照的店铺向量；没有向量检索时为 null */
-async function axisPrototypes(database = db._raw, now = Date.now()) {
+async function axisPrototypes(database = defaultDatabase(), now = Date.now()) {
     const key = cacheKey(database, true);
     if (prototypePending?.database === database && prototypePending.key === key) return prototypePending.promise;
     const entry = { database, key, promise: null };
@@ -250,7 +261,7 @@ async function axisPrototypes(database = db._raw, now = Date.now()) {
 }
 
 async function buildAxisPrototypes(database, now) {
-    if (!isVectorSearchAvailable()) return null;
+    if (!hasVectorSearch(database)) return null;
     const key = cacheKey(database, true);
     if (prototypeCache && prototypeCache.database === database && prototypeCache.key === key && now - prototypeCache.at < PROTOTYPE_TTL_MS) return prototypeCache.value;
     // Compute once from a synchronous SQLite snapshot: no remote mean request,
@@ -330,9 +341,9 @@ function normalCdf(z) {
  * 每轴的夹角估算：{ cosine, percentile（高于多少比例的随机口味）, value（0–1）, placeIds（最接近的证据店铺） }；
  * 没有向量、没有可用证据时整体返回 null
  */
-async function embeddingEstimates(evidence, database = db._raw, unavailable = () => {}) {
+async function embeddingEstimates(evidence, database = defaultDatabase(), unavailable = () => {}) {
     if (!evidence.size) { unavailable('no_eligible_evidence'); return null; }
-    if (!isVectorSearchAvailable()) { unavailable('service_unavailable'); return null; }
+    if (!hasVectorSearch(database)) { unavailable('service_unavailable'); return null; }
     const model = await axisPrototypes(database);
     if (!model) { unavailable('missing_vectors'); return null; }
     const items = [];
@@ -383,26 +394,26 @@ function usableEmbeddingEstimate(estimate) {
     return estimate && Number.isFinite(estimate.value) && estimate.value >= 0 && estimate.value <= 1 ? estimate : null;
 }
 
-async function userTasteAxes(userId, database = db._raw, attempt = 0) {
+async function userTasteAxes(userId, database = defaultDatabase(), { now = Date.now() } = {}, attempt = 0) {
     const {key,evidence,classes,self,userMean}=database.transaction(()=>{
-        const key=cacheKey(database),evidence=userEvidence(userId,database),classes=placeAxesMap([...evidence.keys()],database),self=selfLevels(userId,database);
+        const key=cacheKey(database),evidence=userEvidence(userId,database,now),classes=placeAxesMap([...evidence.keys()],database),self=selfLevels(userId,database);
         const rated=[...evidence.values()].filter(item=>item.rating!==null),userMean=rated.length?rated.reduce((sum,item)=>sum+item.x,0)/rated.length:0;
         return {key,evidence,classes,self,userMean};
     })();
     let embedding = null;
-    let unavailable = evidence.size ? (isVectorSearchAvailable() ? 'missing_vectors' : 'service_unavailable') : 'no_eligible_evidence';
+    let unavailable = evidence.size ? (hasVectorSearch(database) ? 'missing_vectors' : 'service_unavailable') : 'no_eligible_evidence';
     try {
         if(attempt<2)embedding = await embeddingEstimates(evidence, database, reason => { unavailable = reason; });
     } catch (error) {
-        if (error.status === 409 && attempt < 1) return userTasteAxes(userId, database, attempt + 1);
+        if (error.status === 409 && attempt < 1) return userTasteAxes(userId, database, { now }, attempt + 1);
         unavailable = 'service_unavailable';
         console.warn('Taste axis embedding estimate unavailable:', error.message);
     }
     if (attempt<2 && key !== cacheKey(database)) {
-        if (attempt < 1) return userTasteAxes(userId, database, attempt + 1);
+        if (attempt < 1) return userTasteAxes(userId, database, { now }, attempt + 1);
         // Under sustained real updates, fall back to a fresh synchronous
         // evidence/manual snapshot instead of taking down the whole profile.
-        return userTasteAxes(userId,database,2);
+        return userTasteAxes(userId, database, { now }, 2);
     }
     const placeName = (placeId) => classes.get(placeId)?.place.name
         ?? database.prepare('SELECT name FROM Place WHERE id = ?').get(placeId)?.name ?? '';
@@ -449,7 +460,7 @@ async function userTasteAxes(userId, database = db._raw, attempt = 0) {
 }
 
 /** 住民自己填某一轴的喜好（1–4，与评价四档同刻度）；level 为 null 时清除，回到自动推断 */
-function setSelfLevel(userId, axis, level, database = db._raw) {
+function setSelfLevel(userId, axis, level, database = defaultDatabase()) {
     if (!AXIS_SET.has(axis)) return false;
     if (level === null) {
         database.prepare('DELETE FROM UserTastePreference WHERE user_id = ? AND axis = ?').run(userId, axis);
@@ -465,7 +476,7 @@ function setSelfLevel(userId, axis, level, database = db._raw) {
 // ---- 人工纠正（管理员，manage_places） ----
 
 /** axes 为数组时写入人工分类（[] 表示“不属于任何一类”）；为 null 时撤销人工分类 */
-function setManualPlaceAxes(placeId, axes, database = db._raw) {
+function setManualPlaceAxes(placeId, axes, database = defaultDatabase()) {
     if (axes === null) {
         database.prepare("DELETE FROM PlaceTasteClass WHERE place_id = ? AND source = 'manual'").run(placeId);
     } else {
@@ -478,7 +489,7 @@ function setManualPlaceAxes(placeId, axes, database = db._raw) {
     return placeTasteClass(placeId, database);
 }
 
-function placeTasteClass(placeId, database = db._raw) {
+function placeTasteClass(placeId, database = defaultDatabase()) {
     const place = database.prepare('SELECT id, name, category, description FROM Place WHERE id = ?').get(placeId);
     if (!place) return null;
     const stored = storedClasses(database).get(place.id);
@@ -500,7 +511,7 @@ drinks=咖啡茶饮（咖啡、奶茶、茶馆），foreign=异国料理（日�
 只输出严格 JSON：{"results":[{"id":数字,"axes":["..."]}]}`;
 
 /** 规则判断不了、也还没有有效模型结果的公开地点 */
-function pendingLlmPlaces(limit, database = db._raw) {
+function pendingLlmPlaces(limit, database = defaultDatabase()) {
     const stored = storedClasses(database);
     const pending = [];
     const cursor = classificationCursor.get(database) || 0;
@@ -515,7 +526,7 @@ function pendingLlmPlaces(limit, database = db._raw) {
     return pending;
 }
 
-async function classifyBatchWithLlm(places, database = db._raw, complete = completeDeepseekJson) {
+async function classifyBatchWithLlm(places, database = defaultDatabase(), complete = completeDeepseekJson) {
     const payload = places.map((place) => ({
         id: place.id,
         name: String(place.name || '').slice(0, 60),
@@ -548,7 +559,7 @@ async function classifyBatchWithLlm(places, database = db._raw, complete = compl
     return written;
 }
 
-async function runLlmClassification(database = db._raw) {
+async function runLlmClassification(database = defaultDatabase()) {
     if (!hasDeepseekConfiguration()) return 0;
     const places = pendingLlmPlaces(LLM_PER_RUN, database);
     if (places.length) classificationCursor.set(database, places[places.length - 1].id);
@@ -612,6 +623,7 @@ module.exports = {
     initTasteAxesSchema,
     ruleAxes,
     resolvePlaceAxes,
+    hasVectorSearch,
     storedClasses,
     classificationInputHash,
     userTasteAxes,

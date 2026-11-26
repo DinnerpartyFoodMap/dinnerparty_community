@@ -3,6 +3,8 @@ import {
     pickNativeProfileValues,
     createNativeProfileSession
 } from '../../../src/platform/nativeProfile.js';
+import { buildOtherRoomNativeModel, buildRoomNativeModel } from '../../../src/companion/roomNativeModel.js';
+import { PROFILE_ACTIONS, PROFILE_EVENTS } from '../../../src/platform/nativeProfile.js';
 import {
     buildProfileViewModel,
     profileSelfLevels,
@@ -67,7 +69,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(pickNativeProfileValues('setCollectionVisibility', { isPublic: false }), { isPublic: false });
     assert.equal(pickNativeProfileValues('setCollectionVisibility', { isPublic: 'false' }), null);
     assert.equal(pickNativeProfileValues('other', {}), null);
-    // 页面栈：同好里点开的住民、同好页与角色观察屋
+    // 页面栈：同好里点开的住民、同好页与小伙伴
     assert.deepEqual(pickNativeProfileValues('setBlocked', { blocked: false, userId: 'u-2' }), { blocked: false, userId: 'u-2' });
     assert.equal(pickNativeProfileValues('setBlocked', { blocked: true, userId: '' }), null);
     assert.deepEqual(pickNativeProfileValues('loadProfile', { userId: 'u-2', extra: 1 }), { userId: 'u-2' });
@@ -86,7 +88,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     }
 }
 
-// 同好与角色观察屋的视图模型（网页同好页与原生二级页共用）
+// 同好与小伙伴的视图模型（网页同好页与原生二级页共用）
 {
     const many = Array.from({ length: 25 }, (_, index) => ({
         id: `u${index}`, username: `同好${index}`, similarity: 0.9 - index / 100, confidence: '参考数据较多',
@@ -322,7 +324,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     await tick();
     assert.deepEqual(calls[2], ['setBlocked', { blocked: true }]);
 
-    // 同好、角色观察屋的回传对象原样转给原生；其他字段不转
+    // 同好、小伙伴的回传对象原样转给原生；其他字段不转
     plugin.emit('profileEvent', { id: session.id, type: 'loadCommunity', requestId: 'r4', values: {} });
     await tick();
     assert.deepEqual(calls[3], ['loadCommunity', {}]);
@@ -429,6 +431,104 @@ for (const [action, values, expected] of [
     failing.openReject(new Error('BUSY'));
     await failedStart;
     assert.equal(message, 'BUSY');
+}
+
+// 小伙伴的一天：原生翻日期 / 筛选的白名单，起名和编辑走结束动作
+assert.ok(PROFILE_EVENTS.includes('roomNavigate'));
+assert.ok(PROFILE_ACTIONS.includes('companionName') && PROFILE_ACTIONS.includes('companionEdit'));
+assert.deepEqual(pickNativeProfileValues('roomNavigate', { date: '', filter: 'moments' }), { date: null, filter: 'moments' });
+assert.deepEqual(pickNativeProfileValues('roomNavigate', { date: '2026-11-24' }), { date: '2026-11-24', filter: 'all' });
+assert.equal(pickNativeProfileValues('roomNavigate', { date: '11/24', filter: 'all' }), null);
+assert.equal(pickNativeProfileValues('roomNavigate', { date: '', filter: 'secret' }), null);
+
+// 小伙伴的一天：原生快照
+{
+    assert.deepEqual(buildRoomNativeModel({ available: false }), { available: false });
+    const unnamed = buildRoomNativeModel({ me: { named: false } });
+    assert.equal(unnamed.named, false);
+    assert.ok(unnamed.card.title && unnamed.card.action, '没起名时带起名卡片');
+    const outing = { kind: 'outing', id: 3, place: { id: 9, name: '面馆' } };
+    const day = {
+        day: '2026-11-25', is_today: true, next_at: 900, first_day: '2026-11-20',
+        owner: { user_id: 'u1', name: '小满' }, people: [{ user_id: 'u1', name: '小满' }],
+        events: [
+            { start_min: 480, end_min: 485, type: 'home', who: ['u1'], action: '小满关了闹钟', sound: null, detail: '盯着天花板', star: false },
+            { start_min: 700, end_min: 710, type: 'outing', who: ['u1'], action: '小满选了面馆', star: false, group: outing },
+            { start_min: 710, end_min: 760, type: 'outing', who: ['u1'], action: '小满吃完了', star: 'explore', group: outing }
+        ]
+    };
+    const named = buildRoomNativeModel({ me: { named: true }, day, today: '2026-11-25' });
+    assert.equal(named.name, '小满');
+    assert.ok(named.now.includes('小满吃完了'));
+    assert.deepEqual(named.rows.map((row) => row.kind), ['segment', 'event', 'group', 'event', 'event']);
+    assert.equal(named.rows[2].title.includes('面馆'), true);
+    assert.equal(named.rows[3].grouped, true);
+    assert.equal(named.rows[4].star, true);
+    assert.equal(named.rows[1].avatars[0].image, 'companions/dinnerparty-bot/avatar.png', '没有大头照时用内置角色的');
+    assert.equal(named.prev, '2026-11-24');
+    assert.equal(named.next, '');
+    assert.ok(named.upcoming);
+    assert.equal(named.rows[1].avatars[0].userId, 'u1', '头像带住民编号，原生点了推入对方的小伙伴页');
+    assert.equal(named.rows[2].placeId, '9');
+    assert.deepEqual(named.friends, []);
+    assert.deepEqual(named.neighbors, []);
+    assert.equal(named.notice, '');
+
+    // 熟悉的小伙伴（点头之交起，最多 3 只）、口味像你的小伙伴、检查没通过的提示
+    const social = buildRoomNativeModel({
+        me: { named: true, default_name: '饭桶', texts: { name: { status: 'self_only' }, sayings: [{ text: '饿了', status: 'self_only' }, { text: '好吃', status: 'visible' }] } },
+        day: { ...day, owner: { ...day.owner, friends: [
+            { user_id: 'f0', name: '生人', level: 0 }, { user_id: 'f1', name: '阿栗', level: 2, avatar: 'https://example.test/a.png' },
+            { user_id: 'f2', name: '豆豆', level: 1 }
+        ] } },
+        today: '2026-11-25',
+        neighbors: [{ user_id: 'n1', name: '团子', owner_name: '住民甲' }]
+    });
+    assert.deepEqual(social.friends.map((friend) => friend.userId), ['f1', 'f2']);
+    assert.equal(social.friends[0].image, 'https://example.test/a.png');
+    assert.ok(social.friends[0].caption && social.friends[0].caption !== social.friends[1].caption, '熟悉程度写成文字');
+    assert.equal(social.neighbors[0].userId, 'n1');
+    assert.ok(social.neighbors[0].caption.includes('住民甲'));
+    assert.ok(social.notice.includes('饭桶') && social.notice.includes('1'), '名字和一句口头禅没通过');
+}
+
+// 别人的小伙伴：原生推入页的取数、举报白名单，只屏蔽不打开举报
+assert.ok(PROFILE_EVENTS.includes('loadRoom') && PROFILE_EVENTS.includes('reportUser'));
+assert.deepEqual(pickNativeProfileValues('loadRoom', { userId: 'u-2', date: '', filter: 'meets', extra: 1 }), { userId: 'u-2', date: null, filter: 'meets' });
+assert.equal(pickNativeProfileValues('loadRoom', { date: '2026-11-24' }), null, '必须带住民编号');
+assert.equal(pickNativeProfileValues('loadRoom', { userId: '../me', date: '' }), null);
+assert.equal(pickNativeProfileValues('loadRoom', { userId: 'u-2', filter: 'secret' }), null);
+assert.deepEqual(pickNativeProfileValues('reportUser', { userId: 'u-2', name: '住民甲', extra: 1 }), { userId: 'u-2', name: '住民甲' });
+assert.equal(pickNativeProfileValues('reportUser', { name: '住民甲' }), null);
+assert.deepEqual(pickNativeProfileValues('setBlocked', { blocked: true, userId: 'u-2', report: false }), { blocked: true, userId: 'u-2', report: false });
+assert.deepEqual(pickNativeProfileValues('setBlocked', { blocked: true, userId: 'u-2', report: 'no' }), { blocked: true, userId: 'u-2' });
+{
+    assert.equal(buildOtherRoomNativeModel({ status: 'loading' }).loaded, false);
+    const missing = buildOtherRoomNativeModel({ status: 'missing' });
+    assert.ok(missing.loaded && missing.missing, '看不到时只说没有找到');
+    assert.equal(missing.name, undefined);
+    const other = buildOtherRoomNativeModel({
+        status: 'ready', today: '2026-11-25', filter: 'all',
+        day: {
+            day: '2026-11-25', is_today: false, first_day: '2026-11-01', next_at: null,
+            owner: { user_id: 'u2', name: '阿栗', owner_name: '住民甲', avatar: null, tags: ['夜猫子'], quirks: [{ id: 'q1', name: '吃饭前洗手' }], bond_level: 2 },
+            people: [{ user_id: 'u2', name: '阿栗' }, { user_id: 'u1', name: '小满' }],
+            events: [{ start_min: 720, end_min: 760, type: 'meet', who: ['u2', 'u1'], action: '阿栗和小满拼了桌', star: true,
+                group: { kind: 'table', id: 7, place: { id: 9, name: '面馆' }, partner: { user_id: 'u1', name: '小满' } } }]
+        }
+    });
+    assert.equal(other.name, '阿栗');
+    assert.equal(other.avatar, 'companions/dinnerparty-bot/avatar.png');
+    assert.ok(other.ownerLine.includes('住民甲'));
+    assert.ok(other.bond, '有熟悉程度时写出来');
+    assert.deepEqual(other.tags, ['夜猫子']);
+    assert.deepEqual(other.quirks, ['吃饭前洗手']);
+    assert.ok(other.labels.report && other.labels.block && other.labels.blockConfirm);
+    assert.deepEqual(other.rows.map((row) => row.kind), ['segment', 'group', 'event']);
+    assert.ok(other.rows[1].title.includes('小满') && other.rows[1].title.includes('面馆'));
+    assert.deepEqual(other.rows[2].avatars.map((avatar) => avatar.userId), ['u2', 'u1']);
+    assert.equal(other.satiety, undefined, '别人的小伙伴不带饱食度');
+    assert.equal(buildOtherRoomNativeModel({ status: 'ready', day: { ...other, owner: { name: '阿栗' }, events: [], bond_level: null } }).bond, '');
 }
 
 console.log('Native profile session tests passed.');
