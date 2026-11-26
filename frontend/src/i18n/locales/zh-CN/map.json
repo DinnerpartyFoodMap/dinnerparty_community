@@ -374,7 +374,8 @@
       "backToPoster": "返回海报生成",
       "backToDiary": "返回日记",
       "backToDinner": "返回聚餐创建",
-      "backToExhibition": "返回展会设置"
+      "backToExhibition": "返回展会设置",
+      "backToVenues": "返回展会场馆"
     },
     "searchPlaceholder": "搜店名，或说说现在想吃什么",
     "locateTooltip": "定位/我的位置",
@@ -743,5 +744,10 @@
       "deleteFailed": "评论删除失败：{{message}}",
       "discardTitle": "放弃这次评论？"
     }
+  },
+  "venues": {
+    "notPlaced": "这个展会场馆还没在地图上标出位置",
+    "unavailable": "场馆位置暂时读不到，请稍后再试",
+    "pinLabel": "展会场馆"
   }
 }

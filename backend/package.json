@@ -16,6 +16,7 @@
         "test:compression": "node tests/infrastructure/test_json_compression.js",
         "test:rate-limit": "node tests/infrastructure/test_rate_limit.js",
         "test:migration": "node tests/infrastructure/test_database_migration.js",
+        "test:venues": "node tests/venues/test_venues.js",
         "test:transactions": "node tests/infrastructure/test_transactions.js",
         "test:place-location": "node tests/places/test_place_location_ui.js",
         "test:sessions": "node tests/accounts/test_sessions.js",

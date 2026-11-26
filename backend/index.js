@@ -370,6 +370,10 @@ app.use('/internal/journey-algorithms/places', require('./modules/journeys/route
 app.use('/internal/rating-evidence/bundles',require('./modules/ratings/routes/researchBundles'));
 app.use('/api/public/journeys', require('./modules/journeys/routes/publicJourneys'));
 app.use('/api/community', require('./modules/community/routes/community'));
+// 场馆：denpawave 推送（服务间）、跳转解析（公开只读）、管理员待办（pending）
+app.use('/internal/venues', require('./modules/venues/routes/internal'));
+app.use('/venues', require('./modules/venues/routes/public'));
+app.use(['/admin/venues', '/api/admin/venues'], requireAuth, require('./modules/venues/routes/admin'));
 
 app.get("/", (req, res) => res.json({ ok: true, msg: "yUYUko Food Map Backend" }));
 

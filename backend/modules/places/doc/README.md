@@ -72,3 +72,5 @@ flowchart TD
 `routes/placeVisits.js`（`/api/visits`：状态、查看、到访推断与“是否去过”回答）挂在本模块，规则见 [到访与兴趣信号](../../preferences/doc/INTEREST_V3.md) 与 [评分迁移](../../ratings/doc/RATING_MIGRATION.md)。修改记录只保存描述里新增的文字，见 [编辑文本证据](../../ratings/doc/EDIT_TEXT_EVIDENCE.md)。
 
 数据：Place（含 moderation_status）、PlaceRegion、Category、PlaceRequest（request_type 区分修改、新增复核、打卡和评论）、PlaceModeration。跨模块读写涉及 Comment、PlaceRating、QQBotNotification。测试见 [案例库](TEST_CASES.md)。历史：`2bc8c5e` 位置编辑、`d285076` 分享修复、`ce52848` Bot 共享创建。待办 PLC-01 见 [清单](../../../doc/HISTORY_AND_TODO.md)。
+
+展会场馆（denpawave Micro 跳转后定位到展馆）见 [展会场馆落点](../../../doc/EXHIBITION_VENUE_LINK.md) 与 [场馆模块](../../venues/doc/README.md)：**场馆不进 `Place`**，只在 `modules/venues` 里存坐标。

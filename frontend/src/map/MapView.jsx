@@ -1585,7 +1585,10 @@ export default function MapView({
         return null;
     };
 
-    const handleSelectAlongRoutePlace = async (place) => {
+    // baseZoom：调用方指定的起始缩放（展会跳转要看周边，不沿用当前缩放）；不传时至少 16、不比当前缩放更远
+    // （列表与随机面板也直接把它当回调，第二个参数可能是别的值，只认数字 baseZoom）
+    const handleSelectAlongRoutePlace = async (place, options) => {
+        const baseZoom = options?.baseZoom;
         if (!place || !mapRef.current) return;
         const lng = Number(place.longitude);
         const lat = Number(place.latitude);
@@ -1594,7 +1597,8 @@ export default function MapView({
         const intent = mapIntentRef.current.capture(), map = mapRef.current;
         try {
             // 展会等远距离目标先完成定位再开卡片，避免卡片按旧视口避让并打断地图移动。
-            const zoom = await placeRevealZoom(place, Math.max(16, Math.round(Number(map.getZoom()) || 16)),intent);
+            const base = Number.isFinite(baseZoom) ? baseZoom : Math.max(16, Math.round(Number(map.getZoom()) || 16));
+            const zoom = await placeRevealZoom(place, base, intent);
             if (zoom === null || !mapIntentRef.current.isCurrent(intent)) return;
             map.setZoomAndCenter(zoom, [lng, lat], true);
         } catch (error) { /* best effort */ }
@@ -1604,7 +1608,7 @@ export default function MapView({
 
     // 展会地点（展会面板点地址）：复用高德临时地点的标记与卡片，卡片只有导航；
     // 卡片关掉或选了别的地点后标记随之消失（venuePlace 状态在组件顶部声明，标记层的 effect 要用）
-    const showExhibitionVenue = (venue) => {
+    const showExhibitionVenue = (venue, { baseZoom } = {}) => {
         if (!venue) return;
         const place = {
             id: `amap_${venue.key}`,
@@ -1617,7 +1621,7 @@ export default function MapView({
             latitude: venue.lat
         };
         return focusExhibitionVenue(place,{
-            select:handleSelectAlongRoutePlace,
+            select:(value)=>handleSelectAlongRoutePlace(value,{ baseZoom }),
             isSelected:value=>placeKey(selectedPlaceRef.current)===placeKey(value),
             showMarker:setVenuePlace
         });
@@ -2058,8 +2062,10 @@ export default function MapView({
         if (!placeId || !/^\d+$/.test(placeId)) return;
 
         const isNavShare = shareParamValue(params.get('nav')) === 'amap';
-        // 一次性参数：处理后从地址中移除，避免返回或刷新时重复跳转
-        removeQueryParams(['place', 'nav']);
+        // 一次性参数：处理后从地址中移除，避免返回或刷新时重复跳转。
+        // 同时丢掉 venue：分享链接比展会入口更具体，且本 effect 先于 venue effect 执行，
+        // 在这里删掉它、对方读到时就不存在了（否则两边都会处理）。
+        removeQueryParams(['place', 'nav', 'venue']);
 
         let cancelled = false;
         (async () => {
@@ -2091,6 +2097,56 @@ export default function MapView({
                 showPopup(place);
             } catch (e) {
                 console.warn('加载分享地点失败', e);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [mapReady, backendUrl, routeSearch]);
+
+    // 展会入口跳转（?venue=<key>，来自 denpawave Micro）：场馆已落点时定位过去，否则提示还没标记。
+    // 与 ?place= 分开处理：那是有地点 id、要开店卡；这里只有坐标，和展会面板点地址一样插展会图钉、
+    // 卡片只有导航（showExhibitionVenue），不发起任何搜索。接口不回场馆名，图钉用通用名称。
+    useEffect(() => {
+        if (!mapReady || !backendUrl) return;
+        const params = getQueryParams();
+        // ?place= 优先：分享链接比展会入口更具体（正常情况下上面那个 effect 已经删掉了 venue，
+        // 这里保留一次判断，避免依赖 effect 执行顺序）
+        if (shareParamValue(params.get('place'))) {
+            removeQueryParams(['venue']);
+            return;
+        }
+        const venueKey = shareParamValue(params.get('venue'));
+        if (!venueKey) return;
+        // 一次性参数：处理后从地址中移除，避免返回或刷新时重复跳转
+        removeQueryParams(['venue']);
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`${backendUrl}/venues/${encodeURIComponent(venueKey)}`, { cache: 'no-store' });
+                if (cancelled) return;
+                if (!res.ok) {
+                    // 400 是 key 格式不对：对住民等同于「还没标记」，不是稍后能好的故障
+                    showTip(res.status === 400 ? t('map:venues.notPlaced') : t('map:venues.unavailable'));
+                    return;
+                }
+                const venue = await res.json();
+                if (cancelled) return;
+                const lng = Number(venue?.longitude), lat = Number(venue?.latitude);
+                // 未落点（pending / ignored / unknown）或坐标不可显示：只提示，绝不按场馆名搜索
+                if (venue?.status !== 'placed' || !isMappableCoordinate(lng, lat) || !mapRef.current) {
+                    showTip(t('map:venues.notPlaced'));
+                    return;
+                }
+                exitUserFilter();
+                setAlongRouteResults(null);
+                alongRouteResultsRef.current = null;
+                armSkipAutoSearch(800);
+                // 从 15 级起（看得到展馆周边；首次打开的默认视野是最大缩放，不能沿用），图钉被聚合时再放大到单独显示
+                showExhibitionVenue({ key: `venue-${venueKey}@${lat},${lng}`, lat, lng, label: t('map:venues.pinLabel') }, { baseZoom: 15 });
+            } catch (e) {
+                console.warn('加载场馆位置失败', e);
+                if (!cancelled) showTip(t('map:venues.unavailable'));
             }
         })();
 
