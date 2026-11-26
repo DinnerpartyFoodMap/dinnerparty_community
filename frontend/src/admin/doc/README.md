@@ -4,6 +4,8 @@ AdminExhibitions 在后台底部提供展会联动设置，沿用公告发布权
 
 AdminDashboard.jsx 提供管理入口，AdminUsers/GeneralUsers/Places/Comments/QQWhitelist/Notices 分业务页，BanModal/AuditModal 负责关联弹层。显示权限与当前用户联动，后端才是授权和事务权威；目录整理不新增权限。
 
+AdminVenues（「展会场馆」，`manage_places`，三个等级都有）处理 denpawave 推来的场馆：在全屏选点器（`context="venue"`）里落点或忽略，只在网页后台，iOS 原生后台没有这一页；规则见 [场馆模块](../../../../backend/modules/venues/doc/README.md)。
+
 三个等级都显示操作日志和地点审核入口；地点申请页（AdminPlaces）同时复核新增地点、修改申请、打卡补充内容和被 AI 初筛拦下的住民评论（`request_type = 'comment'`，通过即公开评论，驳回则只有作者能看到）；皮肤兑换码仅 YUYUKO 显示。YOUMU 的普通用户管理面板增加封禁/解封与状态，复用 AdminBanModal 和 `/admin/users/ban`、`/unban`，目标限普通用户。KOMACHI 仍只有普通用户删除操作，不显示封禁按钮。QQ 白名单、公告/展会和隐藏的评论面板沿用原有范围。
 
 普通用户面板提交删除/封禁/解封期间暂停所有行操作和刷新，避免共享列表请求编号使另一个成功响应失效；关闭封禁弹层不取消已提交请求。浏览器用例通过延迟响应验证等待期间的禁用状态与最终封禁结果。

@@ -1585,7 +1585,10 @@ export default function MapView({
         return null;
     };
 
-    const handleSelectAlongRoutePlace = async (place) => {
+    // baseZoom：调用方指定的起始缩放（展会跳转要看周边，不沿用当前缩放）；不传时至少 16、不比当前缩放更远
+    // （列表与随机面板也直接把它当回调，第二个参数可能是别的值，只认数字 baseZoom）
+    const handleSelectAlongRoutePlace = async (place, options) => {
+        const baseZoom = options?.baseZoom;
         if (!place || !mapRef.current) return;
         const lng = Number(place.longitude);
         const lat = Number(place.latitude);
@@ -1594,7 +1597,8 @@ export default function MapView({
         const intent = mapIntentRef.current.capture(), map = mapRef.current;
         try {
             // 展会等远距离目标先完成定位再开卡片，避免卡片按旧视口避让并打断地图移动。
-            const zoom = await placeRevealZoom(place, Math.max(16, Math.round(Number(map.getZoom()) || 16)),intent);
+            const base = Number.isFinite(baseZoom) ? baseZoom : Math.max(16, Math.round(Number(map.getZoom()) || 16));
+            const zoom = await placeRevealZoom(place, base, intent);
             if (zoom === null || !mapIntentRef.current.isCurrent(intent)) return;
             map.setZoomAndCenter(zoom, [lng, lat], true);
         } catch (error) { /* best effort */ }
@@ -1604,7 +1608,7 @@ export default function MapView({
 
     // 展会地点（展会面板点地址）：复用高德临时地点的标记与卡片，卡片只有导航；
     // 卡片关掉或选了别的地点后标记随之消失（venuePlace 状态在组件顶部声明，标记层的 effect 要用）
-    const showExhibitionVenue = (venue) => {
+    const showExhibitionVenue = (venue, { baseZoom } = {}) => {
         if (!venue) return;
         const place = {
             id: `amap_${venue.key}`,
@@ -1617,7 +1621,7 @@ export default function MapView({
             latitude: venue.lat
         };
         return focusExhibitionVenue(place,{
-            select:handleSelectAlongRoutePlace,
+            select:(value)=>handleSelectAlongRoutePlace(value,{ baseZoom }),
             isSelected:value=>placeKey(selectedPlaceRef.current)===placeKey(value),
             showMarker:setVenuePlace
         });
@@ -2099,8 +2103,9 @@ export default function MapView({
         return () => { cancelled = true; };
     }, [mapReady, backendUrl, routeSearch]);
 
-    // 展会入口跳转（?venue=<key>，来自 denpawave Micro）：馆场馆已落点时定位过去，否则提示还没标记。
-    // 与 ?place= 分开处理：那是有地点 id、要开店卡；这里只有坐标，不打开任何卡片，也不发起任何搜索。
+    // 展会入口跳转（?venue=<key>，来自 denpawave Micro）：场馆已落点时定位过去，否则提示还没标记。
+    // 与 ?place= 分开处理：那是有地点 id、要开店卡；这里只有坐标，和展会面板点地址一样插展会图钉、
+    // 卡片只有导航（showExhibitionVenue），不发起任何搜索。接口不回场馆名，图钉用通用名称。
     useEffect(() => {
         if (!mapReady || !backendUrl) return;
         const params = getQueryParams();
@@ -2121,7 +2126,8 @@ export default function MapView({
                 const res = await fetch(`${backendUrl}/venues/${encodeURIComponent(venueKey)}`, { cache: 'no-store' });
                 if (cancelled) return;
                 if (!res.ok) {
-                    showTip(t('map:venues.unavailable'));
+                    // 400 是 key 格式不对：对住民等同于「还没标记」，不是稍后能好的故障
+                    showTip(res.status === 400 ? t('map:venues.notPlaced') : t('map:venues.unavailable'));
                     return;
                 }
                 const venue = await res.json();
@@ -2136,7 +2142,8 @@ export default function MapView({
                 setAlongRouteResults(null);
                 alongRouteResultsRef.current = null;
                 armSkipAutoSearch(800);
-                mapRef.current.setZoomAndCenter(15, [lng, lat], true);
+                // 从 15 级起（看得到展馆周边；首次打开的默认视野是最大缩放，不能沿用），图钉被聚合时再放大到单独显示
+                showExhibitionVenue({ key: `venue-${venueKey}@${lat},${lng}`, lat, lng, label: t('map:venues.pinLabel') }, { baseZoom: 15 });
             } catch (e) {
                 console.warn('加载场馆位置失败', e);
                 if (!cancelled) showTip(t('map:venues.unavailable'));

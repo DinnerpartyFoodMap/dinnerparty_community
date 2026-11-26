@@ -53,17 +53,21 @@ flowchart TD
 
 `key` 限制 `^[A-Za-z0-9_-]{1,64}$`；`label` ≤120、`address` ≤200、`city` ≤40；一律纯文本，拒绝控制字符。
 
-鉴权缺一不可：token 与来源白名单任一为空都返回 503（**白名单留空等于拒绝所有来源**，不是不限制）。限流按来源 IP 计，60 秒 6 次，超出 429 + `Retry-After: 60`；按 IP 而不是请求头，免得换个 `X-Key-Id` 就绕过。
+鉴权缺一不可：token 与来源白名单任一为空都返回 503（**白名单留空等于拒绝所有来源**，不是不限制）。限流按来源 IP 计，60 秒 6 次，超出 429 + `Retry-After: 60`；按 IP 而不是请求头，免得换个 `X-Key-Id` 就绕过。白名单和限流都按 `req.ip`，只有反向代理覆盖 `X-Forwarded-For` 且 `TRUST_PROXY=loopback` 时才可信；默认配置下白名单只能挡误配，真正的门槛是 token。
 
 ## 管理端
 
-面板在后台「场馆」，权限沿用 `manage_places`。点「在地图上定位」打开 `FullScreenMapPicker`，点「选图钉位置」把当前地图中心的坐标提交到 `/place`。
+面板在网页后台「展会场馆」（`frontend/src/admin/AdminVenues.jsx`），权限沿用 `manage_places`，三个等级都有。点「在地图上定位」打开 `FullScreenMapPicker`（`context="venue"`），选中站内地点或图钉位置后把坐标提交到 `/place`。工具行有「刷新」，推送随时会来。iOS 原生管理后台没有这一页（页面引擎没有地图选点），在网页或 Android 上处理。
 
 选点器的初始中心取自 `GET /places/regions` 的城市 bounds 中心：零外部调用（不用 `AMap.DistrictSearch`，那会消耗高德行政区查询额度；JS API 2.0 也已没有 `setCity`）。地区树只含**已有公开地点**的城市，查不到就退回地图默认视野，这是有意的降级。
 
 对端传的城市可能只写「上海」，地区树里是「上海市」，比对前剥掉行政区后缀（`市/省/区/县/自治州/地区/特别行政区`），否则会静默退回默认视野。只影响比对，不改存储。
 
 `MapView` 的 `initialCenter` 只在挂载时读一次，所以打开选点器前要先把地区树准备好（`await ensureRegions()` 再 `setPicking`），不能靠挂载后的 effect 补。
+
+## 住民跳转
+
+`/?venue=<key>`（`frontend/src/map/MapView.jsx`）：`placed` 时与展会面板点地址相同，走 `showExhibitionVenue` 插展会图钉（从 15 级起看周边，图钉被聚合时再放大）、开只有「导航」的卡片，标题是通用的「展会场馆」（接口不回场馆名）；其余状态只提示还没标出位置，不搜索。与 `?place=` 同时出现时以 `place` 为准。
 
 ## 为什么不加 HMAC / 回执表
 
@@ -82,4 +86,6 @@ VENUE_ALLOWED_IPS=
 
 ## 测试
 
-`node tests/venues/test_venues.js`（`npm test` 自动发现）：鉴权分支（缺 token / 错 token / 未配置 token / 未配置白名单 / 白名单不匹配）、限流第 7 次 429、幂等重复推送、`ignored` 保持、单条失败不影响整批、对端硬塞坐标被丢弃、落点的 400/409 与审计、解析四态、公开接口不泄露展示文字、**落点不创建 Place**、非管理员 403。
+`npm run test:venues`（`npm test` 也会跑）：鉴权分支（缺 token / 错 token / 未配置 token / 未配置白名单 / 白名单不匹配）、限流第 7 次 429、幂等重复推送、`ignored` 保持、单条失败不影响整批、对端硬塞坐标被丢弃、落点的 400/409 与审计、解析四态、公开接口不泄露展示文字、**落点不创建 Place**、非管理员 403。
+
+后台面板的浏览器回归在 `tests/venues/test_venues_ui.js`（`npm run test:ui` 也会跑，需要 `PLAYWRIGHT_MODULE`）：真实 `AdminVenues` + 临时库，覆盖待办列表、计数与刷新、忽略的确认、落点后离开待办、深色与 360px 不横向滚动；设 `VENUE_UI_SCREENSHOTS=<目录>` 时保存截图。选点器需要真实地图，落点直接走服务。

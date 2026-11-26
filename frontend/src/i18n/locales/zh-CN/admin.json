@@ -297,7 +297,7 @@
       "users": "用户管理",
       "generalUsers": "普通用户管理",
       "places": "地点修改申请",
-      "venues": "场馆",
+      "venues": "展会场馆",
       "tasteAxes": "店铺口味分类",
       "qqWhitelist": "QQ 白名单",
       "notices": "公告",
@@ -429,10 +429,11 @@
     "page": "第 {{page}} / {{total}} 页"
   },
   "venues": {
-    "title": "场馆",
+    "title": "展会场馆",
     "intro": "denpawave 建好活动后会把场馆推到这里。在地图上点一个位置存下来，跳转时就会聚焦到那里；不需要的可以忽略。场馆不是餐厅，不会出现在搜索和随机推荐里。",
     "loading": "正在加载场馆请求…",
     "empty": "没有待处理的场馆请求",
+    "count": "{{count}} 个场馆等待定位",
     "retry": "重试",
     "pick": "在地图上定位",
     "ignore": "忽略",

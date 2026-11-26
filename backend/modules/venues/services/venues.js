@@ -50,7 +50,7 @@ function normalizeEvent(input) {
         throw failure(400, 'INVALID_FIELD', '事件格式错误');
     }
     const key = typeof input.key === 'string' ? input.key.trim() : '';
-    if (!EXTERNAL_KEY.test(key)) throw failure(400, 'INVALID_KEY', 'key 只能是小写字母、数字、下划线与连字符，最长 64 位');
+    if (!EXTERNAL_KEY.test(key)) throw failure(400, 'INVALID_KEY', 'key 只能是字母、数字、下划线与连字符，最长 64 位');
     return {
         externalKey: key,
         label: plainText(input.label, { field: 'label', max: FIELD_LIMITS.label, required: true }),

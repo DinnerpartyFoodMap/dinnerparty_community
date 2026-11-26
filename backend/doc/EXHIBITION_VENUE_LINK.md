@@ -1,8 +1,6 @@
 # 场馆落点：denpawave Micro 跳转饭联地图后的聚焦
 
-状态：P0 接收端已实现（`modules/venues`），跳转解析与前端待做。
-
-核对基线：`b53d07d`（2026-11-15，origin/main）。
+状态：P0 已实现，包括接收端、管理端待办、跳转解析（`backend/modules/venues`）、后台「展会场馆」（`frontend/src/admin/AdminVenues.jsx`）和前端 `?venue=`（`frontend/src/map/MapView.jsx`）。P1/P2 见「后续」。
 
 ## 背景
 
@@ -49,9 +47,9 @@ CREATE TABLE IF NOT EXISTS Venue (
     status TEXT NOT NULL DEFAULT 'pending',
     note TEXT,
     created_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_time TEXT,
-    handled_by TEXT,                 -- User.id（TEXT）
-    handled_time DATETIME,
+    updated_time DATETIME,
+    placed_by TEXT,                  -- 落点或忽略的管理员 User.id（TEXT）
+    placed_time DATETIME,
     UNIQUE (source, external_key)
 );
 ```
@@ -99,22 +97,22 @@ CREATE TABLE IF NOT EXISTS Venue (
 
 `https://www.dinnerparty.cc/?venue=<key>`
 
-- 单独一个 effect：先解析 `venue`，`placed` 时按坐标 `setZoomAndCenter(16)` 定位（**不开卡**——场馆没有店卡），`pending` / `ignored` / `unknown` 时只弹提示；参数一次性，处理后 `removeQueryParams(['venue'])`。
-- 与 `?place=` 互不干扰：前者是地点 id、开卡片，后者是坐标、只移动视野。
-- `pending` / `ignored` / `unknown`：打开地图并提示「这个展会地点还没在饭联地图标记」，**显式不调用任何高德搜索**。
-- 两者同时出现时以 `place` 为准（分享链接优先）。
+- 单独一个 effect：读 `GET /venues/<key>`；`placed` 时和展会面板点地址一样走 `showExhibitionVenue`：地图移到场馆（从 15 级起，看得到周边；图钉被聚合时再放大到单独显示。首次打开的默认视野是最大缩放，不能沿用当前缩放）、插展会图钉、卡片只有「导航」（不是店卡，没有评价、评论、收藏）。接口不回场馆名，卡片标题用通用的「展会场馆」。
+- `pending` / `ignored` / `unknown`（含 key 格式不对的 400）：停在当前视野，提示「这个展会场馆还没在地图上标出位置」，**不调用任何高德搜索**；接口出错时提示稍后再试。
+- 参数一次性，处理后 `removeQueryParams(['venue'])`；与 `?place=` 同时出现时以 `place` 为准（分享链接优先）。
+- App 里 Universal Link 打开 `/?venue=` 走同一条 `app:open-path` → 网页分支，iOS 原生底图与原生店卡同样适用。
 
-### 城市兜底
+### 选点器的初始中心
 
-`pending` 时若想落在城市，复用已有的地区树，不引入任何外部调用：`GET /places/regions` 返回的每个市节点带 `bounds: [minLng, minLat, maxLng, maxLat]`（`places/services/placeRegions.js` 的 `regionTree()`，按已有地点算），前端 `frontend/src/places/placeRegions.js` 已有缓存与查找帮手。
+管理端选点时按推送里的 `city` 定位，复用已有的地区树，不引入任何外部调用：`GET /places/regions` 的每个市节点带 `bounds: [minLng, minLat, maxLng, maxLat]`（`places/services/placeRegions.js` 的 `regionTree()`，按已有地点算），取 bounds 中心。
 
-- 只对有公开地点的城市有效；查不到就保持默认视野 + 提示，不额外造数据。
-- 用 bounds 中心 + 固定 zoom（约 11），**不要直接 `setBounds`**：城市里只有两三家店时 bounds 很紧，会贴着那几家店放大。
-- 高德 JS API 2.0 没有 `setCity`（那是 1.4 的 API），`AMap.DistrictSearch` 是服务插件、要外部调用，不用。`setZoomAndCenter` / `setBounds` 是纯视口操作，不消耗搜索额度。
+- 只对有公开地点的城市有效；查不到就用地图默认视野。
+- 高德 JS API 2.0 没有 `setCity`（那是 1.4 的 API），`AMap.DistrictSearch` 是服务插件、要外部调用，不用。
+- 住民跳转时不做城市兜底：`GET /venues/:key` 不回 `city`。
 
 ## 为什么不加 HMAC / 回执表
 
-威胁模型：对端是合作方，接口最坏只能往待办里塞几行数据，落点仍需管理员登录，量级是每月几场活动。请求走 HTTPS，Bearer 用于吊销，IP 白名单防「token 意外泄漏后被外部使用」。
+威胁模型：对端是合作方，接口最坏只能往待办里塞几行数据，落点仍需管理员登录，量级是每月几场活动。请求走 HTTPS，Bearer 用于吊销，IP 白名单防「token 意外泄漏后被外部使用」。白名单按 `req.ip` 比对，只有反向代理覆盖 `X-Forwarded-For` 且 `TRUST_PROXY=loopback` 时才可信（见 `http/doc/README.md#数据访问限流`）；默认配置下它只能挡误配，真正的门槛是 token。
 
 重放没有副作用（幂等）；请求记录由既有 `requestLogger`（含 `requestId`）与 `AdminAudit` 覆盖。真需要时再加 nonce 唯一表或回执表，都不破坏现有数据。
 
@@ -128,9 +126,9 @@ VENUE_ALLOWED_IPS=127.0.0.1,<denpa 生产出网 IP>  # 留空等于拒绝所有
 
 ## 测试
 
-`node tests/venues/test_venues.js`（`npm test` 自动发现）。已覆盖：鉴权三条分支（缺 token / 错 token / 未配置）、重复推送幂等、`ignored` 保持、单条失败不影响整批、批大小与字段上限、link 的 400/404/409 与审计、解析四态、公开接口不泄露展示文字、地点被删退化为 `unknown`、非管理员 403。
+`npm run test:venues`（`npm test` 也会跑）：鉴权分支（缺 token / 错 token / 未配置 token / 未配置白名单 / 白名单不匹配）、限流第 7 次 429、幂等重复推送、`ignored` 保持、单条失败不影响整批、对端硬塞坐标被丢弃、落点的 400/409 与审计、解析四态、公开接口不泄露展示文字、落点不创建 Place、非管理员 403。后台面板的浏览器回归见 `tests/venues/test_venues_ui.js`。
 
-前端回归（待自动化）：`/?venue=<key>` 命中时定位并开卡、参数被移除；未命中时出现提示且 `AmapSearchUsage` 无新增。
+住民跳转的前端回归（待自动化）：`/?venue=<key>` 命中时地图移到场馆并出现展会图钉与导航卡片、参数被移除；未命中时出现提示且 `AmapSearchUsage` 无新增。
 
 ## 后续
 
@@ -144,7 +142,7 @@ P0 完成即可先用 curl 验收全链路；P1/P2 只增加入口。
 
 ## 风险
 
-- **合同**：搜索只服务管理员的即时选点、不落库、不再分发；解析接口只回饭联自己的地点 id。
+- **合同**：坐标只来自管理员在地图上的选点，不落任何搜索结果；解析接口只回状态和坐标。
 - **额度**：本方案没有任何新增搜索调用；要防的是 `pending` 时前端自己按场馆名搜索，代码里显式不做。
 - **数据质量**：同一展馆会被多场活动推成多条请求，管理员会看到两条相似待办；v1 靠人工忽略，不做自动合并。
-- **iOS**：`?place=` 在 iOS 由原生接管，`?venue=` 的城市兜底需要原生桥配合，先做 Web，iOS 另开。
+- **iOS 后台**：「展会场馆」只在网页后台，iOS 原生管理后台没有这一页（原生页面引擎没有地图选点），管理员在网页或 Android 上处理。

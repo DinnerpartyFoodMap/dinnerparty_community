@@ -2873,7 +2873,7 @@ export default function MapUI(props) {
 
             {!hideNonSearchButtons && pickerMode && !iosApp && (
                 <div data-native-cluster-occluder="" ref={dinnerBtnRef} style={{ position: "absolute", left: 16, bottom: isNarrow ? 68 : 12, zIndex: 2000 }}>
-                    <Tooltip text={isPosterPicker ? t('map:ui.picker.backToPoster') : pickerContext === 'manage' ? t('map:manage.backToEdit') : pickerContext === 'journey' ? t('map:ui.picker.backToDiary') : pickerContext === 'exhibition' ? t('map:ui.picker.backToExhibition') : pickerContext === 'listCenter' ? t('places:list.center.backToList') : t('map:ui.picker.backToDinner')} placement="top">
+                    <Tooltip text={isPosterPicker ? t('map:ui.picker.backToPoster') : pickerContext === 'manage' ? t('map:manage.backToEdit') : pickerContext === 'journey' ? t('map:ui.picker.backToDiary') : pickerContext === 'exhibition' ? t('map:ui.picker.backToExhibition') : pickerContext === 'venue' ? t('map:ui.picker.backToVenues') : pickerContext === 'listCenter' ? t('places:list.center.backToList') : t('map:ui.picker.backToDinner')} placement="top">
                         <div style={{ display: "inline-block" }}>
                             <Button
                                 onClick={onPickerClose}

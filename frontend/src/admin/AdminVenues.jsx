@@ -134,30 +134,45 @@ export default function AdminVenues({ backendUrl }) {
 
     const pending = data?.pending || [];
     const meta = { fontSize: 12, color: 'var(--color-text-secondary)' };
-    const card = { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12, marginBottom: 10, background: 'var(--color-bg-overlay)' };
+    const card = { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12, background: 'var(--color-bg-overlay)' };
     const row = { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, alignItems: 'center' };
 
     return <section aria-labelledby="admin-venues-title">
         <h3 id="admin-venues-title" style={{ marginTop: 0 }}>{t('admin:venues.title')}</h3>
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, lineHeight: 1.6 }}>{t('admin:venues.intro')}</p>
 
-        {loading && <StateMessage kind="loading">{t('admin:venues.loading')}</StateMessage>}
-        {!loading && loadError && <StateMessage kind="error" onRetry={refresh} retryLabel={t('admin:venues.retry')}>{loadError}</StateMessage>}
-        {!loading && !loadError && pending.length === 0 && <StateMessage>{t('admin:venues.empty')}</StateMessage>}
+        {/* 推送随时会来：工具行放区块内刷新（secondary sm，与地点申请、白名单一致） */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+            <span style={meta}>{data ? t('admin:venues.count', { count: pending.length }) : ''}</span>
+            <Button variant="secondary" size="sm" onClick={refresh} disabled={loading || !!busyId}>
+                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 18 }}>refresh</span>{t('common:action.refresh')}
+            </Button>
+        </div>
 
-        {!loading && !loadError && pending.map((item) => <div key={item.id} style={card}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>{item.label}</div>
-            {item.address && <div style={meta}>{item.address}</div>}
-            <div style={meta}>
-                {[item.city, t('admin:venues.receivedAt', { time: formatTime(item.created_time) })].filter(Boolean).join(' · ')}
+        {/* 刷新时保留已有列表（变淡），只有第一次加载才显示加载中 */}
+        {loading && !data ? (
+            <StateMessage kind="loading">{t('admin:venues.loading')}</StateMessage>
+        ) : loadError ? (
+            <StateMessage kind="error" onRetry={refresh} retryLabel={t('admin:venues.retry')}>{loadError}</StateMessage>
+        ) : pending.length === 0 ? (
+            <StateMessage>{t('admin:venues.empty')}</StateMessage>
+        ) : (
+            <div style={{ display: 'grid', gap: 10, opacity: loading ? 0.6 : 1 }}>
+                {pending.map((item) => <article key={item.id} style={card}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>{item.label}</div>
+                    {item.address && <div style={meta}>{item.address}</div>}
+                    <div style={meta}>
+                        {[item.city, t('admin:venues.receivedAt', { time: formatTime(item.created_time) })].filter(Boolean).join(' · ')}
+                    </div>
+                    <div style={row}>
+                        <Button disabled={!!busyId || loading} onClick={async () => { await ensureRegions(); setPicking(item); }}>{t('admin:venues.pick')}</Button>
+                        <Button variant="secondary" disabled={!!busyId || loading} onClick={() => ignore(item)}>{t('admin:venues.ignore')}</Button>
+                    </div>
+                </article>)}
             </div>
-            <div style={row}>
-                <Button disabled={!!busyId} onClick={async () => { await ensureRegions(); setPicking(item); }}>{t('admin:venues.pick')}</Button>
-                <Button variant="secondary" disabled={!!busyId} onClick={() => ignore(item)}>{t('admin:venues.ignore')}</Button>
-            </div>
-        </div>)}
+        )}
 
-        <FullScreenMapPicker open={!!picking} title={t('admin:venues.pickLocation')} context="exhibition"
+        <FullScreenMapPicker open={!!picking} title={t('admin:venues.pickLocation')} context="venue"
             center={picking ? cityCenterOf(regions, picking.city) : null}
             backendUrl={backendUrl} token={token} isAuthenticated={!!token} onRequireAuth={onRequireAuth}
             onPickPlace={(point) => picking && placeAt(picking, point)}
