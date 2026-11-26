@@ -3,19 +3,25 @@
     "id": "home.alarm", "scene": "home", "anchor": "wake", "window": null, "minutes": [2, 10], "icon": "sleep",
     "quiz": 3, "ask": "闹钟响了",
     "variants": [
-      { "id": "snooze", "fits": ["爱睡觉"], "action": "{a}把闹钟按掉，翻了个身", "sound": ["「再五分钟」"], "detail": ["第二个闹钟也响了"] },
-      { "id": "up", "fits": ["早起"], "action": "{a}闹钟一响就坐起来了", "sound": [], "detail": ["被子顺手叠成了方块"] },
-      { "id": "grope", "fits": ["迷糊"], "action": "{a}闭着眼睛到处摸手机", "sound": ["「在哪……」"], "detail": ["在枕头底下摸到了"] },
-      { "id": "plain", "fits": [], "action": "{a}关了闹钟，在床上坐了一会儿", "sound": [], "detail": ["盯着天花板"] }
+      { "id": "snooze", "fits": ["爱睡觉"], "action": "{a}把闹钟按掉，翻了个身", "sound": ["「再五分钟」"], "detail": ["第二个闹钟也响了", "手在床头柜上乱摸"] },
+      { "id": "up", "fits": ["早起"], "action": "{a}闹钟一响就坐起来了", "sound": [], "detail": ["被子顺手叠成了方块", "拖鞋都穿好了才下床"] },
+      { "id": "grope", "fits": ["迷糊"], "action": "{a}闭着眼睛到处摸手机", "sound": ["「在哪……」"], "detail": ["在枕头底下摸到了", "手机还插着充电线"] },
+      { "id": "plain", "fits": [], "action": "{a}关了闹钟，在床上坐了一会儿", "sound": [], "detail": ["盯着天花板", "闹钟又响了一次"] },
+      { "id": "coffee-start", "fits": ["咖啡茶饮续命"], "action": "{a}起床先去按了咖啡机", "sound": ["「嘀」"], "detail": ["等的时候去刷了牙"] },
+      { "id": "curtain-gap", "fits": ["早起"], "action": "{a}把窗帘拨开一条缝往外看", "sound": [], "detail": ["早点摊的灯已经亮了"] },
+      { "id": "clothes-fast", "fits": ["果断"], "action": "{a}掀开被子就下床穿衣服", "sound": [], "detail": ["拖鞋踢到了床底"] }
     ]
   },
   {
     "id": "home.wash", "scene": "home", "window": [[360, 690]], "minutes": [5, 15], "icon": "clean",
     "variants": [
-      { "id": "facewash", "fits": ["迷糊"], "action": "{a}挤了牙膏才发现是洗面奶", "sound": ["「呸呸」"], "detail": ["重新挤了一遍"] },
+      { "id": "facewash", "fits": ["迷糊"], "action": "{a}挤了牙膏才发现是洗面奶", "sound": ["「呸呸」"], "detail": ["重新挤了一遍"], "rare": true },
       { "id": "wipe", "fits": ["爱操心"], "action": "{a}刷完牙把洗手台擦干了", "sound": [], "detail": ["牙刷头朝上放好"] },
       { "id": "eyes-shut", "fits": ["爱睡觉"], "action": "{a}站在镜子前刷了三分钟牙", "sound": [], "detail": ["眼睛还没睁开"] },
-      { "id": "plain", "fits": [], "action": "{a}洗了把脸", "sound": ["「哗啦」"], "detail": ["毛巾挂歪了"] }
+      { "id": "plain", "fits": [], "action": "{a}洗了把脸", "sound": ["「哗啦」"], "detail": ["毛巾挂歪了"] },
+      { "id": "toothbrush-tap", "fits": ["果断"], "action": "{a}把牙刷在杯沿上敲了两下", "sound": ["「咚咚」"], "detail": ["泡沫溅了一镜子"] },
+      { "id": "towel-three", "fits": ["吃得慢"], "action": "{a}用毛巾把脸擦了三遍", "sound": [], "detail": ["毛巾滴着水"] },
+      { "id": "toothbrush-on-off", "fits": ["选择困难"], "action": "{a}把电动牙刷按开又按掉", "sound": ["「嗡嗡」"], "detail": ["震得手一抖"] }
     ]
   },
   {
@@ -24,15 +30,18 @@
       { "id": "egg", "fits": ["早起"], "action": "{a}煎了一个蛋", "sound": ["「滋啦」"], "detail": ["边上焦了一圈"] },
       { "id": "noodles", "fits": ["面食快餐派"], "action": "{a}下了一小把挂面当早饭", "sound": [], "detail": ["卧了个蛋"] },
       { "id": "cold-bread", "fits": ["随缘"], "action": "{a}站在冰箱前吃了片面包", "sound": [], "detail": ["没烤，也没坐下"] },
-      { "id": "plain", "fits": [], "action": "{a}热了杯牛奶", "sound": ["「叮」"], "detail": ["端着在屋里走来走去"] }
+      { "id": "plain", "fits": [], "action": "{a}热了杯牛奶", "sound": ["「叮」"], "detail": ["端着在屋里走来走去"] },
+      { "id": "fried-rice", "fits": ["家常菜"], "action": "{a}把昨晚的剩饭炒了", "sound": ["「刺啦」"], "detail": ["饭炒成了深色"] },
+      { "id": "oatmeal", "fits": ["吃得快"], "action": "{a}冲了碗燕麦，搅两下就吃", "sound": [], "detail": ["没等泡开"] },
+      { "id": "lunch-box", "fits": ["家常菜"], "action": "{a}边吃边把午饭装进饭盒", "sound": [], "detail": ["饭盒盖压了两次"] }
     ]
   },
   {
     "id": "home.weekend-morning", "scene": "home", "days": "weekend", "window": [[420, 660]], "minutes": [20, 60], "icon": "sleep",
     "quiz": 16, "ask": "周末早上",
     "variants": [
-      { "id": "back-to-sleep", "fits": ["爱睡觉"], "action": "{a}醒了又睡着了", "sound": ["「嗯……」"], "detail": ["手机还亮着"] },
-      { "id": "early", "fits": ["早起"], "window": [[420, 480]], "minutes": [10, 20], "action": "{a}七点就醒了，在屋里转了两圈", "sound": [], "detail": ["把窗帘全拉开了"] },
+      { "id": "back-to-sleep", "fits": ["爱睡觉"], "minutes": [55, 65], "action": "{a}又回床上睡了一个钟头", "sound": ["「嗯……」"], "detail": ["被子蒙过了头"], "say": true },
+      { "id": "early", "fits": ["早起"], "window": [[420, 540]], "minutes": [10, 20], "action": "{a}周末也没睡懒觉，在屋里转了两圈", "sound": [], "detail": ["把窗帘全拉开了"] },
       { "id": "group", "fits": ["话多"], "action": "{a}在群里问有没有人去吃早茶", "sound": ["「有人吗」"], "detail": ["半小时没人回"] },
       { "id": "plain", "fits": [], "action": "{a}躺着听楼上装修", "sound": ["「咚咚咚」"], "detail": ["用枕头把头盖住了"] }
     ]
@@ -40,10 +49,13 @@
   {
     "id": "home.plants", "scene": "home", "window": [[420, 660], [960, 1140]], "minutes": [3, 10], "icon": "clean",
     "variants": [
-      { "id": "watered", "fits": ["迷糊"], "action": "{a}拿起水壶才发现昨天浇过了", "sound": ["「哦」"], "detail": ["又放回去了"] },
+      { "id": "watered", "fits": ["迷糊"], "action": "{a}拿起水壶才发现昨天浇过了", "sound": ["「哦」"], "detail": ["又放回去了"], "say": true },
       { "id": "turn", "fits": ["爱操心"], "action": "{a}把绿萝转了个方向", "sound": [], "detail": ["说这边晒得到"] },
       { "id": "cactus", "fits": ["随缘"], "action": "{a}看了一眼仙人掌", "sound": ["「下周再说」"], "detail": [] },
-      { "id": "plain", "fits": [], "action": "{a}给窗台上的绿萝浇了水", "sound": [], "detail": ["水从盆底漏了出来"] }
+      { "id": "plain", "fits": [], "action": "{a}给窗台上的绿萝浇了水", "sound": [], "detail": ["水从盆底漏了出来"] },
+      { "id": "dead-leaves", "fits": ["果断"], "action": "{a}把枯了的叶子一片片摘掉", "sound": [], "detail": ["摘了一小把"] },
+      { "id": "soil-loosen", "fits": ["吃得慢"], "action": "{a}给花盆松了松土", "sound": [], "detail": ["土撒了一窗台"] },
+      { "id": "garlic-pot", "fits": ["家常菜"], "action": "{a}把发芽的蒜按进了花盆", "sound": [], "detail": ["标签上写了个蒜字"] }
     ]
   },
   {
@@ -51,17 +63,23 @@
     "variants": [
       { "id": "drills", "fits": ["早起"], "action": "{a}在客厅做了一套广播体操", "sound": [], "detail": ["第三节转错了方向"] },
       { "id": "video", "fits": ["宅"], "action": "{a}打开健身视频，跟了五分钟", "sound": [], "detail": ["后面一直坐着看"] },
-      { "id": "pushups", "fits": ["嘴硬"], "action": "{a}做了十个俯卧撑", "sound": ["「还能做」"], "detail": ["第十一个没撑起来"] },
-      { "id": "plain", "fits": [], "action": "{a}靠着墙拉伸", "sound": ["「嘶——」"], "detail": ["脚尖还是够不到"] }
+      { "id": "pushups", "fits": ["嘴硬"], "action": "{a}做了十个俯卧撑", "sound": ["「还能做」"], "detail": ["第十一个没撑起来"], "rare": true },
+      { "id": "plain", "fits": [], "action": "{a}靠着墙拉伸", "sound": ["「嘶——」"], "detail": ["脚尖还是够不到"] },
+      { "id": "mat-out", "fits": ["选择困难"], "action": "{a}把瑜伽垫铺开又卷回去", "sound": [], "detail": [] },
+      { "id": "dumbbell-dust", "fits": ["果断"], "action": "{a}把哑铃从床底拖了出来", "sound": ["「咳咳」"], "detail": ["上面落了一层灰"] },
+      { "id": "jump-rope", "fits": ["早起"], "action": "{a}在阳台上跳绳", "sound": ["「啪」"], "detail": ["绳子抽到了晾衣架"] }
     ]
   },
   {
     "id": "home.laundry", "scene": "home", "window": [[480, 1260]], "minutes": [5, 15], "icon": "clean",
     "variants": [
-      { "id": "tissue", "fits": ["迷糊"], "action": "{a}晾衣服时从兜里掏出一张纸巾", "sound": ["「完了」"], "detail": ["已经洗成了碎屑"] },
+      { "id": "tissue", "fits": ["迷糊"], "action": "{a}晾衣服时从兜里掏出一张纸巾", "sound": ["「完了」"], "detail": ["已经洗成了碎屑"], "say": true },
       { "id": "pairs", "fits": ["爱操心"], "action": "{a}把袜子一双双配好夹上", "sound": [], "detail": ["少了一只"] },
       { "id": "pile", "fits": ["随缘"], "action": "{a}收回来的衣服堆在了椅子上", "sound": [], "detail": ["说明天再叠"] },
-      { "id": "plain", "fits": [], "action": "{a}把衣服塞进洗衣机", "sound": ["「嘀」"], "detail": ["按了两次才启动"] }
+      { "id": "plain", "fits": [], "action": "{a}把衣服塞进洗衣机", "sound": ["「嘀」"], "detail": ["按了两次才启动"] },
+      { "id": "sort-colors", "fits": ["果断"], "action": "{a}把深色和浅色分了两堆", "sound": ["「分好了」"], "detail": ["分完直接塞进洗衣机"] },
+      { "id": "sheets-load", "fits": ["吃得慢"], "action": "{a}把衣架全朝一个方向挂", "sound": [], "detail": ["挂了两排"] },
+      { "id": "season-box", "fits": ["果断"], "action": "{a}把厚衣服收进了床底的箱子", "sound": [], "detail": ["箱子差点推不进去"] }
     ]
   }
 ]

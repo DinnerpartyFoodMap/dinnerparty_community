@@ -33,6 +33,7 @@ import { DinnerCreatePage, DinnerDetailPage, DinnerListPage, isDinnerPath, parse
 import PosterExportPage from "../poster/PosterExportPage";
 import PlaceListPage from "../places/PlaceListPage";
 import UserProfilePage from "../profile/UserProfilePage";
+import OtherRoomPage from "../companion/OtherRoomPage";
 import ProfileCommunityPage from "../profile/ProfileCommunityPage";
 import NativeProfileHost from "../profile/NativeProfileHost";
 import { supportsNativeProfile } from "../profile/useNativeProfile";
@@ -70,6 +71,12 @@ const BACKEND_URL = getApiBaseUrl();
 // 住民主页 /users/<id>（id 是 UUID，旧数据也可能是数字）
 function parseProfileIdFromPath(pathname) {
     const match = /^\/users\/([A-Za-z0-9-]{1,64})$/.exec(String(pathname || ''));
+    return match ? match[1] : null;
+}
+
+// 别人的小伙伴 /users/<id>/room（只读）
+function parseRoomIdFromPath(pathname) {
+    const match = /^\/users\/([A-Za-z0-9-]{1,64})\/room$/.exec(String(pathname || ''));
     return match ? match[1] : null;
 }
 
@@ -548,9 +555,9 @@ export default function App() {
             window.location.replace('/home/');
             return;
         }
-        // 限定页面路径（允许 /, /admin, /settings/*, /dinners*, /posters/new, /places, /users/:id）
+        // 限定页面路径（允许 /, /admin, /settings/*, /dinners*, /posters/new, /places, /users/:id, /users/:id/room）
         if (pathname !== "/" && pathname !== "/admin" && !pathname.startsWith("/settings") && !isDinnerPath(pathname) && pathname !== '/posters/new'
-            && pathname !== '/places' && !parseProfileIdFromPath(pathname)) {
+            && pathname !== '/places' && !parseProfileIdFromPath(pathname) && !parseRoomIdFromPath(pathname)) {
             goPath("/");
         }
     }, [pathname, goPath]);
@@ -618,7 +625,11 @@ export default function App() {
     const showPosterExport = pathname === '/posters/new';
     // 地点列表与住民主页
     const showPlaceList = pathname === '/places';
-    const profileUserId = parseProfileIdFromPath(pathname);
+    const roomUserId = parseRoomIdFromPath(pathname);
+    // iOS 原生：别人的小伙伴是原生主页里推入的页面，打开对方主页并直接推入（见 NativeProfileHost 的 initialPage）
+    const nativeRoomPath = !!roomUserId && supportsNativeProfile() && String(nativeProfileFailedId) !== roomUserId;
+    const profileUserId = parseProfileIdFromPath(pathname) || (nativeRoomPath ? roomUserId : null);
+    const showOtherRoom = !!roomUserId && !nativeRoomPath;
     const profileSearch = new URLSearchParams(routeSearch);
     const profileTab = profileSearch.get('tab');
     const selfProfile = !!user && String(user.id) === profileUserId;
@@ -628,12 +639,25 @@ export default function App() {
     const nativeProfileFailed = nativeProfileFailedId != null && String(nativeProfileFailedId) === String(profileUserId);
     const nativeProfileActive = !!profileUserId && !showProfileCommunity && !showProfileFavorites && !nativeProfileFailed && supportsNativeProfile();
     const showMapPage = (!showAdminPage || nativeAdminActive) && !showSettingsAny && !showAnyDinnerPage && !showPosterExport && !showPlaceList
-        && (!profileUserId || nativeProfileActive);
+        && (!profileUserId || nativeProfileActive) && !showOtherRoom;
     const openPlaceOnMap = useCallback((placeId) => goPath(`/?place=${encodeURIComponent(placeId)}`), [goPath]);
     const openProfile = useCallback((userId) => { if (userId) goPath(`/users/${encodeURIComponent(userId)}`); }, [goPath]);
-    const openCompanion = useCallback(() => {
+    // room：iOS 原生小伙伴页的“起名”“编辑”带过来，网页小伙伴页打开后直接弹出对应表单
+    const openCompanion = useCallback((room = null) => {
         companionEntry.current = { userId: user.id, index: currentNavigationIndex() + 1 };
-        return goPath('/settings/companions');
+        return goPath(room === 'name' || room === 'edit' ? `/settings/companions?room=${room}` : '/settings/companions');
+    }, [goPath, user?.id]);
+    // 点地图底栏的小伙伴：iOS 打开原生主页并直接推入小伙伴页（返回先回到主页），其余平台打开小伙伴页
+    const openCompanionFromMap = useCallback(() => {
+        if (!user?.id) return undefined;
+        if (supportsNativeProfile()) return goPath(`/users/${encodeURIComponent(user.id)}?page=companion`);
+        return openCompanion();
+    }, [goPath, openCompanion, user?.id]);
+    // 时间线头像、熟悉的小伙伴、口味像你的小伙伴：点自己的回到自己的小伙伴页，点别人的进对方的小伙伴页
+    const openRoom = useCallback((targetId) => {
+        if (!targetId) return undefined;
+        if (user && String(user.id) === String(targetId)) return goPath('/settings/companions');
+        return goPath(`/users/${encodeURIComponent(targetId)}/room`);
     }, [goPath, user?.id]);
     const backFromCompanion = useCallback(() => {
         if (companionEntry.current?.userId === user?.id && companionEntry.current?.index === currentNavigationIndex()) {
@@ -684,6 +708,8 @@ export default function App() {
         if (!user || !token || String(user.id) !== String(userId)) return;
         if (action === 'settings') return goPath('/settings');
         if (action === 'companion') return openCompanion();
+        if (action === 'companionName') return openCompanion('name');
+        if (action === 'companionEdit') return openCompanion('edit');
         if (action === 'logout') return handleLogout();
     }, [goPath, handleLogout, openCompanion, openProfileList, token, user?.id]);
     useEffect(() => {
@@ -883,6 +909,24 @@ export default function App() {
                 onOpenProfile={openProfile} onBack={backFromProfileTab} />
         );
         if (showProfileFavorites) return null;
+        if (showOtherRoom) return user && String(user.id) === roomUserId
+            ? <CompanionSettings key={user.id} backendUrl={BACKEND_URL} token={token} userId={user.id}
+                companion={companion.state} update={companion.update} enabled={companionEnabled} onEnabledChange={setCompanionEnabled}
+                onOpenPlace={openPlaceOnMap} onOpenRoom={openRoom} />
+            : (
+                <OtherRoomPage
+                    key={roomUserId}
+                    backendUrl={BACKEND_URL}
+                    token={token}
+                    userId={roomUserId}
+                    onOpenPlace={openPlaceOnMap}
+                    onOpenRoom={openRoom}
+                    onOpenProfile={openProfile}
+                    onOpenFeedback={openFeedback}
+                    onRequireAuth={() => setShowAuth(true)}
+                    onBack={backFromProfile}
+                />
+            );
         if (profileUserId) return nativeProfileActive ? null : (
             <UserProfilePage
                 key={profileUserId}
@@ -894,6 +938,7 @@ export default function App() {
                 onOpenFeedback={openFeedback}
                 onRequireAuth={() => setShowAuth(true)}
                 onOpenCommunity={openProfileCommunity}
+                onOpenRoom={openRoom}
                 onAction={handleProfileAction}
                 onBack={backFromProfile}
             />
@@ -1037,8 +1082,9 @@ export default function App() {
             )
         );
 
-        if (showSettingsCompanion) return user ? <CompanionSettings key={user.id} backendUrl={BACKEND_URL} token={token}
-            companion={companion.state} update={companion.update} enabled={companionEnabled} onEnabledChange={setCompanionEnabled} />
+        if (showSettingsCompanion) return user ? <CompanionSettings key={user.id} backendUrl={BACKEND_URL} token={token} userId={user.id}
+            companion={companion.state} update={companion.update} enabled={companionEnabled} onEnabledChange={setCompanionEnabled}
+            onOpenPlace={openPlaceOnMap} onOpenRoom={openRoom} initialRoomAction={new URLSearchParams(routeSearch).get('room')} />
             : <div style={placeholderStyle}>{t('common:app.verifyingSession')}</div>;
 
         if (showSettingsEdit) return (
@@ -1147,6 +1193,7 @@ export default function App() {
                                 onOpenDinners={() => goPath('/dinners')}
                                 onOpenJourney={openJourney}
                                 companion={isAuth && showMapPage && !profileUserId && companionEnabled && user?.map_settings?.companion_roaming !== false ? companion.state : null}
+                                onOpenCompanion={openCompanionFromMap}
                                 onOpenAdmin={() => goPath('/admin')}
                                 onOpenPosterExport={() => {
                                     if (!isAuth) {
@@ -1199,10 +1246,11 @@ export default function App() {
                         )}
 
                         {/* 原生住民主页：不占网页页面，地图留在下方；屏蔽 / 偏好 / 小组件请求仍由网页执行。
-                            同好、角色观察屋是主页里推入的原生二级页；住民设置叠在主页之上时主页保持挂载 */}
+                            同好、小伙伴是主页里推入的原生二级页；住民设置叠在主页之上时主页保持挂载 */}
                         {nativeProfileHostId && (
                             <NativeProfileHost
                                 userId={nativeProfileHostId}
+                                initialPage={nativeRoomPath ? (selfProfile ? 'companion' : 'room') : (selfProfile && profileSearch.get('page') === 'companion' ? 'companion' : null)}
                                 backendUrl={BACKEND_URL}
                                 token={token}
                                 currentUser={user}

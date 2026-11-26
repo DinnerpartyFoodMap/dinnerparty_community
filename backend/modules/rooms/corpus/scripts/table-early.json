@@ -78,7 +78,7 @@
     { "who": "xy", "minutes": [15, 25], "icon": "eat", "star": true, "action": "{x}和{y}聊起了上回点的东西", "sound": [], "detail": ["{y}一样不落全报了出来"] },
     { "who": "x", "minutes": [1, 2], "icon": "walk", "action": "{x}先吃完，走时拍了拍{y}的椅背", "sound": [], "detail": [] }
   ] },
-  { "id": "table.napkin", "kind": "table", "bond": [1, 2], "x": ["爱操心"], "y": ["吃得快"], "axis": null, "beats": [
+  { "id": "table.napkin", "kind": "table", "bond": [1, 2], "x": ["爱操心"], "y": ["吃得快"], "axis": null, "meal": false, "beats": [
     { "who": "y", "minutes": [10, 15], "icon": "eat", "action": "{y}三两口吃完了", "sound": [], "detail": ["脸上沾了点酱"] },
     { "who": "x", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{x}抽了张纸巾递给{y}", "sound": [], "detail": [] },
     { "who": "y", "minutes": [1, 2], "icon": "chat", "action": "{y}擦了擦，说下回请{x}喝饮料", "sound": [], "detail": [] }

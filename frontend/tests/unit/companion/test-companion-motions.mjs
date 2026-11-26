@@ -52,7 +52,7 @@ function keyValues(segments) {
     return values;
 }
 
-assert.deepEqual(builtInRefs.Motions.Standby, builtInRefs.Motions.Idle, '饭桶在地图和观察屋使用同一套待机动作');
+assert.deepEqual(builtInRefs.Motions.Standby, builtInRefs.Motions.Idle, '饭桶在地图和小伙伴页使用同一套待机动作');
 for (const group of Object.values(MOTION)) {
     assert.ok(builtInRefs.Motions[group]?.length, `饭桶有 ${group} 组`);
     assert.ok(builtInRefs.Motions[group].every(({ File }) => !path.isAbsolute(File) && !File.split('/').includes('..')), `${group} 随饭桶发布`);

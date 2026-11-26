@@ -19,6 +19,9 @@
 .fm-companion-roam__x, .fm-companion-roam__fly, .fm-companion-roam__body, .fm-companion-roam__bob { position: relative; width: 100%; height: 100%; }
 .fm-companion-roam__x { position: absolute; inset: 0; }
 .fm-companion-roam__body { transform-origin: 50% 100%; }
+/* 点小伙伴进入小伙伴页：只有身体这一层接触摸，外框和影子仍然不挡地图 */
+.fm-companion-roam__body--tap { pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.fm-companion-roam__body--tap:focus-visible { outline: 2px solid var(--theme-primary); outline-offset: 2px; border-radius: var(--radius-md); }
 .fm-companion-roam__shadow { position: absolute; left: 50%; bottom: -1px; width: 32px; height: 6px; margin-left: -16px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.22), transparent); }
 .fm-companion-roam__heart, .fm-companion-roam__z { position: absolute; opacity: 0; line-height: 1; }
 .fm-companion-roam__heart { right: 2px; top: -4px; font-size: 13px; color: var(--theme-primary-text); }
@@ -30,3 +33,70 @@
 @media (prefers-reduced-motion: reduce) {
     .fm-companion__heart { animation: none; }
 }
+
+/* ---- 小伙伴的一天：起名卡片、名字和“现在”、时间线、起名与编辑表单（CompanionRoom 与 Room*.jsx） ---- */
+.fm-room-card { margin-top: var(--space-4); padding: var(--space-5) var(--space-4); border-radius: var(--radius-lg); background: var(--color-bg-overlay); text-align: center; }
+.fm-room-card h2 { margin: 0; font: var(--text-headline); }
+.fm-room-card p { margin: var(--space-2) 0 var(--space-4); color: var(--color-text-secondary); }
+.fm-room-header { margin-top: var(--space-4); }
+.fm-room-header__name { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.fm-room-header__name h2 { margin: 0; font: var(--text-title2); overflow-wrap: anywhere; }
+.fm-room-header__now { margin: var(--space-2) 0 0; color: var(--theme-primary-text); font: var(--text-body); }
+.fm-room-timeline { margin-top: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.fm-room-timeline__bar { display: flex; align-items: center; justify-content: space-between; }
+.fm-room-timeline__empty, .fm-room-timeline__upcoming, .fm-room-timeline__note { margin: 0; color: var(--color-text-muted); font: var(--text-footnote); text-align: center; }
+.fm-room-timeline__empty { padding: var(--space-5) 0; }
+.fm-room-segment h3 { margin: 0 0 var(--space-2); font: var(--text-footnote); color: var(--color-text-secondary); }
+.fm-room-segment ul, .fm-room-group ul, .fm-room-moments { list-style: none; margin: 0; padding: 0; }
+.fm-room-event { display: grid; grid-template-columns: 56px auto 1fr; gap: var(--space-2); padding: var(--space-2) 0; align-items: start; }
+.fm-room-event__time { display: flex; flex-direction: column; font: var(--text-footnote); color: var(--color-text-secondary); }
+.fm-room-event__time small { font: var(--text-caption2); color: var(--color-text-muted); }
+.fm-room-event__avatars { display: flex; gap: 2px; min-width: 28px; }
+.fm-room-event__text p { margin: 0; font: var(--text-body); color: var(--color-text-primary); overflow-wrap: anywhere; }
+.fm-room-event__text .fm-room-event__sub, .fm-room-moments .fm-room-event__sub { font: var(--text-footnote); color: var(--color-text-secondary); }
+.fm-room-event__star { color: var(--theme-primary); }
+.fm-room-avatar { display: inline-flex; flex-shrink: 0; border-radius: var(--radius-full); overflow: hidden; background: var(--color-bg-overlay); border: 1px solid var(--color-border); padding: 0; }
+.fm-room-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.fm-room-avatar--button { cursor: pointer; }
+.fm-room-group { margin: var(--space-1) 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-bg-overlay); }
+.fm-room-group--table, .fm-room-group--remote { border-left: 3px solid var(--theme-primary); }
+.fm-room-group__title { margin: 0; font: var(--text-footnote); color: var(--color-text-secondary); }
+.fm-room-group__place { padding: 0; border: 0; background: none; color: var(--theme-primary-text); font: inherit; cursor: pointer; text-decoration: underline; }
+.fm-room-moments li { padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.fm-room-moments li small { color: var(--color-text-muted); font: var(--text-caption); }
+.fm-room-moments li p { margin: var(--space-1) 0 0; }
+.fm-room-form { display: flex; flex-direction: column; gap: var(--space-3); }
+.fm-room-form__lead { margin: 0; font: var(--text-body); }
+.fm-room-form__field { display: flex; flex-direction: column; gap: var(--space-2); }
+.fm-room-form__field > span { font: var(--text-footnote); color: var(--color-text-secondary); }
+.fm-room-form__switch { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.fm-room-form__switch input { width: 22px; height: 22px; accent-color: var(--theme-primary); }
+.fm-room-form__hint { margin: 0; font: var(--text-footnote); color: var(--color-text-muted); }
+.fm-room-form__error { margin: var(--space-2) 0 0; padding-left: var(--space-4); color: var(--color-danger-text); font: var(--text-footnote); }
+.fm-room-form__actions { display: flex; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
+.fm-room-quiz { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.fm-room-quiz legend { margin-bottom: var(--space-2); font: var(--text-headline); }
+.fm-room-quiz__option { min-height: 44px; padding: var(--space-2) var(--space-3); text-align: left; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-primary); font: var(--text-body); cursor: pointer; }
+.fm-room-quiz__option.is-selected { border-color: var(--theme-primary); background: var(--theme-primary-0-2); }
+.fm-room-editor section { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
+.fm-room-editor h3 { margin: 0; font: var(--text-headline); }
+.fm-room-editor h3 small { font: var(--text-footnote); color: var(--color-text-muted); }
+.fm-room-editor__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.fm-room-editor__saying { display: flex; gap: var(--space-2); align-items: center; }
+.fm-room-editor__status { flex-shrink: 0; font: var(--text-caption); color: var(--color-warning-text); }
+.fm-room-header__notice { display: block; width: 100%; margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-warning) 12%, var(--color-bg-surface)); color: var(--color-warning-text); font: var(--text-footnote); text-align: left; cursor: pointer; }
+.fm-room-people { margin-top: var(--space-4); }
+.fm-room-people h3 { margin: 0 0 var(--space-2); font: var(--text-headline); }
+.fm-room-people ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.fm-room-people__item { width: 100%; min-height: 44px; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2); border: 0; border-radius: var(--radius-md); background: none; color: var(--color-text-primary); font: var(--text-body); text-align: left; cursor: pointer; }
+.fm-room-people__item:hover { background: var(--color-bg-overlay); }
+.fm-room-people__item span { display: flex; flex-direction: column; min-width: 0; }
+.fm-room-people__item small { font: var(--text-footnote); color: var(--color-text-muted); }
+.fm-room-visit { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); margin-top: var(--space-4); text-align: center; }
+.fm-room-visit h2 { margin: 0; font: var(--text-title2); overflow-wrap: anywhere; }
+.fm-room-visit__owner { padding: 0; border: 0; background: none; color: var(--theme-primary-text); font: var(--text-footnote); cursor: pointer; }
+.fm-room-visit__bond { margin: 0; font: var(--text-footnote); color: var(--color-text-secondary); }
+.fm-room-visit__chips { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-1); }
+.fm-room-visit__chips span { padding: 2px var(--space-2); border-radius: var(--radius-full); background: var(--color-bg-overlay); font: var(--text-caption); color: var(--color-text-secondary); }
+.fm-room-visit__menu { display: flex; justify-content: flex-end; }
+.fm-room-message { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding: var(--space-6) 0; text-align: center; color: var(--color-text-secondary); }

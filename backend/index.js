@@ -20,7 +20,7 @@ const { requestLogger, notFoundHandler, errorHandler } = require('./http/middlew
 logger.installConsoleBridge();
 logger.installProcessHandlers();
 
-const { init } = require("./infrastructure/database");
+const { db, init } = require("./infrastructure/database");
 
 const placesRouter = require("./modules/places/routes/places");
 const commentsRouter = require("./modules/community/routes/comments");
@@ -36,6 +36,7 @@ const placeRequestsRouter = require("./modules/places/routes/placeRequests");
 const dinnersRouter = require("./modules/community/routes/dinners");
 const favoritesRouter = require("./modules/preferences/routes/favorites");
 const preferencesRouter = require('./modules/preferences/routes/preferences');
+const roomsRouter = require('./modules/rooms/routes/rooms');
 const noticesRouter = require("./modules/community/routes/notices");
 const categoriesRouter = require("./modules/places/routes/categories");
 const alongRouteRouter = require("./modules/discovery/routes/alongRoute");
@@ -67,6 +68,11 @@ const PORT = process.env.PORT || 7000;
 // Must run before CORS/body parsing so rejected preflights, malformed JSON and
 // aborted requests all receive the same request ID and access log coverage.
 app.use(requestLogger);
+// CORS preflights and failures also carry the room cache policy.
+app.use('/api/rooms', (_req, res, next) => {
+    res.set('Cache-Control', 'private, no-store');
+    next();
+});
 
 const STATIC_ALLOWED_ORIGINS = [
     "http://localhost:2053",
@@ -227,6 +233,7 @@ app.use('/_AMapService', require('./modules/maps/services/amapSearchBudget').cre
 // 压缩之后所有路由的 JSON 响应（地图缩小时 /places/nearby 约 3 MB → 0.4 MB），地图代理是流式转发，不经过这里
 app.use(require('./http/middleware/jsonCompression').jsonCompression());
 
+app.use('/api/rooms', roomsRouter);
 app.use('/api/journeys', express.json({ limit: '256kb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -297,6 +304,7 @@ app.use('/upload', requireAuth, require('./modules/media/routes/upload'));
 // mount admin routers under /admin
 app.use("/admin/users", requireAuth, adminUsersRouter);
 app.use("/admin/comments", requireAuthWithCode, adminCommentsRouter);
+app.use('/admin/rooms', requireAuthWithCode, require('./modules/rooms/routes/adminRooms'));
 app.use("/admin/general-users", requireAuth, adminGeneralUsersRouter);
 app.use("/admin/audit", requireAuth, adminAuditRouter);
 app.use("/admin/qq-whitelist", requireAuth, adminQQWhitelistRouter);
@@ -310,6 +318,8 @@ app.use("/admin/taste-axes", requireAuth, require('./modules/admin/routes/adminT
 
 
 init();
+const stopRoomScheduler = require('./modules/rooms/services/roomScheduler').startRoomScheduler(db._raw);
+require('./modules/rooms/services/roomTextCheck').resumeTextChecks(db._raw);
 const stopRatingReputationWorker = require('./modules/ratings/services/ratingReputation').startRatingReputationWorker();
 // 启动时即建立 Redis 连接（会话存储惰性加载 redis 客户端，这里提前初始化，避免首批请求走 JWT 降级）
 require('./modules/accounts/services/sessions').getDefaultSessionStore();
@@ -392,6 +402,7 @@ let shutdownStarted = false;
 function gracefulShutdown(signal) {
     if (shutdownStarted) return;
     shutdownStarted = true;
+    stopRoomScheduler();
     stopRatingReputationWorker();
     stopUserVectorWorker();
     stopRatingEvidenceWorker();stopRatingTextWorker();stopRatingBundleWorker();

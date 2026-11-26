@@ -1,0 +1,25 @@
+[
+  { "id": "bond.ask-name", "kind": "bond", "level": 1, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}问{y}平时怎么称呼", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}报了名字，也问了{x}", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.same-sticker", "kind": "bond", "level": 1, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "phone", "action": "{x}给{y}发了个打招呼的图", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{y}回了一张一模一样的", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.shared-list", "kind": "bond", "level": 2, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [2, 4], "icon": "write", "action": "{x}列了三家店发给{y}", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [2, 4], "icon": "write", "star": true, "action": "{y}在后面又添了两家", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.weekend-hour", "kind": "bond", "level": 2, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "chat", "action": "{x}问{y}周末一般几点出门", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "chat", "star": true, "action": "{y}说「看去哪家」", "sound": [], "detail": [] }
+  ] },
+  { "id": "bond.taste-memo", "kind": "bond", "level": 3, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "write", "star": true, "action": "{x}在备忘录里记下{y}的忌口", "sound": [], "detail": ["写在了第一行"] }
+  ] },
+  { "id": "bond.mark-calendar", "kind": "bond", "level": 3, "x": [], "y": [], "beats": [
+    { "who": "x", "minutes": [1, 2], "icon": "phone", "action": "{x}在日历上标了周六，截图给{y}", "sound": [], "detail": [] },
+    { "who": "y", "minutes": [1, 2], "icon": "phone", "star": true, "action": "{y}回了张标到下周六的截图", "sound": [], "detail": [] }
+  ] }
+]

@@ -22,6 +22,10 @@ const ICONS = Object.freeze({
     guide: ['help', 'questionmark.circle'],
     feedback: ['feedback', 'exclamationmark.bubble'],
     retry: ['refresh', 'arrow.clockwise'],
+    // 小伙伴时间线
+    prevDay: ['chevron_left', 'chevron.left'],
+    nextDay: ['chevron_right', 'chevron.right'],
+    moments: ['star', 'star'],
     // 地点与店卡
     place: ['location_on', 'mappin.and.ellipse'],
     placeRow: ['location_on', 'mappin.circle.fill'],

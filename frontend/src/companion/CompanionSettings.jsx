@@ -6,9 +6,10 @@ import { getPlatform } from '../platform/env';
 import ResourceRedeemForm from '../skins/ResourceRedeemForm';
 import { saveActiveCompanion } from '../skins/skinApi';
 import CompanionFigure from './CompanionFigure';
+import CompanionRoom from './CompanionRoom';
 import { DEFAULT_COMPANION } from './useCompanion';
 
-export default function CompanionSettings({ backendUrl, token, companion, update, enabled, onEnabledChange }) {
+export default function CompanionSettings({ backendUrl, token, userId, companion, update, enabled, onEnabledChange, onOpenPlace, onOpenRoom, initialRoomAction = null }) {
     const [busy, setBusy] = useState(false);
     const showTip = useTips();
     const roles = [{ id: DEFAULT_COMPANION, name: t('companion:defaultName') }, ...companion.owned];
@@ -30,18 +31,21 @@ export default function CompanionSettings({ backendUrl, token, companion, update
         finally { setBusy(false); }
     }
 
+    // 从上到下：舞台和饱食度、起名卡片或时间线（CompanionRoom）、切换角色、兑换码，开关放在最下面；
+    // 关掉「开启小伙伴」后只剩开关（见 doc/README.md 的小伙伴页）
+    const toggleRow = <label className="fm-companion-settings__toggle">
+        <span>{t('companion:enabled')}</span>
+        <input type="checkbox" role="switch" checked={enabled} disabled={busy} onChange={(event) => toggle(event.target.checked)} />
+    </label>;
     return <div className="fm-companion-settings">
-        <label className="fm-companion-settings__toggle">
-            <span>{t('companion:enabled')}</span>
-            <input type="checkbox" role="switch" checked={enabled} disabled={busy} onChange={(event) => toggle(event.target.checked)} />
-        </label>
         {enabled && <>
             <section className="fm-companion-room">
                 <CompanionFigure backendUrl={backendUrl} token={token} companion={companion} showStatus />
-                <strong>{active.name}</strong>
                 <p className="fm-companion-room__satiety" aria-live="polite">{t('companion:satiety', { count: companion.satiety })}</p>
-                <p>{t('companion:unlockHint')}</p>
+                <p>{t('companion:unlockHint')}{t('companion:room.satietyKeep')}</p>
             </section>
+            {userId && <CompanionRoom backendUrl={backendUrl} token={token} userId={userId} onOpenPlace={onOpenPlace}
+                onOpenRoom={onOpenRoom} initialAction={initialRoomAction} />}
             <div className="fm-companion-room__choices" aria-label={t('companion:role')}>
                 {roles.map((role) => <Button key={role.id} variant={role.id === active.id ? 'primary' : 'secondary'}
                     aria-pressed={role.id === active.id} disabled={busy || role.id === active.id} onClick={() => choose(role.id)}>{role.name}</Button>)}
@@ -50,5 +54,6 @@ export default function CompanionSettings({ backendUrl, token, companion, update
                 if (result.type === 'companion') update(result.state);
             }} />}
         </>}
+        {toggleRow}
     </div>;
 }

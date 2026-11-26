@@ -125,6 +125,8 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, back
         collectionVisibility: canUseAccountActions && typeof profile?.collection_visibility === 'boolean' ? profile.collection_visibility : null,
         canBlock: !!relation.can_block,
         blocked: !!relation.blocked,
+        // 对方的小伙伴对你可见（后端 profile.room）：主页里多一行“去看 Ta 的小伙伴”，推入原生小伙伴页
+        canOpenRoom: !self && !relation.blocked && profile?.room === true,
         widgets: [widget],
         hiddenWidgets,
         widgetSlotLabels: [t('profile:widgets.slot', { index: 2 })],
@@ -147,6 +149,7 @@ export function buildProfileViewModel(profile, { currentUser, tokenPresent, back
             viewAllLocations: t('profile:widgets.collection.viewAll'),
             settings: t('map:ui.accountSettings'),
             companion: t('companion:title'),
+            visitRoom: t('companion:room.visit'),
             logout: t('map:ui.logout'),
             rejectedPlaces: rejectedPlaceCount ? t('map:ui.myPlacesRejected', { count: rejectedPlaceCount }) : '',
             collectionPublic: t('profile:widgets.collection.public'),

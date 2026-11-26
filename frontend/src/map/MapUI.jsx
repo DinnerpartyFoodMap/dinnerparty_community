@@ -2576,6 +2576,7 @@ export default function MapUI(props) {
                 // 游走、发呆、爬右侧按钮（网页按钮标了 data-companion-perch）、睡觉等见 companion/companionDirector.js；
                 // 上拉更多功能或显示搜索结果时飞起，收起时落回
                 <CompanionRoam backendUrl={backendUrl} token={token} companion={props.companion}
+                    onOpen={props.onOpenCompanion}
                     bottom={companionBottom}
                     drawer={chrome.drawerMotion}
                     searching={companionSearching}

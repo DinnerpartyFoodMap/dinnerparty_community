@@ -1,4 +1,4 @@
-// 同好与角色观察屋：网页同好页（ProfileCommunityPage）与 iOS 原生住民主页的二级页（NativeProfilePlugin.swift）共用的数据整理。
+// 同好与小伙伴：网页同好页（ProfileCommunityPage）与 iOS 原生住民主页的二级页（NativeProfilePlugin.swift）共用的数据整理。
 // 原生不访问后端：网页取同好、发现设置与小伙伴状态，整理成可以直接显示的文案、头像地址与星图坐标。
 import { resolveAvatarUrl } from '../auth/avatarUrl.js';
 import { DEFAULT_COMPANION, DEFAULT_COMPANION_PREVIEW } from '../companion/defaultCompanion.js';
@@ -186,7 +186,7 @@ export function createCommunityController({ backendUrl, getToken, getUser, reque
 }
 
 /**
- * 原生角色观察屋：开关、当前角色、饱食度与可切换的角色。额外角色的模型是私有资源包，原生只显示名字，
+ * 原生小伙伴：开关、当前角色、饱食度与可切换的角色。额外角色的模型是私有资源包，原生只显示名字，
  * 预览为空时 Swift 用图标代替（Live2D 动画仍只在网页与地图底栏）。
  */
 export function buildCompanionViewModel(companion, { enabled = true } = {}) {

@@ -6,6 +6,7 @@ import { BOX } from './companionBehavior';
 import { CompanionDirector } from './companionDirector';
 import { subscribeCompanionActivity } from './companionActivity';
 import { useMotionFlags } from '../motion/MotionProvider';
+import { t } from '../i18n';
 import './companion.css';
 
 /**
@@ -55,8 +56,9 @@ function domColumn() {
  * 地图底栏上的小伙伴：游走、发呆、爬右侧按钮、睡觉、饿和饱由 CompanionDirector 决定（见 companionDirector.js）。
  * drawer：useMapChrome 的 drawerMotion（iOS 原生控件上拉更多功能时飞起）；searching 搜索已展开，perch / perchTop 为结果列表位置。
  * column：右侧按钮组外框（iOS 原生控件由原生回传；不传时找页面上标了 data-companion-perch 的按钮，传 null 表示没有）。
+ * onOpen：点小伙伴进入小伙伴页。它会走动，所以标 data-native-touch-live，iOS 原生底图按它的实时位置让出触摸。
  */
-export default function CompanionRoam({ backendUrl, token, companion, bottom, drawer = null, searching = false, perch = null, perchTop = null, column }) {
+export default function CompanionRoam({ backendUrl, token, companion, bottom, drawer = null, searching = false, perch = null, perchTop = null, column, onOpen = null }) {
     const roam = useRef(null);
     const layers = { x: useRef(null), fly: useRef(null), body: useRef(null), bob: useRef(null), shadow: useRef(null), heart: useRef(null) };
     const zzz = [useRef(null), useRef(null), useRef(null)];
@@ -102,18 +104,28 @@ export default function CompanionRoam({ backendUrl, token, companion, bottom, dr
         director.current?.geometryChanged();
     }, [column?.left, column?.top, column?.right, column?.bottom, column === null, bottom, searching]);
 
-    return <div className="fm-companion-roam" ref={roam} aria-hidden="true" style={{ bottom, width: BOX.width, height: BOX.height }}>
+    const tap = typeof onOpen === 'function' ? {
+        role: 'button', tabIndex: 0, 'aria-label': t('companion:openFromMap'), 'data-native-touch-live': '',
+        onClick: () => onOpen(),
+        onKeyDown: (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            onOpen();
+        }
+    } : null;
+
+    return <div className="fm-companion-roam" ref={roam} aria-hidden={tap ? undefined : 'true'} style={{ bottom, width: BOX.width, height: BOX.height }}>
         <div className="fm-companion-roam__x" ref={layers.x}>
-            <span className="fm-companion-roam__shadow" ref={layers.shadow} />
+            <span className="fm-companion-roam__shadow" ref={layers.shadow} aria-hidden="true" />
             <div className="fm-companion-roam__fly" ref={layers.fly}>
-                <div className="fm-companion-roam__body" ref={layers.body}>
+                <div className={`fm-companion-roam__body${tap ? ' fm-companion-roam__body--tap' : ''}`} ref={layers.body} {...tap}>
                     <div className="fm-companion-roam__bob" ref={layers.bob}>
                         <CompanionFigure backendUrl={backendUrl} token={token} companion={companion} reactToFeed={false}
                             onScene={(scene) => director.current?.setScene(scene)} />
                     </div>
                 </div>
-                <span className="fm-companion-roam__heart" ref={layers.heart}>♥</span>
-                {zzz.map((ref, index) => <span key={index} className={`fm-companion-roam__z fm-companion-roam__z--${index}`} ref={ref}>z</span>)}
+                <span className="fm-companion-roam__heart" ref={layers.heart} aria-hidden="true">♥</span>
+                {zzz.map((ref, index) => <span key={index} className={`fm-companion-roam__z fm-companion-roam__z--${index}`} ref={ref} aria-hidden="true">z</span>)}
             </div>
         </div>
     </div>;

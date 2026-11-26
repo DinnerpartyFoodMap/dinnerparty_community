@@ -116,7 +116,8 @@ export default function MapView({
     mapPageActive = false,
     mapPreviewActive = false,
     onOpenJourney = null,
-    companion = null
+    companion = null,
+    onOpenCompanion = null
 }) {
     const containerRef = useRef(null);
     const journeyRef = useRef(null);
@@ -2573,6 +2574,7 @@ export default function MapView({
                 onOpenPlaceList={onOpenPlaceList}
                 onOpenProfile={onOpenProfile}
                 companion={companion}
+                onOpenCompanion={onOpenCompanion}
                 profileListRequest={profileListRequest}
                 onOpenFavoritePlace={focusPlaceById}
                 onShowExhibitionVenue={showExhibitionVenue}

@@ -9,6 +9,14 @@ const AXES = Object.freeze(['homestyle', 'noodles', 'hotpotBbq', 'dessert', 'dri
 const OUTING_STEPS = Object.freeze(['pick', 'leave', 'arrive', 'order', 'wait', 'serve', 'eat', 'spicy', 'full', 'pay', 'back']);
 const ANCHORS = Object.freeze(['wake', 'bedtime', 'sleep']);
 const SCRIPT_KINDS = Object.freeze(['table', 'remote', 'bond']);
+// 隔空剧情的时段：dinner 排在晚饭时段并算作当天的晚饭，late 排在两边睡前一小时内
+const SCRIPT_TIMES = Object.freeze(['dinner', 'late']);
+const CONTINUITY = Object.freeze({
+    asleep: /睡着|瞌睡|睡过去|又睡|昏睡|打盹/,
+    closed: /醒|睡了(半|一|两|二|三|十|几|个|会)|眯了一会|睡了一觉/,
+    wakeClaim: /([一二三四五六七八九十两]点|点半).{0,3}(醒|起)|醒了又|才醒|刚醒|睡到.{0,3}点/,
+    dinnerNow: /晚饭|今晚吃|晚上吃|边吃|去吃饭|吃饭了|做了一盘|煮了|夜宵/
+});
 const QUIZ_COUNT = 20;
 
 function readJson(file) {
@@ -127,7 +135,7 @@ function validateCorpus(corpus) {
     // ---- 情境 ----
     const quizSeen = new Map();
     const hourCoverage = Array.from({ length: 24 }, () => 0);
-    const situationStats = { variants: 0, withSound: 0, withDetail: 0, prefixes: new Map() };
+    const situationStats = { variants: 0, withSound: 0, withDetail: 0, say: 0, rare: 0, prefixes: new Map() };
     for (const situation of corpus.situations) {
         const where = `${situation.file} ${situation.id}`;
         if (!/^(home|outing)\.[a-z0-9_-]+$/.test(situation.id || '')) errors.push(`${where}: id 要是 home.xxx 或 outing.xxx`);
@@ -186,7 +194,18 @@ function validateCorpus(corpus) {
             const verb = Array.from(String(variant.action || '').replace('{a}', '').replace(/^[把在被给和跟又先一也就]+/, '')).slice(0, 1).join('');
             if (verbs.has(verb)) warnings.push(`${vWhere}: 和 ${verbs.get(verb)} 开头的字相同（${verb}）`);
             verbs.set(verb, variant.id);
+            for (const flag of ['say', 'rare']) {
+                if (variant[flag] !== undefined && variant[flag] !== true) errors.push(`${vWhere}: ${flag} 只写 true 或不写`);
+            }
+            if (variant.say) situationStats.say += 1;
+            if (variant.rare) {
+                situationStats.rare += 1;
+                // 普通做法和问答的答案会天天出现，标了星就不稀有了
+                if (!variant.fits?.length) errors.push(`${vWhere}: 普通做法不标 rare`);
+                if (situation.quiz) errors.push(`${vWhere}: 问答情境里的做法不标 rare`);
+            }
         }
+        if (variants.filter((variant) => variant.rare).length > 1) errors.push(`${where}: 一个情境最多一种 rare 做法`);
     }
     for (let quiz = 1; quiz <= QUIZ_COUNT; quiz += 1) if (!quizSeen.has(quiz)) errors.push(`问答缺第 ${quiz} 题`);
     for (const anchor of ANCHORS) if (!corpus.situations.some((s) => s.anchor === anchor)) errors.push(`缺 anchor 为 ${anchor} 的屋里情境`);
@@ -235,6 +254,13 @@ function validateCorpus(corpus) {
             for (let level = script.bond[0]; level <= script.bond[1]; level += 1) coverage[script.kind][level] += 1;
         }
         if (script.axis !== undefined && script.axis !== null && (script.kind !== 'table' || !AXES.includes(script.axis))) errors.push(`${where}: 只有拼桌剧本能限定 axis`);
+        if (script.meal !== undefined && (script.kind !== 'table' || !(script.meal === false || script.meal === 'before'
+            || Number.isInteger(script.meal) && script.meal >= 0 && script.meal < (script.beats?.length ?? 0)))) {
+            errors.push(`${where}: meal 只用于拼桌，写 false、"before" 或吃饭那条的序号（从 0 数）`);
+        }
+        if (script.when !== undefined && (script.kind !== 'remote' || !SCRIPT_TIMES.includes(script.when))) {
+            errors.push(`${where}: when 只用于隔空，写 ${SCRIPT_TIMES.join(' 或 ')}`);
+        }
         useTags(`${where} x`, script.x || []);
         useTags(`${where} y`, script.y || []);
         const beats = Array.isArray(script.beats) ? script.beats : [];
@@ -259,6 +285,30 @@ function validateCorpus(corpus) {
         if (coverage.remote[level] < 2) errors.push(`熟悉度 ${level} 的隔空剧本少于 2 段（${coverage.remote[level]}）`);
     }
     for (let level = 1; level <= 3; level += 1) if (coverage.bond[level] < 1) errors.push(`缺升到 ${level} 级的升级剧情`);
+
+    // ---- 前后矛盾 ----
+    // 句子是按时段抽的，前后接什么事不固定：不能停在睡着的状态、不能替起床那条写几点醒；
+    // 隔空和升级剧情默认在晚上任意时刻，提到正在吃晚饭的隔空剧情要写 when: dinner，升级剧情不提
+    const continuity = [
+        ...corpus.situations.flatMap((situation) => (situation.variants || []).map((variant) => ({
+            where: `${situation.file} ${situation.id}/${variant.id}`, anchor: situation.anchor, item: variant }))),
+        ...corpus.quirks.flatMap((quirk) => (quirk.hooks || []).map((hook) => ({
+            where: `quirks.json ${quirk.id}@${hook.situation}`,
+            anchor: corpus.situations.find(({ id }) => id === hook.situation)?.anchor, item: hook }))),
+        ...corpus.scripts.flatMap((script) => (script.beats || []).map((beat, index) => ({
+            where: `${script.file} ${script.id}#${index + 1}`, script, item: beat })))
+    ];
+    for (const { where, anchor, script, item } of continuity) {
+        const text = lines(item).join(' ');
+        if (CONTINUITY.asleep.test(text) && anchor !== 'sleep') {
+            if (anchor === 'bedtime') errors.push(`${where}: 睡前这条后面紧跟睡着，这里不能先睡着`);
+            else if (!CONTINUITY.closed.test(item.action || '')) errors.push(`${where}: 白天睡着要在动作里写完（睡了多久、醒了），细节是抽的，不一定出现`);
+        }
+        if (CONTINUITY.wakeClaim.test(text) && anchor !== 'wake') errors.push(`${where}: 几点醒由起床那条决定，别的句子不写几点醒、醒了又睡`);
+        if (script && script.kind !== 'table' && script.when !== 'dinner' && CONTINUITY.dinnerNow.test(text)) {
+            errors.push(`${where}: 提到正在吃晚饭（「${text.match(CONTINUITY.dinnerNow)[0]}」），${script.kind === 'remote' ? '要写 when: "dinner"' : '升级剧情接在任何剧情后面，不能写'}`);
+        }
+    }
 
     // ---- 成批的范围 ----
     const share = (count) => situationStats.variants ? count / situationStats.variants : 0;
@@ -296,7 +346,7 @@ function validateCorpus(corpus) {
     return {
         errors, warnings,
         stats: {
-            situations: corpus.situations.length, variants: situationStats.variants, quirks: corpus.quirks.length,
+            situations: corpus.situations.length, variants: situationStats.variants, say: situationStats.say, rare: situationStats.rare, quirks: corpus.quirks.length,
             scripts: corpus.scripts.length, coverage, soundShare, detailShare, tagUses: Object.fromEntries(tagUses), hourCoverage
         }
     };

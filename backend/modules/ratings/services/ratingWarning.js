@@ -7,4 +7,11 @@ const EXPLORE_TAG='待探索';
 function hasExploreTag(category){
     return (Array.isArray(category)?category:[category]).some(value=>String(value||'').split(/[,，/、|]/).some(tag=>tag.trim()===EXPLORE_TAG));
 }
-module.exports={hasAvoidTag,hasExploreTag,EXPLORE_TAG};
+const AVOID_BELOW_AVERAGE = 2.5;
+function isAvoidedPlace(place) {
+    return !!place && (hasAvoidTag(place.category) || Number(place.rating_count) > 0
+        && (Number(place.rating_average) < AVOID_BELOW_AVERAGE
+            || Number(place.rating_negative_count) > Number(place.rating_count) / 2));
+}
+
+module.exports={hasAvoidTag,hasExploreTag,EXPLORE_TAG,AVOID_BELOW_AVERAGE,isAvoidedPlace};

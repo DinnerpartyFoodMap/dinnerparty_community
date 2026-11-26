@@ -1,5 +1,5 @@
 // 原生住民主页的网页侧入口：取 profile、执行屏蔽 / 偏好 / 小组件请求，并把最新视图模型回传原生。
-// 同好、角色观察屋和同好里点开的其他住民主页是原生主页里推入的二级页：数据同样由这里读取、整理后回传。
+// 同好、小伙伴和同好里点开的其他住民主页是原生主页里推入的二级页：数据同样由这里读取、整理后回传。
 // 调用方负责判断平台与插件可用性；失败时由调用方切回网页 UserProfilePage。
 import { useEffect, useRef } from 'react';
 import {
@@ -23,6 +23,9 @@ import {
     profileWidgetOptions
 } from './profileViewModel.js';
 import { buildCompanionViewModel, createCommunityController } from './communityViewModel.js';
+import { fetchRoomDay, fetchRoomMe, fetchRoomNeighbors } from '../companion/roomApi.js';
+import { buildOtherRoomNativeModel, buildRoomNativeModel } from '../companion/roomNativeModel.js';
+import { ROOM_FILTERS } from '../companion/roomViewModel.js';
 
 /** 当前安装包能否用原生住民主页（iOS App 且包含插件） */
 export function supportsNativeProfile() {
@@ -36,6 +39,7 @@ function themeSnapshot(dark, themeColor) {
 
 export default function useNativeProfile({
     userId,
+    initialPage = null,
     backendUrl,
     token,
     currentUser,
@@ -58,6 +62,8 @@ export default function useNativeProfile({
     const latest = useRef({});
     latest.current = { token, currentUser, companion, companionEnabled, onCompanionUpdate, onCompanionEnabledChange, onOpenSettings };
     const sessionRef = useRef(null);
+    // 小伙伴的一天（原生小伙伴页里显示）：起名状态、看的是哪天、筛选；接口没开放（404）时 available 为假
+    const roomRef = useRef({ available: true, failed: false, me: null, day: null, filter: 'all', date: null, today: null, neighbors: [] });
     const reloadRef = useRef(null);
 
     useEffect(() => {
@@ -90,7 +96,50 @@ export default function useNativeProfile({
             request,
             publishMapConsent
         });
-        const companionView = () => buildCompanionViewModel(latest.current.companion, { enabled: latest.current.companionEnabled });
+        const companionView = () => ({
+            ...buildCompanionViewModel(latest.current.companion, { enabled: latest.current.companionEnabled }),
+            room: buildRoomNativeModel(roomRef.current)
+        });
+        // 读起名状态和某一天（date 为 null 是今天）；只读自己的小伙伴
+        const loadRoom = async ({ date = roomRef.current.date, filter = roomRef.current.filter } = {}) => {
+            const self = latest.current.currentUser?.id;
+            if (!self || String(self) !== String(userId)) return;
+            const room = { ...roomRef.current, date, filter: ROOM_FILTERS.includes(filter) ? filter : 'all' };
+            try {
+                room.me = await fetchRoomMe(backendUrl, latest.current.token);
+                if (room.me?.named) {
+                    room.day = await fetchRoomDay(backendUrl, latest.current.token, self, date);
+                    if (room.day?.is_today) room.today = room.day.day;
+                    // 口味像你的小伙伴：只在第一次读（后端按查看者缓存 10 分钟），失败就不显示
+                    if (!roomRef.current.neighborsLoaded) {
+                        room.neighbors = await fetchRoomNeighbors(backendUrl, latest.current.token).catch(() => []);
+                        room.neighborsLoaded = true;
+                    }
+                }
+                room.failed = false;
+            } catch (error) {
+                if (error?.status === 404) room.available = false;
+                else room.failed = true;
+            }
+            roomRef.current = room;
+        };
+
+        // 别人的小伙伴（原生里推入的只读页）：按主人记住看的哪天，算“今天”用
+        const otherRooms = new Map();
+        const loadOtherRoom = async ({ userId: owner, date, filter }) => {
+            const known = otherRooms.get(owner) || {};
+            const state = { status: 'loading', day: null, filter, today: known.today || null };
+            try {
+                state.day = await fetchRoomDay(backendUrl, latest.current.token, owner, date);
+                state.status = state.day?.named === false ? 'missing' : 'ready';
+                if (state.day?.is_today) state.today = state.day.day;
+            } catch (error) {
+                state.status = error?.status === 404 ? 'missing' : 'failed';
+            }
+            otherRooms.set(owner, state);
+            // 查看者自己：原生时间线里点自己的头像没有反应
+            return { ...buildOtherRoomNativeModel(state), viewerId: String(latest.current.currentUser?.id ?? '') };
+        };
 
         // 主页读取失败：原生页留在原地显示原因与“重试”（不再退回网页）
         const loadIntoSession = async () => {
@@ -121,6 +170,15 @@ export default function useNativeProfile({
                 onRequireAuth?.();
                 return { ok: false, message: '' };
             }
+            if (type === 'loadRoom') {
+                // 点自己的头像不推入（原生已经挡住）；这里只读别人的
+                if (String(values.userId) === String(latest.current.currentUser?.id)) return { ok: false, message: '' };
+                return { ok: true, room: await loadOtherRoom(values) };
+            }
+            if (type === 'reportUser') {
+                onOpenFeedback?.(userReportPrefill({ id: values.userId, username: values.name || '' }));
+                return { ok: true };
+            }
             const self = !!profile?.relation?.self;
             if (type === 'setTasteLevel') {
                 const data = await saveTasteLevel(backendUrl, latest.current.token, values.key, values.level);
@@ -142,7 +200,7 @@ export default function useNativeProfile({
                 const nested = target !== String(userId);
                 const known = nested ? others.get(target) : profile;
                 await setUserBlocked(backendUrl, latest.current.token, target, values.blocked);
-                if (values.blocked) onOpenFeedback?.(userReportPrefill(known?.user || { id: target }));
+                if (values.blocked && values.report !== false) onOpenFeedback?.(userReportPrefill(known?.user || { id: target }));
                 const data = await fetchProfile(target);
                 if (nested) others.set(target, data);
                 else profile = data;
@@ -159,7 +217,14 @@ export default function useNativeProfile({
             if (type === 'loadCommunitySettings') return { ok: true, community: await community.loadSettings() };
             if (type === 'saveCommunitySettings') return { ok: true, community: await community.save(values) };
             if (type === 'clearInteractions') return { ok: true, community: await community.clear() };
-            if (type === 'loadCompanion') return { ok: true, companion: companionView() };
+            if (type === 'loadCompanion') {
+                await loadRoom();
+                return { ok: true, companion: companionView() };
+            }
+            if (type === 'roomNavigate') {
+                await loadRoom({ date: values.date || null, filter: values.filter });
+                return { ok: true, companion: companionView() };
+            }
             if (type === 'setCompanionEnabled') {
                 try {
                     await latest.current.onCompanionEnabledChange?.(values.enabled);
@@ -190,7 +255,9 @@ export default function useNativeProfile({
                     loading: true,
                     profile: { labels: profileBaseLabels() },
                     selfLevels: profileSelfLevels(),
-                    widgetOptions: profileWidgetOptions()
+                    widgetOptions: profileWidgetOptions(),
+                    // 从地图底栏点小伙伴进来：原生打开时直接推入小伙伴页（旧安装包不认这个字段，只打开主页）
+                    ...(initialPage === 'companion' ? { initialPage } : {})
                 }, {
                     onEvent: handleEvent,
                     onBack: () => { if (!cancelled) onBack?.(); },
@@ -245,11 +312,11 @@ export default function useNativeProfile({
         reloadRef.current?.();
     }, [identityKey]);
 
-    // 小伙伴状态变化（打卡投喂、切换角色、开关观察屋）：观察屋开着时立即刷新
+    // 小伙伴状态变化（打卡投喂、切换角色、开关小伙伴）：小伙伴页开着时立即刷新
     const companionKey = `${companionEnabled}:${companion?.active}:${companion?.satiety}:${(companion?.owned || []).length}`;
     const firstCompanion = useRef(true);
     useEffect(() => {
         if (firstCompanion.current) { firstCompanion.current = false; return; }
-        sessionRef.current?.update({ companion: buildCompanionViewModel(companion, { enabled: companionEnabled }) });
+        sessionRef.current?.update({ companion: { ...buildCompanionViewModel(companion, { enabled: companionEnabled }), room: buildRoomNativeModel(roomRef.current) } });
     }, [companionKey]);
 }

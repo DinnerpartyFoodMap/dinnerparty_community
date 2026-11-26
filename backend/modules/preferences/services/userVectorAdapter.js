@@ -3,11 +3,9 @@ const {EMBEDDING_MODEL,EMBEDDING_DIMENSIONS}=require('../../../infrastructure/ai
 const client=require('../../../infrastructure/numericAlgorithmClient');
 const {decodeVector}=require('./vectorCodec');
 const {randomUUID}=require('node:crypto');
-const ALGORITHM_VERSION=2,REFRESH_MS=6*3600000;
+const {ALGORITHM_VERSION,publicPreference}=require('./preferenceVectorProfile');
+const REFRESH_MS=6*3600000;
 const pending=new Map(),queued=new Map();
-function publicPreference(row){if(!row)return null;const vector=decodeVector(row.vector);return {
-    status:row.status,vector:vector?Array.from(vector):null,model:row.model,dimensions:row.dimensions,algorithm_version:row.algorithm_version,
-    source_place_count:row.source_place_count,vector_place_count:row.vector_place_count,total_weight:row.total_weight,updated_at:row.updated_at};}
 function collectPreferenceInput(userId,now=Date.now(),mutation=null){return db._raw.transaction(()=>{
     if(!db._raw.prepare('SELECT id FROM User WHERE id=?').get(userId))return null;
     const row=db._raw.prepare('SELECT * FROM UserPreference WHERE user_id=?').get(userId);

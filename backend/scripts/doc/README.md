@@ -21,6 +21,9 @@
 | backups | backup_database | `npm run backup:database` 默认生成、校验并上传 SQLite 快照到独立私有 OSS；`-- --local-only` 仅本地验证，不需 OSS 配置；见 [备份与恢复](../../infrastructure/doc/DATABASE_BACKUP.md) |
 | datasets | export_feedback | 手工数据导出；运行前读参数与研究同意过滤，不在测试汇总中执行 |
 | testing | run_tests | `npm test` / `npm run test:ui`；按 tests 下文件名发现，每文件独立进程 |
+| rooms | preview_room | `npm run room:preview` 按住民、样本或配对预览时间线与剧本，也可用 `--city-report` 浏览城市统计。快照只读，`--db <file>` 指定库，`--out <md>` 保存 Markdown |
+| rooms | tags_report | `npm run room:tags:report` 从快照只读统计推断标签和住民作息占比，支持 `--db <file>` |
+| tests/rooms | run | `npm run test:rooms` 依次在独立进程执行观察屋的 `test_*.js`，任一失败返回非零 |
 | journeys | configure_private_algorithms | `npm run journey:configure-private` 仅预览；`-- --apply` 备份并更新两侧私有环境配置，不访问模型、不写数据库；见 [日记算法接入](../../modules/journeys/doc/ALGORITHM_SERVICE.md) |
 
 维护流程：阅读脚本 → 确认数据范围和环境 → 预演（工具支持时）→ 审核结果 → 备份 → 显式应用 → 核对幂等性与恢复路径。流程不是本次已执行的数据操作。

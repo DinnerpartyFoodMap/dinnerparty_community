@@ -33,7 +33,7 @@ const {
     nativeColor, encodeNativeNodes, encodeNativePlan, sanitizeProbes, sanitizeOverlayMarker, sanitizeOverlayLine, sanitizeHoles, encodeRect
 } = await import('../../../src/platform/nativeMap.js');
 const {
-    NativeMapView, NativeMarkerOverlay, NativePolylineOverlay, isNativeMap, nativeMapAppearance, sampleTouchHoles, readPoint
+    NativeMapView, NativeMarkerOverlay, NativePolylineOverlay, isNativeMap, nativeMapAppearance, sampleTouchHoles, liveTouchHoles, readPoint
 } = await import('../../../src/map/nativeMapView.js');
 const { NativeMarkerLayer, buildNativeMarkerStyle, nativeNode, NATIVE_BUFFER_RATIO } = await import('../../../src/map/nativeMarkerLayer.js');
 const { createComputeRuntime } = await import('../../../src/map/cluster/computeRuntime.js');
@@ -434,6 +434,15 @@ const canvas = {
         { x: 70, y: 10, width: 24, height: 24 },
         { x: 0, y: 80, width: 100, height: 20 }
     ], '图标被按钮包住不重复发，越界的公告裁到画布内，页面外壳与画布本身不算网页区域');
+
+    // 会走动的元素（底栏小伙伴）不进网格采样，由 liveTouchHoles 按实时位置单独给出
+    const companion = { contains: (el) => el === companion, closest: () => companion,
+        getBoundingClientRect: () => ({ left: 20, top: 40, right: 60, bottom: 90 }) };
+    const withCompanion = (x, y) => (x >= 20 && x < 60 && y >= 40 && y < 80 ? companion : hit(x, y));
+    const grid = sampleTouchHoles({ canvas: canvasEl, rect: { left: 0, top: 0, width: 100, height: 100 }, step: 4, elementFromPoint: withCompanion });
+    assert.ok(!grid.some((hole) => hole.x === 20 && hole.y === 40), '走动的元素不进网格采样');
+    assert.deepEqual(liveTouchHoles({ rect: { left: 0, top: 0, width: 100, height: 85 }, elements: [companion] }),
+        [{ x: 20, y: 40, width: 40, height: 45 }], '走动元素的矩形裁到画布内');
 }
 
 // ---- 原生标记层：网页聚合引擎出快照与转场计划，交给原生 ----

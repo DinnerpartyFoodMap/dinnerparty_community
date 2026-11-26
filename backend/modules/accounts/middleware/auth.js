@@ -35,7 +35,7 @@ function loadUserById(userId) {
     });
 }
 
-async function requireAuth(req, res, next, codedErrors = false) {
+async function requireAuth(req, res, next, codedErrors = false, accessError) {
     const reject = (status, code, error, extra) => res.status(status).json(codedErrors ? { error, code } : { error, ...extra });
     const token = extractBearerToken(req);
     if (!token) {
@@ -103,6 +103,9 @@ async function requireAuth(req, res, next, codedErrors = false) {
             });
             return reject(404, 'AUTH_USER_NOT_FOUND', '住民不存在');
         }
+
+        const denied = accessError?.(user);
+        if (denied) return reject(denied.status, denied.code, denied.publicMessage);
 
         // handle banned users: auto-unban if expired, otherwise restrict non-read methods
         if (refreshBanState(user)) {

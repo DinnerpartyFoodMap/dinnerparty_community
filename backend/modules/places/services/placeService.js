@@ -3,7 +3,7 @@ const { normalizeImageUrls } = require('../../media/services/imageUrls');
 const { enqueuePlaceCreatedNotifications, wakeNotificationWorker } = require('./placeNotifications');
 const { RATING_COLUMNS_SQL, isValidScore, defaultCreationScore, insertCreationRating } = require('../../ratings/services/placeRatings');
 const { registerNewPlaceSync, scheduleModeration } = require('./placeModeration');
-const { canonicalCategoryNames } = require('./categoryMerges');
+const { parseCategoryNames, canonicalCategoryNames } = require('./categoryMerges');
 const { hasExploreTag } = require('../../ratings/services/ratingWarning');
 
 // Shared validation and creation for every path that adds a marker (web/App,
@@ -28,14 +28,6 @@ const PLACE_WITH_NAMES_SQL = `SELECT p.*, u.username AS creator_name, uu.usernam
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  WHERE p.id = ?`;
-
-function parseCategoryNames(value) {
-    return String(value || '')
-        .split(/[,，]/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .filter((item, index, items) => items.indexOf(item) === index);
-}
 
 function getCategoryNameLength(value) {
     return Array.from(value).reduce((length, character) => (

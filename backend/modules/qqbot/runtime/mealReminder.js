@@ -1,12 +1,12 @@
-const { db } = require('../../../infrastructure/database');
 const { MEAL_COPY, RANDOM_HINT } = require('./mealReminderCopy');
+const { beijingClock, DAY_MS } = require('../../../infrastructure/beijingClock');
 
 // Daily breakfast / lunch / dinner reminders in QQ groups at fixed Beijing times
 // (QQ_BOT_MEAL_REMINDER_TIMES). Each group gets one message per meal and day: the
 // QQBotMealReminder row is claimed before sending, so restarts never send twice.
 // A meal missed by more than LATE_WINDOW_MS (bot offline) is skipped for that day.
 // Status: sending → sent | retry (explicit failure, tried again a minute later) | failed | unknown.
-const sql = db._raw;
+const getDatabase = () => require('../../../infrastructure/database').db._raw;
 const MEALS = ['breakfast', 'lunch', 'dinner'];
 const CHECK_INTERVAL_MS = 30 * 1000;
 const LATE_WINDOW_MS = 20 * 60 * 1000;
@@ -15,20 +15,9 @@ const MAX_ATTEMPTS = 3;
 const SEND_TIMEOUT_MS = 20000;
 const GROUP_SEND_GAP_MS = 2000;
 const RETENTION_DAYS = 30;
-const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const iso = (date) => date.toISOString();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function beijingClock(now) {
-    const shifted = now.getTime() + BEIJING_OFFSET_MS;
-    return {
-        day: new Date(shifted).toISOString().slice(0, 10),
-        dayNumber: Math.floor(shifted / DAY_MS),
-        msOfDay: ((shifted % DAY_MS) + DAY_MS) % DAY_MS
-    };
-}
 
 /** Meals whose time has come within the last LATE_WINDOW_MS: [{ meal, index, day, dayNumber }]. */
 function dueMeals(now, times) {
@@ -63,7 +52,7 @@ class MealReminder {
     }
 
     start() {
-        const stuck = sql.prepare("UPDATE QQBotMealReminder SET status = 'unknown', last_error = '进程重启时发送结果未确认', updated_at = ? WHERE status = 'sending'").run(iso(this.now()));
+        const stuck = getDatabase().prepare("UPDATE QQBotMealReminder SET status = 'unknown', last_error = '进程重启时发送结果未确认', updated_at = ? WHERE status = 'sending'").run(iso(this.now()));
         if (stuck.changes) this.logger.warn('QQ meal reminders with unconfirmed delivery after restart', { event: 'qqbot.meal.unknown_after_restart', count: stuck.changes });
         this.timer = setInterval(() => this.tick(), CHECK_INTERVAL_MS);
         this.timer.unref?.();
@@ -96,6 +85,7 @@ class MealReminder {
 
     /** Returns true when a message went out. */
     async sendTo(groupId, due, config) {
+        const sql = getDatabase();
         const key = [groupId, due.day, due.meal];
         const now = this.now();
         const time = iso(now);
@@ -145,11 +135,11 @@ class MealReminder {
 /** Keeps the last RETENTION_DAYS days of reminder rows. */
 function pruneMealReminders(now = new Date()) {
     const cutoff = beijingClock(new Date(now.getTime() - RETENTION_DAYS * DAY_MS)).day;
-    return sql.prepare('DELETE FROM QQBotMealReminder WHERE day < ?').run(cutoff).changes;
+    return getDatabase().prepare('DELETE FROM QQBotMealReminder WHERE day < ?').run(cutoff).changes;
 }
 
 function mealReminderSummary() {
-    return sql.prepare(`SELECT group_id, day, meal, status, attempts, last_error, updated_at
+    return getDatabase().prepare(`SELECT group_id, day, meal, status, attempts, last_error, updated_at
         FROM QQBotMealReminder ORDER BY day DESC, updated_at DESC LIMIT 30`).all();
 }
 

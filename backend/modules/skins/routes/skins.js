@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { requireAuth } = require('../../accounts/middleware/auth');
 const skins = require('../services/skinService');
 const logger = require('../../../infrastructure/logger');
-const { findPack, packFile, grantPack, readGrant } = require('../services/resourcePacks');
+const { findPack, packFile, grantPack, readGrant, readAvatarGrant } = require('../services/resourcePacks');
 
 function sendError(res, error, fallback) {
     if (error instanceof skins.SkinError) return res.status(error.status).json({ error: error.message, reason: error.reason });
@@ -20,6 +20,15 @@ router.get(/^\/packs\/access\/([^/]+)\/(.+)$/, (req, res) => {
     res.set('Cache-Control', `private, max-age=${age}`);
     res.set('X-Content-Type-Options', 'nosniff');
     return res.sendFile(file, { cacheControl: false });
+});
+
+router.get('/packs/avatar/:grant', (req, res) => {
+    const grant = readAvatarGrant(req.params.grant);
+    if (!grant) return res.status(403).json({ error: '下载授权已失效' });
+    const age = Math.max(0, grant.exp - Math.ceil(Date.now() / 1000));
+    res.set('Cache-Control', `private, max-age=${age}`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    return res.sendFile(grant.file, { cacheControl: false });
 });
 
 router.use(requireAuth);
