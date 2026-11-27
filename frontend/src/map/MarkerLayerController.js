@@ -351,7 +351,7 @@ export class MarkerLayerController {
                 || ['kind','tile','cell'].some(key=>this.snapshot.markerBand?.[key] !== this.markerBand?.[key]),
             payload:{viewBounds,zoom,refining:reason === 'refine',
                 viewZoom:this.options.getMarkerViewZoom?.(zoom),queryMode:this.queryMode,markerBand:this.markerBand,
-                selectedKey:this.selectedKey,transitionVersion:this.version+1}
+                selectedKey:this.selectedKey,transitionVersion:this.version+1,orphans:true}
         });
     }
 
@@ -396,7 +396,7 @@ export class MarkerLayerController {
         if (result.metrics.indexMs > 0) this._pushMetric('indexBuilds',{size:result.metrics.inputCount,ms:result.metrics.indexMs});
         // 不等分帧调和完成就放开计算调度：相机停下后的新结果要能直接接替进行中的调和，
         // 而不是排在一份已过时的调和后面（慢设备上会晚几秒）。
-        this._apply(result.plan,next,target.reason).then(applied => {
+        this._apply(result.plan,next,target.reason,result.orphanPlan).then(applied => {
             if (applied === false || this.destroyed) return;
             this.client?.acknowledge(result.snapshotId);
             for (const revision of this.placeVersions.keys()) if (revision !== result.dataRevision) this.placeVersions.delete(revision);
@@ -594,12 +594,16 @@ export class MarkerLayerController {
         }
     }
 
-    _apply(plan, next, reason) {
+    _apply(plan, next, reason, orphans = null) {
         this._cancelRender({restore:false});
-        return this.renderQueue.replace({version:this.version+1,operations:this._render(plan,next,reason)});
+        return this.renderQueue.replace({version:this.version+1,operations:this._render(plan,next,reason,orphans)});
     }
 
-    *_render(plan, next, reason) {
+    /**
+     * @param {object} plan 以上一份确认快照为基准的转场计划
+     * @param {object|null} orphans 被打断的调和留下的节点（主计划里没有）的去向，见 planOrphans
+     */
+    *_render(plan, next, reason, orphans = null) {
         const policy = getMotionPolicy();
         // 新手势开始时旧转场已收敛。相机结束事件可能晚于数据提交，保留刚开始的转场。
         if (reason === 'resize' || reason === 'resume' || !policy.clusterMotion || !policy.pageVisible) {
@@ -674,7 +678,30 @@ export class MarkerLayerController {
             yield {sdk:false};
             if (entry.anims?.size) visuals.set(entry,{travel:this._readVisual(entry.parts.travel),glyph:this._readVisual(entry.parts.glyph)});
         }
-        const priority = node => node.key === this.selectedKey ? 0 : onscreen(project(node.coordinate)) ? 1 : 2;
+        // 合并的旧节点跟着父聚合在同一步开始收拢，不等全部目标节点建完：
+        // 调和要分很多帧，等到最后才收拢会先显示父聚合、旧节点停在原处，再缩小时两者同屏。
+        const mergeSources = new Map();
+        for (const relations of [plan.mergeInto, orphans?.mergeInto]) {
+            for (const [prevKey, nextKey] of relations || []) {
+                yield {sdk:false};
+                if (!mergeSources.has(nextKey)) mergeSources.set(nextKey, []);
+                mergeSources.get(nextKey).push(prevKey);
+            }
+        }
+        const mergeTargetOf = key => plan.mergeInto.get(key) ?? orphans?.mergeInto.get(key);
+        const isMergeTarget = key => plan.mergeTargets.has(key) || !!orphans?.mergeTargets.has(key);
+        const isSplitSource = key => plan.splitSources.has(key) || !!orphans?.splitSources.has(key);
+        // 主计划的来源已不在屏幕上时（被打断的调和已换掉它），改用留下的节点
+        const orphanEntry = (relations, key, entries) => {
+            for (const from of relations?.get(key) || []) if (entries.has(from)) return entries.get(from);
+            return null;
+        };
+        const sourceOnscreen = key => (mergeSources.get(key) || []).some(prevKey => {
+            const source = oldEntries.get(prevKey);
+            return !!source?.attached && onscreen(project(source.node.coordinate));
+        });
+        const priority = node => node.key === this.selectedKey ? 0
+            : onscreen(project(node.coordinate)) || sourceOnscreen(node.key) ? 1 : 2;
         const buckets = [[],[],[]];
         for (const node of next.visibleNodes) { yield {sdk:false}; buckets[priority(node)].push(node); }
         const retireSplitSource = (source) => {
@@ -698,11 +725,77 @@ export class MarkerLayerController {
                 {transform:'scale(0.86)',opacity:0}
             ],{duration:MARKER_TIMING.splitSource,easing:'ease-in',fill:'both'});
         };
+        // 退出节点：残影只做视觉过渡，不可点击。没有动画时把标记放进 removals，由调用方一次移除。
+        // 返回是否有 SDK 操作。
+        const retire = (key, entry, removals) => {
+            this.entries.delete(key);
+            const own = animate ? project(entry.node.coordinate) : null;
+            const visual = this._takeOver(entry,visuals.get(entry));
+            if (!entry.attached) return false;
+            if (!animate || !own || !onscreen(own) || ghosts.length + existingGhosts >= ghostLimit) {
+                entry.ghost = true;
+                entry.parts.root.dataset.ghost = '';
+                removals.push(entry.marker);
+                return true;
+            }
+            const startTravel = visual ? visual.travel : { tx: 0, ty: 0, opacity: 1 };
+            const startGlyph = visual ? visual.glyph : { scale: 1, opacity: 1 };
+            entry.ghost = true;
+            entry.parts.root.dataset.ghost = '';
+            entry.parts.label.dataset.hidden = '';
+            setMarkerZ(entry.marker, Z_INDEX.ghost);
+            ghosts.push(entry);
+            const targetKey = mergeTargetOf(key);
+            const targetNode = targetKey ? next.nodeByKey.get(targetKey) : null;
+            const target = targetNode ? project(targetNode.coordinate) : null;
+            const fromTranslate = `translate(${startTravel.tx}px, ${startTravel.ty}px)`;
+            if (target && !reduced && travelers < LIMITS.travelers) {
+                travelers += 1;
+                run(entry, entry.parts.travel, [
+                    { transform: fromTranslate, opacity: startTravel.opacity },
+                    { transform: `translate(${target.x - own.x}px, ${target.y - own.y}px)`, opacity: startTravel.opacity }
+                ], { duration: MARKER_TIMING.merge, easing: EASE_IN_OUT, fill: 'both' });
+                run(entry, entry.parts.glyph, [
+                    { transform: `scale(${startGlyph.scale})`, opacity: startGlyph.opacity },
+                    { transform: 'scale(0.82)', opacity: startGlyph.opacity, offset: 0.7 },
+                    { transform: 'scale(0.72)', opacity: 0 }
+                ], { duration: MARKER_TIMING.merge, easing: EASE_IN_OUT, fill: 'both' });
+            } else if (isSplitSource(key) && !reduced) {
+                run(entry, entry.parts.glyph, [
+                    { transform: `scale(${startGlyph.scale})`, opacity: startGlyph.opacity },
+                    { transform: 'scale(0.86)', opacity: 0 }
+                ], { duration: MARKER_TIMING.splitSource, easing: 'ease-in', fill: 'both' });
+            } else {
+                run(entry, entry.parts.travel, [
+                    { transform: fromTranslate, opacity: startTravel.opacity },
+                    { transform: fromTranslate, opacity: 0 }
+                ], {
+                    duration: reduced ? MARKER_TIMING.reducedFade : MARKER_TIMING.fadeOut,
+                    easing: 'ease-in',
+                    fill: 'both'
+                });
+            }
+            return true;
+        };
         for (const node of buckets.flat()) {
             yield {sdk:false};
             stopMotionIfCameraMoved();
+            // 先让汇入这个节点的旧节点开始收拢（或在无动画时移除），同一步里再建父聚合，
+            // 中途暂停或被打断时每组要么全是旧节点，要么已经换成父聚合。
+            const sources = mergeSources.get(node.key);
+            if (sources) {
+                const removals = [];
+                for (const key of sources) {
+                    const source = oldEntries.get(key);
+                    if (!source) continue;
+                    oldEntries.delete(key);
+                    retire(key, source, removals);
+                }
+                this._removeMarkers(removals);
+            }
             const fromKey = plan.reuse.get(node.key);
-            let entry = (fromKey ? oldEntries.get(fromKey) : null) || oldEntries.get(node.key);
+            let entry = (fromKey ? oldEntries.get(fromKey) : null) || oldEntries.get(node.key)
+                || orphanEntry(orphans?.reuse, node.key, oldEntries);
             if (entry) {
                 oldEntries.delete(entry.key);
                 this.entries.delete(entry.key);
@@ -755,7 +848,8 @@ export class MarkerLayerController {
             entry.attached = true;
             const reveal = () => { delete entry.parts.root.dataset.staged; };
             const sourceKey = plan.splitFrom.get(node.key);
-            const parentEntry = sourceKey ? prevEntryByKey.get(sourceKey) : null;
+            const parentEntry = (sourceKey ? prevEntryByKey.get(sourceKey) : null)
+                || orphanEntry(orphans?.splitFrom, node.key, prevEntryByKey);
             retireSplitSource(parentEntry);
             if (!animate) {
                 this._queueAttachment(entry.marker, reveal);
@@ -785,7 +879,7 @@ export class MarkerLayerController {
                         { transform: 'scale(1)', opacity: 1, offset: 0.55 },
                         { transform: 'scale(1)', opacity: 1 }
                     ], { duration: MARKER_TIMING.split, easing: EASE_OUT });
-                } else if (plan.mergeTargets.has(node.key) && !reduced && onscreen(own)) {
+                } else if (isMergeTarget(node.key) && !reduced && onscreen(own)) {
                     const keyframes = degraded
                         ? [{ transform: 'scale(0.86)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }]
                         : [
@@ -811,61 +905,14 @@ export class MarkerLayerController {
 
         this._flushAttachments();
 
-        // ---- 退出节点：残影只做视觉过渡，不可点击 ----
+        // ---- 其余退出节点（汇入父聚合的已在上面处理） ----
 
         for (const [key, entry] of oldEntries) {
             yield {sdk:false};
             stopMotionIfCameraMoved();
-            this.entries.delete(key);
-            const own = animate ? project(entry.node.coordinate) : null;
-            const visual = this._takeOver(entry,visuals.get(entry));
-            if (!entry.attached) {
-                continue;
-            }
-            if (!animate || !own || !onscreen(own) || ghosts.length + existingGhosts >= ghostLimit) {
-                entry.ghost = true;
-                entry.parts.root.dataset.ghost = '';
-                this._removeMarkers([entry.marker]);
-                yield {sdk:true};
-                continue;
-            }
-            const startTravel = visual ? visual.travel : { tx: 0, ty: 0, opacity: 1 };
-            const startGlyph = visual ? visual.glyph : { scale: 1, opacity: 1 };
-            entry.ghost = true;
-            entry.parts.root.dataset.ghost = '';
-            entry.parts.label.dataset.hidden = '';
-            setMarkerZ(entry.marker, Z_INDEX.ghost);
-            ghosts.push(entry);
-            const targetKey = plan.mergeInto.get(key);
-            const targetNode = targetKey ? next.nodeByKey.get(targetKey) : null;
-            const target = targetNode ? project(targetNode.coordinate) : null;
-            const fromTranslate = `translate(${startTravel.tx}px, ${startTravel.ty}px)`;
-            if (target && !reduced && travelers < LIMITS.travelers) {
-                travelers += 1;
-                run(entry, entry.parts.travel, [
-                    { transform: fromTranslate, opacity: startTravel.opacity },
-                    { transform: `translate(${target.x - own.x}px, ${target.y - own.y}px)`, opacity: startTravel.opacity }
-                ], { duration: MARKER_TIMING.merge, easing: EASE_IN_OUT, fill: 'both' });
-                run(entry, entry.parts.glyph, [
-                    { transform: `scale(${startGlyph.scale})`, opacity: startGlyph.opacity },
-                    { transform: 'scale(0.82)', opacity: startGlyph.opacity, offset: 0.7 },
-                    { transform: 'scale(0.72)', opacity: 0 }
-                ], { duration: MARKER_TIMING.merge, easing: EASE_IN_OUT, fill: 'both' });
-            } else if (plan.splitSources.has(key) && !reduced) {
-                run(entry, entry.parts.glyph, [
-                    { transform: `scale(${startGlyph.scale})`, opacity: startGlyph.opacity },
-                    { transform: 'scale(0.86)', opacity: 0 }
-                ], { duration: MARKER_TIMING.splitSource, easing: 'ease-in', fill: 'both' });
-            } else {
-                run(entry, entry.parts.travel, [
-                    { transform: fromTranslate, opacity: startTravel.opacity },
-                    { transform: fromTranslate, opacity: 0 }
-                ], {
-                    duration: reduced ? MARKER_TIMING.reducedFade : MARKER_TIMING.fadeOut,
-                    easing: 'ease-in',
-                    fill: 'both'
-                });
-            }
+            const removals = [];
+            if (!retire(key, entry, removals)) continue;
+            this._removeMarkers(removals);
             yield {sdk:true};
         }
 

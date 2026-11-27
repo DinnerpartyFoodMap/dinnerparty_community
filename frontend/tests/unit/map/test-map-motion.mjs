@@ -7,7 +7,7 @@ import {
 import {
     buildSnapshot, computeLogicalZoom, expandBounds, boundsContains, normalizeViewBounds
 } from "../../../src/map/cluster/snapshot.js";
-import { planTransition, verifySnapshotMembers } from "../../../src/map/cluster/transitions.js";
+import { planTransition, planOrphans, verifySnapshotMembers } from "../../../src/map/cluster/transitions.js";
 import { clusterScale, glyphSize, formatCount, hitSize } from "../../../src/map/cluster/glyph.js";
 import { worldPixel, unprojectWorldPixel, centerForScreenTarget, readMapViewport } from "../../../src/map/viewport.js";
 import { tileBounds, isOverseasTile, buildCartoTileUrl } from "../../../src/map/overseasTileLayer.js";
@@ -442,6 +442,38 @@ for (const count of [100, 1000, 10000]) {
         buildCartoTileUrl({ x: 1, y: 2, z: 3, dark: true, retina: false, apiKey: 'k' }),
         'https://basemaps.cartocdn.com/dark_all/3/1/2.png?key=k'
     );
+}
+
+// ---- 被打断的调和留下的节点：按未确认快照补去向，基准快照已有的 key 仍归主计划 ----
+{
+    const rows = [];
+    for (let group = 0; group < 4; group++) {
+        for (const [dx, dy] of [[0, 0], [0.0003, 0], [0, 0.0003]]) {
+            rows.push({ id: rows.length + 1, name: `店${rows.length + 1}`, longitude: 120 + group * 0.004 + dx, latitude: 30 + dy });
+        }
+    }
+    const engine = new ClusterEngine(normalizePlaces(rows));
+    const fine = snap(engine, 20), mid = snap(engine, 17), coarse = snap(engine, 13);
+    assert.deepEqual([fine, mid, coarse].map((s) => s.visibleNodes.length), [12, 4, 1]);
+    const top = coarse.visibleNodes[0].key;
+
+    // 缩小 20 → 17 被 13 打断：17 级已建的聚合汇入 13 级
+    const merged = planOrphans(fine, [mid], coarse);
+    assert.deepEqual(merged.mergeInto, new Map(mid.visibleNodes.map((node) => [node.key, top])));
+    assert.deepEqual(merged.mergeTargets, new Set([top]));
+    assert.equal(planOrphans(mid, [mid], coarse), null, 'keys of the baseline belong to the main plan');
+
+    // 放大 13 → 17 被 20 打断：17 级已建的聚合拆成明细
+    const split = planOrphans(coarse, [mid], fine);
+    for (const node of fine.visibleNodes) {
+        const parent = mid.visibleNodes.find((item) => engine.memberKeys(item).includes(node.key));
+        assert.deepEqual(split.splitFrom.get(node.key), [parent.key]);
+    }
+    assert.deepEqual(split.splitSources, new Set(mid.visibleNodes.map((node) => node.key)));
+
+    // 更新的未确认快照已有的 key 不再按更旧的快照补
+    const older = planOrphans(coarse, [mid, { ...mid, logicalZoom: 16 }], fine);
+    assert.deepEqual(older.splitFrom, split.splitFrom);
 }
 
 void dataSignature;

@@ -68,6 +68,30 @@ await assert.rejects(request('clusterInfo',{nodeKey:cluster.key}),{code:'STALE_D
     assert.equal(final.nodes[0].sourceCoordinate,undefined);
     assert.equal(final.logicalZoom,14,'coordinate refinement preserves normal topology changes');
 }
+// Snapshots sent but never confirmed (their reconciliation was cut short) may
+// still be partly on screen; the web layer asks for their destinations too.
+{
+    const runtime=createComputeRuntime();
+    const keys=[],coordinates=[];
+    for(let group=0;group<4;group++)for(const [dx,dy] of [[0,0],[0.0003,0],[0,0.0003]]){
+        keys.push('place:'+(keys.length+1));coordinates.push(120+group*0.004+dx,30+dy);
+    }
+    const data={keys,coordinates:new Float64Array(coordinates),aggregateCells:keys.map(()=>null),aggregates:keys.map(()=>false)};
+    const base={viewBounds:{minLng:119.99,maxLng:120.03,minLat:29.99,maxLat:30.01},queryMode:'nearby',markerBand:null,orphans:true};
+    const compute=payload=>runtime.handle({op:'compute',dataRevision:1,payload:{...base,...payload}});
+    const fine=await compute({zoom:20,data});
+    await runtime.handle({op:'commitAck',payload:{snapshotId:fine.snapshotId}});
+    assert.equal((await compute({zoom:20})).orphanPlan,null,'a confirmed baseline leaves no orphans');
+    const mid=await compute({zoom:17}); // superseded before its reconciliation finished
+    const coarse=await compute({zoom:13});
+    assert.equal(coarse.plan.kind,'zoom-out','the main plan still starts from the confirmed snapshot');
+    const top=coarse.nodes[0].key;
+    assert.deepEqual(coarse.orphanPlan.mergeInto,new Map(mid.nodes.map(node=>[node.key,top])),
+        'clusters of the unconfirmed snapshot merge into the new cluster');
+    assert.equal((await compute({zoom:13,orphans:false})).orphanPlan,null,'only requested when the caller renders orphans');
+    await runtime.handle({op:'commitAck',payload:{snapshotId:(await compute({zoom:13})).snapshotId}});
+    assert.equal((await compute({zoom:13})).orphanPlan,null,'a confirmation clears the unconfirmed snapshots');
+}
 let fatals=0, posts=0;
 const transport={postMessage:()=>{posts++;},terminate(){}};
 const client=createWorkerClient({createWorker:()=>transport,onFatal:()=>{fatals++;}});

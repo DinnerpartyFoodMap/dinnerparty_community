@@ -368,6 +368,40 @@ export function planTransition(prev, next, options = {}) {
     return finalize(plan, prev, next);
 }
 
+/**
+ * 被打断的调和会在屏幕上留下没确认的快照里的节点（previous 里没有的 key），主计划不知道它们。
+ * 按这些快照（最新在前）到 next 的转场补一份关系，只收录 previous 里没有、更新的快照也没有的 key：
+ * reuse / splitFrom 为 nextKey -> [旧 key]（按新旧顺序），mergeInto 为旧 key -> nextKey。都没有时返回 null。
+ * @param {object|null} previous 主计划的基准快照
+ * @param {object[]} shown 可能部分显示的未确认快照，最新在前
+ * @param {object} next 新快照
+ */
+export function planOrphans(previous, shown, next, options = {}) {
+    const covered = new Set(previous ? previous.nodeByKey.keys() : []);
+    const result = { reuse: new Map(), mergeInto: new Map(), splitFrom: new Map(), mergeTargets: new Set(), splitSources: new Set() };
+    const append = (map, key, value) => {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(value);
+    };
+    for (const snapshot of shown) {
+        if (!snapshot?.visibleNodes.length) continue;
+        const plan = planTransition(snapshot, next, options);
+        for (const [nextKey, from] of plan.reuse) if (!covered.has(from)) append(result.reuse, nextKey, from);
+        for (const [from, nextKey] of plan.mergeInto) {
+            if (covered.has(from)) continue;
+            result.mergeInto.set(from, nextKey);
+            result.mergeTargets.add(nextKey);
+        }
+        for (const [nextKey, from] of plan.splitFrom) {
+            if (covered.has(from)) continue;
+            append(result.splitFrom, nextKey, from);
+            result.splitSources.add(from);
+        }
+        for (const key of snapshot.nodeByKey.keys()) covered.add(key);
+    }
+    return result.reuse.size || result.mergeInto.size || result.splitFrom.size ? result : null;
+}
+
 /** 校验：快照中每个成员恰好属于一个节点，且计数守恒。返回问题描述数组（空数组表示通过）。 */
 export function verifySnapshotMembers(snapshot) {
     const problems = [];
