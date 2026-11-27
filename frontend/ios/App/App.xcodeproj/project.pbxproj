@@ -23,6 +23,7 @@
 		A7F1C0DE0000000000000034 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000033 /* DesignTokens.swift */; };
 		A7F1C0DE0000000000000032 /* NativeScreenPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE0000000000000031 /* NativeScreenPresentation.swift */; };
 		A7F1C0DE000000000000002F /* NativeJourneyPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */; };
+		A7F1C0DE000000000000003C /* NativeDinnerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000003B /* NativeDinnerPlugin.swift */; };
 		A7F1C0DE000000000000002E /* NativeAdminPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001E /* NativeAdminPlugin.swift */; };
 		A7F1C0DE000000000000002D /* NativePageEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001D /* NativePageEngine.swift */; };
 		A7F1C0DE000000000000002C /* NativeProfilePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F1C0DE000000000000001C /* NativeProfilePlugin.swift */; };
@@ -59,6 +60,7 @@
 		A7F1C0DE0000000000000033 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		A7F1C0DE0000000000000031 /* NativeScreenPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScreenPresentation.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeJourneyPlugin.swift; sourceTree = "<group>"; };
+		A7F1C0DE000000000000003B /* NativeDinnerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDinnerPlugin.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001E /* NativeAdminPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAdminPlugin.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001D /* NativePageEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePageEngine.swift; sourceTree = "<group>"; };
 		A7F1C0DE000000000000001C /* NativeProfilePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfilePlugin.swift; sourceTree = "<group>"; };
@@ -116,6 +118,7 @@
 				A7F1C0DE0000000000000033 /* DesignTokens.swift */,
 				A7F1C0DE0000000000000031 /* NativeScreenPresentation.swift */,
 				A7F1C0DE000000000000001F /* NativeJourneyPlugin.swift */,
+				A7F1C0DE000000000000003B /* NativeDinnerPlugin.swift */,
 				A7F1C0DE000000000000001E /* NativeAdminPlugin.swift */,
 				A7F1C0DE000000000000001D /* NativePageEngine.swift */,
 				A7F1C0DE000000000000001C /* NativeProfilePlugin.swift */,
@@ -235,6 +238,7 @@
 				A7F1C0DE0000000000000034 /* DesignTokens.swift in Sources */,
 				A7F1C0DE0000000000000032 /* NativeScreenPresentation.swift in Sources */,
 				A7F1C0DE000000000000002F /* NativeJourneyPlugin.swift in Sources */,
+				A7F1C0DE000000000000003C /* NativeDinnerPlugin.swift in Sources */,
 				A7F1C0DE000000000000002E /* NativeAdminPlugin.swift in Sources */,
 				A7F1C0DE000000000000002D /* NativePageEngine.swift in Sources */,
 				A7F1C0DE000000000000002C /* NativeProfilePlugin.swift in Sources */,

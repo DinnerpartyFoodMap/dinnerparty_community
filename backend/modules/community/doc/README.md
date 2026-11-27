@@ -8,6 +8,14 @@
 - `DELETE /comments/:id` 硬删除自己的住民评论，任何审核状态都可删除。其他人的评论、系统记录和不存在的评论返回 404 `COMMENT_NOT_FOUND`，删除成功返回 `{ success: true }`。作者删除、管理删除、地点删除和账号注销统一撤回待审申请。
 - 住民评论写入 `Comment.source = 'resident'`，系统修改依据与创建者描述的 `source` 保持 `NULL`。管理员用 `GET /comments/place/:id?kind=edit` 读取系统修改记录，兼容省略 `kind` 的请求，两者均需 `manage_comments`。公开评论从单地点详情读取，初筛和复核规则见 [地点审核](../../places/doc/placeModeration.md#住民评论)。
 
+## 聚餐活动
+
+- `/dinners` 与 `/api/dinners` 提供等价接口。列表使用 `q` 搜索标题、说明、地点和发起人，使用 `offset` 翻页，每页最多 50 条。默认仅返回开放中活动。`include_ended=1` 也返回已关闭或开始时间已到的活动，时间待定的开放活动仍在默认列表内。
+- `POST /dinners` 创建活动。`place_name` 和 `start_time` 可以分别留空。迁移保留旧活动及分享链接所使用的 ID。
+- `PUT /dinners/:id/participants/me` 加入，`DELETE /dinners/:id/participants/me` 退出。发起人自动计入总人数。退出或删除活动会撤回相关提案。加入、容量校验和提案变更使用 SQLite 事务。
+- `PUT /dinners/:id/proposals/me` 供已加入的成员覆盖自己的 `{ places, times }`，两类各最多三项。发起人查看全部提案，成员查看自己的提案。仅发起人可通过 `PATCH /dinners/:id/schedule` 更改正式安排，可分别提交地点、时间或同时提交两项。活动结束后详情仍可查看。
+- `node tests/community/test_dinners.js` 覆盖旧库迁移、搜索、并发加入、提案、确定安排和删除级联。
+
 ## 其他社区功能
 
 exhibitions 提供公开的 `/exhibitions`（及 `/api/exhibitions`），返回 `{ exhibitions: [...] }`，按 `event_time` 升序、ID 升序排列，未填时间的旧活动排在末尾。保留 `/exhibitions/current` 返回排序首项。接口只返回已发布展会的展示信息（含选填的展会地点 `location_name`、`latitude`、`longitude`，GCJ-02），无展会时返回 `{ exhibition: null }`。发布、下架及审计由 adminExhibitions 管理。

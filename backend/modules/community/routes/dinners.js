@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const { db } = require("../../../infrastructure/database");
-const { requireAuth } = require("../../accounts/middleware/auth");
+const { requireAuth, attachViewer } = require("../../accounts/middleware/auth");
 const { hasPermission } = require("../../admin/services/adminPermissions");
 const { insertAdminAction } = require("../../admin/services/adminAudit");
+const { listDinners, dinnerDetail, setParticipation, saveProposal, setSchedule } = require("../services/dinnerEvents");
 
 const TITLE_MAX = 120;
 const DESCRIPTION_MAX = 1200;
@@ -22,12 +23,17 @@ function sanitizeText(input, { required = false, max = 200, field = "字段" } =
     return { value };
 }
 
-function normalizeStartTime(raw) {
-    if (!raw) return { error: "开始时间不能为空" };
+function normalizeStartTime(raw, { future = false } = {}) {
+    if (raw == null || raw === "") return { value: null };
+    const date = typeof raw === "string" && /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})?$/.exec(raw);
+    if (!date || new Date(`${date[1]}T00:00Z`).toJSON()?.slice(0, 10) !== date[1] || raw.slice(11, 13) === "24") {
+        return { error: "开始时间格式无效" };
+    }
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) {
         return { error: "开始时间格式无效" };
     }
+    if (future && parsed.getTime() <= Date.now()) return { error: "开始时间必须晚于现在" };
     return { value: parsed.toISOString() };
 }
 
@@ -104,42 +110,18 @@ function buildOgImageSvg(row) {
 </svg>`;
 }
 
-function serializeDinner(row) {
-    if (!row) return null;
-    return {
-        ...row,
-        max_participants: row.max_participants == null ? null : Number(row.max_participants)
-    };
-}
-
 router.get("/", (req, res) => {
-    db.all(
-        `SELECT d.*, u.username AS creator_name
-         FROM DinnerEvent d
-         LEFT JOIN User u ON u.id = d.creator_id
-         ORDER BY d.start_time ASC
-         LIMIT 50`,
-        [],
-        (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            return res.json((rows || []).map(serializeDinner));
-        }
-    );
+    const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 120).toLowerCase() : '';
+    const offset = Number(req.query.offset ?? 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) return res.status(400).json({ error: '列表偏移无效' });
+    return res.json(listDinners(db._raw, { query, offset, includeEnded: req.query.include_ended === '1' }));
 });
 
-router.get("/:id", (req, res) => {
-    db.get(
-        `SELECT d.*, u.username AS creator_name
-         FROM DinnerEvent d
-         LEFT JOIN User u ON u.id = d.creator_id
-         WHERE d.id = ?`,
-        [req.params.id],
-        (err, row) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (!row) return res.status(404).json({ error: "聚餐活动不存在" });
-            return res.json(serializeDinner(row));
-        }
-    );
+router.get("/:id", attachViewer, (req, res) => {
+    res.set('Cache-Control', 'private, no-store');
+    const detail = dinnerDetail(db._raw, req.params.id, req.viewer?.id);
+    if (!detail) return res.status(404).json({ error: "聚餐活动不存在" });
+    return res.json(detail);
 });
 
 router.post("/", requireAuth, (req, res) => {
@@ -151,7 +133,7 @@ router.post("/", requireAuth, (req, res) => {
     const d = sanitizeText(description, { required: false, max: DESCRIPTION_MAX, field: "活动说明" });
     if (d.error) return res.status(400).json({ error: d.error });
 
-    const p = sanitizeText(place_name, { required: true, max: PLACE_MAX, field: "聚餐地点" });
+    const p = sanitizeText(place_name, { max: PLACE_MAX, field: "聚餐地点" });
     if (p.error) return res.status(400).json({ error: p.error });
 
     const s = normalizeStartTime(start_time);
@@ -163,25 +145,50 @@ router.post("/", requireAuth, (req, res) => {
     const c = sanitizeText(contact_info, { required: false, max: CONTACT_MAX, field: "联系方式" });
     if (c.error) return res.status(400).json({ error: c.error });
 
-    db.run(
-        `INSERT INTO DinnerEvent (title, description, place_name, start_time, max_participants, contact_info, creator_id, updated_time)
-         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [t.value, d.value, p.value, s.value, m.value, c.value, req.user.id],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            db.get(
-                `SELECT d.*, u.username AS creator_name
-                 FROM DinnerEvent d
-                 LEFT JOIN User u ON u.id = d.creator_id
-                 WHERE d.id = ?`,
-                [this.lastID],
-                (e2, row) => {
-                    if (e2) return res.status(500).json({ error: e2.message });
-                    return res.status(201).json(serializeDinner(row));
-                }
-            );
-        }
-    );
+    const sql = db._raw;
+    const { lastInsertRowid } = sql.prepare(`INSERT INTO DinnerEvent
+        (title, description, place_name, start_time, max_participants, contact_info, creator_id, updated_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+        .run(t.value, d.value, p.value || null, s.value, m.value, c.value, req.user.id);
+    return res.status(201).json(dinnerDetail(sql, lastInsertRowid, req.user.id));
+});
+
+function sendChange(res, result) {
+    return result.error ? res.status(result.status).json({ error: result.error }) : res.json(result.detail);
+}
+
+router.put('/:id/participants/me', requireAuth, (req, res) =>
+    sendChange(res, setParticipation(db._raw, req.params.id, req.user.id, true)));
+router.delete('/:id/participants/me', requireAuth, (req, res) =>
+    sendChange(res, setParticipation(db._raw, req.params.id, req.user.id, false)));
+
+router.put('/:id/proposals/me', requireAuth, (req, res) => {
+    const { places, times } = req.body || {};
+    if (!Array.isArray(places) || places.length > 3 || !Array.isArray(times) || times.length > 3) {
+        return res.status(400).json({ error: '每人最多推荐三个地点和三个时间' });
+    }
+    const normalizedPlaces = places.map(place => sanitizeText(place, { required: true, max: PLACE_MAX, field: '候选地点' }));
+    const normalizedTimes = times.map(time => normalizeStartTime(time, { future: true }));
+    const invalid = [...normalizedPlaces, ...normalizedTimes].find(entry => entry.error || !entry.value);
+    if (invalid) return res.status(400).json({ error: invalid.error || '候选时间不能为空' });
+    return sendChange(res, saveProposal(db._raw, req.params.id, req.user.id, {
+        places: [...new Set(normalizedPlaces.map(entry => entry.value))],
+        times: [...new Set(normalizedTimes.map(entry => entry.value))]
+    }));
+});
+
+router.patch('/:id/schedule', requireAuth, (req, res) => {
+    const { place_name, start_time } = req.body || {};
+    if (place_name === undefined && start_time === undefined) {
+        return res.status(400).json({ error: '请填写时间或地点' });
+    }
+    const place = sanitizeText(place_name, { max: PLACE_MAX, field: '聚餐地点' });
+    const time = normalizeStartTime(start_time, { future: true });
+    if (place.error || time.error) return res.status(400).json({ error: place.error || time.error });
+    return sendChange(res, setSchedule(db._raw, req.params.id, req.user.id, {
+        place: place_name === undefined ? undefined : place.value || null,
+        time: time.value === null && start_time === undefined ? undefined : time.value
+    }));
 });
 
 router.delete("/:id", requireAuth, (req, res) => {

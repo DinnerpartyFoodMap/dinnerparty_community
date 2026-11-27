@@ -1,11 +1,18 @@
 {
   "timeTbd": "时间待定",
+  "placeTbd": "地点待定",
   "loadFailed": "加载失败",
+  "updateFailed": "更新聚餐失败",
+  "saving": "正在保存…",
   "list": {
     "title": "聚餐活动",
     "create": "发起聚餐",
     "loading": "正在加载活动...",
     "empty": "还没有聚餐活动，来发起第一场吧。",
+    "noResults": "没有找到符合条件的聚餐活动。",
+    "search": "搜索聚餐活动",
+    "showEnded": "查看已结束聚餐",
+    "loadMore": "加载更多聚餐",
     "viewDetail": "查看详情",
     "meta": "状态：{{status}} · 发起人：{{creator_name}}",
     "noDescription": "暂无活动说明"
@@ -14,7 +21,8 @@
   "create": {
     "failed": "创建失败",
     "titlePlaceholder": "活动标题",
-    "placePlaceholder": "聚餐地点",
+    "placePlaceholder": "聚餐地点（可选）",
+    "timeOptional": "开始时间（可选）",
     "pickPlaceTooltip": "从地图选择地点",
     "pickTimeTooltip": "选择日期时间",
     "maxParticipantsPlaceholder": "人数上限（可选）",
@@ -35,16 +43,42 @@
     "creator": "发起人：{{creator_name}}",
     "maxParticipants": " · 人数上限：{{max_participants}}",
     "contact": " · 联系方式：{{contact_info}}",
+    "contactLabel": "联系方式",
     "idStatus": "活动ID：{{id}} · 状态：{{status}}",
     "statusOpen": "开放中",
+    "statusEnded": "已结束",
+    "join": "加入聚餐",
+    "leave": "退出聚餐",
+    "confirmLeave": "退出后会撤回你提交的提案。确认退出聚餐吗？",
+    "full": "人数已满",
+    "participants": "{{count}} 人参加",
+    "participantsLimited": "{{count}} / {{max}} 人参加",
     "times": "创建时间：{{createdAt}} · 更新时间：{{updatedAt}}",
     "shareTitle": "分享链接",
     "copyLink": "复制分享链接",
     "openSharePage": "打开分享页",
     "deleting": "删除中...",
     "delete": "删除此次聚餐",
-    "ogTitle": "链接卡片预览",
-    "ogAlt": "聚餐活动链接卡片",
     "backToList": "返回活动列表"
+  },
+  "proposal": {
+    "title": "我的提案",
+    "hint": "地点和时间各可推荐最多三项，留空的选项不会提交。",
+    "place": "候选地点 {{number}}",
+    "time": "候选时间 {{number}}",
+    "save": "保存提案",
+    "saved": "提案已保存",
+    "suggested": "成员提案",
+    "empty": "暂时没有成员提交提案。",
+    "places": "候选地点",
+    "times": "候选时间"
+  },
+  "schedule": {
+    "title": "确定时间和地点",
+    "save": "保存安排",
+    "saved": "聚餐安排已更新",
+    "place": "聚餐地点",
+    "time": "聚餐时间",
+    "clearTime": "清除时间"
   }
 }

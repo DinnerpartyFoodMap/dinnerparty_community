@@ -30,6 +30,7 @@ import { ConfirmProvider } from "../components/feedback/Confirm";
 import { applyDarkMode, applyThemeColors, resolveThemePrimary, resolveThemeSecondary, getSystemPrefersDark, onSystemColorSchemeChange, getThemeColor } from "../theme/theme";
 import useDarkMode from "../theme/useDarkMode";
 import { DinnerCreatePage, DinnerDetailPage, DinnerListPage, isDinnerPath, parseDinnerIdFromPath } from "../dinners/DinnerPages";
+import NativeDinnerHost, { supportsNativeDinners } from '../dinners/NativeDinnerHost';
 import PosterExportPage from "../poster/PosterExportPage";
 import PlaceListPage from "../places/PlaceListPage";
 import UserProfilePage from "../profile/UserProfilePage";
@@ -137,6 +138,7 @@ export default function App() {
     const [nativeProfileFailedId, setNativeProfileFailedId] = useState(null);
     // 原生管理后台打不开或异常结束：本次停留在 /admin 期间改用网页版
     const [nativeAdminFailed, setNativeAdminFailed] = useState(false);
+    const [nativeDinnerFailed, setNativeDinnerFailed] = useState(false);
     // 原生日记 · 同好：打开时由原生页接管，失败后本次改用网页工作区
     const [nativeJourneyOpen, setNativeJourneyOpen] = useState(false);
     const [nativeJourneyFailed, setNativeJourneyFailed] = useState(false);
@@ -565,7 +567,7 @@ export default function App() {
     useEffect(() => {
         // 未登录访问受限页面时，弹出登录对话框但不强制跳转，以便用户在页面内登录
         if (credentialsRestoring) return;
-        if ((pathname === "/admin" || pathname.startsWith("/settings") || pathname === "/dinners/new" || pathname === '/posters/new') && !token) {
+        if ((pathname === "/admin" || pathname.startsWith("/settings") || /^\/dinners\/new\/?$/.test(pathname) || pathname === '/posters/new') && !token) {
             setShowAuth(true);
             // do not navigate away; allow login modal to appear over these pages
         }
@@ -617,11 +619,13 @@ export default function App() {
     const showSettingsCompanion = pathname === '/settings/companions';
     const showSettingsAny = typeof pathname === 'string' && pathname.startsWith("/settings");
     const showSettingsAvatar = pathname === "/settings/avatar";
-    const showDinnerList = pathname === "/dinners";
-    const showDinnerCreate = pathname === "/dinners/new";
+    const showDinnerList = /^\/dinners\/?$/.test(pathname);
+    const showDinnerCreate = /^\/dinners\/new\/?$/.test(pathname);
     const dinnerId = parseDinnerIdFromPath(pathname);
     const showDinnerDetail = Number.isFinite(dinnerId) && dinnerId > 0;
     const showAnyDinnerPage = showDinnerList || showDinnerCreate || showDinnerDetail;
+    const nativeDinnerMode = showAnyDinnerPage && !nativeDinnerFailed && supportsNativeDinners();
+    const nativeDinnerActive = nativeDinnerMode && !showAuth && !credentialsRestoring;
     const showPosterExport = pathname === '/posters/new';
     // 地点列表与住民主页
     const showPlaceList = pathname === '/places';
@@ -638,7 +642,7 @@ export default function App() {
     // iOS 原生住民主页：网页不渲染 UserProfilePage，地图保持挂载，原生页以系统面板从地图上弹出
     const nativeProfileFailed = nativeProfileFailedId != null && String(nativeProfileFailedId) === String(profileUserId);
     const nativeProfileActive = !!profileUserId && !showProfileCommunity && !showProfileFavorites && !nativeProfileFailed && supportsNativeProfile();
-    const showMapPage = (!showAdminPage || nativeAdminActive) && !showSettingsAny && !showAnyDinnerPage && !showPosterExport && !showPlaceList
+    const showMapPage = (!showAdminPage || nativeAdminActive) && !showSettingsAny && (!showAnyDinnerPage || nativeDinnerMode) && !showPosterExport && !showPlaceList
         && (!profileUserId || nativeProfileActive) && !showOtherRoom;
     const openPlaceOnMap = useCallback((placeId) => goPath(`/?place=${encodeURIComponent(placeId)}`), [goPath]);
     const openProfile = useCallback((userId) => { if (userId) goPath(`/users/${encodeURIComponent(userId)}`); }, [goPath]);
@@ -719,6 +723,11 @@ export default function App() {
         if (canGoBack()) window.history.back();
         else goPath('/');
     }, [goPath]);
+    const authFromDinner = (create, id) => {
+        if (create) goPath('/dinners/new', { replace: true });
+        else if (id) goPath(`/dinners/${id}`, { replace: true });
+        setShowAuth(true);
+    };
     const backFromProfileTab = () => {
         if (canGoBack()) window.history.back();
         else goPath(`/users/${encodeURIComponent(profileUserId)}`, { replace: true });
@@ -821,7 +830,7 @@ export default function App() {
         }
         let parent = null;
         if (pathname.startsWith('/settings/')) parent = '/settings';
-        else if (pathname === '/dinners/new' || parseDinnerIdFromPath(pathname)) parent = '/dinners';
+        else if (showDinnerCreate || showDinnerDetail) parent = '/dinners';
         else if (pathname !== '/') parent = '/';
         if (!parent) return false;
         goPath(parent, { replace: true });
@@ -837,6 +846,10 @@ export default function App() {
     useEffect(() => {
         if (pathname !== '/admin') setNativeAdminFailed(false);
     }, [pathname]);
+
+    useEffect(() => {
+        if (!showAnyDinnerPage) setNativeDinnerFailed(false);
+    }, [showAnyDinnerPage]);
 
     // 离开所有住民主页后清除失败标记：下次进入同一位住民时重新尝试原生页
     useEffect(() => {
@@ -861,6 +874,7 @@ export default function App() {
 
     // 当前覆盖在地图之上的页面；null 表示地图页
     const renderPage = () => {
+        if (nativeDinnerMode) return null;
         if (showDinnerList) return (
             <DinnerListPage
                 backendUrl={BACKEND_URL}
@@ -872,7 +886,6 @@ export default function App() {
                     goPath('/dinners/new');
                 }}
                 onOpenDetail={(id) => goPath(`/dinners/${id}`)}
-                onGoHome={() => goPath('/')}
             />
         );
 
@@ -883,7 +896,6 @@ export default function App() {
                 isAuth={isAuth}
                 onRequireAuth={() => setShowAuth(true)}
                 onCreated={(dinner) => goPath(`/dinners/${dinner.id}`)}
-                onBack={() => goPath('/')}
                 onMapPickerOpenChange={setAuthPanelDisabled}
             />
         );
@@ -895,6 +907,7 @@ export default function App() {
                 token={token}
                 currentUserId={user && user.id}
                 isAdmin={isAdmin}
+                onRequireAuth={() => setShowAuth(true)}
                 onBackList={() => goPath('/dinners')}
                 onGoHome={() => goPath('/')}
             />
@@ -1214,7 +1227,7 @@ export default function App() {
                                 exhibitionOpen={exhibitionOpen}
                                 onCloseExhibition={closeExhibition}
                                 mapPageActive={showMapPage || nativeSettingsActive}
-                                nativeOverlayActive={!!nativeProfileHostId || nativeAdminActive || nativeJourneyActive}
+                                nativeOverlayActive={!!nativeProfileHostId || nativeAdminActive || nativeJourneyActive || nativeDinnerActive}
                                 mapPreviewActive={mapBackPreview}
                             />
                         </div>
@@ -1223,6 +1236,12 @@ export default function App() {
                             {pageElement && <RoutePageShell path={pagePath} onNavigate={goPath}
                                 onBack={pagePath === '/settings/companions' ? backFromCompanion : undefined}>{pageElement}</RoutePageShell>}
                         </PageTransition>
+
+                        {nativeDinnerActive && <NativeDinnerHost
+                            backendUrl={BACKEND_URL} token={token} dinnerId={dinnerId} create={showDinnerCreate}
+                            currentUserId={user?.id} isAdmin={isAdmin} dark={dark} themeColor={getThemeColor()}
+                            onBack={backFromProfile} onAuth={authFromDinner} onUnavailable={() => setNativeDinnerFailed(true)}
+                        />}
 
                         {/* 原生住民设置：不占网页页面，只负责驱动原生设置页与执行它交回的账号请求 */}
                         {nativeSettingsActive && (

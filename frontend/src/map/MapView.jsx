@@ -115,6 +115,7 @@ export default function MapView({
     initialCenter = null,
     mapPageActive = false,
     mapPreviewActive = false,
+    nativeOverlayActive = false,
     onOpenJourney = null,
     companion = null,
     onOpenCompanion = null
@@ -2652,6 +2653,7 @@ export default function MapView({
                 onPickPoint={onPickPoint}
                 showTip={showTip}
                 chromeOwner={mapPageActive && !pickerMode}
+                nativeOverlayActive={nativeOverlayActive}
             />
 
             {!pickerMode && <FullScreenMapPicker

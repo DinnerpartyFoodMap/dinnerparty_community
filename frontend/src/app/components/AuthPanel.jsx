@@ -240,7 +240,7 @@ const AuthPanel = forwardRef(function AuthPanel({ user, isAuth, isAdmin, onOpenA
                                 {divider}
                             </>
                         )}
-                        {isAuth && (
+                        {onOpenDinners && (
                             <>
                                 <Button variant="menu" full {...itemProps} onClick={() => { setMoreOpen(false); isOnDinners ? onGoHome?.() : onOpenDinners?.(); }}>
                                     {isOnDinners ? t('common:action.backToMap') : t('auth:panel.dinners')}

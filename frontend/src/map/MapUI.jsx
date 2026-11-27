@@ -1230,6 +1230,7 @@ export default function MapUI(props) {
     // ---- 原生面板（iOS 26 系统 sheet）：与网页面板同一组操作。原生只拿到展示字段，点按回传行 id，这里查表执行 ----
     const moreMenuEntries = [
         iosApp && { id: 'alongRoute', title: t('map:ui.alongRoute'), symbol: sfSymbol('alongRoute'), ...nativeIcon('expanded.panel.icons.alongRoute'), disabled: !mapReady, run: openAlongRoute },
+        onOpenDinners && { id: 'dinners', title: t('map:ui.dinners'), symbol: sfSymbol('dinners'), ...nativeIcon('expanded.panel.icons.dinners'), run: onOpenDinners },
         isAdmin && { id: 'admin', title: t('map:ui.admin'), symbol: sfSymbol('admin'), ...nativeIcon('expanded.panel.icons.admin'), run: onOpenAdmin },
         { id: 'guide', title: t('map:onboarding.menuEntry'), symbol: sfSymbol('guide'), ...nativeIcon('expanded.panel.icons.guide'), run: openOnboarding },
         onOpenFeedback && { id: 'feedback', title: t('feedback:menuEntry'), symbol: sfSymbol('feedback'), ...nativeIcon('expanded.panel.icons.feedback'), run: onOpenFeedback }
@@ -3095,8 +3096,7 @@ export default function MapUI(props) {
                                 <SkinIcon slot="expanded.panel.icons.random" size={22} style={panelIconStyle} />
                                 {t('map:ui.randomFood')}
                             </Button>
-                            {/* iOS 不提供聚餐活动与导出海报 */}
-                            {isAuthenticated && !iosApp && (
+                            {onOpenDinners && (
                                 <Button variant="menu" full role="menuitem" style={{ minHeight: 48 }} onClick={() => runMobileMoreAction(onOpenDinners)}>
                                     <SkinIcon slot="expanded.panel.icons.dinners" size={22} style={panelIconStyle} />
                                     {t('map:ui.dinners')}

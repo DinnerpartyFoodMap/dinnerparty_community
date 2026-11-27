@@ -1,0 +1,94 @@
+.dinner-page {
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: var(--space-4);
+    background: var(--color-bg-base);
+    color: var(--color-text-primary);
+}
+
+.dinner-content {
+    max-width: 720px;
+    margin-inline: auto;
+}
+
+.dinner-heading {
+    margin: 50px 0 var(--space-4);
+    font: var(--text-title2);
+}
+
+.dinner-list-toolbar, .dinner-search, .dinner-card-heading, .dinner-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.dinner-list-toolbar .fm-button, .dinner-card-heading .fm-button { flex-shrink: 0; }
+.dinner-search { width: min(100%, 24rem); min-width: 0; margin-inline-start: auto; }
+.dinner-search .fm-field { flex: 1; width: 100%; min-width: 0; }
+.dinner-search .dinner-search-submit { width: 44px; height: 44px; padding: 0; }
+.dinner-search-submit .material-symbols-outlined { font-size: 32px; }
+.dinner-card-heading { justify-content: space-between; }
+.dinner-actions { flex-wrap: wrap; }
+
+.dinner-switch {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 44px;
+    width: fit-content;
+    margin-block: var(--space-1) var(--space-2);
+    margin-inline-start: auto;
+    font: var(--text-body);
+    cursor: pointer;
+}
+
+.dinner-switch input {
+    appearance: none;
+    position: relative;
+    width: 40px;
+    height: 24px;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-bg-overlay);
+    cursor: inherit;
+}
+
+.dinner-switch input::before {
+    content: '';
+    position: absolute;
+    inset: 3px auto 3px 3px;
+    aspect-ratio: 1;
+    border-radius: var(--radius-full);
+    background: var(--color-text-secondary);
+}
+
+.dinner-switch input:checked { background: var(--theme-primary); }
+.dinner-switch input:checked::before { background: var(--theme-on-primary); transform: translateX(16px); }
+.dinner-switch input:focus-visible { outline: 2px solid var(--theme-primary); outline-offset: 2px; }
+
+.dinner-list, .dinner-stack, .dinner-form, .dinner-field { display: grid; }
+.dinner-list, .dinner-form { gap: var(--space-3); }
+.dinner-stack { gap: var(--space-1); }
+.dinner-field { gap: var(--space-1); min-width: 0; font: var(--text-footnote); }
+.dinner-field .fm-field, .dinner-fields .fm-field { width: 100%; min-width: 0; }
+.dinner-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr)); gap: var(--space-2); }
+
+.dinner-card {
+    min-width: 0;
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-surface);
+    overflow-wrap: anywhere;
+}
+
+.dinner-content :is(h2, h3, h4, p) { margin: 0; }
+.dinner-card :is(h2, h3) { font: var(--text-headline); }
+.dinner-card :is(h4, p) { font: var(--text-body); }
+.dinner-content .dinner-meta { color: var(--color-text-secondary); }
+.dinner-content .dinner-caption { font: var(--text-footnote); }
+.dinner-content .dinner-error { color: var(--color-danger-text); }
+.dinner-description { white-space: pre-wrap; }
+.dinner-link { color: var(--theme-primary-text); }

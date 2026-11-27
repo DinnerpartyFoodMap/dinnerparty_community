@@ -54,6 +54,7 @@ class FoodMapBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NativeProfilePlugin())
         bridge?.registerPluginInstance(NativeAdminPlugin())
         bridge?.registerPluginInstance(NativeJourneyPlugin())
+        bridge?.registerPluginInstance(NativeDinnerPlugin())
         chromePlugin = plugin
 
         let map = NativeMapPlugin()

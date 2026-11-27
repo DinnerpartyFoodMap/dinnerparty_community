@@ -1,18 +1,9 @@
 # 聚餐页面
 
-DinnerPages.jsx 导出列表、新建、详情与路径解析，api/client 中保留请求函数。MapView 以 pickerMode 选择地点，公共 FullScreenMapContent 提供全屏容器；不另造地图实例管理规则。
+Web 与 Android 使用 `DinnerPages.jsx` 的列表、创建和详情。列表按标题、说明、地点或发起人搜索，默认隐藏已结束活动。创建时地点和时间可分别留空。Web 创建表单继续使用 `MapView` 的选点模式。
 
-```mermaid
-flowchart TD
-    Route[聚餐路由] --> Page{列表 / 新建 / 详情}
-    Page -->|列表| List[加载聚餐与跳转]
-    Page -->|新建| Form[时间 / 内容 / 地点输入]
-    Form --> Picker[地图选点 暂存表单]
-    Picker --> Confirm[确认或取消返回表单]
-    Confirm --> Submit[认证后创建 → 详情]
-    Page -->|详情| Detail[读取活动与创建者信息]
-    Detail --> Delete[有权时确认删除]
-    Detail --> Copy[复制或分享活动信息]
-```
+iOS 的「更多功能」打开 [SwiftUI 导航栈](../../../ios/App/App/NativeDinnerPlugin.swift)。列表中可以进入原生创建与详情，根页返回沿用住民主页的全屏呈现。`NativeDinnerHost.jsx` 通过带会话与请求编号的桥接调用复用网页 API，负责切换登录弹窗。缺少插件的安装包会显示网页聚餐页。
 
-当前多个相关页面共文件便于沿用导出，但下一轮可拆 List/Create/Detail，需保留日期解析和路由函数。案例（待独立浏览器自动化）：DIN-C01 选点取消后文字与时间仍在；DIN-C02 无效时间、空地点、未登录提交有明确结果；DIN-C03 无权删除与取消删除不改变活动；DIN-C04 分享内容与显示日期一致。后端接口测试不代表这些页面状态，见 DIN-01 的 [清单](../../../doc/HISTORY_AND_TODO.md)。
+已加入活动的成员可以编辑自己的提案，地点与时间各最多三项。发起人可在详情选用提案或直接填写安排。正式开始时间已过或状态已关闭的活动显示为已结束。详情提供分享，Web 提供复制链接与打开分享页。
+
+迁移、搜索、并发加入、提案额度和发起人权限见 [后端聚餐测试](../../../../backend/tests/community/test_dinners.js)。SwiftUI 页面和返回手势需在 iOS 上验证。

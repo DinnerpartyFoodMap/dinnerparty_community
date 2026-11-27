@@ -13,9 +13,10 @@ const TITLES = {
 
 export default function RoutePageShell({ path, onNavigate, onBack, children }) {
     if (!onBack && (getPlatform() !== 'ios' || path.startsWith('/users/'))) return children;
-    const parent = path.startsWith('/settings/') ? '/settings' : /^\/dinners\/\d+/.test(path) ? '/dinners' : '/';
+    const normalizedPath = path.replace(/\/$/, '') || '/';
+    const parent = normalizedPath.startsWith('/settings/') ? '/settings' : normalizedPath.startsWith('/dinners/') ? '/dinners' : '/';
     return <section className="fm-full-page fm-route-page">
-        <FullPageHeader title={TITLES[path] || t('common:routePageShell.dinnerDetail')} onBack={onBack || (() => onNavigate(parent))} />
+        <FullPageHeader title={TITLES[normalizedPath] || t('common:routePageShell.dinnerDetail')} onBack={onBack || (() => onNavigate(parent))} />
         <div className="fm-route-page__content">{children}</div>
     </section>;
 }

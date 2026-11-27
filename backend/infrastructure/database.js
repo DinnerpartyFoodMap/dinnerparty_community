@@ -361,12 +361,13 @@ const USER_REFERENCE_TABLES = [
     {
         name: 'DinnerEvent',
         userColumns: ['creator_id'],
+        nullableColumns: ['place_name', 'start_time'],
         createSql: `CREATE TABLE "DinnerEvent" (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             description TEXT,
-            place_name TEXT NOT NULL,
-            start_time DATETIME NOT NULL,
+            place_name TEXT,
+            start_time DATETIME,
             max_participants INTEGER,
             contact_info TEXT,
             status TEXT DEFAULT 'open',
@@ -403,7 +404,8 @@ function migrateUserReferenceColumnsToText() {
             return column && String(column.type || '').toUpperCase() !== 'TEXT';
         });
         const hasMissingColumn = (definition.requiredColumns || []).some((name) => !byName.has(name));
-        return hasWrongIdType || hasMissingColumn;
+        const hasUnexpectedNotNull = (definition.nullableColumns || []).some(name => byName.get(name)?.notnull);
+        return hasWrongIdType || hasMissingColumn || hasUnexpectedNotNull;
     });
     if (!pending.length) return;
 
@@ -419,6 +421,7 @@ function migrateUserReferenceColumnsToText() {
                 "SELECT type, name, sql FROM sqlite_master WHERE tbl_name = ? AND type IN ('index', 'trigger') AND sql IS NOT NULL"
             ).all(definition.name);
             const oldColumns = rawDb.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name);
+            const sequence = rawDb.prepare('SELECT seq FROM sqlite_sequence WHERE name = ?').get(definition.name)?.seq;
 
             rawDb.exec(`ALTER TABLE ${tableName} RENAME TO ${backupName}`);
             rawDb.exec(definition.createSql);
@@ -438,13 +441,19 @@ function migrateUserReferenceColumnsToText() {
             )).join(', ');
             rawDb.exec(`INSERT INTO ${tableName} (${insertColumns}) SELECT ${selectColumns} FROM ${backupName}`);
             rawDb.exec(`DROP TABLE ${backupName}`);
+            if (sequence != null) {
+                const update = rawDb.prepare('UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?');
+                if (!update.run(sequence, definition.name).changes) {
+                    rawDb.prepare('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(definition.name, sequence);
+                }
+            }
             schemaObjects.forEach((item) => rawDb.exec(item.sql));
         }
     });
 
     migrate.immediate();
-    logger.info('Normalized user reference columns to TEXT', {
-        event: 'database.migration.user_reference_text',
+    logger.info('Normalized legacy table columns', {
+        event: 'database.migration.legacy_columns',
         tables: pending.map((definition) => definition.name)
     });
 }
@@ -713,19 +722,8 @@ function init() {
             console.warn('Failed to create idx_qqwhitelist_qq:', e.message);
         }
 
-        rawDb.exec(`CREATE TABLE IF NOT EXISTS "DinnerEvent" (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT,
-            place_name TEXT NOT NULL,
-            start_time DATETIME NOT NULL,
-            max_participants INTEGER,
-            contact_info TEXT,
-            status TEXT DEFAULT 'open',
-            creator_id TEXT NOT NULL,
-            created_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_time DATETIME
-        );`);
+        rawDb.exec(USER_REFERENCE_TABLES.find(table => table.name === 'DinnerEvent').createSql
+            .replace('CREATE TABLE', 'CREATE TABLE IF NOT EXISTS'));
         try {
             rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_dinnerevent_start_time ON DinnerEvent(start_time);`);
             rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_dinnerevent_creator_id ON DinnerEvent(creator_id);`);
@@ -747,10 +745,9 @@ function init() {
             console.warn('Failed to create Favorite indexes:', e.message);
         }
 
-        // SQLite cannot ALTER a column type in place. Rebuild only the legacy
-        // tables that still declare user UUID references as INTEGER, preserving
-        // rows, explicit indexes, triggers and AUTOINCREMENT values.
+        // Rebuild legacy tables with integer user references or required dinner scheduling fields.
         migrateUserReferenceColumnsToText();
+        require('../modules/community/services/dinnerEvents').initDinnerParticipationSchema(rawDb);
         require('../modules/places/services/placeModerationSchema').initPlaceModerationSchema(rawDb);
         require('../modules/community/services/residentCommentSchema').initResidentCommentSchema(rawDb);
         require('../modules/ratings/services/placeRatingSchema').initPlaceRatingSchema(rawDb);

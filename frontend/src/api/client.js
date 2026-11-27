@@ -223,23 +223,35 @@ function normalizeDinner(item) {
         max_participants: item.max_participants == null ? null : Number(item.max_participants),
         contact_info: item.contact_info || '',
         status: item.status || 'open',
-        creator_id: item.creator_id == null ? null : Number(item.creator_id),
+        creator_id: item.creator_id == null ? null : String(item.creator_id),
         creator_name: item.creator_name || '',
         created_time: item.created_time || null,
-        updated_time: item.updated_time || null
+        updated_time: item.updated_time || null,
+        is_ended: item.is_ended ?? ((item.status && item.status !== 'open') || Date.parse(item.start_time) <= Date.now()),
+        participant_count: item.participant_count ?? 1,
+        is_joined: item.is_joined === true,
+        is_organizer: item.is_organizer === true,
+        my_proposal: item.my_proposal ?? null,
+        proposals: item.proposals ?? []
     };
 }
 
-export async function fetchDinners(backendUrl) {
-    const res = await fetch(`${backendUrl}/dinners`);
+export const DINNER_PAGE_SIZE = 50;
+
+export async function fetchDinners(backendUrl, { query = '', includeEnded = false, offset = 0, signal } = {}) {
+    const params = new URLSearchParams({ q: query, include_ended: includeEnded ? '1' : '0', offset });
+    const res = await fetch(`${backendUrl}/dinners?${params}`, { signal });
     if (!res.ok) throw new Error(t('map:api.dinners.fetchFailed', { status: res.status }));
     const data = await res.json().catch(() => []);
     const list = Array.isArray(data) ? data : [];
     return list.map(normalizeDinner).filter(Boolean);
 }
 
-export async function fetchDinnerById(backendUrl, id) {
-    const res = await fetch(`${backendUrl}/dinners/${id}`);
+export async function fetchDinnerById(backendUrl, id, { token, signal } = {}) {
+    const res = await fetch(`${backendUrl}/dinners/${id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        signal
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || t('map:api.dinners.fetchOneFailed', { status: res.status }));
     return normalizeDinner(data);
@@ -254,6 +266,29 @@ export async function createDinner(backendUrl, token, payload) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || t('map:api.dinners.createFailed', { status: res.status }));
     return normalizeDinner(data);
+}
+
+async function changeDinner(backendUrl, token, id, path, method, payload) {
+    const res = await fetch(`${backendUrl}/dinners/${id}/${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: payload === undefined ? undefined : JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || t('dinner:updateFailed'));
+    return normalizeDinner(data);
+}
+
+export function setDinnerParticipation(backendUrl, token, id, joined) {
+    return changeDinner(backendUrl, token, id, 'participants/me', joined ? 'PUT' : 'DELETE');
+}
+
+export function saveDinnerProposal(backendUrl, token, id, proposal) {
+    return changeDinner(backendUrl, token, id, 'proposals/me', 'PUT', proposal);
+}
+
+export function saveDinnerSchedule(backendUrl, token, id, schedule) {
+    return changeDinner(backendUrl, token, id, 'schedule', 'PATCH', schedule);
 }
 
 export async function deleteDinner(backendUrl, token, id) {

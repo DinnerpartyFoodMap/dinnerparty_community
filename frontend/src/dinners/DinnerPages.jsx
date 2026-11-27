@@ -1,19 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Button from "../components/primitives/Button";
 import TextInput from "../components/forms/TextInput";
 import TextArea from "../components/forms/TextArea";
-import JsonTable from "../components/data/JsonTable";
-import { createDinner, deleteDinner, fetchDinnerById, fetchDinners } from "../api/client";
+import { createDinner, deleteDinner, DINNER_PAGE_SIZE, fetchDinnerById, fetchDinners, saveDinnerProposal, saveDinnerSchedule, setDinnerParticipation } from "../api/client";
 import { useTips } from "../components/feedback/Tips";
-import useDarkMode from "../theme/useDarkMode";
 import MapView from "../map/MapView";
 import Tooltip from "../components/primitives/Tooltip";
 import ScrollableView from "../components/layout/ScrollableView";
 import { copyText } from "../platform/share";
+import { materialIcon } from '../platform/iconRegistry.js';
 import MotionSurface from "../components/overlay/MotionSurface";
 import FullScreenMapContent from "../components/layout/FullScreenMapContent";
 import { useConfirm } from "../components/feedback/Confirm";
 import { getLanguage, t, tx } from "../i18n/index.js";
+import './dinner.css';
 
 function formatDateTime(value) {
     if (!value) return t('dinner:timeTbd');
@@ -48,124 +48,117 @@ function buildShareUrl(id, backendUrl) {
     return `${window.location.origin}${path}`;
 }
 
-function pageStyle(dark) {
-    return {
-        height: '100%',
-        minHeight: 0,
-        background: 'var(--color-bg-base)',
-        color: 'var(--color-text-primary)',
-        padding: 20,
-        boxSizing: 'border-box'
-    };
+function toStartTime(value) {
+    return value ? new Date(value).toISOString() : null;
 }
 
-function cardStyle(dark) {
-    return {
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-bg-surface)',
-        padding: 20
-    };
+function dinnerStatus(item) {
+    return item.is_ended ? t('dinner:detail.statusEnded') : t('dinner:detail.statusOpen');
 }
 
-function containerStyle() {
-    return {
-        maxWidth: 960,
-        margin: '0 auto'
-    };
+function DinnerSummary({ item }) {
+    return <>
+        <p className="dinner-meta">{formatDateTime(item.start_time)} · {item.place_name || t('dinner:placeTbd')}</p>
+        <p className="dinner-meta dinner-caption">{tx('dinner:list.meta', {
+            status: dinnerStatus(item), creator_name: item.creator_name || t('dinner:anonymous')
+        })}</p>
+    </>;
 }
 
-function titleRowStyle() {
-    return {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 14,
-        marginTop: 50
-    };
+function DinnerPageHeading({ children }) {
+    return <h1 className="fm-legacy-page-heading dinner-heading">{children}</h1>;
 }
 
-function captionStyle(dark) {
-    return {
-        marginBottom: 14,
-        color: 'var(--color-text-secondary)',
-        fontSize: 16
-    };
-}
-
-export function DinnerListPage({ backendUrl, onGoCreate, onOpenDetail, onGoHome }) {
-    const dark = useDarkMode();
+export function DinnerListPage({ backendUrl, onGoCreate, onOpenDetail }) {
+    const [query, setQuery] = useState('');
+    const [includeEnded, setIncludeEnded] = useState(false);
+    const [offset, setOffset] = useState(0);
+    const [retry, setRetry] = useState(0);
+    const [debounceQuery, setDebounceQuery] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [items, setItems] = useState([]);
+    const [hasMore, setHasMore] = useState(false);
 
-    const sortedItems = useMemo(() => {
-        return [...items].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-    }, [items]);
+    const resetList = (debounce = false) => {
+        setOffset(0);
+        setDebounceQuery(debounce);
+        setItems([]);
+        setHasMore(false);
+        setError('');
+        setLoading(true);
+    };
+
+    const submitSearch = event => {
+        event.preventDefault();
+        resetList();
+        setRetry(value => value + 1);
+    };
 
     useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            setError('');
+        const controller = new AbortController();
+        const { signal } = controller;
+        const timer = setTimeout(async () => {
             try {
-                const data = await fetchDinners(backendUrl);
-                if (!cancelled) setItems(Array.isArray(data) ? data : []);
+                const data = await fetchDinners(backendUrl, { query, includeEnded, offset, signal });
+                if (signal.aborted) return;
+                setItems(previous => offset ? [...previous, ...data.filter(item => !previous.some(saved => saved.id === item.id))] : data);
+                setHasMore(data.length === DINNER_PAGE_SIZE);
             } catch (e) {
-                if (!cancelled) setError(e.message || t('dinner:loadFailed'));
+                if (!signal.aborted) setError(e.message || t('dinner:loadFailed'));
             } finally {
-                if (!cancelled) setLoading(false);
+                if (!signal.aborted) setLoading(false);
             }
-        })();
-        return () => { cancelled = true; };
-    }, [backendUrl]);
+        }, !offset && query && debounceQuery ? 250 : 0);
+        return () => { clearTimeout(timer); controller.abort(); };
+    }, [backendUrl, query, includeEnded, offset, retry, debounceQuery]);
 
     return (
-        <ScrollableView as="main" style={pageStyle(dark)}>
-            <div style={containerStyle()}>
-                <div className="fm-legacy-page-heading" style={titleRowStyle()}>
-                    <h2 style={{ margin: 0 }}>{t('dinner:list.title')}</h2>
+        <ScrollableView as="main" className="dinner-page">
+            <div className="dinner-content">
+                <DinnerPageHeading>{t('dinner:list.title')}</DinnerPageHeading>
+                <div className="dinner-list-toolbar">
+                    <Button onClick={onGoCreate}>{t('dinner:list.create')}</Button>
+                    <form className="dinner-search" role="search" onSubmit={submitSearch}>
+                        <TextInput type="search" maxLength={120} value={query} placeholder={t('dinner:list.search')}
+                            aria-label={t('dinner:list.search')} onChange={event => { setQuery(event.target.value); resetList(true); }} />
+                        <Button type="submit" className="dinner-search-submit" aria-label={t('common:action.search')} title={t('common:action.search')}>
+                            <span className="material-symbols-outlined" aria-hidden="true">{materialIcon('search')}</span>
+                        </Button>
+                    </form>
                 </div>
-
-                <div className="fm-page-card" style={cardStyle(dark)}>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                        <Button onClick={onGoCreate}>{t('dinner:list.create')}</Button>
-                    </div>
-
-                    {loading && <div>{t('dinner:list.loading')}</div>}
-                    {!!error && <div style={{ color: 'var(--color-danger)' }}>{error}</div>}
-                    {!loading && !error && sortedItems.length === 0 && (
-                        <div style={{ color: 'var(--color-text-secondary)' }}>{t('dinner:list.empty')}</div>
-                    )}
-
-                    {!loading && !error && sortedItems.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            {sortedItems.map((item) => (
-                                <div key={item.id} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: 14, background: 'var(--color-bg-overlay)' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <strong style={{ fontSize: 18 }}>{item.title}</strong>
-                                        <Button onClick={() => onOpenDetail(item.id)} style={{ padding: '6px 12px', border: 0 }}>{t('dinner:list.viewDetail')}</Button>
-                                    </div>
-                                    <div style={{ marginTop: 8, color: 'var(--color-text-secondary)' }}>
-                                        {formatDateTime(item.start_time)} · {item.place_name}
-                                    </div>
-                                    <div style={{ marginTop: 4, fontSize: 13, color: 'var(--color-text-muted)' }}>
-                                        {tx('dinner:list.meta', { status: item.status || 'open', creator_name: item.creator_name || t('dinner:anonymous') })}
-                                    </div>
-                                    <div style={{ marginTop: 6, color: 'var(--color-text-primary)' }}>{item.description || t('dinner:list.noDescription')}</div>
-                                </div>
-                            ))}
+                <label className="dinner-switch">
+                    {t('dinner:list.showEnded')}
+                    <input type="checkbox" role="switch" checked={includeEnded}
+                        onChange={event => { setIncludeEnded(event.target.checked); resetList(); }} />
+                </label>
+                <div className="dinner-list" aria-busy={loading}>
+                    {items.map(item => <article className="dinner-card dinner-stack" key={item.id}>
+                        <div className="dinner-card-heading">
+                            <h2>{item.title}</h2>
+                            <Button variant="secondary" onClick={() => onOpenDetail(item.id)}>{t('dinner:list.viewDetail')}</Button>
                         </div>
-                    )}
+                        <DinnerSummary item={item} />
+                        {!!item.description && <p>{item.description}</p>}
+                    </article>)}
+                    {loading && <p role="status" className="dinner-meta">{t('dinner:list.loading')}</p>}
+                    {error && <div className="dinner-actions">
+                        <p role="alert" className="dinner-error">{error}</p>
+                        <Button variant="secondary" onClick={() => { setError(''); setLoading(true); setRetry(value => value + 1); }}>{t('common:action.retry')}</Button>
+                    </div>}
+                    {!loading && !error && !items.length && <p className="dinner-meta">{query.trim() ? t('dinner:list.noResults') : t('dinner:list.empty')}</p>}
+                    {!loading && !error && hasMore && <Button variant="secondary" onClick={() => { setLoading(true); setOffset(offset + DINNER_PAGE_SIZE); }}>
+                        {t('dinner:list.loadMore')}
+                    </Button>}
                 </div>
             </div>
         </ScrollableView>
     );
 }
 
-export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequireAuth, onBack, onMapPickerOpenChange }) {
-    const dark = useDarkMode();
+export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequireAuth, onMapPickerOpenChange }) {
     const dateInputRef = useRef(null);
+    const submitContext = useRef(null);
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [placeName, setPlaceName] = useState('');
@@ -175,6 +168,13 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [pickerOpen, setPickerOpen] = useState(false);
+
+    useEffect(() => {
+        const context = { active: true };
+        submitContext.current = context;
+        setSubmitting(false);
+        return () => { context.active = false; };
+    }, [backendUrl, token]);
 
     useEffect(() => {
         if (typeof onMapPickerOpenChange === 'function') {
@@ -190,6 +190,8 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
 
     const submit = async (e) => {
         e.preventDefault();
+        const context = submitContext.current;
+        if (submitting || !context?.active) return;
         if (!isAuth || !token) {
             onRequireAuth && onRequireAuth();
             return;
@@ -201,16 +203,16 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
                 title,
                 description,
                 place_name: placeName,
-                start_time: startTime,
+                start_time: toStartTime(startTime),
                 max_participants: maxParticipants ? Number(maxParticipants) : null,
                 contact_info: contactInfo
             };
             const created = await createDinner(backendUrl, token, payload);
-            onCreated && onCreated(created);
+            if (context.active) onCreated?.(created);
         } catch (err) {
-            setError(err.message || t('dinner:create.failed'));
+            if (context.active) setError(err.message || t('dinner:create.failed'));
         } finally {
-            setSubmitting(false);
+            if (context.active) setSubmitting(false);
         }
     };
 
@@ -225,13 +227,11 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
     };
 
     return (
-        <ScrollableView as="main" style={pageStyle(dark)}>
-            <div style={containerStyle()}>
-                <div className="fm-legacy-page-heading" style={titleRowStyle()}>
-                    <h2 style={{ margin: 0 }}>{t('dinner:list.create')}</h2>
-                </div>
+        <ScrollableView as="main" className="dinner-page">
+            <div className="dinner-content">
+                <DinnerPageHeading>{t('dinner:list.create')}</DinnerPageHeading>
 
-                <div className="fm-page-card" style={cardStyle(dark)}>
+                <div className="dinner-card">
                     <style>{`
                         .dinner-datetime-input::-webkit-calendar-picker-indicator {
                             opacity: 0;
@@ -242,13 +242,13 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
                         }
                     `}</style>
                     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('dinner:create.titlePlaceholder')} required maxLength={120} />
+                        <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('dinner:create.titlePlaceholder')} aria-label={t('dinner:create.titlePlaceholder')} required maxLength={120} />
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             <TextInput
                                 value={placeName}
                                 onChange={(e) => setPlaceName(e.target.value)}
                                 placeholder={t('dinner:create.placePlaceholder')}
-                                required
+                                aria-label={t('dinner:create.placePlaceholder')}
                                 maxLength={120}
                                 style={{ flex: 1 }}
                             />
@@ -263,26 +263,20 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
                                 </Button>
                             </Tooltip>
                         </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <label className="dinner-field">
+                            {t('dinner:create.timeOptional')}
                             <TextInput
                                 ref={dateInputRef}
                                 className="dinner-datetime-input"
                                 type="datetime-local"
                                 value={startTime}
                                 onChange={(e) => setStartTime(e.target.value)}
-                                required
-                                style={{ flex: 1 }}
+                                aria-label={t('dinner:create.timeOptional')}
                             />
-                            <Tooltip text={t('dinner:create.pickTimeTooltip')} placement="top">
-                                <Button
-                                    onClick={openDatePicker}
-                                    type="button"
-                                    aria-label={t('dinner:create.pickTimeTooltip')}
-                                    style={{ width: 44, height: 44, padding: 0, borderRadius: '50%', border: 0 }}
-                                >
-                                    <span className="material-symbols-outlined" style={{ display: 'inline-block', fontSize: 24 }}>calendar_month</span>
-                                </Button>
-                            </Tooltip>
+                        </label>
+                        <div className="dinner-actions">
+                            <Button variant="secondary" onClick={openDatePicker}>{t('dinner:create.pickTimeTooltip')}</Button>
+                            {startTime && <Button variant="plain" onClick={() => setStartTime('')}>{t('dinner:schedule.clearTime')}</Button>}
                         </div>
                         <TextInput type="number" min={2} max={1000} value={maxParticipants} onChange={(e) => setMaxParticipants(e.target.value)} placeholder={t('dinner:create.maxParticipantsPlaceholder')} />
                         <TextInput value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} placeholder={t('dinner:create.contactPlaceholder')} maxLength={200} />
@@ -338,121 +332,183 @@ export function DinnerCreatePage({ backendUrl, token, isAuth, onCreated, onRequi
     );
 }
 
-export function DinnerDetailPage({ backendUrl, dinnerId, token, currentUserId, isAdmin, onBackList, onGoHome }) {
-    const dark = useDarkMode();
+function DinnerProposalForm({ proposal, busy, onSave }) {
+    const [places, setPlaces] = useState(() => Array.from({ length: 3 }, (_, index) => proposal?.places[index] || ''));
+    const [times, setTimes] = useState(() => Array.from({ length: 3 }, (_, index) => normalizeInputDateTime(proposal?.times[index])));
+    const updateOption = (setter, index, value) => setter(previous => previous.map((option, i) => i === index ? value : option));
+
+    return <form className="dinner-card dinner-form" onSubmit={event => {
+        event.preventDefault();
+        onSave({ places: places.map(place => place.trim()).filter(Boolean), times: times.filter(Boolean).map(toStartTime) });
+    }}>
+        <h3>{t('dinner:proposal.title')}</h3>
+        <p className="dinner-meta">{t('dinner:proposal.hint')}</p>
+        <div className="dinner-fields">
+            {places.map((place, index) => <TextInput key={index} value={place} maxLength={120}
+                placeholder={t('dinner:proposal.place', { number: index + 1 })}
+                aria-label={t('dinner:proposal.place', { number: index + 1 })}
+                onChange={event => updateOption(setPlaces, index, event.target.value)} />)}
+        </div>
+        <div className="dinner-fields">
+            {times.map((time, index) => <label className="dinner-field" key={index}>
+                {t('dinner:proposal.time', { number: index + 1 })}
+                <TextInput type="datetime-local" value={time} onChange={event => updateOption(setTimes, index, event.target.value)} />
+            </label>)}
+        </div>
+        <div><Button type="submit" disabled={busy}>{busy ? t('dinner:saving') : t('dinner:proposal.save')}</Button></div>
+    </form>;
+}
+
+function DinnerScheduleForm({ item, busy, onSave }) {
+    const [place, setPlace] = useState(item.place_name);
+    const [time, setTime] = useState(normalizeInputDateTime(item.start_time));
+    const places = [...new Set(item.proposals.flatMap(proposal => proposal.places))];
+    const times = [...new Set(item.proposals.flatMap(proposal => proposal.times))].sort();
+
+    return <form className="dinner-card dinner-form" onSubmit={event => {
+        event.preventDefault();
+        onSave({
+            place_name: place,
+            start_time: time === normalizeInputDateTime(item.start_time) ? item.start_time : toStartTime(time)
+        });
+    }}>
+        <h3>{t('dinner:schedule.title')}</h3>
+        <label className="dinner-field">
+            {t('dinner:schedule.place')}
+            <TextInput value={place} onChange={event => setPlace(event.target.value)} maxLength={120} />
+        </label>
+        <label className="dinner-field">
+            {t('dinner:schedule.time')}
+            <TextInput type="datetime-local" value={time} onChange={event => setTime(event.target.value)} />
+        </label>
+        {time && <div><Button variant="plain" onClick={() => setTime('')}>{t('dinner:schedule.clearTime')}</Button></div>}
+        <div className="dinner-stack">
+            <h4>{t('dinner:proposal.suggested')}</h4>
+            {!places.length && !times.length && <p className="dinner-meta">{t('dinner:proposal.empty')}</p>}
+            {!!places.length && <div className="dinner-stack">
+                <p className="dinner-meta">{t('dinner:proposal.places')}</p>
+                <div className="dinner-actions">{places.map(value => <Button key={value} variant="secondary" onClick={() => setPlace(value)}>{value}</Button>)}</div>
+            </div>}
+            {!!times.length && <div className="dinner-stack">
+                <p className="dinner-meta">{t('dinner:proposal.times')}</p>
+                <div className="dinner-actions">{times.map(value => <Button key={value} variant="secondary" onClick={() => setTime(normalizeInputDateTime(value))}>{formatDateTime(value)}</Button>)}</div>
+            </div>}
+        </div>
+        <div><Button type="submit" disabled={busy}>{busy ? t('dinner:saving') : t('dinner:schedule.save')}</Button></div>
+    </form>;
+}
+
+export function DinnerDetailPage({ backendUrl, dinnerId, token, currentUserId, isAdmin, onBackList, onGoHome, onRequireAuth }) {
     const confirm = useConfirm();
     const showTip = useTips();
+    const session = useRef(null);
     const [item, setItem] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [copied, setCopied] = useState('');
-    const [deleting, setDeleting] = useState(false);
+    const [actionError, setActionError] = useState('');
+    const [retry, setRetry] = useState(0);
+    const [busy, setBusy] = useState(false);
 
     useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            setError('');
-            try {
-                const data = await fetchDinnerById(backendUrl, dinnerId);
-                if (!cancelled) setItem(data);
-            } catch (e) {
-                if (!cancelled) setError(e.message || t('dinner:loadFailed'));
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [backendUrl, dinnerId]);
+        const controller = new AbortController();
+        const { signal } = controller;
+        session.current = signal;
+        setLoading(true);
+        setBusy(false);
+        setError('');
+        setActionError('');
+        fetchDinnerById(backendUrl, dinnerId, { token, signal }).then(data => {
+            if (!signal.aborted) setItem(data);
+        }).catch(e => {
+            if (!signal.aborted) setError(e.message || t('dinner:loadFailed'));
+        }).finally(() => {
+            if (!signal.aborted) setLoading(false);
+        });
+        return () => controller.abort();
+    }, [backendUrl, dinnerId, token, retry]);
 
     const shareUrl = item ? buildShareUrl(item.id, backendUrl) : '';
-    const ogImageUrl = item ? `${String(backendUrl).replace(/\/+$/, '')}/dinners/${item.id}/og-image` : '';
-    const canDelete = !!(item && token && ((currentUserId && String(item.creator_id) === String(currentUserId)) || isAdmin));
+    const canDelete = !!(item && token && ((currentUserId && item.creator_id === String(currentUserId)) || isAdmin));
 
-    const copyLink = async () => {
-        if (!shareUrl) return;
-        // WebView 中剪贴板 API 可能受限，copyText 内含降级方案
-        setCopied((await copyText(shareUrl)) ? t('dinner:detail.linkCopied') : t('dinner:detail.copyFailed'));
-    };
-
-    const handleDelete = async () => {
-        if (!item || !token || !canDelete || deleting) return;
-        const ok = await confirm(t('dinner:detail.confirmDelete'), { destructive: true, confirmLabel: t('common:action.delete') });
-        if (!ok) return;
-        setDeleting(true);
+    const change = async (action, { confirmText, success } = {}) => {
+        if (!token) { onRequireAuth?.(); return; }
+        const signal = session.current;
+        if (busy || !signal || signal.aborted) return;
+        setBusy(true);
+        setActionError('');
         try {
-            await deleteDinner(backendUrl, token, item.id);
-            showTip(t('dinner:detail.deleted'));
-            onBackList && onBackList();
+            if (confirmText && !await confirm(confirmText, { destructive: true })) return;
+            if (signal.aborted) return;
+            const updated = await action();
+            if (signal.aborted) return;
+            if (updated?.id && !updated.success) setItem(updated);
+            success?.();
         } catch (e) {
-            const msg = (e && e.message) ? e.message : t('dinner:detail.unknownError');
-            showTip(t('dinner:detail.deleteFailed', { msg }));
+            if (!signal.aborted) setActionError(e.message || t('dinner:updateFailed'));
         } finally {
-            setDeleting(false);
+            if (!signal.aborted) setBusy(false);
         }
     };
 
-    return (
-        <ScrollableView as="main" style={pageStyle(dark)}>
-            <div style={containerStyle()}>
-                <div className="fm-legacy-page-heading" style={titleRowStyle()}>
-                    <h2 style={{ margin: 0 }}>{t('dinner:detail.title')}</h2>
-                </div>
-
-                <div className="fm-page-card" style={cardStyle(dark)}>
-                    {loading && <div>{t('dinner:detail.loading')}</div>}
-                    {!!error && <div style={{ color: 'var(--color-danger)' }}>{error}</div>}
-                    {!loading && !error && item && (
-                        <>
-                            <h2 style={{ marginTop: 0 }}>{item.title}</h2>
-                            <p style={{ color: 'var(--color-text-secondary)' }}>
-                                {formatDateTime(item.start_time)} · {item.place_name}
-                            </p>
-                            <p style={{ marginBottom: 10 }}>{item.description || t('dinner:list.noDescription')}</p>
-                            <p style={{ marginTop: 0, color: 'var(--color-text-secondary)' }}>
-                                {tx('dinner:detail.creator', { creator_name: item.creator_name || t('dinner:anonymous') })}
-                                {item.max_participants ? t('dinner:detail.maxParticipants', { max_participants: item.max_participants }) : ''}
-                                {item.contact_info ? t('dinner:detail.contact', { contact_info: item.contact_info }) : ''}
-                            </p>
-                            <p style={{ marginTop: 0, color: 'var(--color-text-secondary)' }}>
-                                {tx('dinner:detail.idStatus', { id: item.id, status: item.status || t('dinner:detail.statusOpen') })}
-                            </p>
-                            <p style={{ marginTop: 0, color: 'var(--color-text-secondary)' }}>
-                                {tx('dinner:detail.times', { createdAt: formatDateTime(item.created_time), updatedAt: formatDateTime(item.updated_time) })}
-                            </p>
-
-                            <div style={{ marginTop: 12, padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-bg-overlay)' }}>
-                                <div style={{ fontWeight: 700, marginBottom: 6 }}>{t('dinner:detail.shareTitle')}</div>
-                                <div style={{ wordBreak: 'break-all', color: 'var(--color-text-primary)' }}>{shareUrl}</div>
-                                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                                    <Button onClick={copyLink}>{t('dinner:detail.copyLink')}</Button>
-                                    <a href={shareUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
-                                        <Button variant="secondary">{t('dinner:detail.openSharePage')}</Button>
-                                    </a>
-                                    {canDelete && (
-                                        <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-                                            {deleting ? t('dinner:detail.deleting') : t('dinner:detail.delete')}
-                                        </Button>
-                                    )}
-                                </div>
-                                {!!copied && <div style={{ marginTop: 8, color: 'var(--color-success)' }}>{copied}</div>}
-                            </div>
-
-                            <div style={{ marginTop: 14 }}>
-                                <div style={{ fontWeight: 700, marginBottom: 8 }}>{t('dinner:detail.ogTitle')}</div>
-                                <img src={ogImageUrl} alt={t('dinner:detail.ogAlt')} style={{ width: '100%', borderRadius: 'var(--radius-md)', border: 0 }} />
-                            </div>
-
-                            <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-                                <Button variant="secondary" onClick={onBackList}>{t('dinner:detail.backToList')}</Button>
-                                <Button variant="secondary" onClick={onGoHome}>{t('common:action.backToMap')}</Button>
-                            </div>
-                        </>
-                    )}
-                </div>
+    return <ScrollableView as="main" className="dinner-page">
+        <div className="dinner-content dinner-list">
+            <DinnerPageHeading>{t('dinner:detail.title')}</DinnerPageHeading>
+            {loading && <p role="status" className="dinner-meta">{t('dinner:detail.loading')}</p>}
+            {error && <div className="dinner-actions">
+                <p role="alert" className="dinner-error">{error}</p>
+                <Button variant="secondary" onClick={() => setRetry(value => value + 1)}>{t('common:action.retry')}</Button>
+            </div>}
+            {!loading && !error && item && <>
+                <section className="dinner-card dinner-stack">
+                    <h2>{item.title}</h2>
+                    <DinnerSummary item={item} />
+                    {!!item.description && <p className="dinner-description">{item.description}</p>}
+                    <p className="dinner-meta">
+                        {item.max_participants
+                            ? t('dinner:detail.participantsLimited', { count: item.participant_count, max: item.max_participants })
+                            : t('dinner:detail.participants', { count: item.participant_count })}
+                        {item.contact_info && tx('dinner:detail.contact', { contact_info: item.contact_info })}
+                    </p>
+                    {!item.is_ended && !item.is_organizer && <div>
+                        {item.is_joined ? <Button variant="secondary" disabled={busy} onClick={() => change(
+                            () => setDinnerParticipation(backendUrl, token, item.id, false),
+                            { confirmText: t('dinner:detail.confirmLeave') }
+                        )}>{t('dinner:detail.leave')}</Button> : <>
+                            {item.max_participants && item.participant_count >= item.max_participants
+                                ? <span className="dinner-meta">{t('dinner:detail.full')}</span>
+                                : <Button disabled={busy} onClick={() => change(() => setDinnerParticipation(backendUrl, token, item.id, true))}>{t('dinner:detail.join')}</Button>}
+                        </>}
+                    </div>}
+                </section>
+                {!item.is_ended && item.is_joined && !item.is_organizer && <DinnerProposalForm
+                    proposal={item.my_proposal} busy={busy} onSave={proposal => change(
+                        () => saveDinnerProposal(backendUrl, token, item.id, proposal),
+                        { success: () => showTip(t('dinner:proposal.saved')) }
+                    )} />}
+                {!item.is_ended && item.is_organizer && <DinnerScheduleForm item={item} busy={busy} onSave={schedule => change(
+                    () => saveDinnerSchedule(backendUrl, token, item.id, schedule),
+                    { success: () => showTip(t('dinner:schedule.saved')) }
+                )} />}
+                {actionError && <p role="alert" className="dinner-error">{actionError}</p>}
+                <section className="dinner-card dinner-form">
+                    <h3>{t('dinner:detail.shareTitle')}</h3>
+                    <a className="dinner-link" href={shareUrl} target="_blank" rel="noreferrer">{t('dinner:detail.openSharePage')}</a>
+                    <div className="dinner-actions">
+                        <Button variant="secondary" onClick={async () => showTip((await copyText(shareUrl))
+                            ? t('dinner:detail.linkCopied') : t('dinner:detail.copyFailed'))}>{t('dinner:detail.copyLink')}</Button>
+                        {canDelete && <Button variant="destructive" disabled={busy} onClick={() => change(
+                            () => deleteDinner(backendUrl, token, item.id),
+                            { confirmText: t('dinner:detail.confirmDelete'), success: () => { showTip(t('dinner:detail.deleted')); onBackList?.(); } }
+                        )}>{t('dinner:detail.delete')}</Button>}
+                    </div>
+                </section>
+            </>}
+            <div className="dinner-actions">
+                <Button onClick={onBackList}>{t('dinner:detail.backToList')}</Button>
+                <Button variant="secondary" onClick={onGoHome}>{t('common:action.backToMap')}</Button>
             </div>
-        </ScrollableView>
-    );
+        </div>
+    </ScrollableView>;
 }
 
 export function parseDinnerIdFromPath(pathname) {
@@ -462,10 +518,4 @@ export function parseDinnerIdFromPath(pathname) {
 
 export function isDinnerPath(pathname) {
     return /^\/dinners(?:\/new|\/\d+)?\/?$/.test(String(pathname || ''));
-}
-
-export function normalizeDinnerCreateDefaultTime() {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + 30);
-    return normalizeInputDateTime(now.toISOString());
 }
