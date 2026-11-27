@@ -74,6 +74,27 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 {
+    // 评论模式：原生只交 { comment, rating }，没有店名也要交给网页处理（之前被当成无效提交，iOS 显示“提交失败”）
+    const plugin = fakePlugin();
+    const submitted = [];
+    const session = createNativePlaceFormSession(plugin, { mode: 'comment' }, {
+        onUpload: async () => ({ ok: true }),
+        onSubmit: async (values) => { submitted.push([values.comment, values.rating]); return values.comment ? { ok: true } : { ok: false, message: '评论至少 2 个字' }; },
+        onFinish: () => {}, onError: (error) => { throw error; }
+    });
+    session.start();
+    await tick();
+    await plugin.listener({ id: session.id, type: 'submit', requestId: 'c1', values: { comment: '  很好吃 ', rating: 4 } });
+    await plugin.listener({ id: session.id, type: 'submit', requestId: 'c2', values: { comment: '', rating: 3 } });
+    assert.deepEqual(submitted, [['很好吃', 4], ['', 3]]);
+    assert.deepEqual(plugin.responses.map(({ requestId, ok, message }) => [requestId, ok, message]), [
+        ['c1', true, ''],
+        ['c2', false, '评论至少 2 个字']
+    ]);
+    await session.stop();
+}
+
+{
     // 原生返回别的 id 或不认识的动作：算作异常结束，调用方改用网页表单
     const plugin = fakePlugin();
     let failed = null;

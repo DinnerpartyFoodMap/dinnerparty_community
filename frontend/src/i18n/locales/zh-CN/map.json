@@ -715,6 +715,7 @@
     "anonymous": "住民",
     "line": "{{username}}：{{content}}",
     "more": "还有 {{count}} 条评论未显示",
+    "action": "评论",
     "write": "写评论",
     "editMine": "修改我的评论",
     "status": {

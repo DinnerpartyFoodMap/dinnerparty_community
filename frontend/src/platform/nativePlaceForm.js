@@ -69,7 +69,9 @@ export function createNativePlaceFormSession(plugin, snapshot, { onUpload, onSub
                 result = image ? await onUpload(image) : { ok: false, message: '' };
             } else if (event.type === 'submit') {
                 const values = pickPlaceFormValues(event.values);
-                result = values && values.name ? await onSubmit(values) : { ok: false, message: '' };
+                // 评论模式只交 { comment, rating }，没有店名；评论内容由网页的评论表单校验并给出提示
+                const valid = values && (snapshot.mode === 'comment' || values.name);
+                result = valid ? await onSubmit(values) : { ok: false, message: '' };
             } else if (event.type === 'delete') {
                 result = onDelete ? await onDelete() : { ok: false, message: '' };
             } else {

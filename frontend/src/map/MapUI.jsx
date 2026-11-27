@@ -2135,7 +2135,14 @@ export default function MapUI(props) {
         { id: 'details', title: t('map:ui.card.details'), icon: 'info', slot: 'cardActions.details', run: () => { setDetailFocus(null); setDetailOpen(true); } },
         { id: 'share', title: t('map:ui.share.title'), icon: 'share', slot: 'cardActions.share', run: () => setShareOpen(true) },
         { id: 'edit', title: t('map:ui.edit'), icon: 'edit', slot: 'cardActions.edit', run: () => openManagePanel?.() },
-        commentAllowed && { id: 'comment', title: commentLabel, icon: materialIcon('writeComment'), run: openCommentForm },
+        // 评价在卡片的评价行也能打开；操作栏放评论
+        {
+            id: 'rating',
+            title: myRatingTier ? t('map:rating.card.mine', { tier: tierLabel(myRatingTier) }) : t('map:rating.card.rate'),
+            icon: myRatingTier ? myRatingTier.icon : 'rate_review',
+            slot: myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none',
+            run: openRating
+        },
         isAdmin && { id: 'comments', title: t('map:editEvidence.history'), icon: 'history', slot: 'cardActions.details', run: () => openCommentPanel?.() },
         !iosApp && canReportPlace && { id: 'report', title: t('map:ui.report'), icon: 'flag', slot: 'cardActions.report', run: reportPlace }
     ].filter(Boolean);
@@ -2300,14 +2307,13 @@ export default function MapUI(props) {
                             </Button>
                         </Tooltip>
                         <Button
-                            onClick={openRating}
-                            aria-label={t('map:rating.card.openLabel', { summary: summaryText(ratingSummary) })}
-                            style={{ ...popupSecondaryActionStyle, color: myRatingTier ? myRatingTier.tone : popupSecondaryActionStyle.color }}
+                            onClick={openCommentForm}
+                            disabled={!commentAllowed}
+                            aria-label={commentLabel}
+                            style={popupSecondaryActionStyle}
                         >
-                            <SkinIcon slot={myRatingTier ? `rating.${myRatingTier.key}` : 'rating.none'} size={20}>
-                                <span className="material-symbols-outlined" style={{ ...popupActionIconStyle, fontVariationSettings: myRatingTier?.fill ? "'FILL' 1" : undefined }}>{myRatingTier ? myRatingTier.icon : 'rate_review'}</span>
-                            </SkinIcon>
-                            <span style={popupActionLabelStyle}>{myRatingTier ? tierLabel(myRatingTier) : t('map:rating.card.rate')}</span>
+                            <span className="material-symbols-outlined" aria-hidden="true" style={popupActionIconStyle}>{materialIcon('writeComment')}</span>
+                            <span style={popupActionLabelStyle}>{t('map:placeComments.action')}</span>
                         </Button>
                         <Button onClick={openCheckIn} disabled={!canCheckIn} aria-label={t('map:checkIn.submit')} style={popupSecondaryActionStyle}>
                             <span className="material-symbols-outlined" aria-hidden="true" style={popupActionIconStyle}>my_location</span>
