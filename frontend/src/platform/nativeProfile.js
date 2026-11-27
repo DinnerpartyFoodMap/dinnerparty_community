@@ -5,12 +5,14 @@
 // loadProfile 读取页面栈里别的住民（values.userId），loadCommunity* / saveCommunitySettings / clearInteractions 驱动同好页，
 // loadCompanion / setCompanionEnabled / chooseCompanion 驱动小伙伴，openSettings 让网页在主页之上打开原生住民设置。
 // openCommunity / settings / companion 三个结束动作只留给旧安装包。
-// companionName / companionEdit：原生小伙伴页的“起名”“编辑”，收起主页后在网页小伙伴页里填（表单只在网页）
+// editCompanion：原生小伙伴页的“起名”“编辑”。表单只在网页，开在原生主页底下，网页用 update({ hidden }) 让主页淡出、淡入，
+// 主页会话不中断；表单关掉后回传最新的小伙伴。companionName / companionEdit 两个结束动作只留给旧安装包。
 export const PROFILE_ACTIONS = Object.freeze(['back', 'openPlace', 'openCommunity', 'openFavorites', 'my-locations', 'settings', 'companion', 'companionName', 'companionEdit', 'logout']);
 export const PROFILE_EVENTS = Object.freeze([
     'setTasteLevel', 'saveWidgets', 'setBlocked', 'setCollectionVisibility', 'reload',
     'loadProfile', 'loadCommunity', 'loadCommunitySettings', 'saveCommunitySettings', 'clearInteractions',
-    'loadCompanion', 'setCompanionEnabled', 'chooseCompanion', 'openSettings', 'roomNavigate', 'loadRoom', 'reportUser'
+    'loadCompanion', 'setCompanionEnabled', 'chooseCompanion', 'openSettings', 'roomNavigate', 'loadRoom', 'reportUser',
+    'editCompanion'
 ]);
 const TASTE_AXES = ['homestyle', 'noodles', 'hotpotBbq', 'dessert', 'drinks', 'foreign'];
 const WIDGET_KINDS = ['collection', 'recent', 'favorite'];
@@ -91,6 +93,9 @@ export function pickNativeProfileValues(type, values) {
     if (type === 'reportUser') {
         const userId = clip(values.userId, 64);
         return userId && /^[A-Za-z0-9-]+$/.test(userId) ? { userId, name: clip(values.name, 64) } : null;
+    }
+    if (type === 'editCompanion') {
+        return values.mode === 'name' || values.mode === 'edit' ? { mode: values.mode } : null;
     }
     if (type === 'chooseCompanion') {
         const id = clip(values.id, 64);
@@ -182,14 +187,16 @@ export function createNativeProfileSession(plugin, snapshot, { onEvent, onBack, 
         /**
          * 打开后才读到的主页数据（profile）或读取失败的原因（error）；
          * 打开期间主题（theme：住民设置里改了明暗 / 主题色）或小伙伴状态（companion）变化时也经这里推给原生。
+         * hidden：主页淡出（露出底下网页的起名 / 编辑表单）或淡入，会话不变。
          */
-        async update({ profile, error, theme, companion } = {}) {
+        async update({ profile, error, theme, companion, hidden } = {}) {
             if (stopped) return;
             const payload = { id };
             if (profile && typeof profile === 'object') payload.profile = profile;
             else if (error !== undefined) payload.error = String(error || '').slice(0, 200);
             if (theme && typeof theme === 'object') payload.theme = theme;
             if (companion && typeof companion === 'object') payload.companion = companion;
+            if (typeof hidden === 'boolean') payload.hidden = hidden;
             if (Object.keys(payload).length === 1) return;
             try { await plugin.update?.(payload); } catch { /* 原生主页已关闭 */ }
         },

@@ -1,7 +1,7 @@
 // 原生住民主页的网页侧入口：取 profile、执行屏蔽 / 偏好 / 小组件请求，并把最新视图模型回传原生。
 // 同好、小伙伴和同好里点开的其他住民主页是原生主页里推入的二级页：数据同样由这里读取、整理后回传。
 // 调用方负责判断平台与插件可用性；失败时由调用方切回网页 UserProfilePage。
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     fetchUserProfile,
     saveFavoriteVisibility,
@@ -23,7 +23,7 @@ import {
     profileWidgetOptions
 } from './profileViewModel.js';
 import { buildCompanionViewModel, createCommunityController } from './communityViewModel.js';
-import { fetchRoomDay, fetchRoomMe, fetchRoomNeighbors } from '../companion/roomApi.js';
+import { fetchRoomCities, fetchRoomDay, fetchRoomMe, fetchRoomNeighbors } from '../companion/roomApi.js';
 import { buildOtherRoomNativeModel, buildRoomNativeModel } from '../companion/roomNativeModel.js';
 import { ROOM_FILTERS } from '../companion/roomViewModel.js';
 
@@ -65,6 +65,10 @@ export default function useNativeProfile({
     // 小伙伴的一天（原生小伙伴页里显示）：起名状态、看的是哪天、筛选；接口没开放（404）时 available 为假
     const roomRef = useRef({ available: true, failed: false, me: null, day: null, filter: 'all', date: null, today: null, neighbors: [] });
     const reloadRef = useRef(null);
+    // 原生小伙伴页的“起名”“编辑”：网页表单开在原生主页底下。{ mode: name|edit, me, cities, open }，关掉时保留 mode 让退场动画跑完
+    const [roomEditor, setRoomEditor] = useState(null);
+    const editorDone = useRef(null);
+    const finishRoomEditor = useCallback((result) => editorDone.current?.(result), []);
 
     useEffect(() => {
         if (!userId) return undefined;
@@ -142,13 +146,54 @@ export default function useNativeProfile({
         };
 
         // 主页读取失败：原生页留在原地显示原因与“重试”（不再退回网页）
-        const loadIntoSession = async () => {
+        let profilePending = null;
+        const loadIntoSession = () => {
+            profilePending = (async () => {
+                try {
+                    profile = await fetchProfile(userId);
+                    if (!cancelled) session?.update({ profile: view(profile) });
+                } catch (error) {
+                    if (cancelled) return;
+                    session?.update({ error: String(loadFailure(error)).slice(0, 200) });
+                }
+            })();
+            return profilePending;
+        };
+
+        // 起名、编辑性格：表单是网页的，开在原生主页底下（全屏、短渐变），渐显完了原生淡出露出表单；
+        // 关表单时原生先淡入盖住表单再关，主页会话和页面栈不变，回来仍是小伙伴页
+        let editing = false;
+        const editCompanion = async () => {
+            if (editing) return { ok: false, message: '' };
+            editing = true;
+            let hidden = false;
             try {
-                profile = await fetchProfile(userId);
-                if (!cancelled) session?.update({ profile: view(profile) });
-            } catch (error) {
-                if (cancelled) return;
-                session?.update({ error: String(loadFailure(error)).slice(0, 200) });
+                const me = await fetchRoomMe(backendUrl, latest.current.token);
+                const cities = await fetchRoomCities(backendUrl).catch(() => []);
+                if (cancelled) return { ok: false, message: '' };
+                const result = await new Promise((resolve) => {
+                    editorDone.current = resolve;
+                    setRoomEditor({ mode: me?.named ? 'edit' : 'name', me, cities, open: true });
+                    setTimeout(() => {
+                        if (cancelled || editorDone.current !== resolve) return;
+                        hidden = true;
+                        session?.update({ hidden: true });
+                    }, 150);
+                });
+                editorDone.current = null;
+                if (result === 'named') await loadRoom({ date: null });
+                else if (result === 'saved') await loadRoom();
+                if (hidden && !cancelled) {
+                    hidden = false;
+                    await session?.update({ hidden: false, companion: companionView() });
+                    await new Promise((resolve) => setTimeout(resolve, 260));
+                }
+                return { ok: true, companion: companionView() };
+            } finally {
+                if (hidden && !cancelled) session?.update({ hidden: false });
+                editorDone.current = null;
+                if (!cancelled) setRoomEditor((current) => (current ? { ...current, open: false } : current));
+                editing = false;
             }
         };
 
@@ -179,7 +224,9 @@ export default function useNativeProfile({
                 onOpenFeedback?.(userReportPrefill({ id: values.userId, username: values.name || '' }));
                 return { ok: true };
             }
-            const self = !!profile?.relation?.self;
+            // 从地图底栏直接进小伙伴页时，原生在主页数据回来之前就发请求：先等这次读取，读不到时按登录的住民判断
+            if (!profile && profilePending) await profilePending;
+            const self = profile ? !!profile.relation?.self : String(latest.current.currentUser?.id ?? '') === String(userId);
             if (type === 'setTasteLevel') {
                 const data = await saveTasteLevel(backendUrl, latest.current.token, values.key, values.level);
                 profile = { ...profile, taste: data.taste };
@@ -225,6 +272,7 @@ export default function useNativeProfile({
                 await loadRoom({ date: values.date || null, filter: values.filter });
                 return { ok: true, companion: companionView() };
             }
+            if (type === 'editCompanion') return editCompanion();
             if (type === 'setCompanionEnabled') {
                 try {
                     await latest.current.onCompanionEnabledChange?.(values.enabled);
@@ -289,6 +337,8 @@ export default function useNativeProfile({
         })();
         return () => {
             cancelled = true;
+            editorDone.current?.(null);
+            setRoomEditor(null);
             if (sessionRef.current === session) {
                 sessionRef.current = null;
                 reloadRef.current = null;
@@ -319,4 +369,6 @@ export default function useNativeProfile({
         if (firstCompanion.current) { firstCompanion.current = false; return; }
         sessionRef.current?.update({ companion: { ...buildCompanionViewModel(companion, { enabled: companionEnabled }), room: buildRoomNativeModel(roomRef.current) } });
     }, [companionKey]);
+
+    return { roomEditor, finishRoomEditor };
 }

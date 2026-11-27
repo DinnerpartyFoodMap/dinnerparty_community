@@ -37,7 +37,6 @@ export function RoomAudienceFields({ visibility, meets, city, cities, onChange, 
             </SelectInput>
         </label>
         <p className="fm-room-form__hint">{t('companion:naming.cityHint')}</p>
-        <p className="fm-room-form__hint">{t('companion:room.theaterNote')}</p>
     </div>;
 }
 
@@ -53,9 +52,9 @@ export function RoomQuizQuestion({ item, name, value, onChange, disabled }) {
 
 /**
  * 起名（入住）：名字 → 谁能看到 → 前 6 道题（可跳过、可以“以后再答”）。一次提交 POST /api/rooms/me/name。
- * me 是 GET /api/rooms/me；已经填了东西时关面板先确认。
+ * me 是 GET /api/rooms/me；已经填了东西时关面板先确认。panel：覆盖面板的布局和动效（iOS 原生小伙伴页底下打开时全屏、短渐变）。
  */
-export default function RoomNameFlow({ open, onClose, me, cities, backendUrl, token, onNamed }) {
+export default function RoomNameFlow({ open, onClose, me, cities, backendUrl, token, onNamed, panel = null }) {
     const defaultName = me?.default_name || t('companion:defaultName');
     const quiz = (Array.isArray(me?.quiz) ? me.quiz : []).filter((item) => item.n <= MOVE_IN_QUESTIONS);
     const [step, setStep] = useState(0);
@@ -152,7 +151,7 @@ export default function RoomNameFlow({ open, onClose, me, cities, backendUrl, to
         title={t(`companion:naming.${titles[step]}`)} width="min(520px, calc(100vw - 24px))" bodyStyle={PANEL_BODY}
         headerExtra={step === 2 && !confirmDiscard
             ? <Button variant="plain" disabled={saving} onClick={finish}>{t('companion:naming.later')}</Button> : null}
-        footer={<div className="fm-room-form__actions">{footer}</div>}>
+        footer={<div className="fm-room-form__actions">{footer}</div>} {...panel}>
         {body}
         {error && <p className="fm-room-form__error" role="alert">{error}</p>}
     </ResponsivePanel>;

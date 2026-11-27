@@ -17,7 +17,7 @@
 - **起名**（`RoomNameFlow.jsx`，底部面板三步）：名字 → 谁能看到（`RoomAudienceFields`：谁能看、和别的小伙伴互动、所在城市；选“只有我”时互动关闭置灰）→ 前 6 道题（上一题、这题跳过、以后再答）。一次提交 `POST /api/rooms/me/name`。填了东西再关先确认。名字的本地检查 `roomNameProblem` 只为及时提示，规则以后端为准：1 到 12 个字、不能全是标点、不能等于当前角色的默认名、不能带链接和联系方式。
 - **时间线**（`RoomTimeline.jsx`，视图模型 `roomViewModel.js`）：一天从起床到睡着，过零点的排在最后；分段上午、下午、晚上、深夜；筛选全部、名场面、互动；一次外出、一段剧情归成一组；睡着那条不写时长；今天只显示已经发生的，下一条开始时（30 秒到 10 分钟之间）和回到前台时再取；最早翻到起名那天或 30 天前。
 - **编辑性格**（`RoomSheetEditor.jsx`，全屏面板）：名字、标签（互斥的一对互换，最多 10 个；取消过的推测标签记进 `untagged`）、20 道题（再点取消）、小习惯（最多 3 个）、口头禅（最多 3 句、每句 8 字以内）、谁能看到。有未保存修改时关面板先确认。
-- **iOS**：原生小伙伴页（`NativeProfilePlugin.swift`）显示同样的名字、“现在”、翻日期、筛选和时间线，快照由 `roomNativeModel.js` 算好经 `buildCompanionViewModel` 的 `room` 交给原生，翻日期和筛选是事件 `roomNavigate`。起名和编辑的表单只在网页：原生的“起名”“编辑”是结束动作 `companionName` / `companionEdit`，收起主页后打开 `/settings/companions?room=name|edit`，网页读到起名状态后直接弹出对应表单。名场面列表也只在网页（原生用“名场面”筛选看当天的）。
+- **iOS**：原生小伙伴页（`NativeProfilePlugin.swift`）显示同样的名字、“现在”、翻日期、筛选和时间线，快照由 `roomNativeModel.js` 算好经 `buildCompanionViewModel` 的 `room` 交给原生，翻日期和筛选是事件 `roomNavigate`。起名和编辑的表单只在网页：原生的“起名”“编辑”发事件 `editCompanion`，`NativeProfileHost` 把对应表单开在原生主页底下（全屏、短渐变），表单出来后网页用 `update({ hidden: true })` 让原生整页淡出；保存或放弃时先 `update({ hidden: false, companion })` 淡入、盖住表单再关表单，最后回传最新的小伙伴。主页会话和页面栈不变，回来仍是小伙伴页（2026-11-27，之前是收起主页再打开网页小伙伴页）。旧安装包的结束动作 `companionName` / `companionEdit` 仍打开 `/settings/companions?room=name|edit`。底栏进来时原生会在主页数据回来之前读小伙伴，`useNativeProfile` 先等主页这次读取，读不到时按登录的住民判断是不是自己。名场面列表也只在网页（原生用“名场面”筛选看当天的）。
 - **面板边距**：起名、编辑、名场面三个面板的内容边距都是 `roomPanel.js` 的 `PANEL_BODY`。
 
 ## 小伙伴之间：熟悉的小伙伴、别人的小伙伴（2026-11-26，P2）

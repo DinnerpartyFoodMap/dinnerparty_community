@@ -24,8 +24,9 @@ const SIDE_TOP = 76;
  *   label?: string, role?: string, kind?: string, suspendNative?: boolean, closeOnEscape?: boolean,
  *   initialFocusRef?: any, bodyStyle?: object, surfaceStyle?: object, surfaceClassName?: string, headerExtra?: React.ReactNode,
  *   bodyProps?: object, onExitComplete?: Function, plain?: boolean, sideInset?: number, sideTop?: number, sideBottom?: number, draggable?: boolean,
- *   expanded?: boolean, onExpandedChange?: (expanded: boolean) => void
+ *   expanded?: boolean, onExpandedChange?: (expanded: boolean) => void, presetOptions?: object
  * }} props
+ * presetOptions：传给动效预设，例如 { reduced: true } 只做短渐变（iOS 原生页底下打开、由原生淡出露出的表单）。
  * expanded / onExpandedChange：底部面板的“收起 / 展开”两档（调用方按 expanded 改内容与 maxHeight）。把手可上拉 / 下拉，也可点按切换。
  * draggable=false 关闭底部/全屏面板的下滑关闭（例如正在输入的创作页，避免误触退出）。
  * snap：底部面板先停在较低的位置，用户自己往上拉到完整高度。'half' 往下让出约三分之一屏；
@@ -45,6 +46,7 @@ export default function ResponsivePanel({
     closeOnEscape,
     initialFocusRef,
     onExitComplete,
+    presetOptions,
     ...rest
 }) {
     const layout = useLayoutPolicy();
@@ -60,6 +62,7 @@ export default function ResponsivePanel({
             show={open}
             portal
             preset={preset}
+            presetOptions={presetOptions}
             layer={layer}
             backdrop={showBackdrop}
             onExitComplete={onExitComplete}

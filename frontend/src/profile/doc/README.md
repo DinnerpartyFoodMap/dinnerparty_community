@@ -25,7 +25,7 @@ iOS App 的住民主页由桥接控制器上的原生 SwiftUI 全屏子页呈现
 主页自带页面栈（SwiftUI `NavigationStack`）。打开二级页时主页不关闭，二级页占满全屏，返回时系统侧滑途中就能看到下面的主页。推入二级页后主页自己的整页侧滑停用（`NativeContainedScreenPresenter.edgeEnabled`），左边缘交给系统返回。
 
 - **同好**：原生页。导航栏中间是系统分段控件「同好 / 发现设置」（iOS 26 为可拖动的液态玻璃），下面两页也能左右滑动切换。同好页有列表 / 星图两种显示，排版与网页相同；发现设置页的标签、三个开关、保存与清除交互记录与网页同好页一致。点同好推入对方的主页（同一个原生页面，数据经 `loadProfile` 读取），屏蔽成功后整个主页收起，让举报表显示在地图上。
-- **小伙伴**：原生页（不再打开 `/settings/companions` 网页）。开关「开启小伙伴」、当前角色、饱食度、打卡投喂说明与切换角色。内置角色显示随安装包发布的静态预览（`companion/defaultCompanion.js` 的 `DEFAULT_COMPANION_PREVIEW`，原生从安装包的 `public/` 读取），额外角色显示图标；Live2D 动画只在网页小伙伴页和地图底栏。iOS 没有兑换表单（App Store 3.1.1）。投喂后饱食度上涨时冒一颗爱心。
+- **小伙伴**：原生页（不再打开 `/settings/companions` 网页）。开关「开启小伙伴」、当前角色、饱食度、打卡投喂说明与切换角色。内置角色显示随安装包发布的静态预览（`companion/defaultCompanion.js` 的 `DEFAULT_COMPANION_PREVIEW`，原生从安装包的 `public/` 读取），额外角色显示图标；Live2D 动画只在网页小伙伴页和地图底栏。iOS 没有兑换表单（App Store 3.1.1）。投喂后饱食度上涨时冒一颗爱心。起名和编辑性格是网页表单，开在原生主页底下，原生整页淡出露出表单、关掉时淡回（事件 `editCompanion` + `update({ hidden })`，见 [小伙伴](../../companion/doc/README.md)）。
 - **住民与地图设置**：仍是原生设置插件，网页收到 `openSettings` 后在主页之上打开 `/settings`，`App.jsx` 记下这一层（`settingsOverProfile`），设置打开期间同一个 `NativeProfileHost` 保持挂载。设置的返回改为 `history.back()`，等回到主页的那一帧渲染完才交回原生设置会话。在设置里改了明暗、主题色、住民名或头像，主页会重新上色或重新读取。设置里再进入网页子页（主题皮肤、手机号）时主页收起，与以前相同。
 
 网页侧的请求、白名单与回传见 [会话](../../platform/nativeProfile.js) 与 [`useNativeProfile.js`](../useNativeProfile.js)。旧安装包仍以 `openCommunity` / `settings` / `companion` 结束主页，网页按原来的路由处理。

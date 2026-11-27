@@ -81,6 +81,5 @@ export default function RoomTimeline({ day, filter, onFilter, navigation, onNavi
             </ul>
         </div>)}
         {view.upcoming && <p className="fm-room-timeline__upcoming">{t('companion:room.upcoming')}</p>}
-        <p className="fm-room-timeline__note">{t('companion:room.theaterNote')}</p>
     </section>;
 }

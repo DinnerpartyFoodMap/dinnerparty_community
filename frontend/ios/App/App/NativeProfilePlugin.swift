@@ -5,14 +5,16 @@ import UIKit
 /// 本地 Capacitor 插件：iOS 原生住民主页（/users/:id）。
 ///
 /// open({ id, userId, theme, labels, loading, profile, selfLevels, widgetOptions }) -> { id, action, values }
-/// update({ id, profile?, error?, theme?, companion? }) -> {}：页面先滑入显示加载中，网页读到主页数据（或失败原因）后补上；
-///   打开期间改了明暗 / 主题色（theme）或小伙伴状态（companion）也经这里推来
+/// update({ id, profile?, error?, theme?, companion?, hidden? }) -> {}：页面先滑入显示加载中，网页读到主页数据（或失败原因）后补上；
+///   打开期间改了明暗 / 主题色（theme）或小伙伴状态（companion）也经这里推来；
+///   hidden：整页淡出 / 淡入（小伙伴的起名、编辑表单是网页，开在主页底下），页面栈和会话不变
 /// respond({ id, requestId, ok, message, profile?, community?, companion? }) -> {}
 /// close({ id }) -> {}
 /// 事件 profileEvent：{ id, type, requestId, values }
 ///   主页：setTasteLevel | saveWidgets | setBlocked | setCollectionVisibility | reload | openSettings
 ///   页面栈：loadProfile（同好里点开的住民） | loadCommunity | loadCommunitySettings | saveCommunitySettings | clearInteractions
-///          | loadCompanion | setCompanionEnabled | chooseCompanion
+///          | loadCompanion | setCompanionEnabled | chooseCompanion | roomNavigate | loadRoom | reportUser
+///          | editCompanion（values.mode: name | edit；表单关掉后才回传最新的小伙伴）
 ///
 /// 主页自带页面栈（NavigationStack）：同好、小伙伴和同好里点开的其他住民主页都推入在主页之上，
 /// 返回时系统侧滑就能看到下面的主页；住民设置由网页在主页之上打开（NativeSettingsPlugin），主页不关闭。
@@ -134,6 +136,20 @@ public class NativeProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             } else if let error = call.getString("error") {
                 navigator.root.applyLoadError(String(error.prefix(200)))
             }
+            if let hidden = call.getBool("hidden") {
+                self.setContentHidden(hidden)
+            }
+        }
+    }
+
+    /// 网页在主页底下打开小伙伴的起名 / 编辑表单：主页淡出露出表单（不接收触摸），表单关掉前再淡入
+    private func setContentHidden(_ hidden: Bool) {
+        guard let view = host?.view else { return }
+        view.isUserInteractionEnabled = !hidden
+        view.accessibilityElementsHidden = hidden
+        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0.12 : 0.25, delay: 0,
+                       options: [.curveEaseInOut, .beginFromCurrentState]) {
+            view.alpha = hidden ? 0 : 1
         }
     }
 
@@ -966,7 +982,6 @@ struct NativeRoomSnapshot {
     var rows: [NativeRoomRow] = []
     var empty = ""
     var upcoming = ""
-    var note = ""
     /// 名字或口头禅没通过检查时名字下方的提示（点了进编辑）
     var notice = ""
     var friends: [NativeRoomPerson] = []
@@ -995,7 +1010,6 @@ struct NativeRoomSnapshot {
         room.filter = object["filter"] as? String ?? "all"
         room.empty = string("empty")
         room.upcoming = string("upcoming")
-        room.note = string("note")
         room.notice = string("notice")
         room.friends = NativeRoomPerson.parseList(object["friends"])
         room.neighbors = NativeRoomPerson.parseList(object["neighbors"])
@@ -1051,6 +1065,8 @@ final class NativeCompanionModel: ObservableObject {
 
     private var satietyCount = 0
     private var previewPath = ""
+    /// 起名 / 编辑表单开着（网页）：连点不重复发
+    private var editing = false
     private let session: NativeProfileSession
     weak var navigator: NativeProfileNavigator?
 
@@ -1133,13 +1149,29 @@ final class NativeCompanionModel: ObservableObject {
         }
     }
 
-    /// 起名、编辑性格的表单只在网页：收起主页后在网页小伙伴页里直接弹出
+    /// 起名、编辑性格的表单只在网页：网页把表单开在主页底下，再让主页淡出（update hidden）；
+    /// 表单关掉时主页淡入，这里收到最新的小伙伴，仍停在这一页
     func openNaming() {
-        session.close("companionName")
+        edit("name")
     }
 
     func openEditor() {
-        session.close("companionEdit")
+        edit("edit")
+    }
+
+    private func edit(_ mode: String) {
+        guard !editing else { return }
+        editing = true
+        // 表单可能开很久：只在网页回传或会话结束时收尾
+        session.request("editCompanion", values: ["mode": mode], timeout: 6 * 3600) { [weak self] ok, message, payload in
+            guard let self else { return }
+            self.editing = false
+            if ok, let companion = payload["companion"] as? JSObject {
+                self.apply(companion)
+            } else if !message.isEmpty {
+                self.alertMessage = message
+            }
+        }
     }
 
     func setEnabled(_ value: Bool) {
@@ -1388,9 +1420,6 @@ private struct NativeRoomTimeline: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
-                Text(state.note)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
     }

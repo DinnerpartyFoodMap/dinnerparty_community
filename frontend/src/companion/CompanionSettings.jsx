@@ -42,7 +42,7 @@ export default function CompanionSettings({ backendUrl, token, userId, companion
             <section className="fm-companion-room">
                 <CompanionFigure backendUrl={backendUrl} token={token} companion={companion} showStatus />
                 <p className="fm-companion-room__satiety" aria-live="polite">{t('companion:satiety', { count: companion.satiety })}</p>
-                <p>{t('companion:unlockHint')}{t('companion:room.satietyKeep')}</p>
+                <p>{t('companion:unlockHint')}</p>
             </section>
             {userId && <CompanionRoom backendUrl={backendUrl} token={token} userId={userId} onOpenPlace={onOpenPlace}
                 onOpenRoom={onOpenRoom} initialAction={initialRoomAction} />}

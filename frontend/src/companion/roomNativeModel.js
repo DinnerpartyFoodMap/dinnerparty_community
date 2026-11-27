@@ -91,8 +91,7 @@ function timelineFields(day, { filter, today, ownerName }) {
         filter,
         rows,
         empty: view.empty ? EMPTY_LABELS[view.empty]?.(ownerName) || '' : '',
-        upcoming: view.upcoming ? t('companion:room.upcoming') : '',
-        note: t('companion:room.theaterNote')
+        upcoming: view.upcoming ? t('companion:room.upcoming') : ''
     };
 }
 

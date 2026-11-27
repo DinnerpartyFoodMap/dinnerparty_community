@@ -37,9 +37,9 @@ const sayingOk = (text) => {
 
 /**
  * 编辑性格（全屏面板）：名字、标签、20 道题、小习惯、口头禅、谁能看到。保存 PUT /api/rooms/me；
- * 有未保存的修改时关面板先确认。
+ * 有未保存的修改时关面板先确认。panel：覆盖面板的动效（iOS 原生小伙伴页底下打开时只做短渐变）。
  */
-export default function RoomSheetEditor({ open, onClose, me, cities, backendUrl, token, onSaved }) {
+export default function RoomSheetEditor({ open, onClose, me, cities, backendUrl, token, onSaved, panel = null }) {
     const showTip = useTips();
     const [form, setForm] = useState(() => initialForm(me));
     const [initial, setInitial] = useState(() => JSON.stringify(initialForm(me)));
@@ -190,7 +190,8 @@ export default function RoomSheetEditor({ open, onClose, me, cities, backendUrl,
         footer={confirmDiscard ? <div className="fm-room-form__actions">
             <Button variant="secondary" onClick={() => setConfirmDiscard(false)}>{t('companion:editor.keep')}</Button>
             <Button variant="destructive" onClick={onClose}>{t('companion:editor.discard')}</Button>
-        </div> : (errors.length ? <ul className="fm-room-form__error" role="alert">{errors.map((text, index) => <li key={index}>{text}</li>)}</ul> : null)}>
+        </div> : (errors.length ? <ul className="fm-room-form__error" role="alert">{errors.map((text, index) => <li key={index}>{text}</li>)}</ul> : null)}
+        {...panel}>
         {body}
     </ResponsivePanel>;
 }

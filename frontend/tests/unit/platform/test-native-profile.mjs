@@ -357,10 +357,16 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     await session.update({ companion: { satietyCount: 4 } });
     await session.update({});
     await session.update({ error: 'x' });
+    // hidden：起名 / 编辑表单开在主页底下时主页淡出、淡入；不是布尔值不转发
+    await session.update({ hidden: true });
+    await session.update({ hidden: false, companion: { name: '阿栗' } });
+    await session.update({ hidden: 'yes' });
     assert.deepEqual(updates, [
         { id: session.id, theme: { dark: true, primary: '#112233' } },
         { id: session.id, companion: { satietyCount: 4 } },
-        { id: session.id, error: 'x' }
+        { id: session.id, error: 'x' },
+        { id: session.id, hidden: true },
+        { id: session.id, companion: { name: '阿栗' }, hidden: false }
     ]);
     plugin.openResolve({ id: session.id, action: 'back' });
     await started;
@@ -440,6 +446,12 @@ assert.deepEqual(pickNativeProfileValues('roomNavigate', { date: '', filter: 'mo
 assert.deepEqual(pickNativeProfileValues('roomNavigate', { date: '2026-11-24' }), { date: '2026-11-24', filter: 'all' });
 assert.equal(pickNativeProfileValues('roomNavigate', { date: '11/24', filter: 'all' }), null);
 assert.equal(pickNativeProfileValues('roomNavigate', { date: '', filter: 'secret' }), null);
+// 起名 / 编辑：事件不结束主页；mode 只能是 name / edit
+assert.ok(PROFILE_EVENTS.includes('editCompanion'));
+assert.deepEqual(pickNativeProfileValues('editCompanion', { mode: 'edit', extra: 1 }), { mode: 'edit' });
+assert.deepEqual(pickNativeProfileValues('editCompanion', { mode: 'name' }), { mode: 'name' });
+assert.equal(pickNativeProfileValues('editCompanion', { mode: 'delete' }), null);
+assert.equal(pickNativeProfileValues('editCompanion', {}), null);
 
 // 小伙伴的一天：原生快照
 {
