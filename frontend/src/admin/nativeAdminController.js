@@ -17,6 +17,7 @@ const SECTION_TITLES = {
   users: () => t('admin:dashboard.sections.users'),
   generalUsers: () => t('admin:dashboard.sections.generalUsers'),
   places: () => t('admin:dashboard.sections.places'),
+  venues: () => t('admin:dashboard.sections.venues'),
   tasteAxes: () => t('admin:dashboard.sections.tasteAxes'),
   qqWhitelist: () => t('admin:dashboard.sections.qqWhitelist'),
   notices: () => t('admin:dashboard.sections.notices'),
@@ -29,6 +30,7 @@ const SECTION_SYMBOLS = {
   users: sfSymbol('adminUsers'),
   generalUsers: sfSymbol('adminUsers'),
   places: sfSymbol('place'),
+  venues: sfSymbol('adminVenues'),
   tasteAxes: sfSymbol('adminTasteAxes'),
   qqWhitelist: sfSymbol('adminWhitelist'),
   notices: sfSymbol('adminNotices'),
@@ -37,11 +39,12 @@ const SECTION_SYMBOLS = {
   audit: sfSymbol('adminAudit')
 };
 
-// 皮肤兑换码不在 iOS 后台里管理（App 内不出现兑换码，见 App Store 3.1.1），在网页后台生成
+// 皮肤兑换码不在 iOS 后台里管理（App 内不出现兑换码，见 App Store 3.1.1），在网页后台生成。
+// 展会场馆走 manage_places，三个等级都有。
 function sectionPermissions(level) {
-  if (level === 'YUYUKO') return ['users', 'places', 'tasteAxes', 'qqWhitelist', 'notices', 'exhibitions', 'feedback', 'audit'];
-  if (level === 'YOUMU') return ['generalUsers', 'places', 'tasteAxes', 'qqWhitelist', 'notices', 'exhibitions', 'feedback', 'audit'];
-  return ['generalUsers', 'places', 'tasteAxes', 'feedback', 'audit'];
+  if (level === 'YUYUKO') return ['users', 'places', 'venues', 'tasteAxes', 'qqWhitelist', 'notices', 'exhibitions', 'feedback', 'audit'];
+  if (level === 'YOUMU') return ['generalUsers', 'places', 'venues', 'tasteAxes', 'qqWhitelist', 'notices', 'exhibitions', 'feedback', 'audit'];
+  return ['generalUsers', 'places', 'venues', 'tasteAxes', 'feedback', 'audit'];
 }
 
 function formatTime(value) {
@@ -98,7 +101,8 @@ function detailLines(value) {
  * 控制器：dashboard 为根页；各面板按需加载。动作/表单处理器在每次构建页面时注册，
  * 原生只回传 id，避免把任意 URL 或账号操作交给原生。
  */
-export function createNativeAdminController({ backendUrl, token, user, onRequireAuth, onOpenPlace }) {
+// onPickVenue(venue)：展会场馆「在地图上定位」。原生页先关闭，网页打开全屏选点，选完由宿主带着结果重新打开到场馆页（NativeAdminHost.jsx）
+export function createNativeAdminController({ backendUrl, token, user, onRequireAuth, onOpenPlace, onPickVenue }) {
   const level = user?.admin_level || null;
   const actions = new Map();
   const forms = new Map();
@@ -192,12 +196,14 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
     };
   }
 
-  async function load(id) {
+  /** options 只用于场馆页：重新打开时带回选点结果（message / error） */
+  async function load(id, options = {}) {
     section = id;
     switch (id) {
       case 'users': return loadUsers();
       case 'generalUsers': return loadGeneralUsers();
       case 'places': return loadPlaces();
+      case 'venues': return loadVenues(options);
       case 'tasteAxes': return loadTasteAxes();
       case 'qqWhitelist': return loadQQWhitelist();
       case 'notices': return loadNotices();
@@ -772,6 +778,38 @@ export function createNativeAdminController({ backendUrl, token, user, onRequire
       sections: rows.length ? [{ id: 'exhibitions', title: '', rows }] : [{ id: 'exhibitions-empty', title: '', text: t('admin:exhibitions.empty') }],
       buttons: [formAction(t('admin:exhibitions.add'), () => exhibitionForm(null), { push: true })],
       refresh: refresh(loadExhibitions)
+    });
+  }
+
+  // ---- 展会场馆 ----
+  // 原生页面引擎没有地图选点：「在地图上定位」关闭原生后台，交给网页全屏选点，选完重新打开到这一页（与地点表单改位置相同）
+  async function loadVenues({ message = '', error = '' } = {}) {
+    actions.clear(); forms.clear();
+    const data = await api('/admin/venues');
+    const rows = (data.pending || []).map((item) => {
+      const venue = { id: item.id, label: item.label, city: item.city || '' };
+      const pick = onPickVenue ? action(t('admin:venues.pick'), async () => {
+        onPickVenue(venue);
+        return { close: true };
+      }) : null;
+      const ignore = action(t('admin:venues.ignore'), async () => {
+        await api(`/admin/venues/${encodeURIComponent(item.id)}/ignore`, { method: 'POST', body: JSON.stringify({}) });
+        return { page: await loadVenues(), message: t('admin:venues.ignoredTip') };
+      }, { tone: 'danger', confirm: { title: t('admin:venues.ignore'), message: t('admin:venues.confirmIgnore', { label: item.label }), button: t('admin:venues.ignore') } });
+      return {
+        id: String(item.id),
+        title: item.label,
+        subtitle: [item.city, t('admin:venues.receivedAt', { time: formatTime(item.created_time) })].filter(Boolean).join(' · '),
+        detail: item.address || undefined,
+        actions: [pick, ignore].filter(Boolean)
+      };
+    });
+    return basePage('admin-venues', t('admin:venues.title'), {
+      sections: rows.length ? [{ id: 'venues', title: t('admin:venues.count', { count: rows.length }), rows }] : [],
+      empty: t('admin:venues.empty'),
+      message,
+      error,
+      refresh: refresh(loadVenues)
     });
   }
 

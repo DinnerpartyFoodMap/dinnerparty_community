@@ -5,36 +5,14 @@ import { useConfirm } from '../components/feedback/Confirm';
 import { useAuth } from '../auth/AuthContext';
 import { FullScreenMapPicker } from '../map/MapView';
 import { loadPlaceRegions } from '../places/placeRegions';
+import { cityCenterOf, pickedCoordinates } from './venuePicking.js';
 import { t } from '../i18n/index.js';
 import StateMessage from '../components/feedback/StateMessage';
 
 // 场馆（denpawave → 饭联地图）：对端说「这个场馆该在地图上有一个点」，管理员在地图上落一个坐标。
 // 待办只是 status='pending' 的那批，落点后同一行变成 placed 实体。
 // 场馆不是地点：不建 Place，不写评分，不进搜索与随机推荐。全程不调用任何高德搜索，
-// 见 backend/modules/venues/doc/README.md。
-
-/**
- * 选点时地图的初始中心：用已有地点算出的地区树，按城市名找 bounds 的中心。
- * 零外部调用（不碰高德行政区查询）；城市还没被任何地点覆盖时返回 null，用地图默认视野。
- */
-function cityCenterOf(regions, city) {
-    const raw = String(city || '').trim();
-    if (!raw) return null;
-    // 对端可能只写「上海」，地区树里是「上海市」；去掉行政区后缀再比，避免静默退回默认视野。
-    const bare = (value) => String(value || '').trim().replace(/(特别行政区|自治区|自治州|地区|省|市|县)$/u, '');
-    const want = bare(raw);
-    if (!want) return null;
-    const matches = (value) => bare(value) === want || raw === String(value || '').trim();
-    for (const province of regions || []) {
-        const cityNode = (province.children || []).find((item) => matches(item.name));
-        const node = cityNode || (matches(province.name) ? province : null);
-        const bounds = node && node.bounds;
-        if (Array.isArray(bounds) && bounds.length === 4 && bounds.every((value) => Number.isFinite(Number(value)))) {
-            return { lat: (bounds[1] + bounds[3]) / 2, lng: (bounds[0] + bounds[2]) / 2 };
-        }
-    }
-    return null;
-}
+// 见 backend/modules/venues/doc/README.md。iOS 原生后台走同一套选点（NativeAdminHost.jsx）。
 
 /** 数据库时间是 UTC 的 “YYYY-MM-DD HH:MM:SS” */
 function formatTime(value) {
@@ -101,13 +79,12 @@ export default function AdminVenues({ backendUrl }) {
 
     /** 落点：把管理员选的坐标存进请求本身，不建地点 */
     async function placeAt(item, point) {
-        const latitude = Number(point?.lat ?? point?.latitude);
-        const longitude = Number(point?.lng ?? point?.longitude);
+        const coordinates = pickedCoordinates(point);
         setPicking(null);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+        if (!coordinates) return;
         setBusyId(item.id);
         try {
-            await request(`/admin/venues/${item.id}/place`, { method: 'POST', body: JSON.stringify({ latitude, longitude }) });
+            await request(`/admin/venues/${item.id}/place`, { method: 'POST', body: JSON.stringify(coordinates) });
             showTip(t('admin:venues.placedTip'));
             refresh();
         } catch (e) {

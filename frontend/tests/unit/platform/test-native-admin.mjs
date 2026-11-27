@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createNativeAdminSession } from '../../../src/platform/nativeAdmin.js';
 import { createNativeAdminController } from '../../../src/admin/nativeAdminController.js';
+import { cityCenterOf, pickedCoordinates } from '../../../src/admin/venuePicking.js';
 
 class FakePlugin {
     constructor() {
@@ -16,7 +17,8 @@ class FakePlugin {
         return { remove: () => this.listeners.delete(name) };
     }
 
-    open() {
+    open(options) {
+        this.opened = options;
         return new Promise((resolve, reject) => {
             this.openResolve = resolve;
             this.openReject = reject;
@@ -105,6 +107,21 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(message, 'BUSY');
 }
 
+// 选完场馆位置后重新打开：快照里的 page 原样交给插件（原生压在首页之上）
+{
+    const plugin = new FakePlugin();
+    const session = createNativeAdminSession(plugin, { dashboard: { id: 'dash' }, page: { id: 'venues', level: 1 } }, {
+        onEvent: async () => ({}), onLoadImage: async () => ({}), onClose: () => {}, onError: () => {}
+    });
+    const started = session.start();
+    await tick();
+    assert.equal(plugin.opened.dashboard.id, 'dash');
+    assert.equal(plugin.opened.page.id, 'venues');
+    assert.equal(plugin.opened.id, session.id);
+    plugin.openResolve({ id: session.id, action: 'close' });
+    await started;
+}
+
 console.log('Native admin session tests passed.');
 
 // 控制器 smoke：首页信息框、用户行与详情字段、白名单/公告内联表单、口味分类实时保存、展会修改页（使用假 fetch）
@@ -125,6 +142,11 @@ console.log('Native admin session tests passed.');
         if (path.startsWith('/admin/taste-axes/places?')) return json({ items: [{ place_id: 7, name: '面馆', category: '面', source: 'llm', axes: ['noodles'] }], total: 1, page_size: 20 });
         if (path === '/admin/taste-axes/places/7' && options.method === 'PUT') { puts.push(JSON.parse(options.body)); return json({ ok: true }); }
         if (path === '/admin/exhibitions') return json({ exhibitions: [{ id: 4, name: '例大祭', event_time: '2026-11-08 10:00', description: '简介', information: '信息' }] });
+        if (path === '/admin/venues') return json({ pending: [
+            { id: 12, label: '上海新国际博览中心', address: '龙阳路2345号', city: '上海', created_time: '2026-11-26 10:00:00' },
+            { id: 13, label: '国家会展中心', city: '', created_time: '2026-11-26 11:00:00' }
+        ], count: 2 });
+        if (path === '/admin/venues/12/ignore' && options.method === 'POST') { puts.push({ ignored: 12 }); return json({ ignored: true }); }
         if (path === '/place-requests') return json([{ id: 5, status: 'pending', place_id: 8, requester_id: 'u3', created_time: '2026-10-31', proposed: { name: '新店名', per_person_cost: 30, exterior_images: ['/uploads/a.jpg'] }, note: '改名了' }]);
         return json({}, 404);
     };
@@ -137,7 +159,8 @@ console.log('Native admin session tests passed.');
         assert.equal(dashboard.header.title, '紫');
         assert.equal(dashboard.header.image, 'https://oss.example.com/avatars/9-new.webp');
         assert.match(dashboard.header.subtitle, /YUYUKO/);
-        assert.equal(dashboard.sections[0].rows.length, 8);
+        assert.equal(dashboard.sections[0].rows.length, 9);
+        assert.deepEqual(dashboard.sections[0].rows.slice(0, 3).map((row) => row.id), ['users', 'places', 'venues']);
         assert.ok(!dashboard.sections[0].rows.some((row) => row.id === 'skinCodes'));
         assert.ok(!dashboard.sections[0].rows.some((row) => row.id === 'generalUsers'));
         assert.ok(dashboard.sections[0].rows.every((row) => row.symbol));
@@ -203,9 +226,65 @@ console.log('Native admin session tests passed.');
         assert.equal(edit.form.actions[0].tone, 'danger');
         const add = await controller.handle('action', { actionId: exhibitions.buttons[0].id });
         assert.equal(add.form.fields.find((field) => field.id === 'name').value, '');
+
+        // 展会场馆：三个等级都有；行里先「在地图上定位」（关闭原生后台交给网页选点），再「忽略」（危险色、要确认）
+        for (const admin_level of ['YOUMU', 'KOMACHI']) {
+            const rows = createNativeAdminController({ backendUrl: 'https://api.example.com', token: 't', user: { id: 1, admin_level } }).dashboard().sections[0].rows;
+            assert.ok(rows.some((row) => row.id === 'venues'), `${admin_level} sees venues`);
+        }
+        const picked = [];
+        const venueAdmin = createNativeAdminController({
+            backendUrl: 'https://api.example.com', token: 't', user: { id: 9, admin_level: 'KOMACHI' }, onPickVenue: (venue) => picked.push(venue)
+        });
+        venueAdmin.dashboard();
+        const venues = await venueAdmin.load('venues', { message: '已保存位置' });
+        assert.equal(venues.message, '已保存位置');
+        assert.equal(venues.level, 1);
+        assert.ok(venues.refresh);
+        const [expo, plain] = venues.sections[0].rows;
+        assert.match(venues.sections[0].title, /2/);
+        assert.equal(expo.title, '上海新国际博览中心');
+        assert.match(expo.subtitle, /^上海 · /);
+        assert.equal(expo.detail, '龙阳路2345号');
+        assert.equal(plain.detail, undefined);
+        assert.ok(!plain.subtitle.startsWith(' · '));
+        assert.equal(expo.actions.length, 2);
+        const toMap = await venueAdmin.handle('action', { actionId: expo.actions[0].id });
+        assert.deepEqual(toMap, { close: true });
+        assert.deepEqual(picked, [{ id: 12, label: '上海新国际博览中心', city: '上海' }]);
+        const ignore = expo.actions[1];
+        assert.equal(ignore.tone, 'danger');
+        assert.match(ignore.confirm.message, /上海新国际博览中心/);
+        const ignored = await venueAdmin.handle('action', { actionId: ignore.id });
+        assert.deepEqual(puts.at(-1), { ignored: 12 });
+        assert.ok(ignored.page && ignored.message);
+        // 返回首页、筛选都照常
+        assert.equal((await venueAdmin.handle('back')).page.id, 'admin-dashboard');
+        // 没有宿主接选点（旧调用方）时只剩「忽略」
+        const noPicker = createNativeAdminController({ backendUrl: 'https://api.example.com', token: 't', user: { id: 9, admin_level: 'YUYUKO' } });
+        assert.equal((await noPicker.load('venues')).sections[0].rows[0].actions.length, 1);
     } finally {
         globalThis.fetch = originalFetch;
     }
 }
 
 console.log('Native admin controller smoke tests passed.');
+
+// 场馆选点：城市名去掉行政区后缀再比；选点结果两种写法都认
+{
+    const regions = [
+        { name: '上海市', bounds: [121, 31, 122, 32], children: [{ name: '上海市', bounds: [121.2, 31.0, 121.8, 31.4] }] },
+        { name: '广东省', bounds: [110, 20, 117, 25], children: [{ name: '广州市', bounds: [113, 23, 114, 24] }] }
+    ];
+    assert.deepEqual(cityCenterOf(regions, '上海'), { lat: 31.2, lng: 121.5 });
+    assert.deepEqual(cityCenterOf(regions, '广州市'), { lat: 23.5, lng: 113.5 });
+    assert.equal(cityCenterOf(regions, '天津'), null);
+    assert.equal(cityCenterOf(null, '上海'), null);
+    assert.equal(cityCenterOf(regions, ''), null);
+    assert.deepEqual(pickedCoordinates({ lat: 31.2, lng: 121.5 }), { latitude: 31.2, longitude: 121.5 });
+    assert.deepEqual(pickedCoordinates({ latitude: '31.2', longitude: '121.5' }), { latitude: 31.2, longitude: 121.5 });
+    assert.equal(pickedCoordinates({ lat: 'x', lng: 1 }), null);
+    assert.equal(pickedCoordinates(null), null);
+}
+
+console.log('Venue picking helper tests passed.');

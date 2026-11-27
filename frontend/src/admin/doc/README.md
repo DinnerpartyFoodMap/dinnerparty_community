@@ -4,7 +4,7 @@ AdminExhibitions 在后台底部提供展会联动设置，沿用公告发布权
 
 AdminDashboard.jsx 提供管理入口，AdminUsers/GeneralUsers/Places/Comments/QQWhitelist/Notices 分业务页，BanModal/AuditModal 负责关联弹层。显示权限与当前用户联动，后端才是授权和事务权威；目录整理不新增权限。
 
-AdminVenues（「展会场馆」，`manage_places`，三个等级都有）处理 denpawave 推来的场馆：在全屏选点器（`context="venue"`）里落点或忽略，只在网页后台，iOS 原生后台没有这一页；规则见 [场馆模块](../../../../backend/modules/venues/doc/README.md)。
+AdminVenues（「展会场馆」，`manage_places`，三个等级都有）处理 denpawave 推来的场馆：在全屏选点器（`context="venue"`）里落点或忽略；城市定位、坐标与提交在 `venuePicking.js`，网页面板与 iOS 原生后台共用。规则见 [场馆模块](../../../../backend/modules/venues/doc/README.md)。
 
 三个等级都显示操作日志和地点审核入口；地点申请页（AdminPlaces）同时复核新增地点、修改申请、打卡补充内容和被 AI 初筛拦下的住民评论（`request_type = 'comment'`，通过即公开评论，驳回则只有作者能看到）；皮肤兑换码仅 YUYUKO 显示。YOUMU 的普通用户管理面板增加封禁/解封与状态，复用 AdminBanModal 和 `/admin/users/ban`、`/unban`，目标限普通用户。KOMACHI 仍只有普通用户删除操作，不显示封禁按钮。QQ 白名单、公告/展会和隐藏的评论面板沿用原有范围。
 
@@ -30,4 +30,4 @@ flowchart LR
 
 iOS App 的管理后台由 SwiftUI 呈现（[NativeAdminPlugin.swift](../../../ios/App/App/NativeAdminPlugin.swift)），共用声明式页面引擎 `NativePageEngine.swift`。网页按管理员等级构建 dashboard 与各面板页面模型，原生只渲染 rows / form / calendar / images 并回传动作、筛选与表单值；账号请求、权限与校验仍在网页（[nativeAdminController.js](../nativeAdminController.js)、[nativeAdmin.js](../../platform/nativeAdmin.js)）。
 
-覆盖面板：用户、普通用户、地点申请（含 AI 初筛原因与图片；住民评论被初筛拦下的“评论复核”按地点、作者、评论内容逐项列出）、口味分类、QQ 白名单、公告、展会（含图标上传）、住民反馈、操作日志。皮肤兑换码不在 iOS 后台出现（App 内不提兑换码），在网页后台生成。首页顶部是与住民主页相同的个人信息框；各页的刷新在导航栏右侧；用户与地点申请的详情按字段分开；口味分类在列表里直接勾选并实时保存；白名单与公告的输入框直接在页面里，白名单记录左滑删除；当前生效公告用网页 `Notice` 组件渲染的 HTML 显示。原生不可用或请求失败时回退网页 `AdminDashboard`。桥接测试纳入 `test:native-panels`，真机验收见 [原生文档](../../../native/doc/README.md)。
+覆盖面板：用户、普通用户、地点申请（含 AI 初筛原因与图片；住民评论被初筛拦下的“评论复核”按地点、作者、评论内容逐项列出）、展会场馆、口味分类、QQ 白名单、公告、展会（含图标上传）、住民反馈、操作日志。展会场馆的选点：原生页面引擎没有地图，「在地图上定位」先关闭原生后台，网页打开全屏选点（`NativeAdminHost.jsx`），存好后带着结果重新打开并直接进入场馆页（`NativeAdmin.open` 的 `page`），做法同地点表单的「在地图上修改位置」；旧安装包的原生插件不认 `page`，会停在后台首页。皮肤兑换码不在 iOS 后台出现（App 内不提兑换码），在网页后台生成。首页顶部是与住民主页相同的个人信息框；各页的刷新在导航栏右侧；用户与地点申请的详情按字段分开；口味分类在列表里直接勾选并实时保存；白名单与公告的输入框直接在页面里，白名单记录左滑删除；当前生效公告用网页 `Notice` 组件渲染的 HTML 显示。原生不可用或请求失败时回退网页 `AdminDashboard`。桥接测试纳入 `test:native-panels`；场馆选点的网页一侧另有浏览器回归 `backend/tests/venues/test_venues_native_admin_ui.js`（原生插件与选点地图用替身）；真机验收见 [原生文档](../../../native/doc/README.md)。

@@ -61,6 +61,7 @@ const ICONS = Object.freeze({
     adminWhitelist: ['checklist', 'checklist'],
     adminNotices: ['campaign', 'megaphone.fill'],
     adminExhibitions: ['confirmation_number', 'ticket.fill'],
+    adminVenues: ['stadium', 'building.2.fill'],
     adminFeedback: ['forum', 'bubble.left.and.bubble.right.fill'],
     adminAudit: ['manage_search', 'doc.text.magnifyingglass'],
     // 协议与备案

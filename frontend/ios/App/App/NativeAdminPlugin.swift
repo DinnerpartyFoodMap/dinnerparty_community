@@ -4,7 +4,8 @@ import UIKit
 
 /// 本地 Capacitor 插件：iOS 原生管理后台（NativeAdminPlugin.swift）。
 ///
-/// open({ id, dashboard, theme }) -> { id, action: close }
+/// open({ id, dashboard, page?, theme }) -> { id, action: close }
+///   page：打开时直接进入的下一级页面（网页选完展会场馆的位置后重新打开到场馆页），压在首页之上
 /// respond({ id, requestId, ok, message, error, page?, form?, silent?, imageId?, imageData? }) -> {}
 /// close({ id }) -> {}
 /// 事件 adminEvent：{ id, type: action|filter|submit|back|loadImage, requestId, ... }
@@ -64,6 +65,10 @@ public class NativeAdminPlugin: CAPPlugin, CAPBridgedPlugin {
             self.screenPresenter.edgeEnabled = true
             model.onDepthChange = { [weak self] depth in
                 self?.screenPresenter.edgeEnabled = depth == 0
+            }
+            // 直接进入的下一级页面：呈现前推入，滑入时已在那一页；返回仍回到首页
+            if let page = call.getObject("page") {
+                model.apply(NativePageParser.spec(page))
             }
             // 侧滑拖回取消：页面仍在，恢复为可再次关闭
             self.screenPresenter.onDismissCancelled = { [weak self] in

@@ -57,7 +57,7 @@ flowchart TD
 
 ## 管理端
 
-面板在网页后台「展会场馆」（`frontend/src/admin/AdminVenues.jsx`），权限沿用 `manage_places`，三个等级都有。点「在地图上定位」打开 `FullScreenMapPicker`（`context="venue"`），选中站内地点或图钉位置后把坐标提交到 `/place`。工具行有「刷新」，推送随时会来。iOS 原生管理后台没有这一页（页面引擎没有地图选点），在网页或 Android 上处理。
+面板在网页后台「展会场馆」（`frontend/src/admin/AdminVenues.jsx`），权限沿用 `manage_places`，三个等级都有。点「在地图上定位」打开 `FullScreenMapPicker`（`context="venue"`），选中站内地点或图钉位置后把坐标提交到 `/place`。工具行有「刷新」，推送随时会来。iOS 原生管理后台也有这一页：原生页面引擎没有地图，「在地图上定位」先关闭原生后台，网页打开全屏选点（`NativeAdminHost.jsx`），存好后带着结果重新打开并直接进入场馆页（`NativeAdmin.open` 的 `page`），做法同地点表单的「在地图上修改位置」。
 
 选点器的初始中心取自 `GET /places/regions` 的城市 bounds 中心：零外部调用（不用 `AMap.DistrictSearch`，那会消耗高德行政区查询额度；JS API 2.0 也已没有 `setCity`）。地区树只含**已有公开地点**的城市，查不到就退回地图默认视野，这是有意的降级。
 
@@ -88,4 +88,4 @@ VENUE_ALLOWED_IPS=
 
 `npm run test:venues`（`npm test` 也会跑）：鉴权分支（缺 token / 错 token / 未配置 token / 未配置白名单 / 白名单不匹配）、限流第 7 次 429、幂等重复推送、`ignored` 保持、单条失败不影响整批、对端硬塞坐标被丢弃、落点的 400/409 与审计、解析四态、公开接口不泄露展示文字、**落点不创建 Place**、非管理员 403。
 
-后台面板的浏览器回归在 `tests/venues/test_venues_ui.js`（`npm run test:ui` 也会跑，需要 `PLAYWRIGHT_MODULE`）：真实 `AdminVenues` + 临时库，覆盖待办列表、计数与刷新、忽略的确认、落点后离开待办、深色与 360px 不横向滚动；设 `VENUE_UI_SCREENSHOTS=<目录>` 时保存截图。选点器需要真实地图，落点直接走服务。
+iOS 原生后台的选点（网页一侧）在 `tests/venues/test_venues_native_admin_ui.js`。后台面板的浏览器回归在 `tests/venues/test_venues_ui.js`（`npm run test:ui` 也会跑，需要 `PLAYWRIGHT_MODULE`）：真实 `AdminVenues` + 临时库，覆盖待办列表、计数与刷新、忽略的确认、落点后离开待办、深色与 360px 不横向滚动；设 `VENUE_UI_SCREENSHOTS=<目录>` 时保存截图。选点器需要真实地图，落点直接走服务。

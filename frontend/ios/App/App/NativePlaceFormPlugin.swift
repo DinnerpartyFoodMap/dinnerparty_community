@@ -387,12 +387,16 @@ final class NativePlaceFormModel: ObservableObject {
 
     /// 修改记录只保存描述里新增的文字（改前 123、改后 123456 记 456），规则同后端
     /// placeEditDiff.addedText / 网页 editEvidence.js；Markdown 这里只粗略去掉符号。
-    var editPreview: String {
+    var editAddedText: String {
         let old: String = {
             guard let value = original["description"], !(value is NSNull) else { return "" }
             return String(describing: value)
         }()
-        let added = Self.addedText(Self.roughPlainText(old), Self.roughPlainText(description))
+        return Self.addedText(Self.roughPlainText(old), Self.roughPlainText(description))
+    }
+
+    var editPreview: String {
+        let added = editAddedText
         return added.isEmpty ? text("noChanges", "描述没有新增文字，这次修改不会留下修改记录") : added
     }
 
@@ -739,9 +743,15 @@ private struct NativePlaceFormView: View {
                         ratingSection
                     }
                     if !model.isCreate {
-                        formSection(model.text("editPreview", "修改记录预览")) {
-                            Text(model.text("editNotice", "修改生效后，描述里新增的文字会以你的名义保存为修改记录，仅管理员可查看。")).font(.caption).foregroundStyle(.secondary)
-                            Text(model.editPreview).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                        // 说明放分组下方的脚注（与其他分组一致），预览放进带内边距的行；没有新增文字时用次要色
+                        formSection(model.text("editPreview", "修改记录预览"),
+                                    footer: model.text("editNotice", "修改生效后，描述里新增的文字会以你的名义保存为修改记录，仅管理员可查看。")) {
+                            row {
+                                Text(model.editPreview)
+                                    .font(.callout)
+                                    .foregroundStyle(model.editAddedText.isEmpty ? Color.secondary : Color.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
                     imagesSection(.exterior)
