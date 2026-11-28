@@ -1,6 +1,6 @@
 # 搜索、随机推荐与顺路发现
 
-入口：routes/search.js（`/api/places/search*`）、routes/alongRoute.js（`/api/along-route`）；随机路由由 places 模块挂载。AI 搜索（`POST /api/places/search/ai`）需要登录（游客 401，基础搜索不受影响）。模型只判断候选是否相关、给出置信度，并从店铺介绍里逐字摘一段依据；推荐语一律由固定模板拼成（见下文“推荐语模板”），不是 AI 生成内容，前端不标注。每条推荐带 `reason_source: 'template'`（旧版 App 只给 `deepseek` 打“AI 生成”标签，所以旧版也不显示）和 `review_source`（`deepseek` / `local_fallback`：相关性由谁判断）；`status` 为 `ok`（模型审核完成）或 `partial`（退回本地阈值）。服务：placeSearch、semanticSearch、recommendationReason、randomRecommendation、alongRoute。依赖 ratings 统一避雷规则、preferences 用户向量及基础设施 AI / 数据库。
+入口是 `routes/search.js`（`/api/places/search*`）和 `routes/alongRoute.js`（`/api/along-route`）。随机推荐由 places 模块挂载。AI 搜索需要登录，依赖 ratings 的统一避雷规则。随机推荐与顺路发现沿用各自的排序。
 
 ```mermaid
 flowchart TD
@@ -12,12 +12,16 @@ flowchart TD
     Recall --> Rank
     Rank --> Tie[距离 / 创建时间 / ID 确定性平局]
     Tie --> Limit[最后才截断 limit 并返回数组]
-    AI[单独请求 AI 搜索] --> Embed[查询向量 → 地图中心半径内逐家算相似度]
-    Embed --> Floor[排除标签 / 人均硬筛 + 相对相似度下限]
-    Floor --> Blend[相似度与距离合成排序，取前 8 家]
-    Blend --> Review[模型相关性审核与原文摘录]
-    Review -->|成功| AIResult[逐字核对摘录 + 固定模板推荐语]
-    Review -->|不可用| Degrade[503 unavailable 基础搜索仍可用]
+    Place[公开地点写入或修改] --> Profile[后台抽取事实和推断]
+    AI[单独请求 AI 搜索] --> Compile[编译布尔条件]
+    Compile --> RecallAI[私有服务召回]
+    Profile --> RecallAI
+    RecallAI --> Vector{允许向量兜底?}
+    Vector -->|是| TopUp[向量补充候选]
+    Vector -->|否| Review[分批并行审核]
+    TopUp --> Review
+    Review -->|至少一批完成| AIResult[逐字核对摘录并生成模板卡片]
+    Review -->|全部失败| Degrade[503 unavailable]
     Random[随机推荐中心] --> Five[5km 粗筛与精确距离 / 排除避雷]
     Five --> Pool{完整池至少 5 家?}
     Pool -->|否| Empty[place null]
@@ -29,24 +33,19 @@ flowchart TD
 | 选择 | 当前实现 | 对照与约束 |
 | --- | --- | --- |
 | 基础搜索 | SQLite 所有匹配候选联合排序 | 先截断再算距离会漏附近结果；数据量增长后需评估成本 |
-| AI 路径 | 独立接口，可不可用 | 把关键词搜索绑在模型请求上会让网络故障扩大影响 |
+| AI 路径 | 独立登录接口，结构化召回后由模型审核 | 基础搜索可独立使用 |
 | 随机 | 固定 5km + 概率抽样 + 至少 20% 基础分布 | 只取最高相似度会失去探索；不随地图缩放变半径 |
 | 地理 | 直线距离 + 顺路几何工具 | 不等同于真实步行/行车时长 |
 
-## AI 搜索的候选与审核
+## AI 搜索分工
 
-类似检索增强：向量检索只负责粗排，相关不相关由模型审核决定（services/semanticSearch.js）。2026-11-18 之前大多数查询一家都不推荐，原因和改法见下表；拿广州、上海、温州、梧州四地各 8 句常见查询（含“距离不远价格不贵不是冰的正餐”“好吃的寿司”）用真实模型对照，有推荐的从 13/32 升到 26/32，连跑两次结果基本一致。剩下没有推荐的是附近确实没有（这几座城的数据里没有寿司店）或资料证明不了（附近没有写到辣的店）。
+后端负责登录、限流、候选池、向量兜底、审核和推荐语模板，维护地点档案及后台重试、回填和评测入口。没有地图中心时，候选池按最近更新取最多 3,000 家公开地点。向量兜底只补私有服务允许的地点。接口继续返回 `filter` 和召回来源，条件和命中详情仅供内部评测使用。
 
-| 环节 | 现在 | 以前的问题 |
-| --- | --- | --- |
-| 候选 | 有地图中心时取半径内（`AI_SEARCH_RADIUS_KM`，默认 50 公里；视野更大时取视野半径的两倍）的全部地点，用 `vec_distance_cosine` 逐家算；没有中心时全国取向量最近的 200 家 | 先在全国取前 100/200 家再按距离筛，地点少的城市常常一家都进不了候选（梧州的大排档、酒楼排在全国 100 名外） |
-| 原话里的筛选 | services/searchFilter.js 只读“明确不要的标签”和人均范围，硬筛；想吃什么不做标签筛选，返回的 `filter.tags` 恒为空 | “好吃的寿司”被读成“只要寿司标签”，只标了“日本料理”的大雄寿司、小二寿司全被筛掉 |
-| 相似度下限 | 比附近最相似的那家低 `0.12` 以内，且不低于 `AI_CANDIDATE_MIN_SEMANTIC_SCORE`（默认 0.35） | 固定 0.6（意图改写后 0.55）。Qwen3-Embedding 的余弦值随查询整体浮动：附近的寿司店约 0.62，“适合聚餐”时大排档、火锅店只有 0.42–0.44 |
-| 排序 | 资料修正后的相似度 × 0.88 + 距离分 × 0.12（`AI_PROXIMITY_WEIGHT`）；距离分在视野半径处为 0.5（视野小于 2 公里按 2 公里算） | 视野内要有一家修正后 ≥ 0.6 才只看视野内，实际几乎从来达不到，于是总按 50 公里内、距离权重 0.06 排，推荐常在十几二十公里外 |
-| 审核 | 前 8 家一次交给模型（以前 5 家）。店名或分类直接写出菜品、菜系就算证据；“好吃”这类好评词不需要证据；夜宵、聚餐这类场景可以按常识判断。提示词给了 confidence 的刻度：描述写到 0.8 以上、店名或分类推出约 0.7、按常识推断约 0.6；`relevant` 为真且 confidence ≥ `AI_RELEVANCE_MIN_CONFIDENCE`（默认 0.5）才算通过 | 规则写着“店名本身不能证明相关”，大雄寿司、渔见寿司·寿司船专门店都被否；门槛 0.68 正好卡在模型来回浮动的 0.6–0.7，同一句查询时有时无 |
-| 卡片顺序 | 通过审核的最多 3 家，按 相似度 × 0.7 + 距离分 × 0.3 排：都相关时近的在前 | 按检索分排，28 公里外的店排在 3.9 公里的前面 |
+私有计算服务负责查询条件编译、地点档案抽取、召回打分和卡片排序。见私有服务文档。
 
-模型不可用时退回本地门槛（`AI_FALLBACK_RELEVANCE_MIN_SCORE`，对排序分），这条路很严，通常没有推荐，只保证不给出明显不相关的店。`.env` 里旧的 `AI_SEARCH_MIN_SEMANTIC_SCORE`、`AI_EXPANDED_INTENT_MIN_SEMANTIC_SCORE`、`AI_LOCAL_PREFERENCE_MIN_SCORE`、`AI_LOCAL_MIN_DETAIL_COMPLETENESS`、`AI_REMOTE_SEARCH_RADIUS_KM`、`AI_REMOTE_PROXIMITY_WEIGHT` 已不再读取。
+从 `backend/` 执行 `npm run search:profiles -- --db <file> --concurrency 4` 回填。省略 `--db` 时使用配置的数据库，`--limit N` 限制数量，重复传入 `--near lat,lng,km` 可指定多个范围。可通过 `SEARCH_PROFILE_WORKER=false` 暂停后台任务。
+
+评测使用已回填的数据库副本。运行 `npm run search:eval -- --db <副本> --queries <私有查询集> --runs 2 --out <新文件.jsonl>`。也可通过 `PLACE_SEARCH_EVAL_QUERIES` 指定查询集。
 
 ## 推荐语模板
 

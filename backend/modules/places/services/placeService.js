@@ -246,6 +246,7 @@ function afterPlacesCreated(placeIds) {
         // 省 / 市 / 区（地区筛选）：后台批量逆地理编码
         try { require('./placeRegions').wakePlaceRegionWorker(); } catch (_) { /* the region worker picks it up later */ }
         try { require('./placeChainTags').wakePlaceChainWorker(); } catch (_) { /* the chain worker picks it up later */ }
+        try { require('../../discovery/services/searchProfiles').wakeSearchProfileWorker(); } catch (_) { /* the profile worker picks it up later */ }
     });
     scheduleModeration(ids);
 }

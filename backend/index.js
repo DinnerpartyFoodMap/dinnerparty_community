@@ -330,6 +330,7 @@ require('./modules/community/services/residentComments').resumeCommentModeration
 // 地点的省 / 市 / 区（地区筛选）：后台用高德逆地理编码补齐（modules/places/services/placeRegions.js）
 const stopPlaceRegionWorker = require('./modules/places/services/placeRegions').startPlaceRegionWorker();
 const stopPlaceChainWorker = require('./modules/places/services/placeChainTags').startPlaceChainWorker();
+const stopSearchProfileWorker = require('./modules/discovery/services/searchProfiles').startSearchProfileWorker();
 const stopUserVectorWorker = startUserVectorWorker();
 const stopRatingEvidenceWorker=require('./modules/ratings/services/ratingEvidence').startEvidenceWorker();
 const stopRatingTextWorker=require('./modules/ratings/services/ratingTextEvidence').startTextEvidenceWorker();
@@ -416,6 +417,7 @@ function gracefulShutdown(signal) {
     stopModelProfileWorker();
     stopPlaceRegionWorker();
     stopPlaceChainWorker();
+    stopSearchProfileWorker();
     if (qqBot) qqBot.stop();
     logger.notice('Backend shutdown started', { event: 'server.shutdown', signal });
     const forceExit = setTimeout(() => process.exit(1), 5000);

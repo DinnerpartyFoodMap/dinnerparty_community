@@ -396,7 +396,10 @@ async function moderatePlace(placeId) {
     const result = applyTransaction.immediate(placeId, hash, report, usedAi);
     if (result.outcome === 'changed') scheduleModeration([placeId]);
     if (result.notify) wakeNotificationWorker();
-    if (result.outcome === 'visible') require('./placeChainTags').wakePlaceChainWorker();
+    if (result.outcome === 'visible') {
+        require('./placeChainTags').wakePlaceChainWorker();
+        require('../../discovery/services/searchProfiles').wakeSearchProfileWorker();
+    }
     if (result.outcome === 'visible' || result.outcome === 'pending') {
         logger.info('Place moderation finished', {
             event: 'place.moderation.finished', placeId, outcome: result.outcome, reasons: report.decision.reasons,

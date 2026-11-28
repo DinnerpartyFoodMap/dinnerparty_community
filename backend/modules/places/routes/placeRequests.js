@@ -190,7 +190,10 @@ router.post("/:id/review", requireAuthWithCode, requireAdmin("manage_places", { 
     res.json({ success: true });
     if (result.semanticChanged) setImmediate(() => queuePlaceVectorSync(result.placeId));
     if (result.notify) wakeNotificationWorker();
-    if (result.becameVisible) require('../services/placeChainTags').wakePlaceChainWorker();
+    if (result.becameVisible) {
+        require('../services/placeChainTags').wakePlaceChainWorker();
+        require('../../discovery/services/searchProfiles').wakeSearchProfileWorker();
+    }
 });
 
 function tryParseJSON(v) {

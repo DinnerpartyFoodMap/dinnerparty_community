@@ -213,8 +213,8 @@ function parseJsonObjectContent(content) {
 
 /**
  * One DeepSeek chat call that must answer with a single JSON object. Returns the
- * parsed object, null when the answer is not JSON, and throws on network/API
- * errors or when no key is configured. Callers validate every field themselves.
+ * parsed object or null for non-JSON text. Throws on upstream errors and on
+ * truncated or empty output. Callers validate every field themselves.
  * `images` (data or https URLs) are sent after the user text; only models that
  * read images can judge them (deepseek-flash does, deepseek-v4-pro answers
  * without seeing them). `model` overrides DEEPSEEK_MODEL for this call.
@@ -234,7 +234,15 @@ async function completeDeepseekJson({ system, user, images = [], model = '', max
             { role: 'user', content }
         ]
     }, DEEPSEEK_API_KEY, timeoutMs);
-    return parseJsonObjectContent(body?.choices?.[0]?.message?.content);
+    const choice = body.choices?.[0];
+    const finishReason = choice?.finish_reason ?? null;
+    const contentText = choice?.message?.content;
+    if (finishReason === 'length' || typeof contentText !== 'string' || !contentText.trim()) {
+        const completionTokens = body.usage?.completion_tokens ?? null;
+        throw Object.assign(new Error(`DeepSeek output is truncated or empty (finish_reason=${finishReason ?? 'unknown'}, completion_tokens=${completionTokens ?? 'unknown'})`),
+            { code: 'model_output_truncated', finish_reason: finishReason, completion_tokens: completionTokens });
+    }
+    return parseJsonObjectContent(contentText);
 }
 
 // The exact description text the relevance review sees. semanticSearch checks the
@@ -246,11 +254,11 @@ function descriptionForReview(place) {
 }
 
 function recommendedPlacePayload(match) {
-    const { place, score, semantic_score, detail_completeness, distance_km, in_view } = match;
+    const { place, score, semantic_score, detail_completeness, distance_km, in_view, reviewCost = place.per_person_cost } = match;
     return {
         name: String(place.name || '').slice(0, 80),
         category: String(place.category || '').slice(0, 120),
-        per_person_cost: place.per_person_cost == null ? null : Number(place.per_person_cost),
+        per_person_cost: reviewCost == null ? null : Number(reviewCost),
         description: descriptionForReview(place),
         combined_match_percent: Math.round(score * 100),
         semantic_match_percent: Math.round((semantic_score ?? score) * 100),
@@ -357,7 +365,11 @@ async function reviewRecommendationRelevance(query, matches) {
             }
         ]
     }, DEEPSEEK_API_KEY, DEEPSEEK_TIMEOUT_MS);
-    return parseRecommendationReviewsContent(body?.choices?.[0]?.message?.content, selected);
+    const content = body?.choices?.[0]?.message?.content;
+    if (!Array.isArray(parseJsonObjectContent(content)?.recommendations)) {
+        throw new Error('DeepSeek relevance review is missing a recommendations array');
+    }
+    return parseRecommendationReviewsContent(content, selected);
 }
 
 module.exports = {

@@ -8,7 +8,6 @@ const {
     normalizeCenter,
     normalizeBounds
 } = require('../services/semanticSearch');
-const { extractSearchFilter, searchFilterPredicate } = require('../services/searchFilter');
 
 const router = express.Router();
 const AI_QUERY_MAX_LENGTH = 300;
@@ -59,10 +58,7 @@ router.get('/places/search/fast', attachViewer, rateLimit('search'), sendFastSea
 // Backward-compatible alias used by older clients and live suggestions.
 router.get('/places/search', attachViewer, rateLimit('search'), sendFastSearch);
 
-// Request B: embedding -> sqlite-vec KNN -> DeepSeek relevance review -> fixed-template reasons.
-// 需要登录；模型只判断相关性并逐字摘店铺介绍，推荐语由固定模板拼成（services/recommendationReason.js），不是 AI 生成内容。
-// filter：同时从原话里读出的筛选（标签 / 排除标签 / 人均，services/searchFilter.js），只套用在这次的推荐候选上，
-// 前端在推荐上方说明，不改地图筛选；读不出时为 null。
+// 需要登录。条件编译、结构化召回和分批审核只影响本次推荐，推荐语由固定模板拼成。
 router.post('/places/search/ai', requireAuth, async (req, res) => {
     const query = String(req.body?.q || '').trim();
     if (!query) return res.status(400).json({ error: '搜索内容不能为空' });
@@ -73,35 +69,25 @@ router.post('/places/search/ai', requireAuth, async (req, res) => {
         return res.status(429).json({ error: '幽幽子正在认真品尝，请稍后再问一次吧' });
     }
 
-    // 筛选提取与语义搜索互不依赖：任一边失败都不影响另一边
-    const filterPromise = extractSearchFilter(query).catch((error) => {
-        console.warn('AI search filter unavailable:', error.message);
-        return null;
-    });
+    let result;
     try {
-        const center = normalizeCenter(req.body?.center);
-        const bounds = normalizeBounds(req.body?.bounds);
-        const [result, filter] = await Promise.all([
-            searchSemanticPlaces(query, {
-                limit: parseLimit(req.body?.limit, 5, 10),
-                center,
-                bounds,
-                placeFilter: filterPromise.then(searchFilterPredicate)
-            }),
-            filterPromise
-        ]);
-        return res.json({ ...result, filter });
+        result = await searchSemanticPlaces(query, {
+            limit: parseLimit(req.body?.limit, 5, 10),
+            center: normalizeCenter(req.body?.center),
+            bounds: normalizeBounds(req.body?.bounds)
+        });
     } catch (error) {
         console.warn('AI place search unavailable:', error.message);
-        return res.status(503).json({
+        result = {
             status: 'unavailable',
             recommendation: null,
             recommendations: [],
             matches: [],
-            filter: await filterPromise,
-            error: '幽幽子的语义搜索暂时不可用，基础搜索仍可正常使用'
-        });
+            filter: { tags: [], exclude_tags: [], min_cost: null, max_cost: null }
+        };
     }
+    if (result.status !== 'unavailable') return res.json(result);
+    return res.status(503).json({ ...result, error: '幽幽子的语义搜索暂时不可用，基础搜索仍可正常使用' });
 });
 
 module.exports = router;

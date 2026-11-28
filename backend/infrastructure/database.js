@@ -89,7 +89,7 @@ try {
     sqliteVec.load(rawDb);
     vectorSearchAvailable = true;
 } catch (error) {
-    console.warn('sqlite-vec is unavailable; semantic search will stay disabled:', error.message);
+    console.warn('sqlite-vec is unavailable; vector search will stay disabled:', error.message);
 }
 
 // Provide a small wrapper that mimics the sqlite3 async callback API used across the codebase
@@ -763,6 +763,7 @@ function init() {
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
         require('../modules/places/services/placeRegionSchema').initPlaceRegionSchema(rawDb);
         require('../modules/places/services/placeChainTagSchema').initPlaceChainTagSchema(rawDb);
+        require('../modules/discovery/services/searchProfileSchema').initSearchProfileSchema(rawDb);
         require('../modules/venues/services/venueSchema').initVenueSchema(rawDb);
         require('../modules/rooms/services/roomSchema').initRoomSchema(rawDb);
         require('../modules/preferences/services/tasteAxes').initTasteAxesSchema(rawDb);

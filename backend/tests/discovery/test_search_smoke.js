@@ -16,11 +16,9 @@ process.env.DEEPSEEK_API_KEY = '';
 const searchRouter = require('../../modules/discovery/routes/search');
 const {
     rankSemanticRows,
-    acceptedOrderScore,
     buildEmbeddingQuery,
     placeDetailCompleteness,
-    isConfidentRecommendationReview,
-    passesLocalRecommendationThreshold
+    isConfidentRecommendationReview
 } = require('../../modules/discovery/services/semanticSearch');
 const {
     parseIntentExpansionContent,
@@ -178,10 +176,6 @@ async function main() {
             { id: 42, name: '眼前的快餐', latitude: 23.1291, longitude: 113.2644, vector_distance: 0.47 }
         ], { center: { lat: 23.1291, lng: 113.2644 }, bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 } });
         assert.deepEqual(specificQuery.map((match) => match.place.id), [41], 'candidates more than 0.12 below the best similarity are dropped');
-        // Cards that passed the review are all relevant: 大雄寿司 3.9 km goes before 任食寿司屋 28 km.
-        const nearSushi = { detail_adjusted_score: 0.5, proximity_score: 0.8 };
-        const farSushi = { detail_adjusted_score: 0.62, proximity_score: 0.05 };
-        assert.ok(acceptedOrderScore(nearSushi) > acceptedOrderScore(farSushi), 'among reviewed cards a nearby relevant shop goes first');
         const nearerFirst = rankSemanticRows([
             { id: 21, name: '二十公里外', latitude: 23.31, longitude: 113.2644, vector_distance: 0.42 },
             { id: 22, name: '一公里内', latitude: 23.138, longitude: 113.2644, vector_distance: 0.43 }
@@ -221,8 +215,6 @@ async function main() {
             }))
         }), reviewMatches);
         assert.equal(allLowConfidence.filter((review) => isConfidentRecommendationReview(review)).length, 0, 'low confidence must allow zero recommendations');
-        assert.equal(passesLocalRecommendationThreshold({ score: 0.57 }), false, 'local fallback should reject weak adjusted scores');
-        assert.equal(passesLocalRecommendationThreshold({ score: 0.59 }), true, 'local fallback should retain sufficiently strong adjusted scores');
 
         // DSC-C09: recommendation sentences come only from fixed templates, place fields,
         // the user's own query and verbatim excerpts of the place description.

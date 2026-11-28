@@ -21,6 +21,20 @@ const upstream = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => {
+        if (req.url.startsWith('/v1/compute/')) {
+            const { input } = JSON.parse(raw);
+            const operation = req.url.split('/').at(-1);
+            const fixtures = {
+                searchcompile: () => ({ profile_version: 1,
+                    plan: { core: [], soft: [], must_not: [], exclude_tags: [], keywords: [], min_cost: null, max_cost: null } }),
+                searchrank: () => ({ candidates: [], vector: { wanted: true, max: 8, eligible_ids: input.places.map(({ id }) => id) },
+                    counts: { pool: input.places.length, eligible: input.places.length, with_evidence: 0 } }),
+                searchorder: () => ({ order: input.items.map(({ id }) => id) })
+            };
+            res.writeHead(fixtures[operation] ? 200 : 404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ protocol_version: 1, result: fixtures[operation]?.() }));
+            return;
+        }
         if (req.url === '/v1/chat/completions') {
             try { lastChatPayload = JSON.parse(raw); } catch (_) { lastChatPayload = null; }
         }
@@ -31,7 +45,7 @@ const upstream = http.createServer((req, res) => {
                 data: payload.input.map((_, index) => ({ index: embeddingMode === 'duplicate' ? 0 : index, embedding: queryVector })) }));
             return;
         }
-        if (deepseekMode === 'stall') {
+        if (deepseekMode === 'stall' || deepseekMode === 'review_stall') {
             // What DeepSeek sends while a request waits in its queue: 200 at once,
             // then keep-alive blank lines and no answer.
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -48,6 +62,14 @@ const upstream = http.createServer((req, res) => {
             res.end(JSON.stringify({ error: { message: 'Rate limit reached' } }));
             return;
         }
+        if (deepseekMode === 'truncated' || deepseekMode === 'empty') {
+            const truncated = deepseekMode === 'truncated';
+            res.end(JSON.stringify({
+                choices: [{ finish_reason: truncated ? 'length' : 'stop', message: { content: truncated ? '{"ok":true}' : '   ' } }],
+                usage: { completion_tokens: truncated ? 32000 : 512 }
+            }));
+            return;
+        }
         // A queued request that eventually ran: blank lines, then the JSON body.
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(`\n\n${JSON.stringify({ choices: [{ message: { content: deepseekContent } }] })}`);
@@ -61,6 +83,8 @@ async function main() {
         SILICONFLOW_API_KEY: 'test-key',
         SILICONFLOW_BASE_URL: upstreamUrl,
         EMBEDDING_TIMEOUT_MS: '2000',
+        NUMERIC_ALGORITHM_SERVICE_URL: upstreamUrl,
+        NUMERIC_ALGORITHM_SERVICE_TOKEN: 'test-key',
         DEEPSEEK_API_KEY: 'test-key',
         DEEPSEEK_BASE_URL: upstreamUrl,
         DEEPSEEK_TIMEOUT_MS: '200',
@@ -104,6 +128,15 @@ async function main() {
 
         deepseekContent = '{"ok":true}';
         assert.deepEqual(await completeDeepseekJson({ system: 's', user: 'u' }), { ok: true });
+        assert.deepEqual(lastChatPayload.thinking, { type: 'disabled' });
+        for (const [mode, reason, tokens] of [['truncated', 'length', 32000], ['empty', 'stop', 512]]) {
+            deepseekMode = mode;
+            await assert.rejects(completeDeepseekJson({ system: 's', user: 'u' }), (error) => {
+                assert.equal(error.code, 'model_output_truncated');
+                assert.match(error.message, new RegExp(`finish_reason=${reason}.*completion_tokens=${tokens}`));
+                return true;
+            });
+        }
         deepseekMode = 'garbage';
         await assert.rejects(completeDeepseekJson({ system: 's', user: 'u' }), /invalid JSON body/);
         deepseekMode = 'rate_limited';
@@ -126,26 +159,24 @@ async function main() {
             .run(BigInt(placeId), Buffer.from(new Float32Array(queryVector).buffer));
 
         warnings.length = 0;
+        deepseekMode = 'review_stall';
         const result = await searchSemanticPlaces('想吃一顿漂亮饭', {
-            center: { lat: 23.1291, lng: 113.2644 },
+            prepareRatings: async () => {},            center: { lat: 23.1291, lng: 113.2644 },
             bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
         });
-        assert.equal(result.recommendations.length, 1, 'a stalled DeepSeek review must not reject every candidate');
-        assert.equal(result.recommendations[0].place.id, placeId);
-        assert.equal(result.recommendations[0].review_source, 'local_fallback');
+        assert.equal(result.status, 'unavailable', 'all-batch review failure takes the unavailable path');
+        assert.deepEqual(result.recommendations, []);
         assert.ok(
             warnings.some((line) => /DeepSeek relevance review failed: upstream response body timed out/.test(line)),
             'a stalled DeepSeek review must be logged'
         );
-
-        assert.equal(result.recommendations[0].reason_source, 'template');
 
         // DSC-C09: a completed review only selects and quotes; the sentence is a fixed template.
         const searchPrettyMeal = async (evidence) => {
             deepseekMode = 'ok';
             deepseekContent = JSON.stringify({ recommendations: [{ name: '精致摆盘小馆', relevant: true, confidence: 0.9, evidence }] });
             return searchSemanticPlaces('想吃一顿漂亮饭', {
-                center: { lat: 23.1291, lng: 113.2644 },
+                prepareRatings: async () => {},                center: { lat: 23.1291, lng: 113.2644 },
                 bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
             });
         };
@@ -181,7 +212,7 @@ async function main() {
         deepseekMode = 'ok';
         deepseekContent = JSON.stringify({ recommendations: [{ name: '巷口面馆', relevant: true, confidence: 0.8, evidence: '' }] });
         const sparseCity = await searchSemanticPlaces('附近吃碗面', {
-            center: { lat: 23.1291, lng: 113.2644 },
+            prepareRatings: async () => {},            center: { lat: 23.1291, lng: 113.2644 },
             bounds: { minLat: 23.1, minLng: 113.23, maxLat: 23.16, maxLng: 113.3 }
         });
         const reviewedNames = JSON.parse(lastChatPayload.messages[1].content).recommended_places.map((place) => place.name);
@@ -189,7 +220,8 @@ async function main() {
         assert.ok(!reviewedNames.some((name) => name.startsWith('北京面馆')), 'places outside the radius are never candidates');
         assert.deepEqual(sparseCity.recommendations.map((item) => item.place.id), [noodleId]);
 
-        console.log(JSON.stringify({ status: result.status, reviewSource: result.recommendations[0].review_source, quotedReason: quoted.recommendations[0].reason }));
+        assert.equal(quoted.recommendations[0].place.id, placeId);
+        console.log(JSON.stringify({ status: result.status, reviewSource: quoted.recommendations[0].review_source, quotedReason: quoted.recommendations[0].reason }));
     } finally {
         console.warn = originalWarn;
         upstream.closeAllConnections();

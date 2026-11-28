@@ -1,5 +1,9 @@
 const {randomUUID}=require('node:crypto');
 const OPERATIONS=new Set(['preference','vectormean','ratingweights','ratingweightspage','ratingsummary','ratingview','personalaverages','ratingsort','evidence','ratingestimate','ratingpredict','listrank','modelcontract','ratingquality']);
+const SEARCH_TIMEOUTS = new Map([
+    ['searchprofile', 240_000], ['searchcompile', 30_000], ['searchrank', 15_000], ['searchorder', 5_000]
+]);
+for (const operation of SEARCH_TIMEOUTS.keys()) OPERATIONS.add(operation);
 const MAX_INPUT=32*1024*1024,MAX_OUTPUT=1024*1024;
 function failure(status=503,code='unavailable') {return Object.assign(new Error(status===409?'数据已变化，请重试':'计算服务暂不可用，请稍后重试'),{status,publicMessage:status===409?'数据已变化，请重试':'计算服务暂不可用，请稍后重试',code});}
 function configuration(){
@@ -22,6 +26,84 @@ async function capabilities(){
         capabilityCache={key,value,until:Date.now()+5000};return value;
     }catch{return null;}finally{clearTimeout(timer);}
 }
+let searchCapabilityCache = null;
+const profileVersion = (value) => integer(value) && value > 0;
+
+async function searchCapabilities() {
+    const config = configuration();
+    if (!config) return null;
+    const key = config.url + '|' + config.token;
+    if (searchCapabilityCache?.key === key && Date.now() < searchCapabilityCache.until) {
+        return searchCapabilityCache.value;
+    }
+    try {
+        const response = await fetch(config.url + '/v1/capabilities', {
+            signal: AbortSignal.timeout(3000), redirect: 'error',
+            headers: { Authorization: 'Bearer ' + config.token, Accept: 'application/json' }
+        });
+        if (!response.ok || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+        const { protocol_version, result } = await response.json();
+        if (protocol_version !== 1 || !profileVersion(result?.search?.profile_version)) return null;
+        const value = { profile_version: result.search.profile_version };
+        searchCapabilityCache = { key, value, until: Date.now() + 5000 };
+        return value;
+    } catch {
+        return null;
+    }
+}
+
+const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const strings = (value) => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+const unit = (value) => Number.isFinite(value) && value >= 0 && value <= 1;
+const cost = (value) => value === null || Number.isFinite(value) && value >= 0;
+
+function validateSearch(operation, result, input) {
+    if (!record(result)) invalid();
+    const { profile_version, model, results, plan, candidates, vector, counts, order } = result;
+    if (operation === 'searchprofile') {
+        const allowed = new Set(input.places.map(({ id }) => id));
+        if (!profileVersion(profile_version) || typeof model !== 'string' || !model.trim()
+            || unique(results, (row) => row?.id, allowed).length !== allowed.size) invalid();
+        for (const { status, facts, inferred, closed } of results) {
+            if (typeof closed !== 'boolean' || !['done', 'invalid'].includes(status)) invalid();
+            if (status === 'invalid') {
+                if (facts !== null || inferred !== null || closed) invalid();
+                continue;
+            }
+            if (!record(facts) || !record(inferred) || !record(facts.evidence)
+                || !Object.values(facts.evidence).every((quote) => typeof quote === 'string')
+                || !['food', 'meals', 'scenes', 'features'].every((field) => strings(facts[field]) && strings(inferred[field]))
+                || !strings(facts.dishes) || !cost(facts.cost_mentioned) || facts.closed !== closed) invalid();
+        }
+    } else if (operation === 'searchcompile') {
+        if (!profileVersion(profile_version) || !record(plan) || !Array.isArray(plan.core)
+            || !plan.core.every((group) => strings(group) && group.length > 0)
+            || !['soft', 'must_not', 'exclude_tags', 'keywords'].every((field) => strings(plan[field]))
+            || !plan.exclude_tags.every((tag) => input.tags.includes(tag))
+            || !cost(plan.min_cost) || !cost(plan.max_cost)
+            || (plan.min_cost !== null && plan.max_cost !== null && plan.min_cost > plan.max_cost)) invalid();
+    } else if (operation === 'searchrank') {
+        const allowed = new Set(input.places.map(({ id }) => id));
+        const ids = unique(candidates, (row) => row?.id, allowed);
+        if (!record(counts) || counts.pool !== allowed.size || !integer(counts.eligible) || !integer(counts.with_evidence)
+            || counts.eligible > counts.pool || counts.with_evidence > counts.eligible || ids.length > counts.with_evidence
+            || !record(vector) || typeof vector.wanted !== 'boolean' || !integer(vector.max) || !vector.max) invalid();
+        if (vector.wanted || vector.eligible_ids !== undefined) {
+            const eligible = new Set(unique(vector.eligible_ids, (id) => id, allowed));
+            if (eligible.size !== counts.eligible || ids.some((id) => !eligible.has(id))) invalid();
+        }
+        for (const row of candidates) {
+            if (!unit(row.evidence_norm) || !unit(row.retrieval_norm) || typeof row.factual_core !== 'boolean'
+                || !cost(row.review_cost) || !record(row.matched)
+                || !['core', 'soft', 'keywords'].every((field) => strings(row.matched[field]))) invalid();
+        }
+    } else if (operation === 'searchorder') {
+        const allowed = new Set(input.items.map(({ id }) => id));
+        if (unique(order, (id) => id, allowed).length !== allowed.size) invalid();
+    }
+    return result;
+}
+
 function vector(value,width=4){
     if(typeof value!=='string'||!/^[A-Za-z0-9+/]+={0,2}$/.test(value))invalid();
     const b=Buffer.from(value,'base64');if(b.length!==1024*width)invalid();
@@ -43,6 +125,7 @@ function validateSummary(r){
 }
 function unique(rows,key,allowed){if(!Array.isArray(rows))invalid();const ids=rows.map(key);if(new Set(ids).size!==ids.length||allowed&&ids.some(id=>!allowed.has(id)))invalid();return ids;}
 function validate(op,r,i={}){
+    if(SEARCH_TIMEOUTS.has(op))return validateSearch(op,r,i);
     if(!r||typeof r!=='object')invalid();
     if(i.calibration_policy!==undefined&&r.calibration_policy!==i.calibration_policy)invalid();
     if(i.text_evidence_policy!==undefined&&(r.text_evidence_policy!==i.text_evidence_policy||r.text_evidence_mode!==i.text_evidence_mode))invalid();
@@ -103,11 +186,12 @@ function validate(op,r,i={}){
     if(op==='evidence'&&![r.accepted,r.excluded,r.deduplicated].every(integer))invalid();
     return r;
 }
-async function compute(operation,input,{signal,requestId=randomUUID(),timeoutMs=10000}={}){
+async function compute(operation,input,{signal,requestId=randomUUID(),timeoutMs=SEARCH_TIMEOUTS.get(operation)??10000}={}){
     if(!OPERATIONS.has(operation))throw failure(400,'invalid_input');const config=configuration();if(!config)throw failure();
     const maxOutput=operation==='modelcontract'?4*MAX_OUTPUT:MAX_OUTPUT;
     const context={contract_version:1,dataset_id:process.env.ALGORITHM_DATASET_ID||'primary',snapshot_id:randomUUID(),input_revision:0,as_of_ms:Date.now(),purpose:'operation',...input};
-    const body=JSON.stringify({request_id:requestId,input:context});if(Buffer.byteLength(body)>(operation==='ratingweights'?128*1024*1024:MAX_INPUT))throw failure(413,'payload_too_large');
+    const search=SEARCH_TIMEOUTS.has(operation);
+    const body=JSON.stringify({request_id:requestId,input:search?input:context});if(Buffer.byteLength(body)>(operation==='ratingweights'?128*1024*1024:MAX_INPUT))throw failure(413,'payload_too_large');
     const controller=new AbortController(),abort=()=>controller.abort();if(signal?.aborted)throw failure(503,'aborted');signal?.addEventListener('abort',abort,{once:true});const timer=setTimeout(abort,timeoutMs);
     try{
         const response=await fetch(`${config.url}/v1/compute/${operation}`,{method:'POST',redirect:'error',signal:controller.signal,headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/json',Accept:'application/json'},body});
@@ -115,8 +199,16 @@ async function compute(operation,input,{signal,requestId=randomUUID(),timeoutMs=
         const reader=response.body?.getReader();if(!reader)invalid();const parts=[];let length=0;
         try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>maxOutput){await reader.cancel();invalid();}parts.push(Buffer.from(value));}}finally{reader.releaseLock();}
         let data;try{data=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{invalid();}
+        if(search&&data?.protocol_version!==1)invalid();
+        if(search&&!response.ok){
+            const code=data.error?.code;
+            if(code==='model_output_truncated')throw failure(502,code);
+            if(response.status===429)throw failure(429,'rate_limited');
+            throw failure(503,code==='upstream_unavailable'?code:'unavailable');
+        }
         if(!response.ok)throw failure(response.status===409?409:response.status===429?429:503,data.error?.code||'unavailable');
         if(data.protocol_version!==1||!data.result)invalid();const result=data.result;
+        if(search)return validate(operation,result,input);
         for(const key of ['contract_version','dataset_id','snapshot_id','input_revision','as_of_ms'])if(result[key]!==context[key])invalid();
         return validate(operation,result,context);
     }catch(error){if(error.publicMessage)throw error;throw failure(503,controller.signal.aborted?'timeout':'unavailable');}
@@ -133,4 +225,4 @@ async function computeRatingWeights(input,options={}){
     }
     delete result.ticket;delete result.next;return validate('ratingweights',result,context);
 }
-module.exports={compute,computeRatingWeights,configuration,capabilities,validate,failure};
+module.exports={compute,computeRatingWeights,configuration,capabilities,searchCapabilities,validate,failure};
