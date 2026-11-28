@@ -351,6 +351,31 @@ assert.ok(sawSplit && sawMerge, '夹具没有覆盖拆分与合并');
     assert.deepEqual(planTransition(fallback, fine).reuse, new Map([['place:61', nw.aggregateKey], ['place:62', se.aggregateKey]]));
 }
 
+// ---- 粗级也带小格（2026-11-29）：z12 格的两个匿名点放大到 z14 格时各自接上自己小格里的点，不串到一个点上 ----
+{
+    const region = { kind: 'aggregate', tile: 5, cell: 12, minZoom: 8, maxZoom: 10, sub: 16 };
+    const city = { kind: 'aggregate', tile: 8, cell: 14, minZoom: 11, maxZoom: 12, sub: 16 };
+    const row = [[], -1, -1, 0];
+    const coarsePoints = expandAggregateTile({ z: 5, cell: 12, sub: 16, cells: [[0, 0, 3, 3, [[...row, 0], [...row, 255]]]] },
+        { tags: [], regions: [] }, '16/16');
+    const [nw, se] = [...coarsePoints].sort((a, b) => a.longitude - b.longitude);
+    const coarse = tileSnap(coarsePoints, 10, region);
+    assert.equal(coarse.visibleNodes.length, 2, '同一 z12 格的两家在 10 级分开显示，不再叠在全格重心');
+    // 细一级：两家各在自己 z16 小格里的某个 z14 格、z18 小格（z12 格 (2048,2048) 的西北角和东南角）
+    const fineBody = (cellX, cellY, subIndex) => ({ z: 8, cell: 14, sub: 16, cells: [[cellX % 64, cellY % 64, 3, 3, [[...row, subIndex]]]] });
+    const finePoints = [
+        ...expandAggregateTile(fineBody(8192, 8192, 0), { tags: [], regions: [] }, '128/128'),
+        ...expandAggregateTile(fineBody(8195, 8195, 255), { tags: [], regions: [] }, '128/128')
+    ];
+    const fine = tileSnap(finePoints, 11, city);
+    assert.equal(fine.visibleNodes.length, 2);
+    const split = planTransition(coarse, fine);
+    const fineNw = finePoints.find((p) => p.longitude < 0.01);
+    const fineSe = finePoints.find((p) => p.longitude > 0.01);
+    assert.equal(split.reuse.get(fineNw.aggregateKey), nw.aggregateKey, '西北角的点接西北角');
+    assert.equal(split.reuse.get(fineSe.aggregateKey), se.aggregateKey, '东南角的点接东南角');
+}
+
 // ---- 成员签名与顺序无关 ----
 assert.equal((hashString('a') ^ hashString('b')) >>> 0, (hashString('b') ^ hashString('a')) >>> 0);
 

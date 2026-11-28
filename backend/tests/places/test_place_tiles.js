@@ -119,10 +119,10 @@ async function main() {
         for (const body of bodies) for (const cell of body.cells) {
             assert.ok(cell[2] >= 0 && cell[2] <= 7 && cell[3] >= 0 && cell[3] <= 7, '重心取整到 1/8 格');
             assert.ok(cell[0] >= 0 && cell[0] < 2 ** (level.cell - level.tile));
-            assert.equal(body.sub, level.sub, '只有最细一级带小格');
+            assert.equal(level.sub, 16, '每一级都带 1/16 小格');
+            assert.equal(body.sub, level.sub);
             for (const row of cell[4]) {
-                if (level.sub) assert.ok(row.length === 5 && Number.isInteger(row[4]) && row[4] >= 0 && row[4] < level.sub ** 2, '行带 1/16 小格编号');
-                else assert.equal(row.length, 4, '较粗的两级不带小格');
+                assert.ok(row.length === 5 && Number.isInteger(row[4]) && row[4] >= 0 && row[4] < level.sub ** 2, '行带 1/16 小格编号');
             }
         }
         // 匿名行能还原筛选字段：标签、人均、地区、图标类型
@@ -162,6 +162,18 @@ async function main() {
     for (const point of anonymous) {
         const [x, y] = front.tileOf(point.longitude, point.latitude, 18);
         assert.ok(Math.abs(front.worldX(point.longitude, 18) - x - 0.5) < 1e-6 && Math.abs(front.worldY(point.latitude, 18) - y - 0.5) < 1e-6, '坐标取小格中心');
+    }
+    // 粗两级同样画在小格中心（z9 格 → z13，z12 格 → z16），不是全格的重心：筛选后只剩一家时也画在店附近
+    for (const level of placeTiles.AGGREGATE_LEVELS.slice(0, 2)) {
+        const subZoom = level.cell + Math.log2(level.sub);
+        const key = front.tileOf(113.2644, 23.1291, level.tile).join('/');
+        const body = await (await get(`/places/tiles/${manifest.tiles[level.tile][key]}/${level.tile}/${key}`)).json();
+        // z2 瓦片很大，也包含别的城市的测试店，只看广州这几家
+        const points = front.expandAggregateTile(body, dict, key).filter((p) => Math.abs(p.longitude - 113.27) < 1);
+        const at = (lng, lat) => front.tileOf(lng, lat, subZoom).join('/');
+        assert.deepEqual(points.map((p) => at(p.longitude, p.latitude)).sort(),
+            [[113.2644, 23.1291], [113.2650, 23.1295], [113.2702, 23.1301]].map(([lng, lat]) => at(lng, lat)).sort(), `z${level.cell} 格的点在店所在的 z${subZoom} 小格`);
+        assert.ok(points.every((p) => p.aggregateCell[3] === subZoom));
     }
     const matching = (raw) => anonymous.filter((p) => matchesPlaceFilter(p, normalizePlaceFilter(raw))).length;
     assert.equal(matching({ tags: ['甜品'] }), 1);
@@ -324,7 +336,7 @@ async function main() {
     assert.equal(limitedNearby.headers.get('cache-control'), 'no-store');
     assert.ok(Number(limitedNearby.headers.get('retry-after')) > 0);
 
-    console.log('Place tiles passed: aggregate tiles without ids/names (finest level with 1/16 sub-cells), counts per level, dictionary and anonymous rows, public/private cache headers, hash redirects and 404, leaf limits with tickets, content-addressed changes, /places 410, complete legacy nearby responses, legacy snapshot switch, legacy and detail limits.');
+    console.log('Place tiles passed: aggregate tiles without ids/names (every level with 1/16 sub-cells), counts per level, dictionary and anonymous rows, public/private cache headers, hash redirects and 404, leaf limits with tickets, content-addressed changes, /places 410, complete legacy nearby responses, legacy snapshot switch, legacy and detail limits.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {

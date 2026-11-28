@@ -11,7 +11,9 @@ const { publicPlaceSql } = require('./placeVisibility');
 // 前端 frontend/src/map/markerTiles.js 按同样的级别和格式读取，两边一起改。
 //
 // - 三级聚合瓦片：格子位置（成员重心，取整到 1/8 格）、店数、每家店匿名的一行（标签编号、人均、地区编号、图标类型）。
-//   最细一级（z14 格，sub: 16）的行再带店所在的 1/16 小格编号（约 140 m），放大到 z13 换明细时标记只挪几个像素。
+//   每一级（sub: 16）的行再带店所在的 1/16 小格编号（z9 格 → z13 小格约 4.4 km，z12 → z16 约 550 m，z14 → z18 约 140 m），
+//   点画在小格中心：筛选后只剩少数几家时也画在店附近，换级时标记只挪几个像素。z14 一级本来就公开了 140 m 小格，
+//   粗两级的小格比它粗，不多给信息。
 //   不带 id、店名和精确坐标：拉齐这些瓦片也对不上具体的店，id 只出现在明细瓦片和单店接口里（两处都有配额）。
 //   行按内容排序，不保留 id 顺序。公共缓存，URL 带内容哈希，永不过期。
 // - 明细瓦片（z12）：与旧快照相同的字段（id、店名、坐标、标签、人均、省市区、评价汇总），按 IP / 账号限流，只在浏览器缓存。
@@ -20,9 +22,10 @@ const { publicPlaceSql } = require('./placeVisibility');
 // 所有内容在内存里建好，TILE_SNAPSHOT_TTL_MS（默认 15 秒）内复用；压缩结果按需生成并缓存，内容没变的瓦片沿用旧的。
 
 const AGGREGATE_LEVELS = Object.freeze([
-    Object.freeze({ tile: 2, cell: 9, minZoom: 0, maxZoom: 7 }),
-    Object.freeze({ tile: 5, cell: 12, minZoom: 8, maxZoom: 10 }),
-    // sub：行里带格内 sub×sub 小格的编号（y * sub + x），只给紧接明细级的这一级
+    // sub：行里带格内 sub×sub 小格的编号（y * sub + x）。2026-11-29 前只有 z14 一级带，粗两级的点画在
+    // 全格所有店的重心：按标签筛选后只剩一两家时，最远画偏 40 多公里，放大换级时跳几十像素
+    Object.freeze({ tile: 2, cell: 9, minZoom: 0, maxZoom: 7, sub: 16 }),
+    Object.freeze({ tile: 5, cell: 12, minZoom: 8, maxZoom: 10, sub: 16 }),
     Object.freeze({ tile: 8, cell: 14, minZoom: 11, maxZoom: 12, sub: 16 })
 ]);
 const LEAF_LEVEL = Object.freeze({ tile: 12, minZoom: 13 });
