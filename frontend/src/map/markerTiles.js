@@ -323,6 +323,13 @@ export class MarkerTileSource {
         return entry && entry.hash === hash ? entry.places : undefined;
     }
 
+    /** 显示用：当前版本还没到时先用内存里这块的旧版本（清单刚更新、新版本在路上），免得这块的标记先消失 */
+    peekForDisplay(z, key) {
+        const current = this.peek(z, key);
+        if (current !== undefined) return current;
+        return this.tiles.get(`${z}/${key}`)?.places;
+    }
+
     async _ticketQuery() {
         if (!this.token) return '';
         const now = this.now();
@@ -469,6 +476,7 @@ export class MarkerTileStore {
         this.displayBand = null;
         this.displayBounds = null;
         this.targetBand = null;
+        this.loadedManifest = null;  // 最近一次按它拉过当前视野瓦片的清单
         this.switchToken = 0;
         this.overlay = { own: [], hiddenIds: new Set(), signature: '[]|' };
         this.patches = new Map();
@@ -560,6 +568,7 @@ export class MarkerTileStore {
         this.view = { bounds: normalized, logicalZoom, zoom };
         const manifest = this.source.manifest;
         if (!manifest) return false;
+        this.loadedManifest = manifest;
         const band = bandForZoom(manifest, logicalZoom);
         this.targetBand = band;
         const token = ++this.switchToken;
@@ -603,6 +612,14 @@ export class MarkerTileStore {
             this.setView({ bounds: this.view.bounds, zoom: this.view.zoom });
             this._notify();
             return;
+        }
+        // 清单换了版本（后台刷新）：当前视野里内容变了的瓦片按新哈希重拉。setView 只在地图移动时拉，
+        // 不补的话地图停着时这些块会一直空着（显示时先用旧版本顶着，见 peekForDisplay）
+        if (manifest !== this.loadedManifest) {
+            this.loadedManifest = manifest;
+            for (const [z, key] of this._neededLoads(this.targetBand)) {
+                if (this.source.peek(z, key) === undefined) this.source.load(z, key);
+            }
         }
         if (bandId(this.targetBand) !== bandId(this.displayBand)) {
             const ready = this._neededLoads(this.targetBand).every(([z, key]) => this.source.peek(z, key) !== undefined);
@@ -701,7 +718,7 @@ export class MarkerTileStore {
         const fallbackShift = fallback ? 2 ** (band.tile - fallback.tile) : 1;
         const fallbackCellShift = fallback ? 2 ** (fallback.cell - band.tile) : 1;
         for (const key of this._coverage(band, this.displayBounds)) {
-            const leaf = this.source.peek(band.tile, key);
+            const leaf = this.source.peekForDisplay(band.tile, key);
             if (leaf) {
                 yield* leaf;
                 continue;
@@ -710,7 +727,7 @@ export class MarkerTileStore {
             if (!fallback) continue;
             const [x, y] = key.split('/').map(Number);
             const parentKey = `${Math.floor(x / fallbackShift)}/${Math.floor(y / fallbackShift)}`;
-            const parent = this.source.peek(fallback.tile, parentKey);
+            const parent = this.source.peekForDisplay(fallback.tile, parentKey);
             if (!parent) continue;
             for (const place of parent) {
                 const [, cellX, cellY] = place.aggregateCell;
@@ -736,7 +753,7 @@ export class MarkerTileStore {
         let expiresAt = Infinity;
         if (band && band.kind === 'aggregate') {
             for (const key of this._coverage(band, this.displayBounds)) {
-                const places = this.source.peek(band.tile, key);
+                const places = this.source.peekForDisplay(band.tile, key);
                 if (places) for (const place of places) { yield; byKey.set(place.aggregateKey, place); }
             }
         } else if (band) {

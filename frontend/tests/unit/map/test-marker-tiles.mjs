@@ -307,4 +307,41 @@ function fakeServer({ leafStatus = 200 } = {}) {
     limitedStore.dispose();
 }
 
-console.log('Marker tiles passed: tile math, band selection, anonymous aggregate points with filters and 1/16 sub-cells, leaf rows, header-free public requests and leaf tickets, local storage, 429 stop, prefetch limits, atomic band switch, leaf fallback, overlay and local patches.');
+// ---- 清单在后台更新：视野里内容变了的瓦片不用等地图移动就按新哈希重拉，新版本到之前旧版本照常显示 ----
+{
+    const server = fakeServer();
+    const newHash = 'ffffffffffff';
+    const manifestV2 = { ...manifest, version: 'm2', tiles: { ...tiles, 8: { ...tiles[8], [gzCityKey]: newHash } } };
+    const bodyV2 = aggregateBody(LEVELS[2], gzCityKey);
+    bodyV2.cells[0][4] = bodyV2.cells[0][4].map((row) => (row[0].includes(2) ? [[2, 3, 4], ...row.slice(1)] : row));
+    let current = manifest;
+    let releaseV2;
+    const v2Arrived = new Promise((resolve) => { releaseV2 = resolve; });
+    const fetchImpl = async (url, options) => {
+        const path = new URL(url).pathname;
+        const json = (data) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => data });
+        if (path === '/places/tiles/manifest') return json(current);
+        if (path === `/places/tiles/${newHash}/8/${gzCityKey}`) { await v2Arrived; return json(bodyV2); }
+        return server.fetchImpl(url, options);
+    };
+    const source = new MarkerTileSource({ backendUrl: 'https://example.test', fetchImpl });
+    const store = new MarkerTileStore(source);
+    store.subscribe(() => {});
+    await source.start();
+    const gzBounds = { minLng: 113.2, maxLng: 113.35, minLat: 23.05, maxLat: 23.2 };
+    store.setView({ bounds: gzBounds, zoom: 11.6 });
+    await sleep(40);
+    assert.equal(store.all().length, 2);
+
+    current = manifestV2;
+    await source.refresh({ force: true, maxAgeMs: 0 });
+    await sleep(40);
+    assert.equal(store.all().length, 2, '新版本还在路上时旧版本照常显示，这块的标记不消失');
+    releaseV2();
+    await sleep(40);
+    assert.equal(source.peek(8, gzCityKey)?.length, 2, '地图没动也按新哈希拉到了新版本');
+    assert.ok(store.all().some((p) => p.category === '面食,小吃,烤鸭'), '显示的是新版本');
+    store.dispose();
+}
+
+console.log('Marker tiles passed: tile math, band selection, anonymous aggregate points with filters and 1/16 sub-cells, leaf rows, header-free public requests and leaf tickets, local storage, 429 stop, prefetch limits, atomic band switch, leaf fallback, overlay and local patches, background manifest refresh.');

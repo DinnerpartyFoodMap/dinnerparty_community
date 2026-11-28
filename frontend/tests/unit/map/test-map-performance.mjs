@@ -33,6 +33,7 @@ const source = {
     manifest: { levels:[{tile:2,cell:9,minZoom:0,maxZoom:7}],leaf:{tile:12,minZoom:13} },
     hashOf: () => 'hash',
     peek: (z,key) => z === 12 && originalKeys.has(key) ? [row] : undefined,
+    peekForDisplay: (z,key) => source.peek(z,key),
     load: () => new Promise(() => {})
 };
 const store = new MarkerTileStore(source, { now:()=>now,patchTtlMs:10,switchWaitMs:1 });

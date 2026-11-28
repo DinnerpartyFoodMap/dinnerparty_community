@@ -47,7 +47,7 @@ test('queries for newly prepared children resolve within the same data revision'
 test('tile composition publishes 200k places atomically and yields between slices',async()=>{
     const rows=Array.from({length:200000},(_,i)=>({id:i+1,longitude:120,latitude:30}));
     const [x,y]=tileOf(120,30,12);
-    const source={manifest:{levels:[],leaf:{tile:12,minZoom:13}},hashOf:()=> 'h',peek:()=>rows,load:()=>Promise.resolve(rows)};
+    const source={manifest:{levels:[],leaf:{tile:12,minZoom:13}},hashOf:()=> 'h',peek:()=>rows,peekForDisplay:()=>rows,load:()=>Promise.resolve(rows)};
     const store=new MarkerTileStore(source);
     store.setView({bounds:{minLng:lngOf(x+.01,12),maxLng:lngOf(x+.99,12),minLat:latOf(y+.99,12),maxLat:latOf(y+.01,12)},zoom:16});
     let published=false,beats=0;const timer=setInterval(()=>beats++,0);
