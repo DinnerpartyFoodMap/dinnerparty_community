@@ -762,6 +762,7 @@ function init() {
         require('../modules/skins/services/skinSchema').initSkinSchema(rawDb);
         require('../modules/feedback/services/feedbackSchema').initFeedbackSchema(rawDb);
         require('../modules/places/services/placeRegionSchema').initPlaceRegionSchema(rawDb);
+        require('../modules/places/services/placeChainTagSchema').initPlaceChainTagSchema(rawDb);
         require('../modules/venues/services/venueSchema').initVenueSchema(rawDb);
         require('../modules/rooms/services/roomSchema').initRoomSchema(rawDb);
         require('../modules/preferences/services/tasteAxes').initTasteAxesSchema(rawDb);

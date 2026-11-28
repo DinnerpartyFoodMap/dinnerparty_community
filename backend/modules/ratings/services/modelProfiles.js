@@ -6,6 +6,7 @@ const logger=require('../../../infrastructure/logger');
 const ai=require('../../../infrastructure/aiClients');
 const {clip}=require('./modelEmbeddings');
 const {markdownToPlainText}=require('../../places/services/markdownText');
+const {hasChainTag,stripChainTag}=require('../../places/services/chainTagText');
 const SCHEMA_VERSION=1;
 const EXTRACTION_FORMAT_VERSION=3;
 const initializedDatabases=new WeakSet();
@@ -137,7 +138,8 @@ function inputFor(placeId,database=db._raw){
  const now=Date.now(),comments=queries.comments.all(placeId,now,now)
  .map(({source,...c})=>({...c,content:clip((source==='resident'?c.content:markdownToPlainText(c.content)).trim(),300)})).filter(c=>c.content.length>0)
  .sort((a,b)=>String(a.time).localeCompare(String(b.time))||a.id-b.id);
- return {place:{...place,description:clip(markdownToPlainText(place.description||''),400)},reviews:comments};
+ const category=hasChainTag(place.category)?stripChainTag(place.category)||null:place.category;
+ return {place:{...place,category,description:clip(markdownToPlainText(place.description||''),400)},reviews:comments};
 }
 function inputHash(input){return createHash('sha256').update(JSON.stringify([SCHEMA_VERSION,input])).digest('hex');}
 const fieldId=(prefix,k)=>prefix+String(k).padStart(prefix==='c'?3:2,'0');

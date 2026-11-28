@@ -1,9 +1,11 @@
 // Portable features: no external identities, current GPS or assumed brands.
+const {stripChainTag}=require('../../places/services/chainTagText');
 const AXES=['homestyle','noodles','hotpotBbq','dessert','drinks','foreign'];
 const ENGLISH={homestyle:['chinese'],noodles:['fast food','sandwich','pizza','hamburger','chicken','breakfast'],hotpotBbq:['barbecue','korean bbq','hot pot','hotpot'],dessert:['cake','bakery','ice cream','icecream','dessert'],drinks:['coffee','tea','cafe','café'],foreign:['japanese','korean','thai','italian','mexican','american','steak']};
 function axes(place){
- const result=new Set(require('../../preferences/services/tasteAxes').ruleAxes(place));
- const text=String(place.category||place.style||'').toLowerCase();
+ const category=stripChainTag(place.category);
+ const result=new Set(require('../../preferences/services/tasteAxes').ruleAxes({...place,category}));
+ const text=String(category||place.style||'').toLowerCase();
  for(const axis of AXES)if(ENGLISH[axis].some(word=>text.includes(word)))result.add(axis);
  return AXES.map(axis=>result.has(axis)?1:0);
 }

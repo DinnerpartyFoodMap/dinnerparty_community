@@ -48,6 +48,7 @@
         "test:images": "node tests/media/test_image_storage.js",
         "test:place-share": "node tests/places/test_place_share.js",
         "test:place-moderation": "node tests/places/test_place_moderation.js",
+        "test:chain-tags": "node tests/places/test_place_chain_tags.js && node tests/places/test_place_chain_tags_independent.js",
         "test:place-requests": "node tests/places/test_place_requests.js",
         "test:place-duplicates": "node tests/places/test_place_duplicates.js",
         "test:creator-places": "node tests/places/test_creator_places.js",
@@ -67,6 +68,7 @@
         "categories:merge": "node scripts/places/merge_categories.js",
         "edit-comments:rewrite": "node scripts/ratings/rewrite_edit_comments.js",
         "places:regions": "node scripts/places/fill_place_regions.js",
+        "places:chain-report": "node scripts/places/chain_tag_report.js",
         "places:check-coordinates": "node scripts/places/check_place_coordinates.js",
         "places:reassign-owners": "node scripts/places/reassign_place_owners.js"
     },

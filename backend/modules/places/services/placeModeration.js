@@ -396,6 +396,7 @@ async function moderatePlace(placeId) {
     const result = applyTransaction.immediate(placeId, hash, report, usedAi);
     if (result.outcome === 'changed') scheduleModeration([placeId]);
     if (result.notify) wakeNotificationWorker();
+    if (result.outcome === 'visible') require('./placeChainTags').wakePlaceChainWorker();
     if (result.outcome === 'visible' || result.outcome === 'pending') {
         logger.info('Place moderation finished', {
             event: 'place.moderation.finished', placeId, outcome: result.outcome, reasons: report.decision.reasons,
@@ -527,7 +528,7 @@ function reviewCreationRequestSync(request, action, adminId) {
     const queued = approve ? enqueuePlaceCreatedNotifications([place.id], { source }) : 0;
     insertAdminAction(adminId, 'place-moderation-review', place.creator_id || null,
         JSON.stringify({ request_id: request.id, place_id: place.id, action }));
-    return { action, placeId: place.id, semanticChanged: false, notify: queued > 0 };
+    return { action, placeId: place.id, semanticChanged: false, notify: queued > 0, becameVisible: approve };
 }
 
 /** 地点删除后：待处理的新增复核申请记为撤回 */

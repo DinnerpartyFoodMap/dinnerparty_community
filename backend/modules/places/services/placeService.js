@@ -3,19 +3,18 @@ const { normalizeImageUrls } = require('../../media/services/imageUrls');
 const { enqueuePlaceCreatedNotifications, wakeNotificationWorker } = require('./placeNotifications');
 const { RATING_COLUMNS_SQL, isValidScore, defaultCreationScore, insertCreationRating } = require('../../ratings/services/placeRatings');
 const { registerNewPlaceSync, scheduleModeration } = require('./placeModeration');
-const { parseCategoryNames, canonicalCategoryNames } = require('./categoryMerges');
+const { parseCategoryNames, normalizeCategoryList, syncCategoryRegistry,
+    getCategoryNameLength, PLACE_CATEGORY_MAX_LENGTH, HTML_TAG_PATTERN } = require('./categoryMerges');
 const { hasExploreTag } = require('../../ratings/services/ratingWarning');
 
 // Shared validation and creation for every path that adds a marker (web/App,
 // QQ Bot, public diaries). Insertion is synchronous so callers can run it
 // inside their own SQLite transaction; network work happens only after commit.
 const PLACE_NAME_MAX_LENGTH = 120;
-const PLACE_CATEGORY_MAX_LENGTH = 240;
 const PLACE_DESCRIPTION_MAX_LENGTH = 1000;
 // 描述最少字数，不算空白；与前端 src/places/placeDescription.js 一致
 const PLACE_DESCRIPTION_MIN_LENGTH = 15;
 const PLACE_ADDRESS_MAX_LENGTH = 250;
-const HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
 // The map (Web Mercator) ends at ±85.0511°. Clicking the blank area beyond it still yields
 // 85°–90°, and the frontend marker layer drops such points (cluster/engine.js
 // MAX_MERCATOR_LAT), so a place saved there could never be shown or selected.
@@ -28,22 +27,6 @@ const PLACE_WITH_NAMES_SQL = `SELECT p.*, u.username AS creator_name, uu.usernam
                  LEFT JOIN User u ON p.creator_id = u.id
                  LEFT JOIN User uu ON p.updated_by = uu.id
                  WHERE p.id = ?`;
-
-function getCategoryNameLength(value) {
-    return Array.from(value).reduce((length, character) => (
-        length + (character.codePointAt(0) > 0x7f ? 2 : 1)
-    ), 0);
-}
-
-// 相同或相近的标签换成保留的标签（categoryMerges.json），所有写入路径都经过这里
-function normalizeCategoryList(value) {
-    const names = canonicalCategoryNames(parseCategoryNames(value));
-    const invalidName = names.find((name) => /[,，]/.test(name) || HTML_TAG_PATTERN.test(name) || getCategoryNameLength(name) > 16);
-    if (invalidName) {
-        return { error: `分类“${invalidName}”不能超过8个汉字或16个英文字符，且仅支持纯文本` };
-    }
-    return { value: names.join(', '), names };
-}
 
 // allowHtml：只给地点描述用。描述按 Markdown（含 HTML）显示，网页由 DOMPurify 按白名单清理后才插入，
 // 不能显示格式的地方（分享页、QQ 机器人等）先转成纯文字，所以保存时不必拒绝 HTML；
@@ -193,17 +176,6 @@ function validateNewPlace(input = {}) {
     };
 }
 
-function syncCategoryRegistry(names, creatorId) {
-    if (!Array.isArray(names) || names.length === 0) return;
-    const insert = db._raw.prepare(
-        `INSERT OR IGNORE INTO Category (name, is_common, sort_order, created_by)
-         VALUES (?, 0, 1000, ?)`
-    );
-    db._raw.transaction((items) => {
-        items.forEach((name) => insert.run(name, creatorId || null));
-    })(names);
-}
-
 // 同一经纬度（按表单显示的 6 位小数，约 0.1 米）同名的地点只能有一个；被驳回的不算。
 // 网络卡顿时重复提交、回应丢失后重试都会落到这里。
 const SAME_POSITION_EPSILON = 5e-7;
@@ -273,6 +245,7 @@ function afterPlacesCreated(placeIds) {
         wakeNotificationWorker();
         // 省 / 市 / 区（地区筛选）：后台批量逆地理编码
         try { require('./placeRegions').wakePlaceRegionWorker(); } catch (_) { /* the region worker picks it up later */ }
+        try { require('./placeChainTags').wakePlaceChainWorker(); } catch (_) { /* the chain worker picks it up later */ }
     });
     scheduleModeration(ids);
 }

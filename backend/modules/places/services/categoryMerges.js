@@ -4,6 +4,8 @@
 // 已有数据由 scripts/places/merge_categories.js 一次性合并。
 
 const { merges } = require('../categoryMerges.json');
+const PLACE_CATEGORY_MAX_LENGTH = 240;
+const HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
 
 function parseCategoryNames(value) {
     return [...new Set(String(value || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
@@ -38,9 +40,36 @@ function canonicalCategoryNames(names) {
     return result;
 }
 
+function getCategoryNameLength(value) {
+    return Array.from(value).reduce((length, character) => (
+        length + (character.codePointAt(0) > 0x7f ? 2 : 1)
+    ), 0);
+}
+
+function normalizeCategoryList(value) {
+    const names = canonicalCategoryNames(parseCategoryNames(value));
+    const invalidName = names.find((name) => /[,，]/.test(name) || HTML_TAG_PATTERN.test(name) || getCategoryNameLength(name) > 16);
+    if (invalidName) {
+        return { error: `分类“${invalidName}”不能超过8个汉字或16个英文字符，且仅支持纯文本` };
+    }
+    return { value: names.join(', '), names };
+}
+
+function syncCategoryRegistry(names, creatorId, database = require('../../../infrastructure/database').db._raw) {
+    if (!Array.isArray(names) || names.length === 0) return;
+    const insert = database.prepare(
+        `INSERT OR IGNORE INTO Category (name, is_common, sort_order, created_by)
+         VALUES (?, 0, 1000, ?)`
+    );
+    database.transaction((items) => {
+        items.forEach((name) => insert.run(name, creatorId || null));
+    })(names);
+}
+
 /** 合并表：[{ source, target }]（脚本与测试用） */
 function categoryMergeEntries() {
     return Object.entries(merges || {}).map(([source, target]) => ({ source: String(source).trim(), target: String(target).trim() }));
 }
 
-module.exports = { parseCategoryNames, canonicalCategoryName, canonicalCategoryNames, categoryMergeEntries };
+module.exports = { parseCategoryNames, canonicalCategoryName, canonicalCategoryNames, categoryMergeEntries,
+    normalizeCategoryList, syncCategoryRegistry, getCategoryNameLength, PLACE_CATEGORY_MAX_LENGTH, HTML_TAG_PATTERN };

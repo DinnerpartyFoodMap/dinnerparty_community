@@ -1,5 +1,6 @@
 const {db}=require('../../../infrastructure/database');
 const client=require('../../../infrastructure/numericAlgorithmClient');
+const {stripChainTag}=require('../../places/services/chainTagText');
 const snapshot=require('./ratingSnapshot');
 const {classifyRatingEvidence}=require('./ratingSourcePolicy');
 const {createFeatures}=require('./bootstrapFeatures');
@@ -54,7 +55,7 @@ async function quality(context,config,excludeViewer=null){
  const text=require('./ratingTextEvidence'),textMode=text.mode(),textFactors=text.factors(context.as_of_ms),hasText=textFactors.size>0&&textMode!=='off';
  const key=JSON.stringify([context.input_revision,config.model.model_hash,excludeViewer,config.calibration_policy,textMode,[...textFactors]]),cached=qualityCache.get(key);if(cached&&context.as_of_ms>=cached.from&&context.as_of_ms<cached.until)return cached.result;
  const graph=featureGraph(context,config,db._raw),places=graph.places,ratings=graph.ratings.filter(r=>r.user_id!==excludeViewer).map(({place_id,user_id,score})=>({place_id,user_id,score})),assets=graph.assets,rated=new Set(ratings.map(r=>r.place_id));
- const place_groups=places.filter(p=>rated.has(p.id)).map(p=>{const raw=assets.get(p.id)?.primary_style||assets.get(p.id)?.categories?.[0]||String(p.category||'').split(/[,，|]/)[0].trim();return {place_id:p.id,group_id:raw&&!['其他','未分类','餐厅','地点'].includes(raw)?raw:null,avoid:hasAvoidTag(p.category)};});
+ const place_groups=places.filter(p=>rated.has(p.id)).map(p=>{const raw=assets.get(p.id)?.primary_style||assets.get(p.id)?.categories?.[0]||stripChainTag(p.category).split(/[,，|]/)[0].trim();return {place_id:p.id,group_id:raw&&!['其他','未分类','餐厅','地点'].includes(raw)?raw:null,avoid:hasAvoidTag(p.category)};});
  const weighted=hasText?ratings.map(r=>({...r,text_weight:textFactors.get(JSON.stringify([r.place_id,r.user_id]))??1})):ratings;
  const result=client.compute('ratingquality',{...context,config_version:config.config_version,model_hash:config.model.model_hash,calibration_policy:config.calibration_policy,...(hasText?{text_evidence_policy:text.POLICY,text_evidence_mode:textMode}:{}),ratings:weighted,place_groups},{timeoutMs:30000}).then(r=>{
   if(excludeViewer===null&&(r.shadow_qualities||r.baseline_qualities)){const base=new Map((r.baseline_qualities||r.qualities).map(p=>[p.place_id,p.average])),deltas=(r.shadow_qualities||r.qualities).map(p=>p.average-base.get(p.place_id));textShadow={mode:textMode,input_revision:context.input_revision,as_of_ms:context.as_of_ms,places:deltas.length,changed:deltas.filter(v=>Math.abs(v)>1e-12).length,mean_shift:deltas.length?deltas.reduce((a,b)=>a+b,0)/deltas.length:0,max_absolute_shift:deltas.length?deltas.reduce((a,b)=>Math.max(a,Math.abs(b)),0):0};}

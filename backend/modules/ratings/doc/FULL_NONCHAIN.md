@@ -2,6 +2,8 @@
 
 This migration extends the three product paths beyond the original 6/13-feature bootstrap. Chain identity, brand priors and explicit chain properties are excluded. Google commercial data use is user-confirmed. Published research numbers remain historical evidence; non-chain models have their own recorded development results.
 
+「连锁店」标签不进评分输入。
+
 “Non-chain” names the feature ablation, not a restriction to independent restaurants: existing restaurants and ratings are not removed based on ownership. Raw place names remain part of the description text, so text embeddings can still carry implicit name information. No brand registry, chain matching or cross-branch score prior is built.
 
 ## Computation and display

@@ -3,6 +3,7 @@ const {EMBEDDING_MODEL}=require('../../../infrastructure/aiClients');
 const {context,same,profileRows}=require('./ratingSnapshot');
 const {placeMeanVector}=require('./meanVectorAdapter');
 const client=require('../../../infrastructure/numericAlgorithmClient');
+const {stripChainTag}=require('../../places/services/chainTagText');
 function userRatingWeight(id){return db._raw.prepare('SELECT weight FROM UserReputation WHERE user_id=?').get(id)?.weight??0.5;}
 function encodeMean(value){if(!value)return null;const b=Buffer.alloc(1024*8);value.forEach((n,i)=>b.writeDoubleLE(n,i*8));return b.toString('base64');}
 let pending=null,started=false;
@@ -13,7 +14,8 @@ async function refreshRatingWeights(now=Date.now()){
         const mean=isVectorSearchAvailable()?encodeMean(await placeMeanVector(now)):null;
         const input=db._raw.transaction(()=>({...context(now),model:EMBEDDING_MODEL,mean,
             users:db._raw.prepare('SELECT id,is_banned FROM User').all(),
-            places:db._raw.prepare('SELECT id,creator_id,description,category,per_person_cost,exterior_images,menu_images FROM Place').all(),
+            places:db._raw.prepare('SELECT id,creator_id,description,category,per_person_cost,exterior_images,menu_images FROM Place').all()
+                .map(place=>({...place,category:stripChainTag(place.category)||null})),
             ratings:db._raw.prepare('SELECT place_id,user_id,score,source,updated_at FROM PlaceRating').all(),
             favorites:db._raw.prepare('SELECT user_id,place_id FROM Favorite').all(),
             requests:db._raw.prepare("SELECT requester_id,status FROM PlaceRequest WHERE status='approved'").all(),profiles:isVectorSearchAvailable()?profileRows():[]}))();

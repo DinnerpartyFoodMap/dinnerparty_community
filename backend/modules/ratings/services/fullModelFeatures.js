@@ -1,5 +1,6 @@
 // P85/P87/P91/P92/P93 numeric feature definitions, with all chain fields removed.
 // Values use the research five-star axis internally; product inputs remain four levels.
+const {stripChainTag}=require('../../places/services/chainTagText');
 const DAY=86400000;
 const star=y=>1+4*(y-1)/3;
 const mean=x=>x.length?x.reduce((a,b)=>a+b,0)/x.length:null;
@@ -18,7 +19,7 @@ function project(vector,spec){
  const centered=sub(vector,spec.mean);return spec.components.map((c,i)=>dot(c,centered)/(spec.sd?.[i]>0?spec.sd[i]:1));
 }
 function timestamp(r){const t=Number(r.created_at??r.updated_at);return Number.isFinite(t)?t:0;}
-function categories(place,profile){return profile?.categories||place.categories||String(place.category||'').split(/[,，|]/).map(x=>x.trim()).filter(Boolean);}
+function categories(place,profile){return profile?.categories||place.categories||stripChainTag(place.category).split(/[,，|]/).map(x=>x.trim()).filter(Boolean);}
 function covisitGraph(ratings){
  const users=new Map();for(const r of ratings){if(!users.has(r.user_id))users.set(r.user_id,[]);users.get(r.user_id).push(r);}
  const diag=new Map(),pairs=new Map();
