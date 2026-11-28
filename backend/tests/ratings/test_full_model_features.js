@@ -22,6 +22,11 @@ assert.equal(make(ratings).featureFor(3).rv_cos,null,'missing review/profile is 
 const changed=ratings.map(r=>r.user_id==='u'&&r.place_id===1?{...r,score:4}:r);
 const before=make(ratings).featureFor(1,{excludeViewer:true}),after=make(changed).featureFor(1,{excludeViewer:true});
 for(const key of ['p_logn','p_n30','p_n90','p_n365','p_mean','p_since','p_style_mean','p_style_share','l_len','l_sd','l_hi','l_lo','l_logn'])assert.equal(before[key],after[key],key+' must not depend on own target rating');
+// Builder-level caches must not leak between candidates, histories, hidden viewer votes or evaluation times.
+const calls=[];for(const id of [1,2,3])for(const excludeViewer of [false,true])for(const scope of ['all','estimate'])calls.push([id,{excludeViewer,scope}]);
+calls.push([1,{asOf:3}],[3,{asOf:3,excludeViewer:true}]);
+const sequence=[...calls,...calls.slice().reverse()],shared=make(ratings);
+assert.deepEqual(sequence.map(([id,o])=>shared.featureFor(id,o)),sequence.map(([id,o])=>make(ratings).featureFor(id,o)),'a shared builder gives the same features as a fresh builder per call');
 const cf=covisitGraph(ratings);assert.equal(cf(1,1),0);assert.ok(cf(1,2)>0);assert.equal(cf(2,3),0);
 const b=raterEventFeatures(ratings,4);assert.equal(b.get(ratings[0]).known,0);assert.equal(b.get(ratings[0]).bias,0);
 const schema=profileSchema(contract);assert.deepEqual(schema.ds,['quality']);
