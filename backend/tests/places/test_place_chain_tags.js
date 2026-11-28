@@ -422,7 +422,10 @@ test('owner and admin edits, request approval and the category merge script all 
     // Supply a temporary merge rule in the child process to exercise a merge that removes this tag.
     const mergeRules = require.resolve('../../modules/places/categoryMerges.json');
     const preload = path.join(temp, 'test-merge-rules.js');
-    fs.writeFileSync(preload, `require(${JSON.stringify(mergeRules)}).merges['连锁店'] = '独立经营';`);
+    // Drop rules that keep 连锁店 as a target first: a kept tag may not also be merged away.
+    fs.writeFileSync(preload, `const m = require(${JSON.stringify(mergeRules)}).merges;
+for (const key of Object.keys(m)) if (m[key] === '连锁店') delete m[key];
+m['连锁店'] = '独立经营';`);
     const result = spawnSync(process.execPath,
         ['--require', preload, require.resolve('../../scripts/places/merge_categories'), '--db', file, '--apply'],
         { encoding: 'utf8' });
